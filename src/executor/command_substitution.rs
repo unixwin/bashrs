@@ -107,12 +107,14 @@ impl Executor {
             let mut env_vars = self.env_vars.clone();
             let mut stdout = Vec::new();
             let mut stderr = Vec::new();
-            let _ = crate::builtins::printf::execute_with_io(
+            let status = crate::builtins::printf::execute_with_io(
                 expanded_args.iter().map(String::as_str),
                 &mut env_vars,
                 &mut stdout,
                 &mut stderr,
-            );
+            )
+            .unwrap_or(1);
+            self.last_command_substitution_status.set(Some(status));
             return String::from_utf8_lossy(&stdout)
                 .trim_end_matches('\n')
                 .to_string();
