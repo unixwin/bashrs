@@ -15,7 +15,7 @@
 ### 测试
 
 - 增加管道 brace group 与函数阶段的工作目录隔离覆盖，并将函数定义、算术命令 pipeline 阶段预期对齐 Bash。
-- 增加 `lastpipe` final `read` 和 final `while read` 更新当前 shell 状态的覆盖。
+- 增加 `lastpipe` final `read`、final `while read`、final 赋值和 `PIPESTATUS` 状态覆盖。
 
 ## [0.2.0] - 2026-07-17
 

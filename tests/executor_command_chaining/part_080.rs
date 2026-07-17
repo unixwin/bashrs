@@ -1727,6 +1727,47 @@ fn test_lastpipe_final_while_loop_updates_current_shell() {
 }
 
 #[test]
+fn test_lastpipe_final_assignment_updates_current_shell() {
+    let output_path = "target/rubash-lastpipe-assignment-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "shopt -s lastpipe; unset result; printf ignored | result=assigned; echo $result > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "assigned\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_lastpipe_preserves_pipeline_statuses() {
+    let output_path = "target/rubash-lastpipe-pipestatus-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "shopt -s lastpipe; true | false | true; echo $? ${{PIPESTATUS[@]}} > {output_path}; set -o pipefail; true | true | false; echo $? ${{PIPESTATUS[@]}} >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "0 0 1 0\n1 0 0 1\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_pipe_stderr_operator_feeds_brace_group_stage_stderr() {
     let output_path = "target/rubash-pipe-stderr-brace-stage-output.txt";
     let _ = fs::remove_file(output_path);
