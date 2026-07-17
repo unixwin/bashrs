@@ -6,17 +6,6 @@ impl Executor {
         cmd: &CommandNode,
     ) -> Result<(), ExecuteError> {
         let args = &cmd.words[1..];
-        if cmd.redirect_out.is_none()
-            && cmd.append.is_none()
-            && cmd.redirect_err.is_none()
-            && cmd.redirect_err_append.is_none()
-            && cmd.redirect_in.is_none()
-            && cmd.heredoc.is_none()
-            && cmd.here_string.is_none()
-        {
-            return self.execute_builtin_direct(args);
-        }
-
         let Some(name) = args.first().map(String::as_str) else {
             self.exit_code = 0;
             return Ok(());

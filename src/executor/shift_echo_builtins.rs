@@ -98,47 +98,6 @@ impl Executor {
         Ok(())
     }
 
-    pub(in crate::executor) fn execute_time_command(
-        &mut self,
-        args: &[String],
-    ) -> Result<(), ExecuteError> {
-        // TODO(parse.y/execute_cmd.c): Bash's `time` is a pipeline modifier,
-        // not a builtin. This small bridge covers upstream posixpipe.tests
-        // while pipelines are still flattened into simple commands.
-        let mut index = 0;
-        let mut inverted = false;
-        while index < args.len() {
-            match args[index].as_str() {
-                "-p" | "--" => index += 1,
-                "!" => {
-                    inverted = !inverted;
-                    index += 1;
-                }
-                "time" => index += 1,
-                _ => break,
-            }
-        }
-
-        let status = match args.get(index).map(String::as_str) {
-            Some("echo") => {
-                crate::builtins::echo::execute(&args[index + 1..])?;
-                0
-            }
-            Some(":") => 0,
-            Some("true") => 0,
-            Some("false") => 1,
-            Some(_) => 0,
-            None => 0,
-        };
-        print_time(&self.env_vars, args.iter().any(|arg| arg == "-p"));
-        self.exit_code = if inverted {
-            invert_exit_status(status)
-        } else {
-            status
-        };
-        Ok(())
-    }
-
     pub(in crate::executor) fn execute_time_command_node(
         &mut self,
         cmd: &CommandNode,
