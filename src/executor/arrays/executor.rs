@@ -75,6 +75,9 @@ impl Executor {
             .and_then(|word| word.strip_suffix('"'))
             .unwrap_or(word);
         let word = word.strip_prefix('\x1d').unwrap_or(word);
+        if let Some(values) = self.array_transform_word_values(word, quoted_array_word) {
+            return Some(values);
+        }
         if !quoted_array_word {
             if let Some((name, offset, length)) = word
                 .strip_prefix("${")
@@ -209,6 +212,33 @@ impl Executor {
             .map(|value| array_values(&value))
     }
 
+    fn array_transform_word_values(
+        &self,
+        word: &str,
+        quoted_array_word: bool,
+    ) -> Option<Vec<String>> {
+        let (var_name, transform) = word
+            .strip_prefix("${")
+            .and_then(|word| word.strip_suffix('}'))
+            .and_then(parse_parameter_transform)?;
+        if !array_value_transform_splits_words(transform) {
+            return None;
+        }
+        let (array_name, starred) = var_name
+            .strip_suffix("[@]")
+            .map(|name| (name, false))
+            .or_else(|| var_name.strip_suffix("[*]").map(|name| (name, true)))?;
+        let storage = self.parameter_array_storage(array_name)?;
+        let values = array_values(&storage)
+            .into_iter()
+            .map(|value| self.apply_parameter_transform_value(&value, transform))
+            .collect::<Vec<_>>();
+        if quoted_array_word && starred {
+            return Some(vec![values.join(&self.ifs_first_char_separator())]);
+        }
+        Some(values)
+    }
+
     fn indirect_array_reference_word_values(
         &self,
         word: &str,
@@ -241,4 +271,16 @@ impl Executor {
             .unwrap_or(' ')
             .to_string()
     }
+}
+
+fn array_value_transform_splits_words(transform: ParameterTransform) -> bool {
+    matches!(
+        transform,
+        ParameterTransform::Quote
+            | ParameterTransform::Escape
+            | ParameterTransform::Prompt
+            | ParameterTransform::Upper
+            | ParameterTransform::UpperFirst
+            | ParameterTransform::Lower
+    )
 }

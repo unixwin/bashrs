@@ -60,7 +60,7 @@ fn test_parameter_transform_expands_prompt_array_elements() {
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(
         fs::read_to_string(output_path).unwrap(),
-        "<alice box>\n<alice>\n"
+        "<alice>\n<box>\n<alice>\n"
     );
     let _ = fs::remove_file(output_path);
 }

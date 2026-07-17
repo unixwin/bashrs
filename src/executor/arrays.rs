@@ -21,9 +21,9 @@ use std::fs;
 
 use super::{
     assoc_entries, assoc_value_at, case_pattern_matches, eval_arith_value,
-    eval_conditional_arith_value, is_marked_var, is_shell_name, pattern_contains_glob,
-    quote_assoc_key, split_storage_words, strip_matching_quotes, unquote_storage_value, Executor,
-    ARRAY_FIELD_SPLIT_MARKER, ASSOC_VARS,
+    eval_conditional_arith_value, is_marked_var, is_shell_name, parse_parameter_transform,
+    pattern_contains_glob, quote_assoc_key, split_storage_words, strip_matching_quotes,
+    unquote_storage_value, Executor, ParameterTransform, ARRAY_FIELD_SPLIT_MARKER, ASSOC_VARS,
 };
 
 pub(super) fn is_array_element_assignment_word(word: &str) -> bool {
@@ -80,6 +80,7 @@ pub(super) fn word_is_unquoted_array_list_expansion(word: &str) -> bool {
         return false;
     };
     let name = inner.split_once(':').map_or(inner, |(name, _)| name);
+    let name = parse_parameter_transform(name).map_or(name, |(name, _)| name);
     name.ends_with("[@]") || name.ends_with("[*]")
 }
 

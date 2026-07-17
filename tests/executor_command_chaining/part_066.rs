@@ -205,6 +205,32 @@ fn test_array_value_parameter_transforms_apply_to_elements() {
 }
 
 #[test]
+fn test_array_at_parameter_transform_expands_per_element() {
+    let output_path = "target/rubash-param-array-at-transform-words-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "arr=(aa 'b c'); \
+         printf 'quoted<%s>\\n' \"${{arr[@]@Q}}\" > {output_path}; \
+         printf 'unquoted<%s>\\n' ${{arr[@]@Q}} >> {output_path}; \
+         printf 'star<%s>\\n' \"${{arr[*]@Q}}\" >> {output_path}; \
+         printf 'upper<%s>\\n' \"${{arr[@]@U}}\" >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "quoted<'aa'>\nquoted<'b c'>\nunquoted<'aa'>\nunquoted<'b>\nunquoted<c'>\nstar<'aa' 'b c'>\nupper<AA>\nupper<B C>\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_parameter_upper_first_transform_applies_to_values() {
     let output_path = "target/rubash-param-upper-first-transform-output.txt";
     let _ = fs::remove_file(output_path);
