@@ -20,10 +20,13 @@ use std::env;
 use std::fs;
 
 use super::{
-    assoc_entries, assoc_value_at, case_pattern_matches, eval_arith_value,
-    eval_conditional_arith_value, is_marked_var, is_shell_name, parse_parameter_transform,
-    pattern_contains_glob, quote_assoc_key, split_storage_words, strip_matching_quotes,
-    unquote_storage_value, Executor, ParameterTransform, ARRAY_FIELD_SPLIT_MARKER, ASSOC_VARS,
+    apply_parameter_case_mod, assoc_entries, assoc_value_at, case_pattern_matches,
+    decode_parameter_replacement_quotes, eval_arith_value, eval_conditional_arith_value,
+    is_marked_var, is_shell_name, parse_indirect_pattern_removal, parse_parameter_case_mod,
+    parse_parameter_replacement, parse_parameter_transform, pattern_contains_glob, quote_assoc_key,
+    remove_parameter_pattern, replace_parameter_pattern, split_storage_words,
+    strip_matching_quotes, unquote_storage_value, Executor, ParameterTransform,
+    ARRAY_FIELD_SPLIT_MARKER, ASSOC_VARS,
 };
 
 pub(super) fn is_array_element_assignment_word(word: &str) -> bool {
@@ -80,7 +83,12 @@ pub(super) fn word_is_unquoted_array_list_expansion(word: &str) -> bool {
         return false;
     };
     let name = inner.split_once(':').map_or(inner, |(name, _)| name);
-    let name = parse_parameter_transform(name).map_or(name, |(name, _)| name);
+    let name = parse_parameter_transform(name)
+        .map(|(name, _)| name)
+        .or_else(|| parse_indirect_pattern_removal(name).map(|(name, _, _)| name))
+        .or_else(|| parse_parameter_replacement(name).map(|(name, _, _, _)| name))
+        .or_else(|| parse_parameter_case_mod(name).map(|(name, _, _)| name))
+        .unwrap_or(name);
     name.ends_with("[@]") || name.ends_with("[*]")
 }
 
