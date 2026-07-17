@@ -221,13 +221,26 @@ impl Executor {
             .strip_prefix("${")
             .and_then(|word| word.strip_suffix('}'))
             .and_then(parse_parameter_transform)?;
-        if !array_value_transform_splits_words(transform) {
-            return None;
-        }
         let (array_name, starred) = var_name
             .strip_suffix("[@]")
             .map(|name| (name, false))
             .or_else(|| var_name.strip_suffix("[*]").map(|name| (name, true)))?;
+        if transform == ParameterTransform::Assignment {
+            let value = self.parameter_assignment_transform(var_name);
+            if quoted_array_word {
+                return Some(split_array_assignment_transform_words(&value));
+            }
+            return Some(vec![value]);
+        }
+        if transform == ParameterTransform::KeyValueQuoted {
+            return Some(vec![self.parameter_key_value_transform(var_name, true)]);
+        }
+        if transform == ParameterTransform::KeyValueSplit {
+            return self.array_key_value_split_transform_values(array_name);
+        }
+        if !array_value_transform_splits_words(transform) {
+            return None;
+        }
         let storage = self.parameter_array_storage(array_name)?;
         let values = array_values(&storage)
             .into_iter()
@@ -237,6 +250,25 @@ impl Executor {
             return Some(vec![values.join(&self.ifs_first_char_separator())]);
         }
         Some(values)
+    }
+
+    fn array_key_value_split_transform_values(&self, array_name: &str) -> Option<Vec<String>> {
+        let storage_name = self.resolved_variable_name(array_name)?;
+        let storage = self.parameter_array_storage(array_name)?;
+        if is_marked_var(&self.env_vars, ASSOC_VARS, &storage_name) {
+            return Some(
+                assoc_entries(&storage)
+                    .into_iter()
+                    .flat_map(|(key, value)| [key, value])
+                    .collect(),
+            );
+        }
+        Some(
+            indexed_array_entries(&storage)
+                .into_iter()
+                .flat_map(|(index, value)| [index.to_string(), value])
+                .collect(),
+        )
     }
 
     fn indirect_array_reference_word_values(
@@ -283,4 +315,19 @@ fn array_value_transform_splits_words(transform: ParameterTransform) -> bool {
             | ParameterTransform::UpperFirst
             | ParameterTransform::Lower
     )
+}
+
+fn split_array_assignment_transform_words(value: &str) -> Vec<String> {
+    let mut parts = value.splitn(3, char::is_whitespace);
+    let first = parts.next().unwrap_or_default();
+    if first.is_empty() {
+        return Vec::new();
+    }
+    let Some(second) = parts.next() else {
+        return vec![first.to_string()];
+    };
+    let Some(rest) = parts.next() else {
+        return vec![first.to_string(), second.to_string()];
+    };
+    vec![first.to_string(), second.to_string(), rest.to_string()]
 }

@@ -127,7 +127,7 @@ fn test_parameter_transform_assignment_prints_indexed_arrays() {
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(
         fs::read_to_string(output_path).unwrap(),
-        "<declare -a arr='alpha'>\n<declare -a arr='beta'>\n<declare -a arr=([0]=\"alpha\" [1]=\"beta\")>\n"
+        "<declare -a arr='alpha'>\n<declare -a arr='beta'>\n<declare>\n<-a>\n<arr=([0]=\"alpha\" [1]=\"beta\")>\n"
     );
     let _ = fs::remove_file(output_path);
 }
@@ -147,7 +147,7 @@ fn test_parameter_transform_assignment_prints_assoc_arrays() {
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(
         fs::read_to_string(output_path).unwrap(),
-        "<declare -A assoc>\n<declare -A assoc='alpha'>\n<declare -A assoc=([one]=\"alpha\" [two]=\"beta\" )>\n"
+        "<declare -A assoc>\n<declare -A assoc='alpha'>\n<declare>\n<-A>\n<assoc=([one]=\"alpha\" [two]=\"beta\" )>\n"
     );
     let _ = fs::remove_file(output_path);
 }

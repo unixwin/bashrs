@@ -231,6 +231,34 @@ fn test_array_at_parameter_transform_expands_per_element() {
 }
 
 #[test]
+fn test_array_key_value_parameter_transforms_split_like_bash() {
+    let output_path = "target/rubash-param-array-key-value-transform-words-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "arr=(aa 'b c'); \
+         printf 'QA<%s>\\n' \"${{arr[@]@A}}\" > {output_path}; \
+         printf 'QK<%s>\\n' \"${{arr[@]@K}}\" >> {output_path}; \
+         printf 'Qk<%s>\\n' \"${{arr[@]@k}}\" >> {output_path}; \
+         printf 'UA<%s>\\n' ${{arr[@]@A}} >> {output_path}; \
+         printf 'UK<%s>\\n' ${{arr[@]@K}} >> {output_path}; \
+         printf 'Uk<%s>\\n' ${{arr[@]@k}} >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "QA<declare>\nQA<-a>\nQA<arr=([0]=\"aa\" [1]=\"b c\")>\nQK<0 \"aa\" 1 \"b c\">\nQk<0>\nQk<aa>\nQk<1>\nQk<b c>\nUA<declare>\nUA<-a>\nUA<arr=([0]=\"aa\">\nUA<[1]=\"b>\nUA<c\")>\nUK<0>\nUK<\"aa\">\nUK<1>\nUK<\"b>\nUK<c\">\nUk<0>\nUk<aa>\nUk<1>\nUk<b>\nUk<c>\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_parameter_upper_first_transform_applies_to_values() {
     let output_path = "target/rubash-param-upper-first-transform-output.txt";
     let _ = fs::remove_file(output_path);
