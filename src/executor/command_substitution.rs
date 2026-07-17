@@ -196,9 +196,12 @@ impl Executor {
                 return crate::builtins::kill::list_first_signal_for_sed().to_string();
             }
             if let Some(value) = words.get(2).map(String::as_str) {
-                return crate::builtins::kill::translate_signal(value)
-                    .unwrap_or_default()
-                    .to_string();
+                if let Some(signal) = crate::builtins::kill::translate_signal(value) {
+                    self.last_command_substitution_status.set(Some(0));
+                    return signal.to_string();
+                }
+                self.last_command_substitution_status.set(Some(1));
+                return String::new();
             }
         }
 
