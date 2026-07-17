@@ -167,6 +167,8 @@ impl Executor {
             }
             self.background_jobs.clear();
             self.background_job_order.clear();
+            self.coproc_stdin_writers.clear();
+            self.coproc_stdout_readers.clear();
             self.write_buffered_builtin_output(cmd, &[], &[])?;
             return Ok(status);
         }
@@ -256,6 +258,8 @@ impl Executor {
         let status = child.wait()?.code().unwrap_or(1);
         self.background_jobs.remove(&pid);
         self.background_job_order.retain(|job_pid| *job_pid != pid);
+        self.coproc_stdin_writers.remove(&pid);
+        self.coproc_stdout_readers.remove(&pid);
         Ok(Some(status))
     }
 
@@ -339,6 +343,8 @@ impl Executor {
                 self.background_children.clear();
                 self.background_jobs.clear();
                 self.background_job_order.clear();
+                self.coproc_stdin_writers.clear();
+                self.coproc_stdout_readers.clear();
                 0
             }
             crate::builtins::disown::DisownAction::Current => {
@@ -360,6 +366,8 @@ impl Executor {
                         self.background_children.remove(&pid);
                         self.background_jobs.remove(&pid);
                         self.background_job_order.retain(|job_pid| *job_pid != pid);
+                        self.coproc_stdin_writers.remove(&pid);
+                        self.coproc_stdout_readers.remove(&pid);
                     } else {
                         writeln!(
                             stderr,
@@ -388,6 +396,8 @@ impl Executor {
         self.background_children.remove(&pid);
         self.background_jobs.remove(&pid);
         self.background_job_order.retain(|job_pid| *job_pid != pid);
+        self.coproc_stdin_writers.remove(&pid);
+        self.coproc_stdout_readers.remove(&pid);
         true
     }
 
@@ -476,11 +486,15 @@ impl Executor {
         let Some(mut child) = self.background_children.remove(&pid) else {
             self.background_jobs.remove(&pid);
             self.background_job_order.retain(|job_pid| *job_pid != pid);
+            self.coproc_stdin_writers.remove(&pid);
+            self.coproc_stdout_readers.remove(&pid);
             self.write_job_not_found("fg", job, stderr)?;
             return Ok(1);
         };
         self.background_jobs.remove(&pid);
         self.background_job_order.retain(|job_pid| *job_pid != pid);
+        self.coproc_stdin_writers.remove(&pid);
+        self.coproc_stdout_readers.remove(&pid);
         let status = child.wait()?.code().unwrap_or(1);
         Ok(status)
     }

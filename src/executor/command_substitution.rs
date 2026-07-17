@@ -313,6 +313,8 @@ impl Executor {
             background_children: HashMap::new(),
             background_jobs: HashMap::new(),
             background_job_order: Vec::new(),
+            coproc_stdin_writers: HashMap::new(),
+            coproc_stdout_readers: HashMap::new(),
             suppress_errexit: self.suppress_errexit,
             last_command_substitution_status: Cell::new(None),
             stdout_capture: None,

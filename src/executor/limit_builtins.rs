@@ -112,6 +112,8 @@ impl Executor {
             }
             self.background_jobs.remove(&pid);
             self.background_job_order.retain(|job_pid| *job_pid != pid);
+            self.coproc_stdin_writers.remove(&pid);
+            self.coproc_stdout_readers.remove(&pid);
         }
 
         self.write_buffered_builtin_output(cmd, &[], &stderr)?;

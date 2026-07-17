@@ -547,19 +547,23 @@ impl Executor {
         if let (Ok((stdin_reader, stdin_writer)), Ok((stdout_reader, stdout_writer))) =
             (stdin_result, stdout_result)
         {
-            child.stdin(stdin_writer);
-            child.stdout(stdout_reader);
+            child.stdin(stdin_reader);
+            child.stdout(stdout_writer);
             child.stderr(Stdio::inherit());
             self.apply_coproc_redirects(cmd, &mut child)?;
 
             match child.spawn() {
                 Ok(child_proc) => {
-                    // stdin_writer and stdout_reader were moved into the child process
-                    // stdin_reader and stdout_writer are now unusable (drop them)
-                    drop(stdin_reader);
-                    drop(stdout_writer);
-
+                    // Rubash does not expose real coproc file descriptors yet,
+                    // but keep the parent ends until after spawn so stdio uses
+                    // the correct pipe direction on all hosts.
                     let pid = child_proc.id();
+                    self.background_children.insert(pid, child_proc);
+                    self.background_jobs
+                        .insert(pid, bash_command_source_text(cmd));
+                    self.background_job_order.push(pid);
+                    self.coproc_stdin_writers.insert(pid, stdin_writer);
+                    self.coproc_stdout_readers.insert(pid, stdout_reader);
                     // Store the file descriptors in env for COPROC array
                     let stdin_key = format!("__RUBASH_COPROC_STDIN_{}", pid);
                     let stdout_key = format!("__RUBASH_COPROC_STDOUT_{}", pid);

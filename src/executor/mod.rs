@@ -304,6 +304,8 @@ pub struct Executor {
     background_children: HashMap<u32, std::process::Child>,
     background_jobs: HashMap<u32, String>,
     background_job_order: Vec<u32>,
+    coproc_stdin_writers: HashMap<u32, std::io::PipeWriter>,
+    coproc_stdout_readers: HashMap<u32, std::io::PipeReader>,
     suppress_errexit: usize,
     last_command_substitution_status: Cell<Option<i32>>,
     stdout_capture: Option<Vec<u8>>,
