@@ -1,4 +1,4 @@
-name: Release
+name: Major Release
 
 on:
   push:
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   github-release:
-    name: GitHub release
+    name: Build and publish GitHub release
     runs-on: ubuntu-latest
 
     steps:
@@ -43,13 +43,13 @@ jobs:
           fi
 
       - name: Run cargo tests
-        run: cargo test
+        run: cargo test --locked
 
       - name: Verify package
-        run: cargo package
+        run: cargo package --locked
 
       - name: Build release binary
-        run: cargo build --release
+        run: cargo build --release --locked
 
       - name: Package Linux binary
         shell: bash
@@ -57,7 +57,8 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           cp target/release/rubash dist/rubash
-          tar -C dist -czf "rubash-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz" rubash
+          tar -C dist -czf "dist/rubash-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz" rubash
+          sha256sum "dist/rubash-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz" > dist/SHA256SUMS
 
       - name: Create GitHub release
         env:
@@ -66,6 +67,8 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "$GITHUB_REF_NAME" \
-            "rubash-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz" \
+            "dist/rubash-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz" \
+            "dist/SHA256SUMS" \
             --title "$GITHUB_REF_NAME" \
-            --generate-notes
+            --generate-notes \
+            --verify-tag
