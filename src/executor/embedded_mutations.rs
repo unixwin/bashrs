@@ -482,6 +482,7 @@ fn command_has_ast_substitution_shape(command: &CommandNode) -> bool {
     command.and_or_list.is_some()
         || command.inverted_command.is_some()
         || command.background_command.is_some()
+        || command_has_here_string_substitution(command)
         || command_has_compound_substitution(command)
 }
 
@@ -522,6 +523,33 @@ fn command_contains_current_shell_substitution(command: &CommandNode) -> bool {
         .any(|word| word_contains_current_shell_command_substitution(word))
 }
 
+fn command_has_here_string_substitution(command: &CommandNode) -> bool {
+    command.here_string.is_some()
+        || command
+            .heredoc_redirects
+            .iter()
+            .any(|redirect| redirect.here_string)
+        || command.pipeline_command.as_ref().is_some_and(|pipeline| {
+            pipeline
+                .stages
+                .iter()
+                .any(command_has_here_string_substitution)
+        })
+        || command.and_or_list.as_ref().is_some_and(|list| {
+            list.commands
+                .iter()
+                .any(command_has_here_string_substitution)
+        })
+        || command
+            .inverted_command
+            .as_ref()
+            .is_some_and(|inverted| command_has_here_string_substitution(&inverted.command))
+        || command
+            .time_command
+            .as_ref()
+            .is_some_and(|time| command_has_here_string_substitution(&time.command))
+}
+
 fn command_is_ast_list_substitution(command: &CommandNode) -> bool {
     if !command_has_simple_substitution_shape(command) {
         return false;
@@ -559,11 +587,43 @@ fn command_substitution_uses_specialized_path(
     words: &[String],
 ) -> bool {
     command_substitution_contains_heredoc(source)
-        || words.iter().any(|word| word == "|")
+        || (words.iter().any(|word| word == "|")
+            && !command_substitution_contains_here_string(source))
         || words.first().map(String::as_str) == Some("time")
         || executor
             .command_substitution_cd_pwd_output(source)
             .is_some()
+}
+
+fn command_substitution_contains_here_string(source: &str) -> bool {
+    let mut chars = source.chars().peekable();
+    let mut single = false;
+    let mut double = false;
+    let mut escaped = false;
+
+    while let Some(ch) = chars.next() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' && !single {
+            escaped = true;
+            continue;
+        }
+        match ch {
+            '\'' if !double => single = !single,
+            '"' if !single => double = !double,
+            '<' if !single && !double && chars.peek().copied() == Some('<') => {
+                chars.next();
+                if chars.peek().copied() == Some('<') {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    false
 }
 
 fn command_substitution_contains_heredoc(source: &str) -> bool {
