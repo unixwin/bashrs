@@ -100,6 +100,8 @@ impl Executor {
                         .open(shell_path_to_windows(target, &self.env_vars))?;
                     process.stdout(Stdio::from(file));
                 }
+            } else if self.stdout_capture.is_some() {
+                process.stdout(Stdio::piped());
             }
         }
 
@@ -194,11 +196,14 @@ impl Executor {
     }
 
     pub(in crate::executor) fn write_external_fd_copy_output(
-        &self,
+        &mut self,
         cmd: &CommandNode,
         stdout: &[u8],
         stderr: &[u8],
     ) -> Result<(), ExecuteError> {
+        if self.stdout_capture.is_some() && !self.external_stdout_copies_to_stderr(cmd) {
+            self.write_default_stdout(stdout)?;
+        }
         if self.external_stdout_copies_to_stderr(cmd) {
             self.write_external_stdout_to_stderr(cmd, stdout)?;
         }
@@ -208,12 +213,12 @@ impl Executor {
         Ok(())
     }
 
-    fn write_external_stderr_to_stdout(&self, stderr: &[u8]) -> Result<(), ExecuteError> {
+    fn write_external_stderr_to_stdout(&mut self, stderr: &[u8]) -> Result<(), ExecuteError> {
         if stderr.is_empty() {
             return Ok(());
         }
 
-        std::io::stdout().lock().write_all(stderr)?;
+        self.write_default_stdout(stderr)?;
         Ok(())
     }
 
@@ -255,7 +260,9 @@ impl Executor {
     }
 
     pub(in crate::executor) fn external_needs_fd_copy_capture(&self, cmd: &CommandNode) -> bool {
-        self.external_stdout_copies_to_stderr(cmd) || self.external_stderr_copies_to_stdout(cmd)
+        self.stdout_capture.is_some()
+            || self.external_stdout_copies_to_stderr(cmd)
+            || self.external_stderr_copies_to_stdout(cmd)
     }
 
     fn external_stdout_copies_to_stderr(&self, cmd: &CommandNode) -> bool {

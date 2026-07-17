@@ -414,6 +414,35 @@ fn test_cd_pwd_command_substitution_accepts_semicolon_separator() {
 }
 
 #[test]
+fn test_command_list_substitution_runs_in_subshell_capture() {
+    let output_path = "target/rubash-list-command-subst-subshell-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "value=$(cd ..; echo hi; printf there); external=$(cd ..; /usr/bin/pwd); after=$(pwd); \
+         printf 'value=<%s>\\nexternal=<%s>\\nafter=<%s>\\n' \"$value\" \"$external\" \"$after\" > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    let current = env::current_dir().unwrap();
+    let parent = current.parent().unwrap();
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        format!(
+            "value=<hi\nthere>\nexternal=<{}>\nafter=<{}>\n",
+            shell_display_test_path(parent),
+            shell_display_test_path(&current)
+        )
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_case_command_substitution_captures_stdout() {
     let output_path = "target/rubash-case-command-subst-output.txt";
     let _ = fs::remove_file(output_path);

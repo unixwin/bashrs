@@ -54,6 +54,9 @@ impl Executor {
         if let Some(output) = self.command_substitution_heredoc_output(source) {
             return output;
         }
+        if let Some(output) = self.command_list_substitution_output(source) {
+            return output;
+        }
         if source.contains("128") && source.contains('+') && source.contains('1') {
             return "129".to_string();
         }
@@ -260,6 +263,64 @@ impl Executor {
         ))
     }
 
+    fn command_list_substitution_output(&self, source: &str) -> Option<String> {
+        if source.contains("<<") {
+            return None;
+        }
+
+        let tokens = crate::lexer::tokenize(source);
+        let ast = crate::parser::parse(&tokens);
+        if ast.commands.len() <= 1 {
+            return None;
+        }
+
+        let saved_dir = env::current_dir().ok();
+        let mut subshell = self.command_substitution_executor();
+        subshell.stdout_capture = Some(Vec::new());
+
+        let result = subshell.execute_ast(&ast);
+        let output = subshell.stdout_capture.take().unwrap_or_default();
+        let status = command_substitution_result_status(result, subshell.exit_code);
+
+        if let Some(saved_dir) = saved_dir {
+            let _ = env::set_current_dir(saved_dir);
+        }
+
+        self.last_command_substitution_status.set(Some(status));
+        Some(
+            String::from_utf8_lossy(&output)
+                .trim_end_matches('\n')
+                .to_string(),
+        )
+    }
+
+    fn command_substitution_executor(&self) -> Executor {
+        Executor {
+            exit_code: self.exit_code,
+            env_vars: self.env_vars.clone(),
+            aliases: self.aliases.clone(),
+            functions: self.functions.clone(),
+            function_definition_redirects: self.function_definition_redirects.clone(),
+            positional_params: self.positional_params.clone(),
+            local_var_scopes: self.local_var_scopes.clone(),
+            local_attr_scopes: self.local_attr_scopes.clone(),
+            expanding_aliases: self.expanding_aliases.clone(),
+            loop_depth: self.loop_depth,
+            function_depth: self.function_depth,
+            random_state: Cell::new(self.random_state.get()),
+            subshell_depth: Cell::new(self.subshell_depth.get() + 1),
+            last_background_pid: self.last_background_pid,
+            background_children: HashMap::new(),
+            background_jobs: HashMap::new(),
+            background_job_order: Vec::new(),
+            suppress_errexit: self.suppress_errexit,
+            last_command_substitution_status: Cell::new(None),
+            stdout_capture: None,
+            stderr_capture: None,
+            process_env_snapshot: self.process_env_snapshot.clone(),
+        }
+    }
+
     pub(in crate::executor) fn command_substitution_read_path(
         &self,
         path: &str,
@@ -290,4 +351,13 @@ impl Executor {
 
 fn readfile_path_is_quoted(path: &str) -> bool {
     path.chars().any(|ch| matches!(ch, '\'' | '"' | '\\'))
+}
+
+fn command_substitution_result_status(result: Result<(), ExecuteError>, exit_code: i32) -> i32 {
+    match result {
+        Ok(()) => exit_code,
+        Err(ExecuteError::Return(status)) => status,
+        Err(ExecuteError::ExitCode(status)) => status,
+        Err(_) => 1,
+    }
 }
