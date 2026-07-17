@@ -271,7 +271,7 @@ impl Executor {
         &mut self,
         source: &str,
     ) -> Option<String> {
-        if source.contains("<<") {
+        if command_substitution_contains_heredoc(source) {
             return None;
         }
 
@@ -558,12 +558,45 @@ fn command_substitution_uses_specialized_path(
     source: &str,
     words: &[String],
 ) -> bool {
-    source.contains("<<")
+    command_substitution_contains_heredoc(source)
         || words.iter().any(|word| word == "|")
         || words.first().map(String::as_str) == Some("time")
         || executor
             .command_substitution_cd_pwd_output(source)
             .is_some()
+}
+
+fn command_substitution_contains_heredoc(source: &str) -> bool {
+    let mut chars = source.chars().peekable();
+    let mut single = false;
+    let mut double = false;
+    let mut escaped = false;
+
+    while let Some(ch) = chars.next() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' && !single {
+            escaped = true;
+            continue;
+        }
+        match ch {
+            '\'' if !double => single = !single,
+            '"' if !single => double = !double,
+            '<' if !single && !double && chars.peek().copied() == Some('<') => {
+                chars.next();
+                if chars.peek().copied() == Some('<') {
+                    chars.next();
+                    continue;
+                }
+                return true;
+            }
+            _ => {}
+        }
+    }
+
+    false
 }
 
 fn update_command_substitution_case_depth(

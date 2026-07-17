@@ -286,6 +286,29 @@ fn test_compound_command_substitution_captures_stdout() {
 }
 
 #[test]
+fn test_select_command_substitution_with_here_string_captures_stdout() {
+    let output_path = "target/rubash-select-command-subst-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "v=$(select value in a b; do echo S:$value; break; done <<< 2); \
+         printf 'v=<%s> status:%s\\n' \"$v\" \"$?\" > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "v=<S:b> status:0\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_command_list_substitution_captures_stdout() {
     let output_path = "target/rubash-list-command-subst-output.txt";
     let _ = fs::remove_file(output_path);
