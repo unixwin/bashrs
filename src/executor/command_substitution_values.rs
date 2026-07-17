@@ -118,6 +118,9 @@ impl Executor {
             .strip_prefix("${")
             .and_then(|word| word.strip_suffix('}'))
         {
+            if let Some(values) = self.positional_modified_word_values(name, word) {
+                return Some(values);
+            }
             if let Some((var_name, offset, length)) = self.parse_parameter_substring(name) {
                 if var_name == "@" {
                     return Some(positional_parameter_substring(
@@ -129,6 +132,83 @@ impl Executor {
             }
         }
         None
+    }
+
+    pub(in crate::executor) fn word_is_unquoted_positional_modified_list_expansion(
+        &self,
+        word: &str,
+    ) -> bool {
+        if word.starts_with('"') || word.starts_with('\'') || word.starts_with('\x1d') {
+            return false;
+        }
+        let Some(inner) = word
+            .strip_prefix("${")
+            .and_then(|word| word.strip_suffix('}'))
+        else {
+            return false;
+        };
+        self.positional_modified_base_name(inner)
+            .is_some_and(|name| matches!(name, "@" | "*"))
+    }
+
+    fn positional_modified_word_values(&self, name: &str, word: &str) -> Option<Vec<String>> {
+        let quoted = word.starts_with('"') || word.starts_with('\x1d');
+
+        if let Some((var_name, pattern, operation)) = parse_indirect_pattern_removal(name) {
+            let pattern = self.expand_parameter_pattern_word(pattern);
+            return self.positional_modified_values(var_name, quoted, |value| {
+                remove_parameter_pattern(value, &pattern, operation)
+            });
+        }
+
+        if let Some((var_name, pattern, replacement, global)) = parse_parameter_replacement(name) {
+            let pattern = self.expand_parameter_pattern_word(pattern);
+            let replacement = decode_parameter_replacement_quotes(
+                &self.expand_embedded_parameters_preserving_escaped_single_quotes(replacement),
+            );
+            return self.positional_modified_values(var_name, quoted, |value| {
+                replace_parameter_pattern(value, &pattern, &replacement, global)
+            });
+        }
+
+        if let Some((var_name, operation, pattern)) = parse_parameter_case_mod(name) {
+            let pattern = self.expand_embedded_parameters(pattern);
+            return self.positional_modified_values(var_name, quoted, |value| {
+                apply_parameter_case_mod(value, operation, &pattern)
+            });
+        }
+
+        None
+    }
+
+    fn positional_modified_base_name<'a>(&self, name: &'a str) -> Option<&'a str> {
+        parse_indirect_pattern_removal(name)
+            .map(|(name, _, _)| name)
+            .or_else(|| parse_parameter_replacement(name).map(|(name, _, _, _)| name))
+            .or_else(|| parse_parameter_case_mod(name).map(|(name, _, _)| name))
+    }
+
+    fn positional_modified_values<F>(
+        &self,
+        name: &str,
+        quoted: bool,
+        modify: F,
+    ) -> Option<Vec<String>>
+    where
+        F: Fn(&str) -> String,
+    {
+        if !matches!(name, "@" | "*") {
+            return None;
+        }
+        let values = self
+            .positional_params
+            .iter()
+            .map(|value| modify(value))
+            .collect::<Vec<_>>();
+        if quoted && name == "*" {
+            return Some(vec![values.join(&self.ifs_first_char_separator())]);
+        }
+        Some(values)
     }
 
     pub(in crate::executor) fn join_array_parameter_values(

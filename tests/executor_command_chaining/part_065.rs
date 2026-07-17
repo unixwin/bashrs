@@ -154,6 +154,34 @@ fn test_positional_parameter_replacement_expands_all_parameters() {
 }
 
 #[test]
+fn test_positional_pattern_replacement_and_case_expand_per_word() {
+    let output_path = "target/rubash-positional-pattern-word-expansion-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "set -- alpha 'a b' beta; \
+         printf 'Qp<%s>\\n' \"${{@#a}}\" > {output_path}; \
+         printf 'Up<%s>\\n' ${{@#a}} >> {output_path}; \
+         printf 'Qr<%s>\\n' \"${{@/a/X}}\" >> {output_path}; \
+         printf 'Ur<%s>\\n' ${{@/a/X}} >> {output_path}; \
+         printf 'Qc<%s>\\n' \"${{@^^}}\" >> {output_path}; \
+         printf 'Uc<%s>\\n' ${{@^^}} >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "Qp<lpha>\nQp< b>\nQp<beta>\nUp<lpha>\nUp<b>\nUp<beta>\nQr<Xlpha>\nQr<X b>\nQr<betX>\nUr<Xlpha>\nUr<X>\nUr<b>\nUr<betX>\nQc<ALPHA>\nQc<A B>\nQc<BETA>\nUc<ALPHA>\nUc<A>\nUc<B>\nUc<BETA>\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_parameter_case_mod_uppercases_first_and_all_chars() {
     let output_path = "target/rubash-param-case-upper-output.txt";
     let _ = fs::remove_file(output_path);

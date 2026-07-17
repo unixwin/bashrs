@@ -359,7 +359,7 @@ impl Executor {
         None
     }
 
-    fn ifs_first_char_separator(&self) -> String {
+    pub(in crate::executor) fn ifs_first_char_separator(&self) -> String {
         self.env_vars
             .get("IFS")
             .and_then(|ifs| ifs.chars().next())

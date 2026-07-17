@@ -179,6 +179,12 @@ impl Executor {
         }
         if let Some(values) = self.quoted_positional_at_word_values(word, cmd.word_kinds.get(index))
         {
+            if self.word_is_unquoted_positional_modified_list_expansion(word) {
+                return field_split_array_values_with_ifs(
+                    values,
+                    self.env_vars.get("IFS").map(String::as_str),
+                );
+            }
             return values;
         }
         if self.is_brace_expand_enabled() && !word.contains("${") {
