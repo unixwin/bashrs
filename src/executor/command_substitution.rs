@@ -122,13 +122,15 @@ impl Executor {
 
         if words.first().map(String::as_str) == Some("cat") {
             let mut output = String::new();
+            let mut status = 0;
             for word in &words[1..] {
                 let path = self.expand_word(word);
-                if let Ok(value) = fs::read_to_string(shell_path_to_windows(&path, &self.env_vars))
-                {
-                    output.push_str(&value);
+                match fs::read_to_string(shell_path_to_windows(&path, &self.env_vars)) {
+                    Ok(value) => output.push_str(&value),
+                    Err(_) => status = 1,
                 }
             }
+            self.last_command_substitution_status.set(Some(status));
             return output.trim_end_matches('\n').to_string();
         }
 

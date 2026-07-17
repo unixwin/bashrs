@@ -49,6 +49,27 @@ fn test_cat_command_substitution_reads_files_and_strips_trailing_newlines() {
 }
 
 #[test]
+fn test_cat_command_substitution_missing_file_sets_status() {
+    let missing_path = "target/rubash-cat-command-substitution-missing.txt";
+    let output_path = "target/rubash-cat-command-substitution-missing-output.txt";
+    let _ = fs::remove_file(missing_path);
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "v=$(cat {missing_path}); printf 'status:%s v:<%s>\\n' \"$?\" \"$v\" > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "status:1 v:<>\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_read_file_command_substitution_strips_trailing_newlines() {
     let input_path = "target/rubash-readfile-command-substitution-input.txt";
     let output_path = "target/rubash-readfile-command-substitution-output.txt";
