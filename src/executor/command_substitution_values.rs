@@ -118,6 +118,9 @@ impl Executor {
             .strip_prefix("${")
             .and_then(|word| word.strip_suffix('}'))
         {
+            if let Some(values) = self.positional_transform_word_values(name, word) {
+                return Some(values);
+            }
             if let Some(values) = self.positional_modified_word_values(name, word) {
                 return Some(values);
             }
@@ -148,7 +151,48 @@ impl Executor {
             return false;
         };
         self.positional_modified_base_name(inner)
+            .or_else(|| parse_parameter_transform(inner).map(|(name, _)| name))
             .is_some_and(|name| matches!(name, "@" | "*"))
+    }
+
+    fn positional_transform_word_values(&self, name: &str, word: &str) -> Option<Vec<String>> {
+        let quoted = word.starts_with('"') || word.starts_with('\x1d');
+        let (var_name, transform) = parse_parameter_transform(name)?;
+        if !matches!(var_name, "@" | "*") {
+            return None;
+        }
+
+        let values = if transform == ParameterTransform::Assignment {
+            let mut values = vec!["set".to_string(), "--".to_string()];
+            values.extend(
+                self.positional_params
+                    .iter()
+                    .map(|value| shell_single_quote_assignment_value(value)),
+            );
+            values
+        } else {
+            self.positional_params
+                .iter()
+                .map(|value| self.apply_parameter_transform_value(value, transform))
+                .collect::<Vec<_>>()
+        };
+
+        if quoted && var_name == "*" {
+            if transform == ParameterTransform::Assignment {
+                let mut rendered = String::from("set -- ");
+                rendered.push_str(
+                    &values[2..]
+                        .iter()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(&self.ifs_first_char_separator()),
+                );
+                return Some(vec![rendered]);
+            }
+            return Some(vec![values.join(&self.ifs_first_char_separator())]);
+        }
+
+        Some(values)
     }
 
     fn positional_modified_word_values(&self, name: &str, word: &str) -> Option<Vec<String>> {

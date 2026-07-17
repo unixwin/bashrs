@@ -292,6 +292,36 @@ fn test_parameter_upper_first_transform_applies_to_values() {
 }
 
 #[test]
+fn test_positional_parameter_transforms_split_like_bash() {
+    let output_path = "target/rubash-param-positional-transform-words-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "set -- alpha 'a b' beta; \
+         printf 'QQ<%s>\\n' \"${{@@Q}}\" > {output_path}; \
+         printf 'UQ<%s>\\n' ${{@@Q}} >> {output_path}; \
+         printf 'QU<%s>\\n' \"${{@@U}}\" >> {output_path}; \
+         printf 'UU<%s>\\n' ${{@@U}} >> {output_path}; \
+         printf 'QA<%s>\\n' \"${{@@A}}\" >> {output_path}; \
+         printf 'UA<%s>\\n' ${{@@A}} >> {output_path}; \
+         printf 'QK<%s>\\n' \"${{@@K}}\" >> {output_path}; \
+         printf 'UK<%s>\\n' ${{@@K}} >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "QQ<'alpha'>\nQQ<'a b'>\nQQ<'beta'>\nUQ<'alpha'>\nUQ<'a>\nUQ<b'>\nUQ<'beta'>\nQU<ALPHA>\nQU<A B>\nQU<BETA>\nUU<ALPHA>\nUU<A>\nUU<B>\nUU<BETA>\nQA<set>\nQA<-->\nQA<'alpha'>\nQA<'a b'>\nQA<'beta'>\nUA<set>\nUA<-->\nUA<'alpha'>\nUA<'a>\nUA<b'>\nUA<'beta'>\nQK<'alpha'>\nQK<'a b'>\nQK<'beta'>\nUK<'alpha'>\nUK<'a>\nUK<b'>\nUK<'beta'>\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_parameter_prompt_transform_expands_version_escapes() {
     let output_path = "target/rubash-param-prompt-transform-version-output.txt";
     let _ = fs::remove_file(output_path);
