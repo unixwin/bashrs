@@ -1632,6 +1632,64 @@ fn test_pipeline_feeds_brace_group_stage() {
 }
 
 #[test]
+fn test_pipeline_brace_group_stage_keeps_cwd_isolated() {
+    let output_path = target_test_path("rubash-pipeline-brace-stage-cwd-output.txt");
+    let shell_output_path = shell_test_path(&output_path);
+    let _ = fs::remove_file(&output_path);
+    let input = format!(
+        "printf x | {{ cd ..; pwd; cat; }} > {shell_output_path}; printf 'after:%s\\n' \"$(pwd)\" >> {shell_output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    let current = env::current_dir().unwrap();
+    let parent = current.parent().unwrap();
+    assert_eq!(
+        fs::read_to_string(&output_path).unwrap(),
+        format!(
+            "{}\nxafter:{}\n",
+            shell_display_test_path(parent),
+            shell_display_test_path(&current)
+        )
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_pipeline_function_stage_keeps_cwd_isolated() {
+    let output_path = target_test_path("rubash-pipeline-function-stage-cwd-output.txt");
+    let shell_output_path = shell_test_path(&output_path);
+    let _ = fs::remove_file(&output_path);
+    let input = format!(
+        "f() {{ cd ..; pwd; cat; }}; printf x | f > {shell_output_path}; printf 'after:%s\\n' \"$(pwd)\" >> {shell_output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    let current = env::current_dir().unwrap();
+    let parent = current.parent().unwrap();
+    assert_eq!(
+        fs::read_to_string(&output_path).unwrap(),
+        format!(
+            "{}\nxafter:{}\n",
+            shell_display_test_path(parent),
+            shell_display_test_path(&current)
+        )
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_pipe_stderr_operator_feeds_brace_group_stage_stderr() {
     let output_path = "target/rubash-pipe-stderr-brace-stage-output.txt";
     let _ = fs::remove_file(output_path);

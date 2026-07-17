@@ -42,7 +42,7 @@ fn test_function_pipeline_feeds_external_stage_stdin() {
 }
 
 #[test]
-fn test_function_definition_pipeline_stage_remains_callable() {
+fn test_function_definition_pipeline_stage_is_isolated() {
     let output_path = "target/rubash-function-definition-pipeline-output.txt";
     let _ = fs::remove_file(output_path);
     let input = format!(
@@ -58,8 +58,8 @@ fn test_function_definition_pipeline_stage_remains_callable() {
     let result = executor.execute_ast(&ast);
 
     assert!(result.is_ok());
-    assert_eq!(executor.last_exit_code(), 0);
-    assert_eq!(fs::read_to_string(output_path).unwrap(), "body\n");
+    assert_eq!(executor.last_exit_code(), 127);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "");
     let _ = fs::remove_file(output_path);
 }
 

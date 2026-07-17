@@ -6,39 +6,41 @@ impl Executor {
         command: &CommandNode,
         input: &str,
     ) -> Result<(String, String, i32), ExecuteError> {
-        let old_stdin = self.env_vars.get(FUNCTION_STDIN).cloned();
-        let old_stdin_offset = self.env_vars.get(FUNCTION_STDIN_OFFSET).cloned();
-        self.env_vars
+        let saved_dir = env::current_dir().ok();
+        let mut subshell = self.command_substitution_executor();
+        subshell
+            .env_vars
             .insert(FUNCTION_STDIN.to_string(), input.to_string());
-        self.env_vars
+        subshell
+            .env_vars
             .insert(FUNCTION_STDIN_OFFSET.to_string(), "0".to_string());
 
-        let saved_stdout_capture = self.stdout_capture.take();
-        let saved_stderr_capture = self.stderr_capture.take();
-        self.stdout_capture = Some(Vec::new());
-        self.stderr_capture = Some(Vec::new());
+        subshell.stdout_capture = Some(Vec::new());
+        subshell.stderr_capture = Some(Vec::new());
         let mut stage_command = command.clone();
         stage_command.redirect_out = None;
         stage_command.append = None;
 
         let result = if stage_command.brace_group.is_some() {
-            self.execute_brace_group_pipeline(&stage_command)
+            subshell
+                .execute_brace_group_pipeline(&stage_command)
                 .map(|_| ())
         } else {
-            self.execute_command(&stage_command)
+            subshell.execute_command(&stage_command)
         };
-        let output = self.stdout_capture.take().unwrap_or_default();
-        let stderr = self.stderr_capture.take().unwrap_or_default();
-        self.stdout_capture = saved_stdout_capture;
-        self.stderr_capture = saved_stderr_capture;
-        restore_optional_env_var(&mut self.env_vars, FUNCTION_STDIN, old_stdin);
-        restore_optional_env_var(&mut self.env_vars, FUNCTION_STDIN_OFFSET, old_stdin_offset);
+        let output = subshell.stdout_capture.take().unwrap_or_default();
+        let stderr = subshell.stderr_capture.take().unwrap_or_default();
+        let status = subshell.last_exit_code();
+
+        if let Some(saved_dir) = saved_dir {
+            let _ = env::set_current_dir(saved_dir);
+        }
         result?;
 
         Ok((
             String::from_utf8_lossy(&output).into_owned(),
             String::from_utf8_lossy(&stderr).into_owned(),
-            self.last_exit_code(),
+            status,
         ))
     }
 
@@ -62,30 +64,33 @@ impl Executor {
         call.words = std::iter::once(function_name.clone())
             .chain(args.iter().cloned())
             .collect();
+        call.redirect_out = None;
+        call.append = None;
 
-        let old_stdin = self.env_vars.get(FUNCTION_STDIN).cloned();
-        let old_stdin_offset = self.env_vars.get(FUNCTION_STDIN_OFFSET).cloned();
-        self.env_vars
+        let saved_dir = env::current_dir().ok();
+        let mut subshell = self.command_substitution_executor();
+        subshell
+            .env_vars
             .insert(FUNCTION_STDIN.to_string(), input.to_string());
-        self.env_vars
+        subshell
+            .env_vars
             .insert(FUNCTION_STDIN_OFFSET.to_string(), "0".to_string());
 
-        let saved_stdout_capture = self.stdout_capture.take();
-        let saved_stderr_capture = self.stderr_capture.take();
-        self.stdout_capture = Some(Vec::new());
-        self.stderr_capture = Some(Vec::new());
-        let result = self.execute_function(&function_name, &args, &call);
-        let output = self.stdout_capture.take().unwrap_or_default();
-        let stderr = self.stderr_capture.take().unwrap_or_default();
-        self.stdout_capture = saved_stdout_capture;
-        self.stderr_capture = saved_stderr_capture;
-        restore_optional_env_var(&mut self.env_vars, FUNCTION_STDIN, old_stdin);
-        restore_optional_env_var(&mut self.env_vars, FUNCTION_STDIN_OFFSET, old_stdin_offset);
+        subshell.stdout_capture = Some(Vec::new());
+        subshell.stderr_capture = Some(Vec::new());
+        let result = subshell.execute_function(&function_name, &args, &call);
+        let output = subshell.stdout_capture.take().unwrap_or_default();
+        let stderr = subshell.stderr_capture.take().unwrap_or_default();
+        let status = subshell.last_exit_code();
+
+        if let Some(saved_dir) = saved_dir {
+            let _ = env::set_current_dir(saved_dir);
+        }
         result?;
         Ok(Some((
             String::from_utf8_lossy(&output).into_owned(),
             String::from_utf8_lossy(&stderr).into_owned(),
-            self.last_exit_code(),
+            status,
         )))
     }
 

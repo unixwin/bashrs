@@ -63,7 +63,7 @@ fn test_arithmetic_command_pipeline_stage_executes_and_feeds_next_stage() {
 
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
-    assert_eq!(fs::read_to_string(output_path).unwrap(), "status:0 n:1\n");
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "status:0 n:0\n");
     let _ = fs::remove_file(output_path);
 }
 
