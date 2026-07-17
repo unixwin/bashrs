@@ -258,6 +258,12 @@ impl Executor {
         if let Some(output) = self.run_function_command_substitution(&words) {
             return output;
         }
+        if command_substitution_words_contain_here_string(&words) {
+            let alias_source = words.join(" ");
+            if let Some(output) = self.run_ast_command_substitution(&alias_source) {
+                return output;
+            }
+        }
         if command_substitution_uses_specialized_path(self, source, &words) {
             return self.expand_command_substitution(source);
         }
@@ -593,6 +599,12 @@ fn command_substitution_uses_specialized_path(
         || executor
             .command_substitution_cd_pwd_output(source)
             .is_some()
+}
+
+fn command_substitution_words_contain_here_string(words: &[String]) -> bool {
+    words
+        .iter()
+        .any(|word| word == "<<<" || word.ends_with("<<<"))
 }
 
 fn command_substitution_contains_here_string(source: &str) -> bool {
