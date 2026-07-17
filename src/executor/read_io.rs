@@ -107,15 +107,15 @@ impl Executor {
             return None;
         }
 
-        let saved_env = self.env_vars.clone();
-        let saved_exit_code = self.exit_code;
-        let saved_capture = self.stdout_capture.take();
-        self.stdout_capture = Some(Vec::new());
-        let result = self.execute_ast(&ast);
-        let output = self.stdout_capture.take().unwrap_or_default();
-        self.stdout_capture = saved_capture;
-        self.env_vars = saved_env;
-        self.exit_code = saved_exit_code;
+        let saved_dir = env::current_dir().ok();
+        let mut subshell = self.command_substitution_executor();
+        subshell.stdout_capture = Some(Vec::new());
+        let result = subshell.execute_ast(&ast);
+        let output = subshell.stdout_capture.take().unwrap_or_default();
+
+        if let Some(saved_dir) = saved_dir {
+            let _ = env::set_current_dir(saved_dir);
+        }
 
         match result {
             Ok(()) | Err(ExecuteError::ExitCode(_)) | Err(ExecuteError::Return(_)) => {

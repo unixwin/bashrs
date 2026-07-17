@@ -1,7 +1,17 @@
 use super::super::*;
-use std::fs;
 use std::thread;
 use std::time::Duration;
+use std::{env, fs, path::Path};
+
+fn shell_display_test_path(path: &Path) -> String {
+    let path = path.to_string_lossy().replace('\\', "/");
+    let bytes = path.as_bytes();
+    if bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' {
+        let drive = (bytes[0] as char).to_ascii_lowercase();
+        return format!("/{drive}/{}", &path[3..]);
+    }
+    path
+}
 
 #[test]
 fn test_combined_stdout_stderr_redirect_captures_brace_group() {
@@ -181,6 +191,35 @@ fn test_input_process_substitution_runs_sequential_heredoc_commands() {
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(fs::read_to_string(&output_path).unwrap(), "one\ntwo\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_input_process_substitution_command_list_keeps_output_and_cwd_isolated() {
+    let output_path = target_test_path("rubash-process-substitution-command-list-output.txt");
+    let shell_output_path = shell_test_path(&output_path);
+    let _ = fs::remove_file(&output_path);
+    let input = format!(
+        "cat <(cd ..; pwd) > {shell_output_path}; printf 'after:%s\\n' \"$(pwd)\" >> {shell_output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    let current = env::current_dir().unwrap();
+    let parent = current.parent().unwrap();
+    assert_eq!(
+        fs::read_to_string(&output_path).unwrap(),
+        format!(
+            "{}\nafter:{}\n",
+            shell_display_test_path(parent),
+            shell_display_test_path(&current)
+        )
+    );
     let _ = fs::remove_file(output_path);
 }
 

@@ -58,6 +58,17 @@ impl Executor {
             )?);
         }
 
+        if self.stdout_capture.is_some() {
+            let mut stdout = Vec::new();
+            let status = self.execute_pwd_with_io(
+                &cmd.words[1..],
+                &mut stdout,
+                &mut std::io::stderr().lock(),
+            )?;
+            self.write_default_stdout(&stdout)?;
+            return Ok(status);
+        }
+
         let mut stdout = std::io::stdout().lock();
         Ok(self.execute_pwd_with_io(&cmd.words[1..], &mut stdout, &mut std::io::stderr().lock())?)
     }

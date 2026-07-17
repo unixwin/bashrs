@@ -294,7 +294,7 @@ impl Executor {
         )
     }
 
-    fn command_substitution_executor(&self) -> Executor {
+    pub(in crate::executor) fn command_substitution_executor(&self) -> Executor {
         Executor {
             exit_code: self.exit_code,
             env_vars: self.env_vars.clone(),
