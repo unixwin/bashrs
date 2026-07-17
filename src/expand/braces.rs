@@ -209,7 +209,7 @@ fn numeric_range_width(left: &str, right: &str) -> Option<usize> {
     let padded = [left_digits, right_digits]
         .iter()
         .any(|value| value.len() > 1 && value.starts_with('0'));
-    padded.then(|| left_digits.len().max(right_digits.len()))
+    padded.then(|| left.len().max(right.len()))
 }
 
 fn format_numeric_range_value(value: i64, width: Option<usize>) -> String {
@@ -217,7 +217,11 @@ fn format_numeric_range_value(value: i64, width: Option<usize>) -> String {
         return value.to_string();
     };
     if value < 0 {
-        format!("-{:0width$}", value.unsigned_abs(), width = width)
+        format!(
+            "-{:0width$}",
+            value.unsigned_abs(),
+            width = width.saturating_sub(1)
+        )
     } else {
         format!("{value:0width$}")
     }
@@ -248,6 +252,11 @@ mod tests {
         assert_eq!(expand_braces("{1..6..4}"), vec!["1", "5"]);
         assert_eq!(expand_braces("{5..1..2}"), vec!["5", "3", "1"]);
         assert_eq!(expand_braces("{01..03}"), vec!["01", "02", "03"]);
+        assert_eq!(expand_braces("{-03..01..2}"), vec!["-03", "-01", "001"]);
+        assert_eq!(
+            expand_braces("{-003..001..2}"),
+            vec!["-003", "-001", "0001"]
+        );
     }
 
     #[test]

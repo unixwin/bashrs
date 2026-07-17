@@ -67,6 +67,24 @@ fn test_for_command_expands_stepped_and_padded_brace_ranges() {
 }
 
 #[test]
+fn test_for_command_expands_negative_padded_brace_ranges() {
+    let output_path = "target/rubash-for-negative-padded-brace-range-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!("for item in {{-03..01..2}}; do echo $item >> {output_path}; done");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    assert!(ast.commands[0].for_command.is_some());
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "-03\n-01\n001\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_for_command_expands_brace_list_words() {
     let output_path = "target/rubash-for-brace-list-output.txt";
     let _ = fs::remove_file(output_path);
