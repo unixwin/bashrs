@@ -1,6 +1,43 @@
 use super::*;
 
 impl Executor {
+    pub(in crate::executor) fn execute_lastpipe_stage(
+        &mut self,
+        command: &CommandNode,
+        input: &str,
+    ) -> Result<(String, String, i32), ExecuteError> {
+        let old_stdin = self.env_vars.get(FUNCTION_STDIN).cloned();
+        let old_stdin_offset = self.env_vars.get(FUNCTION_STDIN_OFFSET).cloned();
+        self.env_vars
+            .insert(FUNCTION_STDIN.to_string(), input.to_string());
+        self.env_vars
+            .insert(FUNCTION_STDIN_OFFSET.to_string(), "0".to_string());
+
+        let saved_stdout_capture = self.stdout_capture.take();
+        let saved_stderr_capture = self.stderr_capture.take();
+        self.stdout_capture = Some(Vec::new());
+        self.stderr_capture = Some(Vec::new());
+
+        let mut stage_command = command.clone();
+        stage_command.redirect_out = None;
+        stage_command.append = None;
+
+        let result = self.execute_command(&stage_command);
+        let output = self.stdout_capture.take().unwrap_or_default();
+        let stderr = self.stderr_capture.take().unwrap_or_default();
+        self.stdout_capture = saved_stdout_capture;
+        self.stderr_capture = saved_stderr_capture;
+        restore_optional_env_var(&mut self.env_vars, FUNCTION_STDIN, old_stdin);
+        restore_optional_env_var(&mut self.env_vars, FUNCTION_STDIN_OFFSET, old_stdin_offset);
+        result?;
+
+        Ok((
+            String::from_utf8_lossy(&output).into_owned(),
+            String::from_utf8_lossy(&stderr).into_owned(),
+            self.last_exit_code(),
+        ))
+    }
+
     pub(in crate::executor) fn execute_compound_pipeline_stage(
         &mut self,
         command: &CommandNode,

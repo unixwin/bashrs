@@ -1690,6 +1690,43 @@ fn test_pipeline_function_stage_keeps_cwd_isolated() {
 }
 
 #[test]
+fn test_lastpipe_final_read_updates_current_shell() {
+    let output_path = "target/rubash-lastpipe-read-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input =
+        format!("shopt -s lastpipe; printf value | read result; echo $result > {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "value\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_lastpipe_final_while_loop_updates_current_shell() {
+    let output_path = "target/rubash-lastpipe-while-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "shopt -s lastpipe; total=0; printf '1\\n2\\n3\\n' | while read n; do total=$((total+n)); done; echo $total > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "6\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_pipe_stderr_operator_feeds_brace_group_stage_stderr() {
     let output_path = "target/rubash-pipe-stderr-brace-stage-output.txt";
     let _ = fs::remove_file(output_path);

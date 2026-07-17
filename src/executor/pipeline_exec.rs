@@ -214,8 +214,13 @@ impl Executor {
                 .map(|prefix| &prefix.command)
                 .unwrap_or(command);
             self.set_current_command(stage);
+            let last_stage = stage_index + 1 == commands.len();
             let Some((mut next_input, next_stderr, next_status)) =
-                self.execute_pipeline_stage(stage, &input)?
+                (if last_stage && self.lastpipe_enabled() {
+                    Some(self.execute_lastpipe_stage(stage, &input)?)
+                } else {
+                    self.execute_pipeline_stage(stage, &input)?
+                })
             else {
                 return Ok(None);
             };
@@ -405,6 +410,10 @@ impl Executor {
             })
             .collect();
         expanded
+    }
+
+    fn lastpipe_enabled(&self) -> bool {
+        crate::builtins::shopt::option_enabled(&self.env_vars, "lastpipe")
     }
 }
 
