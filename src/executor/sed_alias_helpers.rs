@@ -194,6 +194,14 @@ pub(in crate::executor) fn split_first_shell_word(source: &str) -> Option<(Strin
 }
 
 pub(in crate::executor) fn split_unquoted_and_and(source: &str) -> Option<(&str, &str)> {
+    split_unquoted_token(source, "&&")
+}
+
+pub(in crate::executor) fn split_unquoted_semicolon(source: &str) -> Option<(&str, &str)> {
+    split_unquoted_token(source, ";")
+}
+
+fn split_unquoted_token<'a>(source: &'a str, token: &str) -> Option<(&'a str, &'a str)> {
     let mut single = false;
     let mut double = false;
     let mut escaped = false;
@@ -215,8 +223,8 @@ pub(in crate::executor) fn split_unquoted_and_and(source: &str) -> Option<(&str,
         match ch {
             '\'' if !double => single = !single,
             '"' if !single => double = !double,
-            '&' if !single && !double && chars.get(index + 1).is_some_and(|(_, ch)| *ch == '&') => {
-                return Some((&source[..byte_index], &source[byte_index + 2..]));
+            _ if !single && !double && source[byte_index..].starts_with(token) => {
+                return Some((&source[..byte_index], &source[byte_index + token.len()..]));
             }
             _ => {}
         }

@@ -218,10 +218,12 @@ pub(in crate::executor) fn valid_alias_assignment_name(name: &str) -> bool {
 }
 
 pub(in crate::executor) fn shell_display_path(path: &str) -> String {
-    if cfg!(windows) && path.len() >= 3 && path.as_bytes()[1] == b':' && path.as_bytes()[2] == b'/'
-    {
-        let drive = path.as_bytes()[0] as char;
-        return format!("/{}{}", drive.to_ascii_lowercase(), &path[2..]);
+    if cfg!(windows) {
+        let path = path.strip_prefix("//?/").unwrap_or(path);
+        if path.len() >= 3 && path.as_bytes()[1] == b':' && path.as_bytes()[2] == b'/' {
+            let drive = path.as_bytes()[0] as char;
+            return format!("/{}{}", drive.to_ascii_lowercase(), &path[2..]);
+        }
     }
     path.to_string()
 }

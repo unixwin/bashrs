@@ -1,5 +1,15 @@
 use super::super::*;
-use std::fs;
+use std::{env, fs, path::Path};
+
+fn shell_display_test_path(path: &Path) -> String {
+    let path = path.to_string_lossy().replace('\\', "/");
+    let bytes = path.as_bytes();
+    if bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' {
+        let drive = (bytes[0] as char).to_ascii_lowercase();
+        return format!("/{drive}/{}", &path[3..]);
+    }
+    path
+}
 
 #[test]
 fn test_random_assignment_reseeds_sequence() {
@@ -371,6 +381,34 @@ fn test_command_list_substitution_captures_stdout() {
     assert_eq!(
         fs::read_to_string(output_path).unwrap(),
         "v=<first\nsecond> len:12\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_cd_pwd_command_substitution_accepts_semicolon_separator() {
+    let output_path = "target/rubash-cd-pwd-semicolon-command-subst-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "outer=$(pwd); inner=$(cd ..; pwd); printf 'outer=<%s>\\ninner=<%s>\\n' \"$outer\" \"$inner\" > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    let current = env::current_dir().unwrap();
+    let parent = current.parent().unwrap();
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        format!(
+            "outer=<{}>\ninner=<{}>\n",
+            shell_display_test_path(&current),
+            shell_display_test_path(parent)
+        )
     );
     let _ = fs::remove_file(output_path);
 }

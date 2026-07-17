@@ -223,7 +223,8 @@ impl Executor {
         &self,
         source: &str,
     ) -> Option<String> {
-        let (left, right) = split_unquoted_and_and(source)?;
+        let (left, right) =
+            split_unquoted_and_and(source).or_else(|| split_unquoted_semicolon(source))?;
         let right_words = split_shell_words(right.trim());
         if !matches!(right_words.as_slice(), [cmd] if cmd == "pwd")
             && !matches!(right_words.as_slice(), [cmd, option] if cmd == "pwd" && option == "-P")
