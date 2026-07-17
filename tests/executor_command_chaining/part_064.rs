@@ -105,6 +105,31 @@ fn test_unquoted_positional_parameter_substring_splits_words() {
 }
 
 #[test]
+fn test_positional_substring_preserves_quoted_and_splits_unquoted_words() {
+    let output_path = "target/rubash-positional-substring-word-boundaries-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "set -- zero 'one two' three; \
+         printf 'quoted<%s>\\n' \"${{@:2:2}}\" > {output_path}; \
+         printf 'unquoted<%s>\\n' ${{@:2:2}} >> {output_path}; \
+         printf 'star<%s>\\n' \"${{*:2:2}}\" >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "quoted<one two>\nquoted<three>\nunquoted<one>\nunquoted<two>\nunquoted<three>\nstar<one two three>\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_quoted_positional_at_expands_to_separate_arguments() {
     let output_path = "target/rubash-quoted-positional-at-output.txt";
     let _ = fs::remove_file(output_path);

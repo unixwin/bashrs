@@ -103,6 +103,8 @@ impl Executor {
         word: &str,
         kind: Option<&TokenKind>,
     ) -> Option<Vec<String>> {
+        let quoted_positional_word =
+            (word.starts_with('"') && word.ends_with('"')) || word.starts_with('\x1d');
         let word = word
             .strip_prefix('"')
             .and_then(|word| word.strip_suffix('"'))
@@ -118,10 +120,13 @@ impl Executor {
             .strip_prefix("${")
             .and_then(|word| word.strip_suffix('}'))
         {
-            if let Some(values) = self.positional_transform_word_values(name, word) {
+            if let Some(values) =
+                self.positional_transform_word_values(name, quoted_positional_word)
+            {
                 return Some(values);
             }
-            if let Some(values) = self.positional_modified_word_values(name, word) {
+            if let Some(values) = self.positional_modified_word_values(name, quoted_positional_word)
+            {
                 return Some(values);
             }
             if let Some((var_name, offset, length)) = self.parse_parameter_substring(name) {
@@ -131,6 +136,14 @@ impl Executor {
                         offset,
                         length,
                     ));
+                }
+                if var_name == "*" {
+                    let values =
+                        positional_parameter_substring(&self.positional_params, offset, length);
+                    if quoted_positional_word {
+                        return Some(vec![values.join(&self.ifs_first_char_separator())]);
+                    }
+                    return Some(values);
                 }
             }
         }
@@ -152,11 +165,14 @@ impl Executor {
         };
         self.positional_modified_base_name(inner)
             .or_else(|| parse_parameter_transform(inner).map(|(name, _)| name))
+            .or_else(|| {
+                self.parse_parameter_substring(inner)
+                    .map(|(name, _, _)| name)
+            })
             .is_some_and(|name| matches!(name, "@" | "*"))
     }
 
-    fn positional_transform_word_values(&self, name: &str, word: &str) -> Option<Vec<String>> {
-        let quoted = word.starts_with('"') || word.starts_with('\x1d');
+    fn positional_transform_word_values(&self, name: &str, quoted: bool) -> Option<Vec<String>> {
         let (var_name, transform) = parse_parameter_transform(name)?;
         if !matches!(var_name, "@" | "*") {
             return None;
@@ -195,9 +211,7 @@ impl Executor {
         Some(values)
     }
 
-    fn positional_modified_word_values(&self, name: &str, word: &str) -> Option<Vec<String>> {
-        let quoted = word.starts_with('"') || word.starts_with('\x1d');
-
+    fn positional_modified_word_values(&self, name: &str, quoted: bool) -> Option<Vec<String>> {
         if let Some((var_name, pattern, operation)) = parse_indirect_pattern_removal(name) {
             let pattern = self.expand_parameter_pattern_word(pattern);
             return self.positional_modified_values(var_name, quoted, |value| {
