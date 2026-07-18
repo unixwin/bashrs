@@ -136,6 +136,20 @@ impl Executor {
         command: &CommandNode,
         input: &str,
     ) -> Result<Option<(String, String, i32)>, ExecuteError> {
+        let (command, process_substitution_files) =
+            self.command_with_process_substitution_files(command)?;
+        let result = self.execute_external_pipeline_stage_inner(&command, input);
+        let finish_result = self.finish_process_substitutions(process_substitution_files);
+        let output = result?;
+        finish_result?;
+        Ok(output)
+    }
+
+    fn execute_external_pipeline_stage_inner(
+        &mut self,
+        command: &CommandNode,
+        input: &str,
+    ) -> Result<Option<(String, String, i32)>, ExecuteError> {
         let Some(name) = command.words.first() else {
             return Ok(Some((String::new(), String::new(), 0)));
         };

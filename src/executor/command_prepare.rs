@@ -234,10 +234,21 @@ impl Executor {
             .words
             .first()
             .and_then(|word| self.function_name_for_command_word(word))?;
-        let temporary_assignments = self.apply_temporary_assignments(&cmd.assignments);
-        let applied_assignment_values = self.applied_temporary_assignment_values(&cmd.assignments);
+        let (materialized_cmd, process_substitution_files) =
+            match self.command_with_process_substitution_files(cmd) {
+                Ok(materialized) => materialized,
+                Err(error) => return Some(Err(error)),
+            };
+        let temporary_assignments = self.apply_temporary_assignments(&materialized_cmd.assignments);
+        let applied_assignment_values =
+            self.applied_temporary_assignment_values(&materialized_cmd.assignments);
         let old_posix_export_touched = self.env_vars.remove(POSIX_FUNCTION_EXPORT_TOUCHED);
-        let result = self.execute_function(&function_name, &cmd.words[1..], cmd);
+        let result = self.execute_function(
+            &function_name,
+            &materialized_cmd.words[1..],
+            &materialized_cmd,
+        );
+        let finish_result = self.finish_process_substitutions(process_substitution_files);
         if self.posix_mode_enabled() {
             self.restore_function_temporary_assignments(
                 temporary_assignments,
@@ -251,7 +262,7 @@ impl Executor {
             POSIX_FUNCTION_EXPORT_TOUCHED,
             old_posix_export_touched,
         );
-        Some(result)
+        Some(result.and(finish_result))
     }
 
     pub(in crate::executor) fn execute_assignment_or_comment_command(

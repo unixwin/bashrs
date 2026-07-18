@@ -123,6 +123,47 @@ fn test_combined_append_process_substitution_captures_stdout_and_stderr() {
 }
 
 #[test]
+fn test_pipeline_stage_output_process_substitution_word_runs_on_stage_finish() {
+    let output_path = target_test_path("rubash-pipeline-word-output-process-substitution.txt");
+    let tee_path = target_test_path("rubash-pipeline-word-output-process-tee.txt");
+    let shell_output_path = shell_test_path(&output_path);
+    let shell_tee_path = shell_test_path(&tee_path);
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&tee_path);
+    let input = format!("printf alpha | tee >(cat > {shell_output_path}) > {shell_tee_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(&output_path).unwrap(), "alpha");
+    assert_eq!(fs::read_to_string(&tee_path).unwrap(), "alpha");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(tee_path);
+}
+
+#[test]
+fn test_function_argument_output_process_substitution_word_runs_on_return() {
+    let output_path = target_test_path("rubash-function-arg-output-process-substitution.txt");
+    let shell_output_path = shell_test_path(&output_path);
+    let _ = fs::remove_file(&output_path);
+    let input = format!("f() {{ printf payload > \"$1\"; }}; f >(cat > {shell_output_path})");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(&output_path).unwrap(), "payload");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_input_process_substitution_captures_heredoc_body() {
     let output_path = target_test_path("rubash-process-substitution-heredoc-output.txt");
     let shell_output_path = shell_test_path(&output_path);
