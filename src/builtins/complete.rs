@@ -180,6 +180,7 @@ where
                     stdout,
                 );
             }
+            "helptopic" => crate::builtins::help::HELP_TOPICS,
             "keyword" => SHELL_KEYWORDS,
             "signal" => crate::builtins::trap::SIGNALS.as_slice(),
             "shopt" => crate::builtins::shopt::SHOPT_OPTIONS,

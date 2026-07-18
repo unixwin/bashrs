@@ -468,6 +468,33 @@ fn test_compgen_keyword_flag_filters_prefix_matches() {
 }
 
 #[test]
+fn test_compgen_helptopic_action_filters_prefix_matches() {
+    let output_path = "target/rubash-compgen-helptopic-output.txt";
+    let status_path = "target/rubash-compgen-helptopic-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "compgen -P help: -A helptopic pr > {output_path}; echo first:$? > {status_path}; \
+         compgen -A helptopic no_such_topic >> {output_path}; echo second:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "help:printf\n");
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_signal_action_filters_prefix_matches() {
     let output_path = "target/rubash-compgen-signal-output.txt";
     let status_path = "target/rubash-compgen-signal-status.txt";
