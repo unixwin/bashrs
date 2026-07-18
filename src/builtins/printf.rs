@@ -3,7 +3,7 @@
 //! GNU Bash source ownership:
 //! - builtins/printf.def (`printf_builtin`)
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::{self, Write};
 
 mod escape;
@@ -120,7 +120,7 @@ where
         };
 
         if let Some(name) = name {
-            if !valid_identifier(name) {
+            if !valid_identifier(name) && !valid_printf_array_target(name, env_vars) {
                 writeln!(stderr, "rubash: printf: `{}`: not a valid identifier", name)?;
                 return Ok(EX_USAGE);
             }
@@ -146,7 +146,7 @@ where
 
     let rendered = render(format, &args[index + 1..], env_vars);
     if let Some(name) = output_var {
-        env_vars.insert(name.to_string(), rendered.output);
+        assign_printf_output(env_vars, name, rendered.output);
     } else {
         stdout.write_all(rendered.output.as_bytes())?;
     }
@@ -156,6 +156,288 @@ where
     }
 
     Ok(rendered.status)
+}
+
+fn valid_printf_array_target(name: &str, env_vars: &HashMap<String, String>) -> bool {
+    let Some((base, subscript)) = parse_printf_array_target(name) else {
+        return false;
+    };
+    if is_marked(env_vars, "__RUBASH_ASSOC_VARS", base) {
+        return true;
+    }
+    !subscript.is_empty() && subscript.parse::<usize>().is_ok()
+}
+
+fn assign_printf_output(env_vars: &mut HashMap<String, String>, name: &str, output: String) {
+    if let Some((base, subscript)) = parse_printf_array_target(name) {
+        if is_marked(env_vars, "__RUBASH_ASSOC_VARS", base) {
+            assign_printf_assoc_element(env_vars, base, subscript, output);
+        } else if let Ok(index) = subscript.parse::<usize>() {
+            assign_printf_indexed_element(env_vars, base, index, output);
+        } else {
+            env_vars.insert(name.to_string(), output);
+        }
+        return;
+    }
+
+    env_vars.insert(name.to_string(), output);
+}
+
+fn parse_printf_array_target(name: &str) -> Option<(&str, &str)> {
+    let (base, subscript) = name.split_once('[')?;
+    let subscript = subscript.strip_suffix(']')?;
+    valid_identifier(base).then_some((base, subscript))
+}
+
+fn assign_printf_indexed_element(
+    env_vars: &mut HashMap<String, String>,
+    name: &str,
+    index: usize,
+    output: String,
+) {
+    let mut entries = env_vars
+        .get(name)
+        .map(|value| indexed_entries(value))
+        .unwrap_or_default();
+    entries.insert(index, output);
+    env_vars.insert(name.to_string(), format_indexed_storage(entries));
+    mark_printf_var(env_vars, "__RUBASH_ARRAY_VARS", name);
+}
+
+fn assign_printf_assoc_element(
+    env_vars: &mut HashMap<String, String>,
+    name: &str,
+    key: &str,
+    output: String,
+) {
+    let mut entries = env_vars
+        .get(name)
+        .map(|value| assoc_entries(value))
+        .unwrap_or_default();
+    if let Some((_, value)) = entries
+        .iter_mut()
+        .rev()
+        .find(|(entry_key, _)| entry_key == key)
+    {
+        *value = output;
+    } else {
+        entries.push((key.to_string(), output));
+    }
+    env_vars.insert(name.to_string(), format_assoc_storage(entries));
+}
+
+fn indexed_entries(value: &str) -> BTreeMap<usize, String> {
+    let Some(rendered) = value.strip_prefix('\x1d') else {
+        return value
+            .strip_prefix('(')
+            .and_then(|value| value.strip_suffix(')'))
+            .map(split_storage_words)
+            .unwrap_or_default()
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| {
+                let value = value
+                    .split_once('=')
+                    .map(|(_, value)| value)
+                    .unwrap_or(&value);
+                (index, unquote_storage_value(value))
+            })
+            .collect();
+    };
+
+    let Some(inner) = rendered
+        .strip_prefix('(')
+        .and_then(|value| value.strip_suffix(')'))
+    else {
+        return BTreeMap::new();
+    };
+
+    split_storage_words(inner)
+        .into_iter()
+        .filter_map(|part| {
+            let (key, value) = part.split_once('=')?;
+            let index = key
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .parse::<usize>()
+                .ok()?;
+            Some((index, unquote_storage_value(value)))
+        })
+        .collect()
+}
+
+fn assoc_entries(value: &str) -> Vec<(String, String)> {
+    let Some(inner) = value
+        .strip_prefix('(')
+        .and_then(|value| value.strip_suffix(')'))
+    else {
+        return Vec::new();
+    };
+
+    split_storage_words(inner)
+        .into_iter()
+        .filter_map(|part| {
+            let (key, value) = part.split_once('=')?;
+            Some((
+                unquote_storage_value(key.trim_start_matches('[').trim_end_matches(']')),
+                unquote_storage_value(value),
+            ))
+        })
+        .collect()
+}
+
+fn format_indexed_storage(entries: BTreeMap<usize, String>) -> String {
+    let rendered = entries
+        .into_iter()
+        .map(|(index, value)| format!("[{index}]={}", quote_storage_value(&value)))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("\x1d({rendered})")
+}
+
+fn format_assoc_storage(entries: Vec<(String, String)>) -> String {
+    format!(
+        "({})",
+        entries
+            .into_iter()
+            .map(|(key, value)| format!(
+                "[{}]={}",
+                quote_assoc_key(&key),
+                quote_storage_value(&value)
+            ))
+            .collect::<Vec<_>>()
+            .join(" ")
+    )
+}
+
+fn quote_assoc_key(key: &str) -> String {
+    if !key.is_empty()
+        && !key
+            .chars()
+            .any(|ch| ch.is_ascii_whitespace() || matches!(ch, '"' | '\\' | ']'))
+    {
+        return key.to_string();
+    }
+    quote_storage_value(key)
+}
+
+fn quote_storage_value(value: &str) -> String {
+    if value.contains(['\n', '\r', '\'']) {
+        return format!(
+            "$'{}'",
+            value
+                .replace('\\', "\\\\")
+                .replace('\n', "\\n")
+                .replace('\r', "\\r")
+                .replace('\'', "\\'")
+        );
+    }
+
+    format!(
+        "\"{}\"",
+        value
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('$', "\\$")
+            .replace('`', "\\`")
+    )
+}
+
+fn unquote_storage_value(value: &str) -> String {
+    if let Some(inner) = value
+        .strip_prefix("$'")
+        .and_then(|value| value.strip_suffix('\''))
+    {
+        return inner
+            .replace("\\n", "\n")
+            .replace("\\r", "\r")
+            .replace("\\'", "'")
+            .replace("\\\\", "\\");
+    }
+
+    if let Some(inner) = value
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+    {
+        return unescape_double_quoted_storage(inner);
+    }
+
+    value.to_string()
+}
+
+fn unescape_double_quoted_storage(value: &str) -> String {
+    let mut output = String::new();
+    let mut chars = value.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(escaped) = chars.next() {
+                output.push(escaped);
+            }
+        } else {
+            output.push(ch);
+        }
+    }
+    output
+}
+
+fn split_storage_words(value: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut quote = None;
+    let mut chars = value.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match quote {
+            Some(quote_ch) => {
+                current.push(ch);
+                if ch == '\\' {
+                    if let Some(next) = chars.next() {
+                        current.push(next);
+                    }
+                } else if ch == quote_ch {
+                    quote = None;
+                }
+            }
+            None if ch == '"' || ch == '\'' => {
+                quote = Some(ch);
+                current.push(ch);
+            }
+            None if ch.is_whitespace() => {
+                if !current.is_empty() {
+                    parts.push(std::mem::take(&mut current));
+                }
+            }
+            None => current.push(ch),
+        }
+    }
+
+    if !current.is_empty() {
+        parts.push(current);
+    }
+
+    parts
+}
+
+fn is_marked(env_vars: &HashMap<String, String>, marker: &str, name: &str) -> bool {
+    env_vars
+        .get(marker)
+        .map(|value| value.split('\x1f').any(|marked| marked == name))
+        .unwrap_or(false)
+}
+
+fn mark_printf_var(env_vars: &mut HashMap<String, String>, marker: &str, name: &str) {
+    if is_marked(env_vars, marker, name) {
+        return;
+    }
+    env_vars
+        .entry(marker.to_string())
+        .and_modify(|value| {
+            if !value.is_empty() {
+                value.push('\x1f');
+            }
+            value.push_str(name);
+        })
+        .or_insert_with(|| name.to_string());
 }
 
 fn render(format: &str, args: &[&str], env_vars: &mut HashMap<String, String>) -> RenderedPrintf {

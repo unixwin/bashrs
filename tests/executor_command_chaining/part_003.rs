@@ -292,6 +292,43 @@ fn test_printf_percent_n_with_v_assignment() {
 }
 
 #[test]
+fn test_printf_v_assigns_indexed_array_element() {
+    let output_path = "target/rubash-printf-v-indexed-array-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input =
+        format!("printf -v arr[1] '%s' value; echo \"${{arr[1]}}:${{#arr[@]}}\" > {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "value:1\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_printf_v_assigns_associative_array_element() {
+    let output_path = "target/rubash-printf-v-assoc-array-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "declare -A m; printf -v m[key] '%s' value; echo \"${{m[key]}}:${{#m[@]}}\" > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "value:1\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_printf_time_format_uses_posix_timezone_rules() {
     let output_path = "target/rubash-printf-time-format-output.txt";
     let _ = fs::remove_file(output_path);
