@@ -165,14 +165,14 @@ fn valid_printf_array_target(name: &str, env_vars: &HashMap<String, String>) -> 
     if is_marked(env_vars, "__RUBASH_ASSOC_VARS", base) {
         return true;
     }
-    !subscript.is_empty() && subscript.parse::<usize>().is_ok()
+    resolve_printf_indexed_subscript(env_vars, base, subscript).is_some()
 }
 
 fn assign_printf_output(env_vars: &mut HashMap<String, String>, name: &str, output: String) {
     if let Some((base, subscript)) = parse_printf_array_target(name) {
         if is_marked(env_vars, "__RUBASH_ASSOC_VARS", base) {
             assign_printf_assoc_element(env_vars, base, subscript, output);
-        } else if let Ok(index) = subscript.parse::<usize>() {
+        } else if let Some(index) = resolve_printf_indexed_subscript(env_vars, base, subscript) {
             assign_printf_indexed_element(env_vars, base, index, output);
         } else {
             env_vars.insert(name.to_string(), output);
@@ -187,6 +187,29 @@ fn parse_printf_array_target(name: &str) -> Option<(&str, &str)> {
     let (base, subscript) = name.split_once('[')?;
     let subscript = subscript.strip_suffix(']')?;
     valid_identifier(base).then_some((base, subscript))
+}
+
+fn resolve_printf_indexed_subscript(
+    env_vars: &HashMap<String, String>,
+    name: &str,
+    subscript: &str,
+) -> Option<usize> {
+    if subscript.is_empty() {
+        return None;
+    }
+
+    let raw_index = crate::executor::arithmetic::eval_conditional_arith_value(subscript, env_vars)?;
+    if raw_index >= 0 {
+        return usize::try_from(raw_index).ok();
+    }
+
+    let current = env_vars.get(name)?;
+    let max_index = indexed_entries(current).keys().next_back().copied()?;
+    let resolved = i128::try_from(max_index)
+        .ok()?
+        .checked_add(1)?
+        .checked_add(raw_index)?;
+    usize::try_from(resolved).ok()
 }
 
 fn assign_printf_indexed_element(
