@@ -9,7 +9,7 @@ use std::io::{self, Write};
 const TRAP_LIST: &str = "__RUBASH_TRAPS";
 const TRAP_PREFIX: &str = "__RUBASH_TRAP_";
 const EX_USAGE: i32 = 2;
-const SIGNALS: [&str; 64] = [
+pub(crate) const SIGNALS: [&str; 64] = [
     "SIGHUP",
     "SIGINT",
     "SIGQUIT",

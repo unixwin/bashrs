@@ -162,6 +162,7 @@ where
         let candidates = match action {
             "builtin" => SHELL_BUILTINS,
             "keyword" => SHELL_KEYWORDS,
+            "signal" => crate::builtins::trap::SIGNALS.as_slice(),
             "shopt" => crate::builtins::shopt::SHOPT_OPTIONS,
             "setopt" => {
                 return write_compgen_matches(

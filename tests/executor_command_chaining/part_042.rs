@@ -329,6 +329,37 @@ fn test_compgen_keyword_flag_filters_prefix_matches() {
 }
 
 #[test]
+fn test_compgen_signal_action_filters_prefix_matches() {
+    let output_path = "target/rubash-compgen-signal-output.txt";
+    let status_path = "target/rubash-compgen-signal-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "compgen -A signal SIGT > {output_path}; echo first:$? > {status_path}; \
+         compgen -P sig: -A signal SIGTERM >> {output_path}; echo second:$? >> {status_path}; \
+         compgen -A signal NO_SUCH >> {output_path}; echo third:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "SIGTRAP\nSIGTERM\nSIGTSTP\nSIGTTIN\nSIGTTOU\nsig:SIGTERM\n"
+    );
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:0\nthird:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_shopt_action_filters_prefix_matches() {
     let output_path = "target/rubash-compgen-shopt-output.txt";
     let status_path = "target/rubash-compgen-shopt-status.txt";
