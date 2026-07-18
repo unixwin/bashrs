@@ -315,6 +315,7 @@ impl Executor {
             background_job_order: Vec::new(),
             coproc_stdin_writers: HashMap::new(),
             coproc_stdout_readers: HashMap::new(),
+            assignment_output_process_substitutions: HashMap::new(),
             suppress_errexit: self.suppress_errexit,
             last_command_substitution_status: Cell::new(None),
             stdout_capture: None,

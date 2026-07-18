@@ -325,15 +325,26 @@ impl Executor {
         }
 
         let mut word = value.to_string();
-        let mut files = ProcessSubstitutionFiles::default();
         let substitutions =
             crate::parser::WordMetadata::new(0, value.to_string(), value.to_string())
                 .process_substitutions;
 
-        if substitutions.is_empty() {
-            self.materialize_standalone_process_substitution_word(&mut word, &mut files)?;
-        } else {
-            self.materialize_process_substitution_word(&mut word, substitutions, &mut files)?;
+        for substitution in substitutions {
+            let path = if substitution.output {
+                let path = self.empty_process_substitution_temp()?;
+                self.assignment_output_process_substitutions.insert(
+                    shell_display_path(&path.to_string_lossy()),
+                    substitution.source,
+                );
+                path
+            } else {
+                let Some(output) = self.process_substitution_output(&substitution.source) else {
+                    continue;
+                };
+                self.write_process_substitution_temp(&output)?
+            };
+            let display_path = shell_display_path(&path.to_string_lossy());
+            word = word.replacen(&substitution.target, &display_path, 1);
         }
         Ok(word)
     }
@@ -395,6 +406,43 @@ impl Executor {
         if let Some(error) = error {
             return Err(error);
         }
+        Ok(())
+    }
+
+    pub(in crate::executor) fn finish_assignment_output_process_substitutions_for_command(
+        &mut self,
+        cmd: &CommandNode,
+    ) -> Result<(), ExecuteError> {
+        if self.assignment_output_process_substitutions.is_empty() {
+            return Ok(());
+        }
+
+        let targets = [
+            cmd.redirect_out.as_ref(),
+            cmd.append.as_ref(),
+            cmd.redirect_err.as_ref(),
+            cmd.redirect_err_append.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        .filter_map(|redirect| {
+            let target = self.expand_word(&redirect.target);
+            self.assignment_output_process_substitutions
+                .contains_key(&target)
+                .then_some(target)
+        })
+        .collect::<Vec<_>>();
+
+        for target in targets {
+            let Some(source) = self.assignment_output_process_substitutions.remove(&target) else {
+                continue;
+            };
+            let path = shell_path_to_windows(&target, &self.env_vars);
+            let input = fs::read_to_string(&path).unwrap_or_default();
+            self.execute_persistent_output_process_substitution(&source, input)?;
+            let _ = fs::remove_file(path);
+        }
+
         Ok(())
     }
 

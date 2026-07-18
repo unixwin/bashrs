@@ -1385,6 +1385,45 @@ fn test_embedded_assignment_input_process_substitution_keeps_surrounding_text() 
 }
 
 #[test]
+fn test_assignment_output_process_substitution_runs_after_redirect_write() {
+    let output_path = "target/rubash-assignment-output-process-substitution-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!("p=>(cat > {output_path}); printf alpha > \"$p\"");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "alpha");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_embedded_assignment_output_process_substitution_keeps_surrounding_text() {
+    let output_path = "target/rubash-embedded-assignment-output-process-substitution-output.txt";
+    let side_path = "target/rubash-embedded-assignment-output-process-substitution-side.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(side_path);
+    let input = format!("p=x>(cat > {side_path})y; printf '%s\\n' \"$p\" > {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    let output = fs::read_to_string(output_path).unwrap();
+    assert!(output.starts_with('x'));
+    assert!(output.ends_with("y\n"));
+    assert!(!Path::new(side_path).exists());
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_exec_fd_output_process_substitution_runs_on_close() {
     let output_path = "target/rubash-exec-fd-output-process-substitution.txt";
     let _ = fs::remove_file(output_path);
