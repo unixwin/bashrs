@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 构建
+
+- CI 在推送 `vX.Y.Z` 标准版本 tag 后，会等待测试通过并自动创建 GitHub Release，支持 `v0.2.0` 这类次版本发行。
+
 ### 修复
 
 - alias 展开为 `if ...; then`、`while ...; do`、`for ...; do` 等复合语句前缀时，会继续拼接到匹配的 `fi`/`done` 后重解析执行，补齐更接近 Bash 的 parser-level alias 行为。
