@@ -46,6 +46,54 @@ fn test_compgen_invalid_option_reports_usage() {
 }
 
 #[test]
+fn test_compgen_wordlist_filters_prefix_matches() {
+    let output_path = "target/rubash-compgen-wordlist-output.txt";
+    let status_path = "target/rubash-compgen-wordlist-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!("compgen -W 'alpha beta gamma' b > {output_path}; echo $? > {status_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "beta\n");
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_wordlist_prefix_suffix_and_no_match_status() {
+    let output_path = "target/rubash-compgen-prefix-suffix-output.txt";
+    let status_path = "target/rubash-compgen-prefix-suffix-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "compgen -P pre- -S -suf -W 'alpha beta' a > {output_path}; echo first:$? > {status_path}; \
+         compgen -W 'alpha beta' z >> {output_path}; echo second:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "pre-alpha-suf\n");
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compopt_outside_completion_function_fails() {
     let error_path = "target/rubash-compopt-error.txt";
     let status_path = "target/rubash-compopt-status.txt";

@@ -42,33 +42,65 @@ fn execute_complete<E>(
 where
     E: Write,
 {
-    parse_options(
+    Ok(parse_options(
         CompletionBuiltin::Complete,
         args,
         "abcdefgjksuvprDEI",
         "oAGWFCXPS",
         diagnostic_prefix,
         stderr,
-    )
+    )?
+    .status)
 }
 
 fn execute_compgen<E>(
     args: &[String],
     diagnostic_prefix: &str,
-    _stdout: &mut E,
+    stdout: &mut E,
     stderr: &mut E,
 ) -> io::Result<i32>
 where
     E: Write,
 {
-    parse_options(
+    let parsed = parse_options(
         CompletionBuiltin::Compgen,
         args,
         "abcdefgjksuv",
         "oAGWFCXPS",
         diagnostic_prefix,
         stderr,
-    )
+    )?;
+    if parsed.status != EXECUTION_SUCCESS {
+        return Ok(parsed.status);
+    }
+
+    if let Some(wordlist) = parsed.wordlist {
+        let word = parsed
+            .operands
+            .first()
+            .map(String::as_str)
+            .unwrap_or_default();
+        let mut matched = false;
+        for candidate in wordlist.split_whitespace() {
+            if candidate.starts_with(word) {
+                matched = true;
+                writeln!(
+                    stdout,
+                    "{}{}{}",
+                    parsed.prefix.as_deref().unwrap_or_default(),
+                    candidate,
+                    parsed.suffix.as_deref().unwrap_or_default()
+                )?;
+            }
+        }
+        return Ok(if matched {
+            EXECUTION_SUCCESS
+        } else {
+            EXECUTION_FAILURE
+        });
+    }
+
+    Ok(EXECUTION_SUCCESS)
 }
 
 fn execute_compopt<E>(args: &[String], diagnostic_prefix: &str, stderr: &mut E) -> io::Result<i32>
@@ -94,14 +126,16 @@ fn parse_options<E>(
     arg_options: &str,
     diagnostic_prefix: &str,
     stderr: &mut E,
-) -> io::Result<i32>
+) -> io::Result<ParsedCompletionOptions>
 where
     E: Write,
 {
     let name = builtin.name();
     let mut index = 0;
+    let mut parsed = ParsedCompletionOptions::default();
     while let Some(arg) = args.get(index) {
         if arg == "--" {
+            index += 1;
             break;
         }
         if !arg.starts_with('-') || arg == "-" {
@@ -114,17 +148,24 @@ where
                 continue;
             }
             if arg_options.contains(option) {
-                if chars.peek().is_some() {
+                let inline_arg = chars.peek().is_some();
+                let value = if inline_arg {
+                    chars.collect::<String>()
+                } else {
+                    index += 1;
+                    let Some(value) = args.get(index) else {
+                        writeln!(
+                            stderr,
+                            "{diagnostic_prefix}{name}: -{option}: option requires an argument"
+                        )?;
+                        write_usage(builtin, stderr)?;
+                        return Ok(ParsedCompletionOptions::status(EX_USAGE));
+                    };
+                    value.clone()
+                };
+                parsed.set_option_arg(option, value);
+                if inline_arg {
                     break;
-                }
-                index += 1;
-                if args.get(index).is_none() {
-                    writeln!(
-                        stderr,
-                        "{diagnostic_prefix}{name}: -{option}: option requires an argument"
-                    )?;
-                    write_usage(builtin, stderr)?;
-                    return Ok(EX_USAGE);
                 }
                 break;
             }
@@ -134,12 +175,40 @@ where
                 "{diagnostic_prefix}{name}: -{option}: invalid option"
             )?;
             write_usage(builtin, stderr)?;
-            return Ok(EX_USAGE);
+            return Ok(ParsedCompletionOptions::status(EX_USAGE));
         }
         index += 1;
     }
 
-    Ok(EXECUTION_SUCCESS)
+    parsed.operands = args[index..].to_vec();
+    Ok(parsed)
+}
+
+#[derive(Default)]
+struct ParsedCompletionOptions {
+    status: i32,
+    wordlist: Option<String>,
+    prefix: Option<String>,
+    suffix: Option<String>,
+    operands: Vec<String>,
+}
+
+impl ParsedCompletionOptions {
+    fn status(status: i32) -> Self {
+        Self {
+            status,
+            ..Self::default()
+        }
+    }
+
+    fn set_option_arg(&mut self, option: char, value: String) {
+        match option {
+            'W' => self.wordlist = Some(value),
+            'P' => self.prefix = Some(value),
+            'S' => self.suffix = Some(value),
+            _ => {}
+        }
+    }
 }
 
 fn parse_compopt_options<E>(
