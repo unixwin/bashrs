@@ -290,6 +290,9 @@ impl Executor {
     }
 
     pub(super) fn conditional_file_unary(&self, op: &str, operand: &str) -> bool {
+        if let Some(result) = conditional_process_substitution_unary(op, operand) {
+            return result;
+        }
         let args = vec![op.to_string(), self.expand_word(operand)];
         crate::builtins::test::execute(&args, false, &self.env_vars).unwrap_or(1) == 0
     }
@@ -479,6 +482,29 @@ fn contains_extglob_pattern(pattern: &str) -> bool {
         }
     }
     false
+}
+
+fn conditional_process_substitution_unary(op: &str, operand: &str) -> Option<bool> {
+    let input = operand
+        .strip_prefix("<(")
+        .and_then(|operand| operand.strip_suffix(')'))
+        .is_some();
+    let output = operand
+        .strip_prefix(">(")
+        .and_then(|operand| operand.strip_suffix(')'))
+        .is_some();
+    if !input && !output {
+        return None;
+    }
+
+    Some(match op {
+        "-a" | "-e" | "-p" => true,
+        "-r" => input,
+        "-w" => output,
+        "-f" | "-d" | "-h" | "-L" | "-s" | "-S" | "-b" | "-c" | "-u" | "-g" | "-k" | "-O"
+        | "-G" | "-N" => false,
+        _ => return None,
+    })
 }
 
 fn raw_quote_at(chars: &[char], start: usize) -> Option<(QuoteKind, usize, usize)> {

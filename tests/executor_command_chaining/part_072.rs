@@ -453,6 +453,37 @@ fn test_conditional_file_unary_checks_paths() {
 }
 
 #[test]
+fn test_conditional_file_unary_checks_process_substitution_operands() {
+    let output_path = "target/rubash-conditional-process-substitution-file-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "[[ -e <(:) ]]; echo in_exists:$? > {output_path}; \
+         [[ -p <(:) ]]; echo in_pipe:$? >> {output_path}; \
+         [[ -r <(:) ]]; echo in_read:$? >> {output_path}; \
+         [[ -w <(:) ]]; echo in_write:$? >> {output_path}; \
+         [[ -f <(:) ]]; echo in_file:$? >> {output_path}; \
+         [[ -s <(printf alpha) ]]; echo in_size:$? >> {output_path}; \
+         [[ -e >(:) ]]; echo out_exists:$? >> {output_path}; \
+         [[ -p >(:) ]]; echo out_pipe:$? >> {output_path}; \
+         [[ -w >(:) ]]; echo out_write:$? >> {output_path}; \
+         [[ -r >(:) ]]; echo out_read:$? >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "in_exists:0\nin_pipe:0\nin_read:0\nin_write:1\nin_file:1\nin_size:1\nout_exists:0\nout_pipe:0\nout_write:0\nout_read:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_conditional_modified_since_read_unary_checks_paths() {
     let output_path = "target/rubash-conditional-n-unary-output.txt";
     let file_path = "target/rubash-conditional-n-unary.txt";

@@ -45,10 +45,23 @@ impl Executor {
         if let Some(coproc_cmd) = &cmd.coproc_command {
             return Some(self.execute_coproc_command(cmd, coproc_cmd));
         }
+        if let Some(conditional_command) = &cmd.conditional_command {
+            return Some(self.execute_conditional_command_with_redirects(cmd, conditional_command));
+        }
         if let Some(function_command) = &cmd.function_command {
             return Some(self.define_function(cmd, function_command));
         }
         None
+    }
+
+    fn execute_conditional_command_with_redirects(
+        &mut self,
+        cmd: &CommandNode,
+        conditional_command: &ConditionalCommand,
+    ) -> Result<(), ExecuteError> {
+        self.apply_no_output_builtin_redirects(cmd)?;
+        self.exit_code = self.execute_conditional_command(conditional_command);
+        Ok(())
     }
 
     pub(in crate::executor) fn execute_empty_words_command(

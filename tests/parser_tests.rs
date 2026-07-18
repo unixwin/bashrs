@@ -2483,6 +2483,25 @@ mod conditional_tests {
     }
 
     #[test]
+    fn test_conditional_command_keeps_output_process_substitution_operand() {
+        let input = "[[ -w >(:) ]]; echo done";
+        let tokens = tokenize(input);
+        let ast = parse(&tokens);
+        let conditional = ast.commands[0].conditional_command.as_ref().unwrap();
+
+        assert_eq!(conditional.args, ["-w", ">(:)", "]]"]);
+        assert_eq!(ast.commands[0].words, ["[[", "-w", ">(:)", "]]"]);
+        assert!(ast.commands[0].redirect_out.is_none());
+        assert_eq!(ast.commands[1].words, ["echo", "done"]);
+        assert_eq!(
+            conditional.expression.kind,
+            ConditionalExpressionKind::Unary
+        );
+        assert_eq!(conditional.expression.operator.as_deref(), Some("-w"));
+        assert_eq!(conditional.expression.operands, [">(:)"]);
+    }
+
+    #[test]
     fn test_conditional_command_keeps_quoted_closing_delimiter_word() {
         let input = "[[ value == \"]]\" ]]";
         let tokens = tokenize(input);
