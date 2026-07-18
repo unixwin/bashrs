@@ -415,6 +415,14 @@ where
                     stdout,
                 );
             }
+            "group" => {
+                let candidates = group_completion_candidates(env_vars);
+                return write_compgen_matches(
+                    candidates.iter().map(String::as_str),
+                    &parsed,
+                    stdout,
+                );
+            }
             "job" => {
                 let candidates = job_completion_candidates(job_names);
                 return write_compgen_matches(
@@ -551,6 +559,18 @@ fn hostname_completion_candidates(env_vars: &HashMap<String, String>) -> Vec<Str
 
 fn user_completion_candidates(env_vars: &HashMap<String, String>) -> Vec<String> {
     let mut candidates = ["USER", "LOGNAME", "USERNAME"]
+        .iter()
+        .filter_map(|name| env_vars.get(*name))
+        .filter(|value| !value.is_empty())
+        .cloned()
+        .collect::<Vec<_>>();
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
+fn group_completion_candidates(env_vars: &HashMap<String, String>) -> Vec<String> {
+    let mut candidates = ["GROUP", "GROUPNAME", "USERDOMAIN"]
         .iter()
         .filter_map(|name| env_vars.get(*name))
         .filter(|value| !value.is_empty())
@@ -812,6 +832,7 @@ impl ParsedCompletionOptions {
             'c' => self.action = Some("command".to_string()),
             'd' => self.action = Some("directory".to_string()),
             'f' => self.action = Some("file".to_string()),
+            'g' => self.action = Some("group".to_string()),
             'j' => self.action = Some("job".to_string()),
             'k' => self.action = Some("keyword".to_string()),
             'u' => self.action = Some("user".to_string()),

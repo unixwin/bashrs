@@ -1118,6 +1118,65 @@ fn test_compgen_function_action_uses_prefix_suffix_and_filter() {
 }
 
 #[test]
+fn test_compgen_group_action_filters_group_variables() {
+    let output_path = "target/rubash-compgen-group-output.txt";
+    let status_path = "target/rubash-compgen-group-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "GROUP=rubash-group-alpha; GROUPNAME=rubash-group-beta; USERDOMAIN=rubash-group-gamma; \
+         compgen -A group rubash-group- > {output_path}; echo first:$? > {status_path}; \
+         compgen -A group no-such-group >> {output_path}; echo second:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "rubash-group-alpha\nrubash-group-beta\nrubash-group-gamma\n"
+    );
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_group_flag_uses_prefix_suffix_and_filter() {
+    let output_path = "target/rubash-compgen-group-flag-output.txt";
+    let status_path = "target/rubash-compgen-group-flag-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "GROUP=rubash-group-flag-alpha; GROUPNAME=rubash-group-flag-beta; \
+         compgen -P group: -S :end -g -X '*beta' rubash-group-flag- > {output_path}; \
+         echo $? > {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "group:rubash-group-flag-alpha:end\n"
+    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_job_flag_filters_background_jobs() {
     let output_path = "target/rubash-compgen-job-output.txt";
     let status_path = "target/rubash-compgen-job-status.txt";
