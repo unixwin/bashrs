@@ -8,7 +8,7 @@
 
 ### 构建
 
-- CI 在推送 `vN.0.0` 大版本 tag 后，会等待测试通过并自动创建 GitHub Release。
+- CI 在推送 `vN.N.0` 发布 tag 后，会等待测试通过并自动创建 GitHub Release。
 
 ### 修复
 
