@@ -92,6 +92,7 @@ pub fn execute_with_io<E>(
     args: &[String],
     env_vars: &HashMap<String, String>,
     aliases: &HashMap<String, Alias>,
+    function_names: &[String],
     diagnostic_prefix: &str,
     stdout: &mut E,
     stderr: &mut E,
@@ -101,9 +102,15 @@ where
 {
     match builtin {
         CompletionBuiltin::Complete => execute_complete(args, diagnostic_prefix, stdout, stderr),
-        CompletionBuiltin::Compgen => {
-            execute_compgen(args, env_vars, aliases, diagnostic_prefix, stdout, stderr)
-        }
+        CompletionBuiltin::Compgen => execute_compgen(
+            args,
+            env_vars,
+            aliases,
+            function_names,
+            diagnostic_prefix,
+            stdout,
+            stderr,
+        ),
         CompletionBuiltin::Compopt => execute_compopt(args, diagnostic_prefix, stderr),
     }
 }
@@ -132,6 +139,7 @@ fn execute_compgen<E>(
     args: &[String],
     env_vars: &HashMap<String, String>,
     aliases: &HashMap<String, Alias>,
+    function_names: &[String],
     diagnostic_prefix: &str,
     stdout: &mut E,
     stderr: &mut E,
@@ -199,6 +207,14 @@ where
             }
             "enabled" => SHELL_BUILTINS,
             "helptopic" => crate::builtins::help::HELP_TOPICS,
+            "function" => {
+                let candidates = function_completion_candidates(function_names);
+                return write_compgen_matches(
+                    candidates.iter().map(String::as_str),
+                    &parsed,
+                    stdout,
+                );
+            }
             "keyword" => SHELL_KEYWORDS,
             "signal" => crate::builtins::trap::SIGNALS.as_slice(),
             "shopt" => crate::builtins::shopt::SHOPT_OPTIONS,
@@ -272,6 +288,13 @@ fn variable_completion_candidates(env_vars: &HashMap<String, String>) -> Vec<Str
 fn alias_completion_candidates(aliases: &HashMap<String, Alias>) -> Vec<String> {
     let mut candidates: Vec<String> = aliases.keys().cloned().collect();
     candidates.sort();
+    candidates
+}
+
+fn function_completion_candidates(function_names: &[String]) -> Vec<String> {
+    let mut candidates = function_names.to_vec();
+    candidates.sort();
+    candidates.dedup();
     candidates
 }
 

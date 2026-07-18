@@ -49,6 +49,7 @@
 - `compgen -A enabled` 会生成当前支持的启用内建命令候选。
 - `compgen -v` 和 `compgen -A variable` 会基于当前 shell 变量表生成变量名候选。
 - `compgen -a` 和 `compgen -A alias` 会基于当前 shell alias 表生成别名候选。
+- `compgen -A function` 会基于当前 shell 函数表生成函数名候选。
 
 ### 测试
 
@@ -88,6 +89,7 @@
 - 增加 `compgen -A enabled` 候选输出与无匹配状态的回归覆盖。
 - 增加 `compgen -v` 和 `compgen -A variable` 的变量候选、过滤与包装回归覆盖。
 - 增加 `compgen -a` 和 `compgen -A alias` 的别名候选、过滤与包装回归覆盖。
+- 增加 `compgen -A function` 的函数名候选、过滤与包装回归覆盖。
 
 ## [0.2.0] - 2026-07-17
 

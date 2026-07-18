@@ -640,6 +640,65 @@ fn test_compgen_helptopic_action_filters_prefix_matches() {
 }
 
 #[test]
+fn test_compgen_function_action_filters_function_names() {
+    let output_path = "target/rubash-compgen-function-output.txt";
+    let status_path = "target/rubash-compgen-function-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "rubash_cgf_alpha() {{ :; }}; rubash_cgf_beta() {{ :; }}; \
+         compgen -A function rubash_cgf_ > {output_path}; echo first:$? > {status_path}; \
+         compgen -A function rubash_cgf_z >> {output_path}; echo second:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "rubash_cgf_alpha\nrubash_cgf_beta\n"
+    );
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_function_action_uses_prefix_suffix_and_filter() {
+    let output_path = "target/rubash-compgen-function-action-output.txt";
+    let status_path = "target/rubash-compgen-function-action-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "rubash_cgfa_alpha() {{ :; }}; rubash_cgfa_beta() {{ :; }}; \
+         compgen -P fn: -S :end -A function -X '*beta' rubash_cgfa_ > {output_path}; \
+         echo $? > {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "fn:rubash_cgfa_alpha:end\n"
+    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_signal_action_filters_prefix_matches() {
     let output_path = "target/rubash-compgen-signal-output.txt";
     let status_path = "target/rubash-compgen-signal-status.txt";
