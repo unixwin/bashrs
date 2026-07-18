@@ -167,6 +167,9 @@ pub(in crate::executor) fn split_shell_words(source: &str) -> Vec<String> {
         }
 
         match (ch, quote) {
+            ('$', None) if chars.peek().copied() == Some('(') => {
+                copy_dollar_paren_word(&mut current, &mut chars);
+            }
             ('`', None) => {
                 backtick = true;
                 current.push(ch);
@@ -185,6 +188,78 @@ pub(in crate::executor) fn split_shell_words(source: &str) -> Vec<String> {
         words.push(current);
     }
     words
+}
+
+fn copy_dollar_paren_word(
+    current: &mut String,
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) {
+    current.push('$');
+    if chars.next() != Some('(') {
+        return;
+    }
+    current.push('(');
+
+    let mut depth = 1usize;
+    while let Some(ch) = chars.next() {
+        current.push(ch);
+        match ch {
+            '\\' => {
+                if let Some(escaped) = chars.next() {
+                    current.push(escaped);
+                }
+            }
+            '\'' => copy_quoted_word_part(current, chars, '\''),
+            '"' => copy_quoted_word_part(current, chars, '"'),
+            '`' => copy_backtick_word_part(current, chars),
+            '$' if chars.peek().copied() == Some('(') => {
+                chars.next();
+                current.push('(');
+                depth += 1;
+            }
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn copy_quoted_word_part(
+    current: &mut String,
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+    quote: char,
+) {
+    while let Some(ch) = chars.next() {
+        current.push(ch);
+        if ch == '\\' && quote != '\'' {
+            if let Some(escaped) = chars.next() {
+                current.push(escaped);
+            }
+        } else if ch == quote {
+            break;
+        }
+    }
+}
+
+fn copy_backtick_word_part(
+    current: &mut String,
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) {
+    while let Some(ch) = chars.next() {
+        current.push(ch);
+        if ch == '\\' {
+            if let Some(escaped) = chars.next() {
+                current.push(escaped);
+            }
+        } else if ch == '`' {
+            break;
+        }
+    }
 }
 
 pub(in crate::executor) fn split_first_shell_word(source: &str) -> Option<(String, &str)> {
