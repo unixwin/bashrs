@@ -6,16 +6,8 @@ impl Executor {
         self.apply_parameter_assignment_expansions_in_word(word);
         let saved_parameter_env =
             word_contains_current_shell_command_substitution(word).then(|| self.env_vars.clone());
-        let word = self.expand_embedded_arithmetic_mut(word);
-        let word = self.expand_embedded_command_substitutions_mut(&word);
-        let expanded = if let Some(saved_parameter_env) = saved_parameter_env {
-            let current_env = std::mem::replace(&mut self.env_vars, saved_parameter_env);
-            let expanded = self.expand_embedded_parameters(&word);
-            self.env_vars = current_env;
-            expanded
-        } else {
-            self.expand_embedded_parameters(&word)
-        };
+        let expanded =
+            self.expand_embedded_parameters_ordered_mut(word, saved_parameter_env.as_ref());
         let expanded = if word.contains("$(") || word.contains('`') {
             unescape_remaining_shell_escapes(&expanded)
                 .replace("\\\\'", "'")
@@ -24,159 +16,31 @@ impl Executor {
             expanded
         };
         restore_protected_replacement_quotes(&expanded)
+            .replace('\x1f', "$")
+            .replace('\x1a', "`")
     }
 
-    pub(in crate::executor) fn expand_embedded_command_substitutions_mut(
+    fn expand_embedded_parameters_ordered_mut(
         &mut self,
         word: &str,
+        saved_parameter_env: Option<&std::collections::HashMap<String, String>>,
     ) -> String {
         let mut output = String::new();
         let mut chars = word.chars().peekable();
 
         while let Some(ch) = chars.next() {
-            if ch == '$' && chars.peek().copied() == Some('{') {
-                chars.next();
-                let pipe_output = chars.peek().copied() == Some('|');
-                if pipe_output || chars.peek().is_some_and(|ch| ch.is_whitespace()) {
-                    if pipe_output {
-                        chars.next();
-                    }
-                    let mut depth = 1usize;
-                    let mut source = String::new();
-                    let mut single = false;
-                    let mut double = false;
-                    let mut escaped = false;
-                    let mut closed = false;
-                    for source_ch in chars.by_ref() {
-                        if escaped {
-                            source.push(source_ch);
-                            escaped = false;
-                            continue;
-                        }
-                        if source_ch == '\\' && !single {
-                            source.push(source_ch);
-                            escaped = true;
-                            continue;
-                        }
-                        match source_ch {
-                            '\'' if !double => {
-                                single = !single;
-                                source.push(source_ch);
-                            }
-                            '"' if !single => {
-                                double = !double;
-                                source.push(source_ch);
-                            }
-                            '{' if !single && !double => {
-                                depth += 1;
-                                source.push(source_ch);
-                            }
-                            '}' if !single && !double => {
-                                depth = depth.saturating_sub(1);
-                                if depth == 0 {
-                                    closed = true;
-                                    break;
-                                }
-                                source.push(source_ch);
-                            }
-                            _ => source.push(source_ch),
-                        }
-                    }
-                    if closed {
-                        output.push_str(&protect_command_substitution_output(
-                            &self.expand_current_shell_command_substitution(&source, pipe_output),
-                        ));
-                    } else {
-                        output.push_str(if pipe_output { "${|" } else { "${" });
-                        output.push_str(&source);
-                    }
-                    continue;
-                }
-
-                output.push_str("${");
+            if ch == '\x1a' {
+                output.push('`');
                 continue;
             }
 
-            if ch == '$' && chars.peek().copied() == Some('(') {
-                chars.next();
-                if chars.peek().copied() == Some('(') {
-                    output.push_str("$((");
-                    chars.next();
-                    continue;
-                }
+            if ch == '\x1f' {
+                output.push('$');
+                continue;
+            }
 
-                let mut depth = 1usize;
-                let mut source = String::new();
-                let mut single = false;
-                let mut double = false;
-                let mut escaped = false;
-                let mut case_depth = 0usize;
-                let mut word = String::new();
-                let mut word_boundary = true;
-                let mut current_word_boundary = true;
-                while let Some(source_ch) = chars.next() {
-                    if escaped {
-                        source.push(source_ch);
-                        escaped = false;
-                        continue;
-                    }
-                    if source_ch == '\\' && !single {
-                        source.push(source_ch);
-                        escaped = true;
-                        continue;
-                    }
-                    if source_ch == '#' && !single && !double && word_boundary {
-                        source.push(source_ch);
-                        while let Some(comment_ch) = chars.peek().copied() {
-                            if comment_ch == '\n' {
-                                break;
-                            }
-                            source.push(comment_ch);
-                            chars.next();
-                        }
-                        word.clear();
-                        word_boundary = true;
-                        current_word_boundary = true;
-                        continue;
-                    }
-                    let rest = chars.clone().collect::<String>();
-                    update_command_substitution_case_depth(
-                        source_ch,
-                        single,
-                        double,
-                        &mut word,
-                        &mut case_depth,
-                        &mut word_boundary,
-                        &mut current_word_boundary,
-                        &rest,
-                    );
-                    match source_ch {
-                        '\'' if !double => {
-                            single = !single;
-                            source.push(source_ch);
-                        }
-                        '"' if !single => {
-                            double = !double;
-                            source.push(source_ch);
-                        }
-                        '(' if !single && !double && case_depth == 0 => {
-                            depth += 1;
-                            source.push(source_ch);
-                        }
-                        ')' if !single && !double && case_depth == 0 => {
-                            depth = depth.saturating_sub(1);
-                            if depth == 0 {
-                                break;
-                            }
-                            source.push(source_ch);
-                        }
-                        _ => source.push(source_ch),
-                    }
-                }
-                let source = unescape_storage_command_substitution_source(&source);
-                output.push_str(&protect_command_substitution_output(
-                    &self.expand_command_substitution_mut(&source),
-                ));
+            if ch == '\x17' {
+                output.push('\'');
                 continue;
             }
 
@@ -211,10 +75,212 @@ impl Executor {
                 continue;
             }
 
-            output.push(ch);
+            if ch != '$' {
+                output.push(ch);
+                continue;
+            }
+
+            match chars.peek().copied() {
+                Some('?') => {
+                    chars.next();
+                    output.push_str(&self.exit_code.to_string());
+                }
+                Some('$') => {
+                    chars.next();
+                    output.push_str(&std::process::id().to_string());
+                }
+                Some('!') => {
+                    chars.next();
+                    output.push_str(&self.last_background_pid_value());
+                }
+                Some('@') | Some('*') => {
+                    chars.next();
+                    output.push_str(&self.positional_params.join(" "));
+                }
+                Some('#') => {
+                    chars.next();
+                    output.push_str(&self.positional_params.len().to_string());
+                }
+                Some('-') => {
+                    chars.next();
+                    output.push_str(&self.shell_option_flags());
+                }
+                Some('{') => {
+                    chars.next();
+                    if let Some(value) = self.expand_current_shell_braced_substitution(&mut chars) {
+                        output.push_str(&value);
+                    } else {
+                        let name = collect_braced_parameter_name(&mut chars);
+                        output.push_str(
+                            &self.expand_with_parameter_env(saved_parameter_env, |executor| {
+                                executor.expand_word_mut(&format!("${{{name}}}"))
+                            }),
+                        );
+                    }
+                }
+                Some('(') => {
+                    chars.next();
+                    if chars.peek().copied() == Some('(') {
+                        chars.next();
+                        let (expression, matched) =
+                            collect_dollar_paren_arithmetic_expansion(&mut chars);
+                        if matched {
+                            if let Some(value) = self.eval_arithmetic_command_value(&expression) {
+                                output.push_str(&value.to_string());
+                            }
+                        } else {
+                            output.push_str("$((");
+                            output.push_str(&expression);
+                        }
+                        continue;
+                    }
+
+                    let source = collect_command_substitution_source(&mut chars);
+                    output.push_str(&protect_command_substitution_output(
+                        &self.expand_command_substitution_mut(&source),
+                    ));
+                }
+                Some('[') => {
+                    chars.next();
+                    let (expression, matched) =
+                        collect_dollar_bracket_arithmetic_expansion(&mut chars);
+                    if matched {
+                        if let Some(value) = self.eval_arithmetic_command_value(&expression) {
+                            output.push_str(&value.to_string());
+                        }
+                    } else {
+                        output.push_str("$[");
+                        output.push_str(&expression);
+                    }
+                }
+                Some(first) if first.is_ascii_digit() => {
+                    chars.next();
+                    let index = first.to_digit(10).unwrap_or(0) as usize;
+                    if index == 0 {
+                        output.push_str(&self.script_name_value());
+                    } else {
+                        output.push_str(
+                            self.positional_params
+                                .get(index - 1)
+                                .map(String::as_str)
+                                .unwrap_or(""),
+                        );
+                    }
+                }
+                Some(first) if is_shell_name_start(first) => {
+                    let mut name = String::new();
+                    while let Some(name_ch) = chars.peek().copied() {
+                        if !is_shell_name_char(name_ch) {
+                            break;
+                        }
+                        chars.next();
+                        name.push(name_ch);
+                    }
+                    if let Some(value) =
+                        self.expand_with_parameter_env(saved_parameter_env, |executor| {
+                            executor.dynamic_parameter_value(&name).or_else(|| {
+                                executor
+                                    .shell_variable_value(&name)
+                                    .or_else(|| std::env::var(&name).ok())
+                            })
+                        })
+                    {
+                        output.push_str(&shell_safe_value(&value));
+                    }
+                }
+                Some(other) => {
+                    chars.next();
+                    output.push('$');
+                    output.push(other);
+                }
+                None => output.push('$'),
+            }
         }
 
         output
+    }
+
+    fn expand_with_parameter_env<T>(
+        &mut self,
+        saved_parameter_env: Option<&std::collections::HashMap<String, String>>,
+        expand: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let Some(saved_parameter_env) = saved_parameter_env else {
+            return expand(self);
+        };
+
+        let current_env = std::mem::replace(&mut self.env_vars, saved_parameter_env.clone());
+        let expanded = expand(self);
+        self.env_vars = current_env;
+        expanded
+    }
+
+    fn expand_current_shell_braced_substitution(
+        &mut self,
+        chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+    ) -> Option<String> {
+        let pipe_output = chars.peek().copied() == Some('|');
+        if pipe_output {
+            chars.next();
+        } else if !chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+            return None;
+        }
+
+        let mut depth = 1usize;
+        let mut source = String::new();
+        let mut single = false;
+        let mut double = false;
+        let mut escaped = false;
+        let mut closed = false;
+        for source_ch in chars.by_ref() {
+            if escaped {
+                source.push(source_ch);
+                escaped = false;
+                continue;
+            }
+            if source_ch == '\\' && !single {
+                source.push(source_ch);
+                escaped = true;
+                continue;
+            }
+            match source_ch {
+                '\'' if !double => {
+                    single = !single;
+                    source.push(source_ch);
+                }
+                '"' if !single => {
+                    double = !double;
+                    source.push(source_ch);
+                }
+                '{' if !single && !double => {
+                    depth += 1;
+                    source.push(source_ch);
+                }
+                '}' if !single && !double => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        closed = true;
+                        break;
+                    }
+                    source.push(source_ch);
+                }
+                _ => source.push(source_ch),
+            }
+        }
+
+        if closed {
+            Some(protect_command_substitution_output(
+                &self.expand_current_shell_command_substitution(&source, pipe_output),
+            ))
+        } else {
+            let mut literal = if pipe_output {
+                "${|".to_string()
+            } else {
+                "${".to_string()
+            };
+            literal.push_str(&source);
+            Some(literal)
+        }
     }
 
     fn expand_current_shell_command_substitution(
@@ -366,104 +432,6 @@ impl Executor {
                 .to_string(),
         )
     }
-
-    pub(in crate::executor) fn expand_embedded_arithmetic_mut(&mut self, word: &str) -> String {
-        let chars: Vec<char> = word.chars().collect();
-        let mut output = String::new();
-        let mut index = 0;
-
-        while index < chars.len() {
-            if chars[index] == '$'
-                && chars.get(index + 1) == Some(&'(')
-                && chars.get(index + 2) == Some(&'(')
-            {
-                index += 3;
-                let mut expression = String::new();
-                let mut paren_depth: usize = 0;
-                let mut matched = false;
-
-                while index < chars.len() {
-                    match chars[index] {
-                        '(' => {
-                            paren_depth += 1;
-                            expression.push(chars[index]);
-                            index += 1;
-                        }
-                        ')' if paren_depth == 0 && chars.get(index + 1) == Some(&')') => {
-                            index += 2;
-                            matched = true;
-                            break;
-                        }
-                        ')' => {
-                            paren_depth = paren_depth.saturating_sub(1);
-                            expression.push(chars[index]);
-                            index += 1;
-                        }
-                        ch => {
-                            expression.push(ch);
-                            index += 1;
-                        }
-                    }
-                }
-
-                if matched {
-                    if let Some(value) = self.eval_arithmetic_command_value(&expression) {
-                        output.push_str(&value.to_string());
-                    }
-                } else {
-                    output.push_str("$((");
-                    output.push_str(&expression);
-                }
-                continue;
-            }
-
-            if chars[index] == '$' && chars.get(index + 1) == Some(&'[') {
-                index += 2;
-                let mut expression = String::new();
-                let mut bracket_depth: usize = 0;
-                let mut matched = false;
-
-                while index < chars.len() {
-                    match chars[index] {
-                        '[' => {
-                            bracket_depth += 1;
-                            expression.push(chars[index]);
-                            index += 1;
-                        }
-                        ']' if bracket_depth == 0 => {
-                            index += 1;
-                            matched = true;
-                            break;
-                        }
-                        ']' => {
-                            bracket_depth = bracket_depth.saturating_sub(1);
-                            expression.push(chars[index]);
-                            index += 1;
-                        }
-                        ch => {
-                            expression.push(ch);
-                            index += 1;
-                        }
-                    }
-                }
-
-                if matched {
-                    if let Some(value) = self.eval_arithmetic_command_value(&expression) {
-                        output.push_str(&value.to_string());
-                    }
-                } else {
-                    output.push_str("$[");
-                    output.push_str(&expression);
-                }
-                continue;
-            }
-
-            output.push(chars[index]);
-            index += 1;
-        }
-
-        output
-    }
 }
 
 fn command_substitution_needs_ast_execution(ast: &Ast) -> bool {
@@ -473,6 +441,133 @@ fn command_substitution_needs_ast_execution(ast: &Ast) -> bool {
             .iter()
             .any(command_contains_current_shell_substitution)
         || (ast.commands.len() > 1 && ast.commands.iter().all(command_is_ast_list_substitution))
+}
+
+fn collect_dollar_paren_arithmetic_expansion(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) -> (String, bool) {
+    let mut expression = String::new();
+    let mut paren_depth: usize = 0;
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '(' => {
+                paren_depth += 1;
+                expression.push(ch);
+            }
+            ')' if paren_depth == 0 && chars.peek().copied() == Some(')') => {
+                chars.next();
+                return (expression, true);
+            }
+            ')' => {
+                paren_depth = paren_depth.saturating_sub(1);
+                expression.push(ch);
+            }
+            _ => expression.push(ch),
+        }
+    }
+
+    (expression, false)
+}
+
+fn collect_dollar_bracket_arithmetic_expansion(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) -> (String, bool) {
+    let mut expression = String::new();
+    let mut bracket_depth: usize = 0;
+
+    for ch in chars.by_ref() {
+        match ch {
+            '[' => {
+                bracket_depth += 1;
+                expression.push(ch);
+            }
+            ']' if bracket_depth == 0 => return (expression, true),
+            ']' => {
+                bracket_depth = bracket_depth.saturating_sub(1);
+                expression.push(ch);
+            }
+            _ => expression.push(ch),
+        }
+    }
+
+    (expression, false)
+}
+
+fn collect_command_substitution_source(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) -> String {
+    let mut depth = 1usize;
+    let mut source = String::new();
+    let mut single = false;
+    let mut double = false;
+    let mut escaped = false;
+    let mut case_depth = 0usize;
+    let mut word = String::new();
+    let mut word_boundary = true;
+    let mut current_word_boundary = true;
+
+    while let Some(source_ch) = chars.next() {
+        if escaped {
+            source.push(source_ch);
+            escaped = false;
+            continue;
+        }
+        if source_ch == '\\' && !single {
+            source.push(source_ch);
+            escaped = true;
+            continue;
+        }
+        if source_ch == '#' && !single && !double && word_boundary {
+            source.push(source_ch);
+            while let Some(comment_ch) = chars.peek().copied() {
+                if comment_ch == '\n' {
+                    break;
+                }
+                source.push(comment_ch);
+                chars.next();
+            }
+            word.clear();
+            word_boundary = true;
+            current_word_boundary = true;
+            continue;
+        }
+        let rest = chars.clone().collect::<String>();
+        update_command_substitution_case_depth(
+            source_ch,
+            single,
+            double,
+            &mut word,
+            &mut case_depth,
+            &mut word_boundary,
+            &mut current_word_boundary,
+            &rest,
+        );
+        match source_ch {
+            '\'' if !double => {
+                single = !single;
+                source.push(source_ch);
+            }
+            '"' if !single => {
+                double = !double;
+                source.push(source_ch);
+            }
+            '(' if !single && !double && case_depth == 0 => {
+                depth += 1;
+                source.push(source_ch);
+            }
+            ')' if !single && !double && case_depth == 0 => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    break;
+                }
+                source.push(source_ch);
+            }
+            _ => source.push(source_ch),
+        }
+    }
+
+    unescape_storage_command_substitution_source(&source)
 }
 
 fn command_substitution_status(result: Result<(), ExecuteError>, exit_code: i32) -> i32 {

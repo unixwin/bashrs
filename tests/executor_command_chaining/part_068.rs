@@ -139,6 +139,29 @@ fn test_grouped_arithmetic_assignments_have_side_effects() {
 }
 
 #[test]
+fn test_embedded_arithmetic_expansion_interleaves_parameter_expansion() {
+    let output_path = "target/rubash-arithmetic-embedded-expansion-order-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "i=1; echo $(( i++ )):$i:$(( ++i )):$i > {output_path}; \
+         i=1; echo $[ i++ ]:$i:$[ ++i ]:$i >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "1:2:3:3\n1:2:3:3\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_let_builtin_evaluates_arithmetic_expressions() {
     let output_path = "target/rubash-let-arithmetic-output.txt";
     let _ = fs::remove_file(output_path);
