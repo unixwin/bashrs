@@ -163,7 +163,6 @@ impl Executor {
         }
 
         let mut source = alias_compound_source_words(&words);
-        append_source_redirects(&mut source, command);
         let mut next_index = index + 1;
         if words.len() == 2 {
             if let Some(next_command) = ast.commands.get(next_index) {
@@ -173,7 +172,20 @@ impl Executor {
                     next_index += 1;
                 }
             }
+        } else if alias_function_source_starts_compound_body(&source) {
+            while !source_has_matching_function_compound_body_end(&source) {
+                let Some(next_command) = ast.commands.get(next_index) else {
+                    break;
+                };
+                let command_source = bash_command_source_text(next_command);
+                if !command_source.is_empty() {
+                    source.push_str("; ");
+                    source.push_str(&command_source);
+                }
+                next_index += 1;
+            }
         }
+        append_source_redirects(&mut source, command);
 
         let tokens = crate::lexer::tokenize(&source);
         let reparsed = crate::parser::parse(&tokens);
@@ -776,6 +788,50 @@ fn source_has_matching_time_compound_end(source: &str) -> bool {
         index += 1;
     }
     source_tokens_have_matching_compound_end(&tokens, index)
+}
+
+fn alias_function_source_starts_compound_body(source: &str) -> bool {
+    let tokens = crate::lexer::tokenize(source);
+    let Some(body_index) = alias_function_body_token_index(&tokens) else {
+        return false;
+    };
+    tokens
+        .get(body_index)
+        .and_then(|token| compound_end_word_for(token.value.as_str()))
+        .is_some()
+}
+
+fn source_has_matching_function_compound_body_end(source: &str) -> bool {
+    let tokens = crate::lexer::tokenize(source);
+    let Some(body_index) = alias_function_body_token_index(&tokens) else {
+        return false;
+    };
+    source_tokens_have_matching_compound_end(&tokens, body_index)
+}
+
+fn alias_function_body_token_index(tokens: &[crate::lexer::Token]) -> Option<usize> {
+    let mut index = tokens
+        .iter()
+        .position(|token| token.kind != crate::lexer::TokenKind::Semicolon)?;
+    if tokens.get(index)?.value != "function" {
+        return None;
+    }
+    index += 2;
+    if tokens.get(index).is_some_and(|token| token.value == "(")
+        && tokens
+            .get(index + 1)
+            .is_some_and(|token| token.value == ")")
+    {
+        index += 2;
+    }
+    while tokens
+        .get(index)
+        .is_some_and(|token| token.kind == crate::lexer::TokenKind::Semicolon)
+    {
+        index += 1;
+    }
+    tokens.get(index)?;
+    Some(index)
 }
 
 fn source_tokens_have_matching_compound_end(

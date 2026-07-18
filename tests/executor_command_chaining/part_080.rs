@@ -2428,6 +2428,49 @@ fn test_alias_introduced_function_accepts_following_brace_body() {
 }
 
 #[test]
+fn test_alias_function_prefix_accepts_following_if_body() {
+    let output_path = "target/rubash-alias-function-prefix-if-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "shopt -s expand_aliases; alias makef='function af'; \
+         makef if true; then echo alias-prefix-if > {output_path}; fi; af"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "alias-prefix-if\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_alias_function_prefix_accepts_following_for_body() {
+    let output_path = "target/rubash-alias-function-prefix-for-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "shopt -s expand_aliases; alias makef='function af'; \
+         makef for item in alpha beta; do echo $item >> {output_path}; done; af"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "alpha\nbeta\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_alias_introduced_brace_group_executes_body() {
     let output_path = "target/rubash-alias-brace-group-output.txt";
     let _ = fs::remove_file(output_path);
