@@ -675,16 +675,9 @@ impl Executor {
         let mut index = 0;
         while let Some(clause) = case_command.clauses.get(index) {
             let matched = fall_through
-                || clause.patterns.iter().any(|pattern| {
-                    let expanded = self.expand_word(pattern);
-                    let decoded = decode_parameter_pattern_quotes(&expanded);
-                    let stripped = strip_surrounding_quotes(&decoded);
-                    if stripped.contains("@(")
-                        || stripped.contains("*(")
-                        || stripped.contains("+(")
-                        || stripped.contains("?(")
-                        || stripped.contains("!(")
-                    {
+                || clause.pattern_nodes.iter().any(|pattern| {
+                    let stripped = self.expand_case_pattern(pattern);
+                    if case_pattern_has_extglob(&stripped) {
                         if nocasematch {
                             crate::executor::conditional::extglob_case_pattern_matches_nocase(
                                 &stripped, &word,
@@ -727,6 +720,16 @@ impl Executor {
             self.exit_code = 0;
         }
         Ok(())
+    }
+
+    fn expand_case_pattern(&self, pattern: &crate::parser::CasePattern) -> String {
+        if !case_pattern_raw_has_quotes(&pattern.raw_text) {
+            let expanded = self.expand_word(&pattern.text);
+            let decoded = decode_parameter_pattern_quotes(&expanded);
+            return strip_surrounding_quotes(&decoded);
+        }
+
+        quote_aware_case_pattern(&pattern.raw_text, |word| self.expand_word(word))
     }
 
     pub(in crate::executor) fn execute_case_command_with_redirects(
@@ -947,4 +950,126 @@ fn test_rubash_binary_from_current_exe() -> Option<std::path::PathBuf> {
     };
     let candidate = debug_dir.join(binary_name);
     candidate.is_file().then_some(candidate)
+}
+
+fn case_pattern_has_extglob(pattern: &str) -> bool {
+    let chars = pattern.chars().collect::<Vec<_>>();
+    let mut index = 0usize;
+    while index + 1 < chars.len() {
+        if chars[index] == '\\' {
+            index += 2;
+            continue;
+        }
+        if matches!(chars[index], '@' | '*' | '+' | '?' | '!') && chars[index + 1] == '(' {
+            return true;
+        }
+        index += 1;
+    }
+    false
+}
+
+fn case_pattern_raw_has_quotes(raw: &str) -> bool {
+    let chars = raw.chars().collect::<Vec<_>>();
+    let mut index = 0usize;
+    while index < chars.len() {
+        match chars[index] {
+            '\'' | '"' => return true,
+            '$' if matches!(chars.get(index + 1), Some('\'' | '"')) => return true,
+            '\\' => index += 1,
+            _ => {}
+        }
+        index += 1;
+    }
+    false
+}
+
+fn quote_aware_case_pattern(raw: &str, expand_word: impl Fn(&str) -> String) -> String {
+    let chars = raw.chars().collect::<Vec<_>>();
+    let mut output = String::new();
+    let mut index = 0usize;
+
+    while index < chars.len() {
+        if chars[index] == '$' && matches!(chars.get(index + 1), Some('\'' | '"')) {
+            let quote = chars[index + 1];
+            if let Some(end) = quoted_case_pattern_end(&chars, index + 2, quote) {
+                let body = chars[index + 2..end].iter().collect::<String>();
+                let literal = if quote == '\'' {
+                    decode_ansi_c_escapes(&body)
+                } else {
+                    expand_word(&body)
+                };
+                output.push_str(&escape_case_pattern_literal(&literal));
+                index = end + 1;
+                continue;
+            }
+        }
+
+        if matches!(chars[index], '\'' | '"') {
+            let quote = chars[index];
+            if let Some(end) = quoted_case_pattern_end(&chars, index + 1, quote) {
+                let body = chars[index + 1..end].iter().collect::<String>();
+                let literal = if quote == '\'' {
+                    body
+                } else {
+                    expand_word(&body)
+                };
+                output.push_str(&escape_case_pattern_literal(&literal));
+                index = end + 1;
+                continue;
+            }
+        }
+
+        let start = index;
+        while index < chars.len()
+            && chars[index] != '\''
+            && chars[index] != '"'
+            && !(chars[index] == '$' && matches!(chars.get(index + 1), Some('\'' | '"')))
+        {
+            if chars[index] == '\\' && index + 1 < chars.len() {
+                index += 2;
+            } else {
+                index += 1;
+            }
+        }
+        let segment = chars[start..index].iter().collect::<String>();
+        let expanded = expand_word(&segment);
+        output.push_str(&strip_surrounding_quotes(&decode_parameter_pattern_quotes(
+            &expanded,
+        )));
+    }
+
+    output
+}
+
+fn quoted_case_pattern_end(chars: &[char], start: usize, quote: char) -> Option<usize> {
+    let mut index = start;
+    let mut escaped = false;
+    while index < chars.len() {
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+        if quote == '"' && chars[index] == '\\' {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+        if chars[index] == quote {
+            return Some(index);
+        }
+        index += 1;
+    }
+    None
+}
+
+fn escape_case_pattern_literal(value: &str) -> String {
+    let mut escaped = String::new();
+    for ch in value.chars() {
+        if matches!(ch, '*' | '?' | '[' | '\\' | '@' | '!' | '+' | '(') {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped
 }

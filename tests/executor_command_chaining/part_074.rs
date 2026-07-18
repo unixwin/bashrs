@@ -150,6 +150,29 @@ fn test_case_command_materializes_input_process_substitution_word() {
 }
 
 #[test]
+fn test_case_quoted_patterns_treat_globs_as_literals() {
+    let output_path = "target/rubash-case-quoted-pattern-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "case literal in \"l*\") echo quoted > {output_path} ;; l*) echo pattern > {output_path} ;; esac; \
+         pat='l*'; case literal in \"$pat\") echo quoted-var >> {output_path} ;; l*) echo pattern-var >> {output_path} ;; esac"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "pattern\npattern-var\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_alias_introduced_case_command_redirects_clause_stdout() {
     let output_path = "target/rubash-alias-case-command-redirect-output.txt";
     let _ = fs::remove_file(output_path);
