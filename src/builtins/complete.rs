@@ -3,7 +3,7 @@
 //! GNU Bash source ownership:
 // - builtins/complete.def
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::io::{self, Write};
 use std::path::Path;
 
@@ -187,6 +187,14 @@ where
                 );
             }
             "builtin" => SHELL_BUILTINS,
+            "command" => {
+                let candidates = command_completion_candidates(env_vars, aliases, function_names);
+                return write_compgen_matches(
+                    candidates.iter().map(String::as_str),
+                    &parsed,
+                    stdout,
+                );
+            }
             "directory" => {
                 let candidates =
                     path_completion_candidates(parsed.word(), PathCompletionKind::Directory);
@@ -295,6 +303,42 @@ fn function_completion_candidates(function_names: &[String]) -> Vec<String> {
     let mut candidates = function_names.to_vec();
     candidates.sort();
     candidates.dedup();
+    candidates
+}
+
+fn command_completion_candidates(
+    env_vars: &HashMap<String, String>,
+    aliases: &HashMap<String, Alias>,
+    function_names: &[String],
+) -> Vec<String> {
+    let mut candidates = BTreeSet::new();
+    candidates.extend(SHELL_BUILTINS.iter().map(|name| (*name).to_string()));
+    candidates.extend(SHELL_KEYWORDS.iter().map(|name| (*name).to_string()));
+    candidates.extend(aliases.keys().cloned());
+    candidates.extend(function_names.iter().cloned());
+    candidates.extend(path_command_completion_candidates(env_vars));
+    candidates.into_iter().collect()
+}
+
+fn path_command_completion_candidates(env_vars: &HashMap<String, String>) -> Vec<String> {
+    let Some(path_value) = env_vars.get("PATH") else {
+        return Vec::new();
+    };
+
+    let mut candidates = Vec::new();
+    for dir in std::env::split_paths(path_value) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_file() {
+                candidates.push(entry.file_name().to_string_lossy().into_owned());
+            }
+        }
+    }
     candidates
 }
 
@@ -449,6 +493,7 @@ impl ParsedCompletionOptions {
         match option {
             'a' => self.action = Some("alias".to_string()),
             'b' => self.action = Some("builtin".to_string()),
+            'c' => self.action = Some("command".to_string()),
             'd' => self.action = Some("directory".to_string()),
             'f' => self.action = Some("file".to_string()),
             'k' => self.action = Some("keyword".to_string()),

@@ -485,6 +485,75 @@ fn test_compgen_builtin_flag_filters_prefix_matches() {
 }
 
 #[test]
+fn test_compgen_command_flag_combines_shell_and_path_commands() {
+    let dir_path = "target/rubash-compgen-command-bin";
+    let output_path = "target/rubash-compgen-command-output.txt";
+    let status_path = "target/rubash-compgen-command-status.txt";
+    let _ = fs::remove_dir_all(dir_path);
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    fs::create_dir_all(dir_path).unwrap();
+    fs::write(format!("{dir_path}/rubash_cgc_path"), "").unwrap();
+    let input = format!(
+        "PATH={dir_path}; alias rubash_cgc_alias='echo a'; rubash_cgc_func() {{ :; }}; \
+         compgen -c rubash_cgc_ > {output_path}; echo first:$? > {status_path}; \
+         compgen -c rubash_cgc_z >> {output_path}; echo second:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "rubash_cgc_alias\nrubash_cgc_func\nrubash_cgc_path\n"
+    );
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_dir_all(dir_path);
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_command_action_uses_prefix_suffix_and_filter() {
+    let dir_path = "target/rubash-compgen-command-action-bin";
+    let output_path = "target/rubash-compgen-command-action-output.txt";
+    let status_path = "target/rubash-compgen-command-action-status.txt";
+    let _ = fs::remove_dir_all(dir_path);
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    fs::create_dir_all(dir_path).unwrap();
+    fs::write(format!("{dir_path}/rubash_cgca_path"), "").unwrap();
+    let input = format!(
+        "PATH={dir_path}; alias rubash_cgca_alias='echo a'; rubash_cgca_func() {{ :; }}; \
+         compgen -P cmd: -S :end -A command -X '*func' rubash_cgca_ > {output_path}; \
+         echo $? > {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "cmd:rubash_cgca_alias:end\ncmd:rubash_cgca_path:end\n"
+    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_dir_all(dir_path);
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_enabled_action_filters_prefix_matches() {
     let output_path = "target/rubash-compgen-enabled-output.txt";
     let status_path = "target/rubash-compgen-enabled-status.txt";
