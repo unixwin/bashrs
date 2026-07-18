@@ -107,7 +107,7 @@ pub(in crate::builtins::declare) fn quote_assoc_key(key: &str) -> String {
         return key.to_string();
     }
 
-    quote_assoc_storage_value(key)
+    quote_assoc_storage_value_forced(key)
 }
 
 fn quote_assoc_storage_value(value: &str) -> String {
@@ -128,4 +128,29 @@ fn quote_assoc_storage_value(value: &str) -> String {
     }
     quoted.push('"');
     quoted
+}
+
+fn quote_assoc_storage_value_forced(value: &str) -> String {
+    let mut quoted = String::from("\"");
+    for ch in value.chars() {
+        if matches!(ch, '"' | '\\') {
+            quoted.push('\\');
+        }
+        quoted.push(ch);
+    }
+    quoted.push('"');
+    quoted
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn alternating_bracket_words_are_literal_keys() {
+        assert_eq!(
+            append_assoc_value("()", "([x] one [y] two)"),
+            "([\"[x]\"]=one [\"[y]\"]=two)"
+        );
+    }
 }

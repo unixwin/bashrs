@@ -139,7 +139,7 @@ pub(in crate::executor) fn quote_assoc_key(key: &str) -> String {
         return key.to_string();
     }
 
-    quote_assoc_storage_value(key)
+    quote_assoc_storage_value_forced(key)
 }
 
 pub(in crate::executor) fn quote_assoc_storage_value(value: &str) -> String {
@@ -151,6 +151,18 @@ pub(in crate::executor) fn quote_assoc_storage_value(value: &str) -> String {
         return value.to_string();
     }
 
+    let mut quoted = String::from("\"");
+    for ch in value.chars() {
+        if matches!(ch, '"' | '\\') {
+            quoted.push('\\');
+        }
+        quoted.push(ch);
+    }
+    quoted.push('"');
+    quoted
+}
+
+fn quote_assoc_storage_value_forced(value: &str) -> String {
     let mut quoted = String::from("\"");
     for ch in value.chars() {
         if matches!(ch, '"' | '\\') {

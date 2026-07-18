@@ -19,6 +19,21 @@ impl Executor {
             for word in &cmd.words {
                 let mut single = cmd.clone();
                 single.words = vec![word.clone()];
+                single.array_element_assignments = cmd
+                    .array_element_assignments
+                    .iter()
+                    .filter(|assignment| {
+                        assignment
+                            .word_index
+                            .and_then(|word_index| cmd.words.get(word_index))
+                            .is_some_and(|assignment_word| assignment_word == word)
+                    })
+                    .cloned()
+                    .map(|mut assignment| {
+                        assignment.word_index = Some(0);
+                        assignment
+                    })
+                    .collect();
                 if !self.execute_array_element_assignment(&single) {
                     return false;
                 }
@@ -46,6 +61,17 @@ impl Executor {
         if !index.ends_with(']') || !is_shell_name(name) {
             return false;
         }
+        let raw_index = cmd
+            .array_element_assignments
+            .iter()
+            .find(|assignment| {
+                assignment
+                    .word_index
+                    .and_then(|word_index| cmd.words.get(word_index))
+                    .is_some_and(|word| word == &cmd.words[0])
+                    && assignment.name == name
+            })
+            .map(|assignment| assignment.subscript_metadata.raw.as_str());
         let name = match self.nameref_resolution(name) {
             NamerefResolution::Target(target) => target,
             NamerefResolution::Circular => {
@@ -125,7 +151,7 @@ impl Executor {
             // TODO(assoc.c/arrayfunc.c): Bash parses associative subscripts
             // with quote removal and expansion. This stores the simple
             // `A[key]=value` form exercised by upstream builtins5.sub.
-            let key = self.assoc_subscript_key(index);
+            let key = self.assoc_subscript_key(raw_index.unwrap_or(index));
             let current = self.env_vars.get(name).cloned().unwrap_or_default();
             let mut entries = assoc_entries(&current);
             let value = if append {

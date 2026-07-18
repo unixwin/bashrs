@@ -70,6 +70,55 @@ fn test_declare_nameref_reads_and_assigns_target() {
 }
 
 #[test]
+fn test_declare_assoc_alternating_bracket_words_are_literal_keys() {
+    let output_path = target_test_path("rubash-declare-assoc-bracket-word-keys-output.txt");
+    let shell_output_path = shell_test_path(&output_path);
+    let _ = fs::remove_file(&output_path);
+    let input = format!(
+        "declare -A a=([x] one [y] two); \
+         printf 'bracket:%s/%s plain:%s/%s\\n' \"${{a[\"[x]\"]}}\" \"${{a[\"[y]\"]}}\" \"${{a[x]-missing}}\" \"${{a[y]-missing}}\" > {shell_output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(&output_path).unwrap(),
+        "bracket:one/two plain:missing/missing\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_assoc_element_assignment_quotes_bracket_keys() {
+    let output_path = target_test_path("rubash-assoc-bracket-key-assignment-output.txt");
+    let shell_output_path = shell_test_path(&output_path);
+    let _ = fs::remove_file(&output_path);
+    let input = format!(
+        "declare -A a; a[\"[x]\"]=one; a[plain]=two; \
+         printf 'bracket:%s plain:%s missing:%s\\n' \"${{a[\"[x]\"]}}\" \"${{a[plain]}}\" \"${{a[x]-missing}}\" > {shell_output_path}; \
+         declare -p a >> {shell_output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    let output = fs::read_to_string(&output_path).unwrap();
+    assert!(output.starts_with("bracket:one plain:two missing:missing\n"));
+    assert!(output.contains("[\"[x]\"]=\"one\""));
+    assert!(output.contains("[plain]=\"two\""));
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_nameref_unary_conditionals_use_nameref_attribute() {
     let output_path = target_test_path("rubash-nameref-unary-output.txt");
     let shell_output_path = shell_test_path(&output_path);

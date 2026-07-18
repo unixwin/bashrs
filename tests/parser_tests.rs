@@ -5760,4 +5760,22 @@ mod quote_removal {
             ]
         );
     }
+
+    #[test]
+    fn test_declare_assoc_compound_keeps_bracket_words_without_assignment_operator() {
+        let input = "declare -A assoc=([x] one [y] two)";
+        let tokens = tokenize(input);
+        let ast = parse(&tokens);
+        assert_eq!(
+            ast.commands[0].words,
+            vec!["declare", "-A", "assoc=\x1e([x] one [y] two)"]
+        );
+        let elements = ast.commands[0].compound_assignments[0].elements.as_slice();
+        assert_eq!(elements.len(), 4);
+        assert_eq!(elements[0].subscript, None);
+        assert_eq!(elements[0].value, "[x]");
+        assert_eq!(elements[1].value, "one");
+        assert_eq!(elements[2].subscript, None);
+        assert_eq!(elements[2].value, "[y]");
+    }
 }
