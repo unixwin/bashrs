@@ -163,7 +163,17 @@ where
         let candidates = match action {
             "builtin" => SHELL_BUILTINS,
             "directory" => {
-                let candidates = directory_completion_candidates(parsed.word());
+                let candidates =
+                    path_completion_candidates(parsed.word(), PathCompletionKind::Directory);
+                return write_compgen_matches(
+                    candidates.iter().map(String::as_str),
+                    &parsed,
+                    stdout,
+                );
+            }
+            "file" => {
+                let candidates =
+                    path_completion_candidates(parsed.word(), PathCompletionKind::File);
                 return write_compgen_matches(
                     candidates.iter().map(String::as_str),
                     &parsed,
@@ -188,8 +198,14 @@ where
     Ok(EXECUTION_SUCCESS)
 }
 
-fn directory_completion_candidates(word: &str) -> Vec<String> {
-    let (search_dir, display_prefix) = directory_completion_base(word);
+#[derive(Clone, Copy)]
+enum PathCompletionKind {
+    Directory,
+    File,
+}
+
+fn path_completion_candidates(word: &str, kind: PathCompletionKind) -> Vec<String> {
+    let (search_dir, display_prefix) = path_completion_base(word);
     let Ok(entries) = std::fs::read_dir(Path::new(search_dir)) else {
         return Vec::new();
     };
@@ -199,7 +215,7 @@ fn directory_completion_candidates(word: &str) -> Vec<String> {
         let Ok(file_type) = entry.file_type() else {
             continue;
         };
-        if !file_type.is_dir() {
+        if matches!(kind, PathCompletionKind::Directory) && !file_type.is_dir() {
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -209,7 +225,7 @@ fn directory_completion_candidates(word: &str) -> Vec<String> {
     candidates
 }
 
-fn directory_completion_base(word: &str) -> (&str, &str) {
+fn path_completion_base(word: &str) -> (&str, &str) {
     let Some(separator_index) = word.rfind(['/', '\\']) else {
         return (".", "");
     };
@@ -370,6 +386,7 @@ impl ParsedCompletionOptions {
         match option {
             'b' => self.action = Some("builtin".to_string()),
             'd' => self.action = Some("directory".to_string()),
+            'f' => self.action = Some("file".to_string()),
             'k' => self.action = Some("keyword".to_string()),
             _ => {}
         }

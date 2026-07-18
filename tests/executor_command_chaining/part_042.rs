@@ -302,6 +302,76 @@ fn test_compgen_directory_action_uses_prefix_suffix_and_filter() {
 }
 
 #[test]
+fn test_compgen_file_flag_outputs_file_and_directory_matches() {
+    let dir_path = "target/rubash-compgen-file";
+    let output_path = "target/rubash-compgen-file-output.txt";
+    let status_path = "target/rubash-compgen-file-status.txt";
+    let _ = fs::remove_dir_all(dir_path);
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    fs::create_dir_all(format!("{dir_path}/alpha")).unwrap();
+    fs::create_dir_all(format!("{dir_path}/beta")).unwrap();
+    fs::write(format!("{dir_path}/apple.txt"), "").unwrap();
+    fs::write(format!("{dir_path}/apricot.log"), "").unwrap();
+    let input = format!(
+        "compgen -f {dir_path}/a > {output_path}; echo first:$? > {status_path}; \
+         compgen -f {dir_path}/z >> {output_path}; echo second:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        format!("{dir_path}/alpha\n{dir_path}/apple.txt\n{dir_path}/apricot.log\n")
+    );
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_dir_all(dir_path);
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_file_action_uses_prefix_suffix_and_filter() {
+    let dir_path = "target/rubash-compgen-file-action";
+    let output_path = "target/rubash-compgen-file-action-output.txt";
+    let status_path = "target/rubash-compgen-file-action-status.txt";
+    let _ = fs::remove_dir_all(dir_path);
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    fs::create_dir_all(format!("{dir_path}/alpha")).unwrap();
+    fs::write(format!("{dir_path}/apple.txt"), "").unwrap();
+    fs::write(format!("{dir_path}/amber.txt"), "").unwrap();
+    let input = format!(
+        "compgen -P file: -S :end -A file -X '*.txt' {dir_path}/a > {output_path}; \
+         echo $? > {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        format!("file:{dir_path}/alpha:end\n")
+    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_dir_all(dir_path);
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_builtin_action_filters_prefix_matches() {
     let output_path = "target/rubash-compgen-builtin-output.txt";
     let status_path = "target/rubash-compgen-builtin-status.txt";
