@@ -561,11 +561,11 @@ fn alias_time_source(
     let mut source = alias_compound_source_words(words);
     append_source_redirects(&mut source, command);
     let mut next_index = index + 1;
-    let Some(end_word) = alias_time_compound_end_word(words) else {
+    if alias_time_compound_end_word(words).is_none() {
         return (source, next_index);
-    };
+    }
 
-    if words.iter().any(|word| word == end_word) {
+    if source_has_matching_time_compound_end(&source) {
         return (source, next_index);
     }
 
@@ -579,7 +579,7 @@ fn alias_time_source(
             source.push_str(&command_source);
         }
         next_index = command_index + 1;
-        if command_contains_word(next_command, end_word) {
+        if source_has_matching_time_compound_end(&source) {
             break;
         }
     }
@@ -754,7 +754,38 @@ fn source_has_matching_compound_end(source: &str) -> bool {
     else {
         return false;
     };
-    let Some(first_end) = compound_end_word_for(tokens[first_index].value.as_str()) else {
+    source_tokens_have_matching_compound_end(&tokens, first_index)
+}
+
+fn source_has_matching_time_compound_end(source: &str) -> bool {
+    let tokens = crate::lexer::tokenize(source);
+    let Some(mut index) = tokens
+        .iter()
+        .position(|token| token.kind != crate::lexer::TokenKind::Semicolon)
+    else {
+        return false;
+    };
+    if tokens[index].value != "time" {
+        return false;
+    }
+    index += 1;
+    while matches!(
+        tokens.get(index).map(|token| token.value.as_str()),
+        Some("-p" | "--" | "!")
+    ) {
+        index += 1;
+    }
+    source_tokens_have_matching_compound_end(&tokens, index)
+}
+
+fn source_tokens_have_matching_compound_end(
+    tokens: &[crate::lexer::Token],
+    first_index: usize,
+) -> bool {
+    let Some(first) = tokens.get(first_index) else {
+        return false;
+    };
+    let Some(first_end) = compound_end_word_for(first.value.as_str()) else {
         return false;
     };
     let mut stack = vec![first_end];

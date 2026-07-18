@@ -932,6 +932,31 @@ fn test_alias_introduced_time_executes_if_sequence() {
 }
 
 #[test]
+fn test_alias_introduced_time_if_keeps_nested_if_body() {
+    let output_path = "target/rubash-alias-time-nested-if-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "shopt -s expand_aliases; alias t=time; \
+         t -p if true; then if false; then echo bad >> {output_path}; \
+         else echo inner >> {output_path}; fi; echo outer >> {output_path}; fi; \
+         echo status:$? >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "inner\nouter\nstatus:0\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_alias_introduced_time_executes_for_sequence_with_redirect() {
     let output_path = "target/rubash-alias-time-for-redirect-output.txt";
     let status_path = "target/rubash-alias-time-for-redirect-status.txt";
@@ -954,6 +979,30 @@ fn test_alias_introduced_time_executes_for_sequence_with_redirect() {
     assert_eq!(fs::read_to_string(status_path).unwrap(), "status:0\n");
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_alias_introduced_time_for_keeps_nested_while_body() {
+    let output_path = "target/rubash-alias-time-nested-for-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "shopt -s expand_aliases; alias t=time; \
+         t -p for item in alpha; do while false; do echo bad >> {output_path}; done; \
+         echo $item >> {output_path}; done; echo status:$? >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "alpha\nstatus:0\n"
+    );
+    let _ = fs::remove_file(output_path);
 }
 
 #[test]
