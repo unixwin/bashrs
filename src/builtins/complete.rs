@@ -4,6 +4,7 @@
 // - builtins/complete.def
 
 use std::io::{self, Write};
+use std::path::Path;
 
 const EXECUTION_SUCCESS: i32 = 0;
 const EXECUTION_FAILURE: i32 = 1;
@@ -161,6 +162,14 @@ where
     if let Some(action) = parsed.action.as_deref() {
         let candidates = match action {
             "builtin" => SHELL_BUILTINS,
+            "directory" => {
+                let candidates = directory_completion_candidates(parsed.word());
+                return write_compgen_matches(
+                    candidates.iter().map(String::as_str),
+                    &parsed,
+                    stdout,
+                );
+            }
             "keyword" => SHELL_KEYWORDS,
             "signal" => crate::builtins::trap::SIGNALS.as_slice(),
             "shopt" => crate::builtins::shopt::SHOPT_OPTIONS,
@@ -179,6 +188,37 @@ where
     Ok(EXECUTION_SUCCESS)
 }
 
+fn directory_completion_candidates(word: &str) -> Vec<String> {
+    let (search_dir, display_prefix) = directory_completion_base(word);
+    let Ok(entries) = std::fs::read_dir(Path::new(search_dir)) else {
+        return Vec::new();
+    };
+
+    let mut candidates = Vec::new();
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        candidates.push(format!("{display_prefix}{name}"));
+    }
+    candidates.sort();
+    candidates
+}
+
+fn directory_completion_base(word: &str) -> (&str, &str) {
+    let Some(separator_index) = word.rfind(['/', '\\']) else {
+        return (".", "");
+    };
+    if separator_index == 0 {
+        return (&word[..1], &word[..1]);
+    }
+    (&word[..separator_index], &word[..=separator_index])
+}
+
 fn write_compgen_matches<'a, I, E>(
     candidates: I,
     parsed: &ParsedCompletionOptions,
@@ -188,11 +228,7 @@ where
     I: IntoIterator<Item = &'a str>,
     E: Write,
 {
-    let word = parsed
-        .operands
-        .first()
-        .map(String::as_str)
-        .unwrap_or_default();
+    let word = parsed.word();
     let mut matched = false;
     for candidate in candidates {
         if candidate.starts_with(word) {
@@ -333,9 +369,17 @@ impl ParsedCompletionOptions {
     fn set_flag_option(&mut self, option: char) {
         match option {
             'b' => self.action = Some("builtin".to_string()),
+            'd' => self.action = Some("directory".to_string()),
             'k' => self.action = Some("keyword".to_string()),
             _ => {}
         }
+    }
+
+    fn word(&self) -> &str {
+        self.operands
+            .first()
+            .map(String::as_str)
+            .unwrap_or_default()
     }
 
     fn filter_excludes(&self, candidate: &str) -> bool {
