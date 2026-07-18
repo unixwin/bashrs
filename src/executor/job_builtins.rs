@@ -614,12 +614,18 @@ impl Executor {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let function_names: Vec<String> = self.functions.keys().cloned().collect();
+        let job_names: Vec<String> = self
+            .background_job_order
+            .iter()
+            .filter_map(|pid| self.background_jobs.get(pid).cloned())
+            .collect();
         let status = crate::builtins::complete::execute_with_io(
             builtin,
             &cmd.words[1..],
             &self.env_vars,
             &self.aliases,
             &function_names,
+            &job_names,
             &self.diagnostic_prefix(),
             &mut stdout,
             &mut stderr,

@@ -98,6 +98,7 @@ pub fn execute_with_io<E>(
     env_vars: &HashMap<String, String>,
     aliases: &HashMap<String, Alias>,
     function_names: &[String],
+    job_names: &[String],
     diagnostic_prefix: &str,
     stdout: &mut E,
     stderr: &mut E,
@@ -112,6 +113,7 @@ where
             env_vars,
             aliases,
             function_names,
+            job_names,
             diagnostic_prefix,
             stdout,
             stderr,
@@ -145,6 +147,7 @@ fn execute_compgen<E>(
     env_vars: &HashMap<String, String>,
     aliases: &HashMap<String, Alias>,
     function_names: &[String],
+    job_names: &[String],
     diagnostic_prefix: &str,
     stdout: &mut E,
     stderr: &mut E,
@@ -253,6 +256,14 @@ where
             "helptopic" => crate::builtins::help::HELP_TOPICS,
             "function" => {
                 let candidates = function_completion_candidates(function_names);
+                return write_compgen_matches(
+                    candidates.iter().map(String::as_str),
+                    &parsed,
+                    stdout,
+                );
+            }
+            "job" => {
+                let candidates = job_completion_candidates(job_names);
                 return write_compgen_matches(
                     candidates.iter().map(String::as_str),
                     &parsed,
@@ -405,6 +416,13 @@ fn alias_completion_candidates(aliases: &HashMap<String, Alias>) -> Vec<String> 
 
 fn function_completion_candidates(function_names: &[String]) -> Vec<String> {
     let mut candidates = function_names.to_vec();
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
+fn job_completion_candidates(job_names: &[String]) -> Vec<String> {
+    let mut candidates = job_names.to_vec();
     candidates.sort();
     candidates.dedup();
     candidates
@@ -600,6 +618,7 @@ impl ParsedCompletionOptions {
             'c' => self.action = Some("command".to_string()),
             'd' => self.action = Some("directory".to_string()),
             'f' => self.action = Some("file".to_string()),
+            'j' => self.action = Some("job".to_string()),
             'k' => self.action = Some("keyword".to_string()),
             'v' => self.action = Some("variable".to_string()),
             _ => {}
