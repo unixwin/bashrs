@@ -53,6 +53,7 @@
 - `compgen -A stopped` 接入停止状态 job 候选框架，当前无 stopped job 状态时保持空成功。
 - `compgen -A hostname` 会基于当前 shell 的 `HOSTNAME`/`COMPUTERNAME` 生成主机名候选。
 - `compgen -A binding` 会基于 GNU Readline 默认函数名表生成 binding 候选。
+- `compgen -u` 和 `compgen -A user` 会基于当前 shell 的 `USER`/`LOGNAME`/`USERNAME` 生成用户候选。
 - `compgen -v` 和 `compgen -A variable` 会基于当前 shell 变量表生成变量名候选。
 - `compgen -a` 和 `compgen -A alias` 会基于当前 shell alias 表生成别名候选。
 - `compgen -A function` 会基于当前 shell 函数表生成函数名候选。
@@ -103,6 +104,7 @@
 - 增加 `compgen -A stopped` 无停止状态 job 时空输出成功的回归覆盖。
 - 增加 `compgen -A hostname` 主机名候选、过滤与包装回归覆盖。
 - 增加 `compgen -A binding` readline 函数候选、过滤与包装回归覆盖。
+- 增加 `compgen -u` 和 `compgen -A user` 用户候选、过滤与包装回归覆盖。
 - 增加 `compgen -v` 和 `compgen -A variable` 的变量候选、过滤与包装回归覆盖。
 - 增加 `compgen -a` 和 `compgen -A alias` 的别名候选、过滤与包装回归覆盖。
 - 增加 `compgen -A function` 的函数名候选、过滤与包装回归覆盖。

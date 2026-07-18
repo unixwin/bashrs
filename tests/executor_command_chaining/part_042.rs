@@ -1251,6 +1251,65 @@ fn test_compgen_stopped_action_succeeds_without_stopped_jobs() {
 }
 
 #[test]
+fn test_compgen_user_action_filters_user_variables() {
+    let output_path = "target/rubash-compgen-user-output.txt";
+    let status_path = "target/rubash-compgen-user-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "USER=rubash-user-alpha; LOGNAME=rubash-user-beta; USERNAME=rubash-user-gamma; \
+         compgen -A user rubash-user- > {output_path}; echo first:$? > {status_path}; \
+         compgen -A user no-such-user >> {output_path}; echo second:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "rubash-user-alpha\nrubash-user-beta\nrubash-user-gamma\n"
+    );
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_user_flag_uses_prefix_suffix_and_filter() {
+    let output_path = "target/rubash-compgen-user-flag-output.txt";
+    let status_path = "target/rubash-compgen-user-flag-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "USER=rubash-user-flag-alpha; LOGNAME=rubash-user-flag-beta; \
+         compgen -P user: -S :end -u -X '*beta' rubash-user-flag- > {output_path}; \
+         echo $? > {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "user:rubash-user-flag-alpha:end\n"
+    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_signal_action_filters_prefix_matches() {
     let output_path = "target/rubash-compgen-signal-output.txt";
     let status_path = "target/rubash-compgen-signal-status.txt";

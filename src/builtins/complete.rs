@@ -450,6 +450,14 @@ where
                 );
             }
             "stopped" => return Ok(EXECUTION_SUCCESS),
+            "user" => {
+                let candidates = user_completion_candidates(env_vars);
+                return write_compgen_matches(
+                    candidates.iter().map(String::as_str),
+                    &parsed,
+                    stdout,
+                );
+            }
             "variable" => {
                 let candidates = variable_completion_candidates(env_vars);
                 return write_compgen_matches(
@@ -531,6 +539,18 @@ fn disabled_builtin_completion_candidates(env_vars: &HashMap<String, String>) ->
 
 fn hostname_completion_candidates(env_vars: &HashMap<String, String>) -> Vec<String> {
     let mut candidates = ["HOSTNAME", "COMPUTERNAME"]
+        .iter()
+        .filter_map(|name| env_vars.get(*name))
+        .filter(|value| !value.is_empty())
+        .cloned()
+        .collect::<Vec<_>>();
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
+fn user_completion_candidates(env_vars: &HashMap<String, String>) -> Vec<String> {
+    let mut candidates = ["USER", "LOGNAME", "USERNAME"]
         .iter()
         .filter_map(|name| env_vars.get(*name))
         .filter(|value| !value.is_empty())
@@ -794,6 +814,7 @@ impl ParsedCompletionOptions {
             'f' => self.action = Some("file".to_string()),
             'j' => self.action = Some("job".to_string()),
             'k' => self.action = Some("keyword".to_string()),
+            'u' => self.action = Some("user".to_string()),
             'v' => self.action = Some("variable".to_string()),
             _ => {}
         }
