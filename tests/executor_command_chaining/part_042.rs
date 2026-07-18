@@ -212,6 +212,63 @@ fn test_compgen_arrayvar_action_uses_prefix_suffix_and_filter() {
 }
 
 #[test]
+fn test_compgen_binding_action_filters_readline_function_names() {
+    let output_path = "target/rubash-compgen-binding-output.txt";
+    let status_path = "target/rubash-compgen-binding-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "compgen -A binding beginning-of- > {output_path}; echo first:$? > {status_path}; \
+         compgen -A binding no-such-binding >> {output_path}; echo second:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "beginning-of-history\nbeginning-of-line\n"
+    );
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_binding_action_uses_prefix_suffix_and_filter() {
+    let output_path = "target/rubash-compgen-binding-action-output.txt";
+    let status_path = "target/rubash-compgen-binding-action-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "compgen -P bind: -S :end -A binding -X '*word' backward- > {output_path}; \
+         echo $? > {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "bind:backward-byte:end\nbind:backward-char:end\nbind:backward-delete-char:end\nbind:backward-kill-line:end\n"
+    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_filter_pattern_excludes_matching_candidates() {
     let output_path = "target/rubash-compgen-filter-output.txt";
     let status_path = "target/rubash-compgen-filter-status.txt";
