@@ -257,6 +257,7 @@ where
         let mut chars = arg[1..].chars().peekable();
         while let Some(option) = chars.next() {
             if flag_options.contains(option) {
+                parsed.set_flag_option(option);
                 continue;
             }
             if arg_options.contains(option) {
@@ -324,6 +325,14 @@ impl ParsedCompletionOptions {
             'X' => self.filter_pattern = Some(value),
             'P' => self.prefix = Some(value),
             'S' => self.suffix = Some(value),
+            _ => {}
+        }
+    }
+
+    fn set_flag_option(&mut self, option: char) {
+        match option {
+            'b' => self.action = Some("builtin".to_string()),
+            'k' => self.action = Some("keyword".to_string()),
             _ => {}
         }
     }
