@@ -1056,6 +1056,60 @@ fn test_compgen_job_action_uses_prefix_suffix_and_filter() {
 }
 
 #[test]
+fn test_compgen_running_action_filters_background_jobs() {
+    let output_path = "target/rubash-compgen-running-output.txt";
+    let status_path = "target/rubash-compgen-running-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "true & first=$!; false & second=$!; \
+         compgen -A running t > {output_path}; echo first:$? > {status_path}; \
+         compgen -A running z >> {output_path}; echo second:$? >> {status_path}; \
+         disown \"$first\"; disown \"$second\""
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "true\n");
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_running_action_uses_prefix_suffix_and_filter() {
+    let output_path = "target/rubash-compgen-running-action-output.txt";
+    let status_path = "target/rubash-compgen-running-action-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "true & first=$!; false & second=$!; \
+         compgen -P run: -S :end -A running -X '*false' > {output_path}; echo $? > {status_path}; \
+         disown \"$first\"; disown \"$second\""
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "run:true:end\n");
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_signal_action_filters_prefix_matches() {
     let output_path = "target/rubash-compgen-signal-output.txt";
     let status_path = "target/rubash-compgen-signal-status.txt";

@@ -279,6 +279,14 @@ where
                     stdout,
                 );
             }
+            "running" => {
+                let candidates = job_completion_candidates(job_names);
+                return write_compgen_matches(
+                    candidates.iter().map(String::as_str),
+                    &parsed,
+                    stdout,
+                );
+            }
             "signal" => crate::builtins::trap::SIGNALS.as_slice(),
             "shopt" => crate::builtins::shopt::SHOPT_OPTIONS,
             "setopt" => {
