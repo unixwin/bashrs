@@ -29,12 +29,12 @@ impl Executor {
             return Ok(None);
         };
         append_source_redirects(&mut source, command);
-        let Some(end_word) = alias_source_compound_end_word(&source) else {
+        if alias_source_compound_end_word(&source).is_none() {
             return Ok(None);
-        };
+        }
 
         let mut next_index = index + 1;
-        if !source_has_shell_word(&source, end_word) {
+        if !source_has_matching_compound_end(&source) {
             for command_index in index + 1..ast.commands.len() {
                 let Some(next_command) = ast.commands.get(command_index) else {
                     break;
@@ -45,13 +45,13 @@ impl Executor {
                     source.push_str(&command_source);
                 }
                 next_index = command_index + 1;
-                if source_has_shell_word(&source, end_word) {
+                if source_has_matching_compound_end(&source) {
                     break;
                 }
             }
         }
 
-        if !source_has_shell_word(&source, end_word) {
+        if !source_has_matching_compound_end(&source) {
             return Ok(None);
         }
 
@@ -746,10 +746,46 @@ fn alias_source_compound_end_word(source: &str) -> Option<&'static str> {
     }
 }
 
-fn source_has_shell_word(source: &str, word: &str) -> bool {
-    crate::lexer::tokenize(source)
-        .into_iter()
-        .any(|token| token.value == word)
+fn source_has_matching_compound_end(source: &str) -> bool {
+    let tokens = crate::lexer::tokenize(source);
+    let Some(first_index) = tokens
+        .iter()
+        .position(|token| token.kind != crate::lexer::TokenKind::Semicolon)
+    else {
+        return false;
+    };
+    let Some(first_end) = compound_end_word_for(tokens[first_index].value.as_str()) else {
+        return false;
+    };
+    let mut stack = vec![first_end];
+
+    for token in tokens.iter().skip(first_index + 1) {
+        if let Some(end_word) = compound_end_word_for(token.value.as_str()) {
+            stack.push(end_word);
+            continue;
+        }
+
+        if stack
+            .last()
+            .is_some_and(|end_word| token.value == *end_word)
+        {
+            stack.pop();
+            if stack.is_empty() {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+fn compound_end_word_for(word: &str) -> Option<&'static str> {
+    match word {
+        "if" => Some("fi"),
+        "case" => Some("esac"),
+        "for" | "while" | "until" | "select" => Some("done"),
+        _ => None,
+    }
 }
 
 fn alias_time_command_from_words(words: &[String], command: CommandNode) -> TimeCommand {

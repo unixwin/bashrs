@@ -258,3 +258,24 @@ fn test_alias_introduced_if_prefix_with_then_executes_body() {
     assert_eq!(fs::read_to_string(output_path).unwrap(), "yes\n");
     let _ = fs::remove_file(output_path);
 }
+
+#[test]
+fn test_alias_introduced_if_prefix_keeps_nested_if_body() {
+    let output_path = "target/rubash-alias-if-prefix-nested-if-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "shopt -s expand_aliases; alias i='if true; then'; \
+         i if false; then echo bad >> {output_path}; else echo inner >> {output_path}; fi; \
+         echo outer >> {output_path}; fi"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "inner\nouter\n");
+    let _ = fs::remove_file(output_path);
+}
