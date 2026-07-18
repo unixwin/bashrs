@@ -374,8 +374,8 @@ fn file_owned_by_effective_user(path: &str, env_vars: &HashMap<String, String>) 
 }
 
 #[cfg(not(unix))]
-fn file_owned_by_effective_user(_path: &str, _env_vars: &HashMap<String, String>) -> bool {
-    false
+fn file_owned_by_effective_user(path: &str, env_vars: &HashMap<String, String>) -> bool {
+    test_path(path, env_vars).exists()
 }
 
 #[cfg(unix)]
@@ -389,8 +389,8 @@ fn file_owned_by_effective_group(path: &str, env_vars: &HashMap<String, String>)
 }
 
 #[cfg(not(unix))]
-fn file_owned_by_effective_group(_path: &str, _env_vars: &HashMap<String, String>) -> bool {
-    false
+fn file_owned_by_effective_group(path: &str, env_vars: &HashMap<String, String>) -> bool {
+    test_path(path, env_vars).exists()
 }
 
 fn same_file(left: &str, right: &str, env_vars: &HashMap<String, String>) -> bool {

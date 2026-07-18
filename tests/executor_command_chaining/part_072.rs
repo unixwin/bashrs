@@ -534,14 +534,11 @@ fn test_conditional_ownership_unary_checks_paths() {
 
     let result = executor.execute_ast(&ast);
 
-    let expected_existing = if cfg!(unix) { "0" } else { "1" };
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(
         fs::read_to_string(output_path).unwrap(),
-        format!(
-            "{expected_existing}\n{expected_existing}\n{expected_existing}\n{expected_existing}\n1\n1\n"
-        )
+        "0\n0\n0\n0\n1\n1\n"
     );
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_file(file_path);

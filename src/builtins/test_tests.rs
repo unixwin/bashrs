@@ -100,13 +100,8 @@ fn ownership_unary_operators_check_existing_file() {
     let _ = fs::remove_file(missing);
     fs::write(path, "data").unwrap();
 
-    let expected = if cfg!(unix) {
-        EXECUTION_SUCCESS
-    } else {
-        EXECUTION_FAILURE
-    };
-    assert_eq!(run(&["-O", path], false).0, expected);
-    assert_eq!(run(&["-G", path], false).0, expected);
+    assert_eq!(run(&["-O", path], false).0, EXECUTION_SUCCESS);
+    assert_eq!(run(&["-G", path], false).0, EXECUTION_SUCCESS);
     assert_eq!(run(&["-O", missing], false).0, EXECUTION_FAILURE);
     assert_eq!(run(&["-G", missing], false).0, EXECUTION_FAILURE);
 
