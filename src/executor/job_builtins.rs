@@ -617,6 +617,7 @@ impl Executor {
             builtin,
             &cmd.words[1..],
             &self.env_vars,
+            &self.aliases,
             &self.diagnostic_prefix(),
             &mut stdout,
             &mut stderr,

@@ -94,6 +94,65 @@ fn test_compgen_wordlist_prefix_suffix_and_no_match_status() {
 }
 
 #[test]
+fn test_compgen_alias_flag_filters_alias_names() {
+    let output_path = "target/rubash-compgen-alias-output.txt";
+    let status_path = "target/rubash-compgen-alias-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "alias rubash_cg_alpha='echo a' rubash_cg_beta='echo b'; \
+         compgen -a rubash_cg_ > {output_path}; echo first:$? > {status_path}; \
+         compgen -a rubash_cg_z >> {output_path}; echo second:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "rubash_cg_alpha\nrubash_cg_beta\n"
+    );
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_alias_action_uses_prefix_suffix_and_filter() {
+    let output_path = "target/rubash-compgen-alias-action-output.txt";
+    let status_path = "target/rubash-compgen-alias-action-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "alias rubash_cga_alpha='echo a' rubash_cga_beta='echo b'; \
+         compgen -P alias: -S :end -A alias -X '*beta' rubash_cga_ > {output_path}; \
+         echo $? > {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "alias:rubash_cga_alpha:end\n"
+    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_filter_pattern_excludes_matching_candidates() {
     let output_path = "target/rubash-compgen-filter-output.txt";
     let status_path = "target/rubash-compgen-filter-status.txt";
