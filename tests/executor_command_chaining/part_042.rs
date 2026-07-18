@@ -142,6 +142,54 @@ fn test_compgen_keyword_action_filters_prefix_matches() {
 }
 
 #[test]
+fn test_compgen_shopt_action_filters_prefix_matches() {
+    let output_path = "target/rubash-compgen-shopt-output.txt";
+    let status_path = "target/rubash-compgen-shopt-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!("compgen -A shopt null > {output_path}; echo $? > {status_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "nullglob\n");
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_setopt_action_filters_prefix_matches() {
+    let output_path = "target/rubash-compgen-setopt-output.txt";
+    let status_path = "target/rubash-compgen-setopt-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "compgen -P opt: -A setopt pipe > {output_path}; echo first:$? > {status_path}; \
+         compgen -A setopt no_such >> {output_path}; echo second:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "opt:pipefail\n");
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compopt_outside_completion_function_fails() {
     let error_path = "target/rubash-compopt-error.txt";
     let status_path = "target/rubash-compopt-status.txt";

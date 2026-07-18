@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
 
-pub(super) const SHOPT_OPTIONS: &[&str] = &[
+pub(crate) const SHOPT_OPTIONS: &[&str] = &[
     "array_expand_once",
     "assoc_expand_once",
     "autocd",

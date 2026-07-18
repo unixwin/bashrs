@@ -154,6 +154,15 @@ where
         let candidates = match action {
             "builtin" => SHELL_BUILTINS,
             "keyword" => SHELL_KEYWORDS,
+            "shopt" => crate::builtins::shopt::SHOPT_OPTIONS,
+            "setopt" => {
+                return write_compgen_matches(
+                    crate::builtins::set::shell_option_names(),
+                    &parsed,
+                    CompletionMatchMode::Prefix,
+                    stdout,
+                );
+            }
             _ => return Ok(EXECUTION_SUCCESS),
         };
         return write_compgen_matches(

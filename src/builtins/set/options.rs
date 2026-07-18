@@ -210,6 +210,10 @@ pub(crate) fn is_shell_option(name: &str) -> bool {
     SHELL_OPTIONS.iter().any(|option| option.name == name)
 }
 
+pub(crate) fn shell_option_names() -> impl Iterator<Item = &'static str> {
+    SHELL_OPTIONS.iter().map(|option| option.name)
+}
+
 pub(crate) fn shell_option_enabled(env_vars: &HashMap<String, String>, name: &str) -> bool {
     let key = shell_option_key(name);
     env_vars

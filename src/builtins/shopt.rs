@@ -6,7 +6,8 @@
 mod support;
 
 pub(crate) use support::is_supported_option;
-use support::{default_state, print_all_shopts, print_shopt, print_shopts_by_state, SHOPT_OPTIONS};
+pub(crate) use support::SHOPT_OPTIONS;
+use support::{default_state, print_all_shopts, print_shopt, print_shopts_by_state};
 
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
