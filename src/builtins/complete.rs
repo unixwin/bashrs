@@ -296,6 +296,7 @@ where
                     stdout,
                 );
             }
+            "stopped" => return Ok(EXECUTION_SUCCESS),
             "variable" => {
                 let candidates = variable_completion_candidates(env_vars);
                 return write_compgen_matches(

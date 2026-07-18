@@ -1110,6 +1110,31 @@ fn test_compgen_running_action_uses_prefix_suffix_and_filter() {
 }
 
 #[test]
+fn test_compgen_stopped_action_succeeds_without_stopped_jobs() {
+    let output_path = "target/rubash-compgen-stopped-output.txt";
+    let status_path = "target/rubash-compgen-stopped-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "true & pid=$!; \
+         compgen -A stopped > {output_path}; echo $? > {status_path}; \
+         disown \"$pid\""
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "");
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_signal_action_filters_prefix_matches() {
     let output_path = "target/rubash-compgen-signal-output.txt";
     let status_path = "target/rubash-compgen-signal-status.txt";
