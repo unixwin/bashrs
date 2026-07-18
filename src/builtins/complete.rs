@@ -254,6 +254,14 @@ where
                 );
             }
             "helptopic" => crate::builtins::help::HELP_TOPICS,
+            "hostname" => {
+                let candidates = hostname_completion_candidates(env_vars);
+                return write_compgen_matches(
+                    candidates.iter().map(String::as_str),
+                    &parsed,
+                    stdout,
+                );
+            }
             "function" => {
                 let candidates = function_completion_candidates(function_names);
                 return write_compgen_matches(
@@ -371,6 +379,18 @@ fn disabled_builtin_completion_candidates(env_vars: &HashMap<String, String>) ->
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
+fn hostname_completion_candidates(env_vars: &HashMap<String, String>) -> Vec<String> {
+    let mut candidates = ["HOSTNAME", "COMPUTERNAME"]
+        .iter()
+        .filter_map(|name| env_vars.get(*name))
+        .filter(|value| !value.is_empty())
+        .cloned()
+        .collect::<Vec<_>>();
     candidates.sort();
     candidates.dedup();
     candidates

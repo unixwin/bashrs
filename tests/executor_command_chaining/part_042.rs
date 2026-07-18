@@ -943,6 +943,65 @@ fn test_compgen_helptopic_action_filters_prefix_matches() {
 }
 
 #[test]
+fn test_compgen_hostname_action_filters_host_variables() {
+    let output_path = "target/rubash-compgen-hostname-output.txt";
+    let status_path = "target/rubash-compgen-hostname-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "HOSTNAME=rubash-host-alpha; COMPUTERNAME=rubash-host-beta; \
+         compgen -A hostname rubash-host- > {output_path}; echo first:$? > {status_path}; \
+         compgen -A hostname no-such-host >> {output_path}; echo second:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "rubash-host-alpha\nrubash-host-beta\n"
+    );
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_hostname_action_uses_prefix_suffix_and_filter() {
+    let output_path = "target/rubash-compgen-hostname-action-output.txt";
+    let status_path = "target/rubash-compgen-hostname-action-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "HOSTNAME=rubash-host-action-alpha; COMPUTERNAME=rubash-host-action-beta; \
+         compgen -P host: -S :end -A hostname -X '*beta' rubash-host-action- > {output_path}; \
+         echo $? > {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "host:rubash-host-action-alpha:end\n"
+    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_function_action_filters_function_names() {
     let output_path = "target/rubash-compgen-function-output.txt";
     let status_path = "target/rubash-compgen-function-status.txt";
