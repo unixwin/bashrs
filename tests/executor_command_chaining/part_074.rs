@@ -131,6 +131,25 @@ fn test_case_command_here_string_feeds_clause_body() {
 }
 
 #[test]
+fn test_case_command_materializes_input_process_substitution_word() {
+    let output_path = "target/rubash-case-input-process-substitution-word-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "case <(printf alpha) in *process-subst*|/dev/fd/*) echo matched > {output_path} ;; *) echo missed > {output_path} ;; esac"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "matched\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_alias_introduced_case_command_redirects_clause_stdout() {
     let output_path = "target/rubash-alias-case-command-redirect-output.txt";
     let _ = fs::remove_file(output_path);

@@ -352,12 +352,19 @@ impl Executor {
         matches!(flag, 'e' | 'x' | 'u' | 'C' | 'f' | 'n') || short_set_flag_option(flag).is_some()
     }
 
-    pub(in crate::executor) fn expand_case_word(&self, word: &str) -> String {
-        if let Some(value) = tilde_expand::expand_word_prefix(word, &self.env_vars) {
-            return value;
+    pub(in crate::executor) fn expand_case_word(&mut self, word: &str) -> String {
+        let mut expanded =
+            if let Some(value) = tilde_expand::expand_word_prefix(word, &self.env_vars) {
+                value
+            } else {
+                self.expand_word(word)
+            };
+        if expanded.contains("<(") || expanded.contains(">(") {
+            expanded = self
+                .materialize_assignment_process_substitutions(&expanded)
+                .unwrap_or(expanded);
         }
-
-        self.expand_word(word)
+        expanded
     }
 
     pub(in crate::executor) fn stdin_string_for_command(
