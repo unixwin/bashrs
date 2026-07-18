@@ -189,9 +189,17 @@ fn case_boundary_word_index(command: &CommandNode) -> Option<usize> {
 }
 
 fn case_boundary_index_in_words(words: &[String]) -> Option<usize> {
-    words
-        .iter()
-        .position(|word| matches!(word.as_str(), ";;" | ";&" | ";;&" | "esac"))
+    let mut case_depth = 0usize;
+    for (index, word) in words.iter().enumerate() {
+        match word.as_str() {
+            "case" => case_depth += 1,
+            "esac" if case_depth == 0 => return Some(index),
+            "esac" => case_depth = case_depth.saturating_sub(1),
+            ";;" | ";&" | ";;&" if case_depth == 0 => return Some(index),
+            _ => {}
+        }
+    }
+    None
 }
 
 fn push_case_body_words(command: &CommandNode, words: &[String], body: &mut Vec<CommandNode>) {

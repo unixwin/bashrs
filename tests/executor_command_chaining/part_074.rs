@@ -269,3 +269,45 @@ fn test_alias_introduced_case_keeps_single_extglob_pattern() {
     assert_eq!(fs::read_to_string(output_path).unwrap(), "yes\n");
     let _ = fs::remove_file(output_path);
 }
+
+#[test]
+fn test_alias_introduced_case_keeps_nested_case_body() {
+    let output_path = "target/rubash-alias-case-nested-case-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "shopt -s expand_aliases; alias c=case; \
+         c x in x) case y in y) echo inner >> {output_path} ;; esac; \
+         echo outer >> {output_path} ;; esac"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "inner\nouter\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_alias_case_prefix_keeps_nested_case_body() {
+    let output_path = "target/rubash-alias-case-prefix-nested-case-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "shopt -s expand_aliases; alias c='case x in'; \
+         c x) case y in y) echo inner >> {output_path} ;; esac; \
+         echo outer >> {output_path} ;; esac"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "inner\nouter\n");
+    let _ = fs::remove_file(output_path);
+}
