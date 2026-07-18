@@ -17,6 +17,7 @@ const EXPORTED_VARS: &str = "__RUBASH_EXPORTED_VARS";
 const READONLY_VARS: &str = "__RUBASH_READONLY_VARS";
 const ARRAY_VARS: &str = "__RUBASH_ARRAY_VARS";
 const ASSOC_VARS: &str = "__RUBASH_ASSOC_VARS";
+const SERVICE_NAMES: &str = "__RUBASH_SERVICE_NAMES";
 const SHELL_BUILTINS: &[&str] = &[
     ".",
     ":",
@@ -448,6 +449,14 @@ where
                     stdout,
                 );
             }
+            "service" => {
+                let candidates = service_completion_candidates(env_vars);
+                return write_compgen_matches(
+                    candidates.iter().map(String::as_str),
+                    &parsed,
+                    stdout,
+                );
+            }
             "signal" => crate::builtins::trap::SIGNALS.as_slice(),
             "shopt" => crate::builtins::shopt::SHOPT_OPTIONS,
             "setopt" => {
@@ -576,6 +585,19 @@ fn group_completion_candidates(env_vars: &HashMap<String, String>) -> Vec<String
         .filter(|value| !value.is_empty())
         .cloned()
         .collect::<Vec<_>>();
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
+fn service_completion_candidates(env_vars: &HashMap<String, String>) -> Vec<String> {
+    let mut candidates = ["SERVICE", "SERVICENAME"]
+        .iter()
+        .filter_map(|name| env_vars.get(*name))
+        .filter(|value| !value.is_empty())
+        .cloned()
+        .collect::<Vec<_>>();
+    candidates.extend(marked_completion_names(env_vars, SERVICE_NAMES));
     candidates.sort();
     candidates.dedup();
     candidates
@@ -835,6 +857,7 @@ impl ParsedCompletionOptions {
             'g' => self.action = Some("group".to_string()),
             'j' => self.action = Some("job".to_string()),
             'k' => self.action = Some("keyword".to_string()),
+            's' => self.action = Some("service".to_string()),
             'u' => self.action = Some("user".to_string()),
             'v' => self.action = Some("variable".to_string()),
             _ => {}

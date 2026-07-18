@@ -1177,6 +1177,65 @@ fn test_compgen_group_flag_uses_prefix_suffix_and_filter() {
 }
 
 #[test]
+fn test_compgen_service_action_filters_service_variables() {
+    let output_path = "target/rubash-compgen-service-output.txt";
+    let status_path = "target/rubash-compgen-service-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "SERVICE=rubash-service-alpha; SERVICENAME=rubash-service-beta; \
+         compgen -A service rubash-service- > {output_path}; echo first:$? > {status_path}; \
+         compgen -A service no-such-service >> {output_path}; echo second:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "rubash-service-alpha\nrubash-service-beta\n"
+    );
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_service_flag_uses_prefix_suffix_and_filter() {
+    let output_path = "target/rubash-compgen-service-flag-output.txt";
+    let status_path = "target/rubash-compgen-service-flag-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "SERVICE=rubash-service-flag-alpha; SERVICENAME=rubash-service-flag-beta; \
+         compgen -P svc: -S :end -s -X '*beta' rubash-service-flag- > {output_path}; \
+         echo $? > {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "svc:rubash-service-flag-alpha:end\n"
+    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_job_flag_filters_background_jobs() {
     let output_path = "target/rubash-compgen-job-output.txt";
     let status_path = "target/rubash-compgen-job-status.txt";
