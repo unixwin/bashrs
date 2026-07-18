@@ -4,13 +4,22 @@ on:
   push:
     tags:
       - "v[0-9]*.[0-9]*.0"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, for example v0.2.0"
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
   cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   rust:
@@ -20,9 +29,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
           submodules: recursive
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Verify formatting
+        run: cargo fmt --check
 
       - name: Run cargo tests
         run: cargo test
@@ -34,6 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
           submodules: recursive
 
       - uses: dtolnay/rust-toolchain@stable
@@ -51,6 +67,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
           submodules: recursive
 
       - uses: dtolnay/rust-toolchain@stable
@@ -85,17 +102,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
           submodules: recursive
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Verify release tag matches Cargo version
+      - name: Verify release tag
         shell: bash
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
+          tag="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.0$ ]]; then
             echo "Release tags must look like v0.2.0, v1.0.0, etc. Got: $tag" >&2
+            exit 1
+          fi
+
+          if ! git rev-parse --quiet --verify "refs/tags/$tag" >/dev/null; then
+            echo "Release tag does not exist: $tag" >&2
+            exit 1
+          fi
+
+          tag_sha="$(git rev-list -n 1 "$tag")"
+          head_sha="$(git rev-parse HEAD)"
+          if [[ "$tag_sha" != "$head_sha" ]]; then
+            echo "Checked-out commit $head_sha does not match $tag at $tag_sha" >&2
             exit 1
           fi
 
@@ -117,10 +148,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          tag="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           mkdir -p dist
           cp target/release/rubash dist/rubash
-          tar -C dist -czf "dist/rubash-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz" rubash
-          sha256sum "dist/rubash-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz" > dist/SHA256SUMS
+          tar -C dist -czf "dist/rubash-${tag}-x86_64-unknown-linux-gnu.tar.gz" rubash
+          sha256sum "dist/rubash-${tag}-x86_64-unknown-linux-gnu.tar.gz" > dist/SHA256SUMS
 
       - name: Create GitHub release
         env:
@@ -128,9 +160,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "$GITHUB_REF_NAME" \
-            "dist/rubash-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz" \
+          tag="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          gh release create "$tag" \
+            "dist/rubash-${tag}-x86_64-unknown-linux-gnu.tar.gz" \
             "dist/SHA256SUMS" \
-            --title "$GITHUB_REF_NAME" \
+            --title "$tag" \
             --generate-notes \
+            --latest \
             --verify-tag
