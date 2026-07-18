@@ -268,6 +268,42 @@ fn test_for_command_input_redirect_feeds_body_reads() {
 }
 
 #[test]
+fn test_for_command_materializes_input_process_substitution_words() {
+    let output_path = "target/rubash-for-input-process-substitution-word-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "for path in <(printf alpha); do [[ -e $path ]]; echo exists:$? > {output_path}; cat \"$path\" >> {output_path}; done"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "exists:0\nalpha");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_for_command_materializes_output_process_substitution_words() {
+    let output_path = "target/rubash-for-output-process-substitution-word-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!("for path in >(cat > {output_path}); do printf alpha > \"$path\"; done");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "alpha");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_for_command_here_string_feeds_body_read() {
     let output_path = "target/rubash-for-command-herestring-output.txt";
     let _ = fs::remove_file(output_path);

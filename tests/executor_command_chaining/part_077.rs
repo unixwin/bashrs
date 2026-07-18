@@ -89,6 +89,44 @@ fn test_select_command_input_redirect_feeds_choice() {
 }
 
 #[test]
+fn test_select_command_materializes_input_process_substitution_words() {
+    let output_path = "target/rubash-select-input-process-substitution-word-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "select path in <(printf alpha); do [[ -e $path ]]; echo exists:$? > {output_path}; break; done <<< '1'"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "exists:0\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_select_command_materializes_output_process_substitution_words() {
+    let output_path = "target/rubash-select-output-process-substitution-word-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "select path in >(cat > {output_path}); do printf alpha > \"$path\"; break; done <<< '1'"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "alpha");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_select_without_in_uses_positional_params() {
     let output_path = "target/rubash-select-default-positional-output.txt";
     let _ = fs::remove_file(output_path);

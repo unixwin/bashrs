@@ -48,7 +48,7 @@ impl Executor {
     }
 
     pub(in crate::executor) fn expand_for_word_values_result(
-        &self,
+        &mut self,
         word: &str,
         raw: Option<&str>,
     ) -> Result<Vec<String>, String> {
@@ -78,8 +78,13 @@ impl Executor {
         self.expand_for_brace_word_values(word)
     }
 
-    fn expand_for_brace_word_values(&self, word: &str) -> Result<Vec<String>, String> {
-        let expanded = self.expand_word(word);
+    fn expand_for_brace_word_values(&mut self, word: &str) -> Result<Vec<String>, String> {
+        let mut expanded = self.expand_word(word);
+        if expanded.contains("<(") || expanded.contains(">(") {
+            expanded = self
+                .materialize_assignment_process_substitutions(&expanded)
+                .unwrap_or(expanded);
+        }
         if for_word_has_unquoted_expansion(word) {
             return Ok(expanded.split_whitespace().map(str::to_string).collect());
         }
