@@ -12,6 +12,8 @@ use crate::builtins::alias::Alias;
 const EXECUTION_SUCCESS: i32 = 0;
 const EXECUTION_FAILURE: i32 = 1;
 const EX_USAGE: i32 = 2;
+const ARRAY_VARS: &str = "__RUBASH_ARRAY_VARS";
+const ASSOC_VARS: &str = "__RUBASH_ASSOC_VARS";
 const SHELL_BUILTINS: &[&str] = &[
     ".",
     ":",
@@ -186,6 +188,14 @@ where
                     stdout,
                 );
             }
+            "arrayvar" => {
+                let candidates = array_variable_completion_candidates(env_vars);
+                return write_compgen_matches(
+                    candidates.iter().map(String::as_str),
+                    &parsed,
+                    stdout,
+                );
+            }
             "builtin" => SHELL_BUILTINS,
             "command" => {
                 let candidates = command_completion_candidates(env_vars, aliases, function_names);
@@ -291,6 +301,26 @@ fn variable_completion_candidates(env_vars: &HashMap<String, String>) -> Vec<Str
     candidates.sort();
     candidates.dedup();
     candidates
+}
+
+fn array_variable_completion_candidates(env_vars: &HashMap<String, String>) -> Vec<String> {
+    let mut candidates = BTreeSet::new();
+    candidates.extend(marked_completion_names(env_vars, ARRAY_VARS));
+    candidates.extend(marked_completion_names(env_vars, ASSOC_VARS));
+    candidates.into_iter().collect()
+}
+
+fn marked_completion_names(env_vars: &HashMap<String, String>, key: &str) -> Vec<String> {
+    env_vars
+        .get(key)
+        .map(|value| {
+            value
+                .split('\x1f')
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn alias_completion_candidates(aliases: &HashMap<String, Alias>) -> Vec<String> {

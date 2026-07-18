@@ -153,6 +153,65 @@ fn test_compgen_alias_action_uses_prefix_suffix_and_filter() {
 }
 
 #[test]
+fn test_compgen_arrayvar_action_filters_array_variables() {
+    let output_path = "target/rubash-compgen-arrayvar-output.txt";
+    let status_path = "target/rubash-compgen-arrayvar-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "rubash_cgav_indexed=(a); declare -A rubash_cgav_assoc=([k]=v); rubash_cgav_scalar=s; \
+         compgen -A arrayvar rubash_cgav_ > {output_path}; echo first:$? > {status_path}; \
+         compgen -A arrayvar rubash_cgav_z >> {output_path}; echo second:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "rubash_cgav_assoc\nrubash_cgav_indexed\n"
+    );
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_arrayvar_action_uses_prefix_suffix_and_filter() {
+    let output_path = "target/rubash-compgen-arrayvar-action-output.txt";
+    let status_path = "target/rubash-compgen-arrayvar-action-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "rubash_cgava_indexed=(a); declare -A rubash_cgava_assoc=([k]=v); \
+         compgen -P array: -S :end -A arrayvar -X '*assoc' rubash_cgava_ > {output_path}; \
+         echo $? > {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "array:rubash_cgava_indexed:end\n"
+    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_filter_pattern_excludes_matching_candidates() {
     let output_path = "target/rubash-compgen-filter-output.txt";
     let status_path = "target/rubash-compgen-filter-status.txt";
