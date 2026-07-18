@@ -316,6 +316,28 @@ impl Executor {
         Ok(())
     }
 
+    pub(in crate::executor) fn materialize_assignment_process_substitutions(
+        &mut self,
+        value: &str,
+    ) -> Result<String, ExecuteError> {
+        if !value.contains("<(") && !value.contains(">(") {
+            return Ok(value.to_string());
+        }
+
+        let mut word = value.to_string();
+        let mut files = ProcessSubstitutionFiles::default();
+        let substitutions =
+            crate::parser::WordMetadata::new(0, value.to_string(), value.to_string())
+                .process_substitutions;
+
+        if substitutions.is_empty() {
+            self.materialize_standalone_process_substitution_word(&mut word, &mut files)?;
+        } else {
+            self.materialize_process_substitution_word(&mut word, substitutions, &mut files)?;
+        }
+        Ok(word)
+    }
+
     fn apply_default_external_stdin_file(
         &mut self,
         rewritten: &mut CommandNode,

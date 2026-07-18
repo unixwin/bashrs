@@ -34,6 +34,11 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                 if state.current_cmd.words.is_empty() {
                     let var_name = token.value[..pos].to_string();
                     let mut var_value = token.value[pos + 1..].to_string();
+                    let mut raw_assignment_value = token
+                        .raw
+                        .split_once('=')
+                        .map(|(_, raw)| raw.to_string())
+                        .unwrap_or_else(|| var_value.clone());
                     if var_value.is_empty() {
                         if let Some((compound_value, next_i)) =
                             collect_compound_assignment(tokens, *i)
@@ -51,6 +56,13 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                             var_value = format!("\x1e{compound_value}");
                             *i = next_i;
                         }
+                    }
+                    if let Some((value, raw, next_i)) =
+                        collect_adjacent_assignment_process_substitution(tokens, *i, token)
+                    {
+                        var_value.push_str(&value);
+                        raw_assignment_value.push_str(&raw);
+                        *i = next_i;
                     }
                     let assignment_name = var_name.strip_suffix('+').unwrap_or(&var_name);
                     record_command_substitutions_for_assignment(
@@ -71,26 +83,25 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                         &var_value,
                         None,
                     );
-                    let raw_assignment_value = token.raw.split_once('=').map(|(_, raw)| raw);
                     record_brace_expansions_for_assignment(
                         &mut state.current_cmd,
                         assignment_name,
                         &var_value,
-                        raw_assignment_value.unwrap_or(&var_value),
+                        &raw_assignment_value,
                         None,
                     );
                     record_extglob_patterns_for_assignment(
                         &mut state.current_cmd,
                         assignment_name,
                         &var_value,
-                        raw_assignment_value.unwrap_or(&var_value),
+                        &raw_assignment_value,
                         None,
                     );
                     record_tilde_expansions_for_assignment(
                         &mut state.current_cmd,
                         assignment_name,
                         &var_value,
-                        raw_assignment_value.unwrap_or(&var_value),
+                        &raw_assignment_value,
                         None,
                     );
                     if let Some((_, raw_value)) = token.raw.split_once('=') {
@@ -567,6 +578,18 @@ fn collect_adjacent_process_substitution_word(
     }
 
     (saw_process_substitution && index > start).then_some((value, raw, index - 1))
+}
+
+fn collect_adjacent_assignment_process_substitution<'a>(
+    tokens: &'a [Token],
+    current: usize,
+    assignment: &Token,
+) -> Option<(String, String, usize)> {
+    let next = tokens.get(current + 1)?;
+    if next.column != assignment.column + assignment.raw.len() {
+        return None;
+    }
+    collect_adjacent_process_substitution_word(tokens, current + 1)
 }
 
 fn adjacent_word_token(token: &Token) -> bool {
