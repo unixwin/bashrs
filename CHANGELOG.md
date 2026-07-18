@@ -46,7 +46,8 @@
 - `compgen -d` 和 `compgen -A directory` 会从文件系统生成目录候选，并支持 prefix 过滤、`-P`/`-S` 包装和 `-X` 过滤。
 - `compgen -f` 和 `compgen -A file` 会从文件系统生成文件名候选，包含普通文件和目录，并支持现有候选过滤与包装流程。
 - `compgen -A helptopic` 会复用 `help` 主题表生成帮助主题候选。
-- `compgen -A enabled` 会生成当前支持的启用内建命令候选。
+- `compgen -A enabled` 会生成当前支持且未被禁用的启用内建命令候选。
+- `compgen -A disabled` 会基于 `enable -n` 状态生成禁用内建命令候选。
 - `compgen -v` 和 `compgen -A variable` 会基于当前 shell 变量表生成变量名候选。
 - `compgen -a` 和 `compgen -A alias` 会基于当前 shell alias 表生成别名候选。
 - `compgen -A function` 会基于当前 shell 函数表生成函数名候选。
@@ -91,6 +92,7 @@
 - 增加 `compgen -f` 和 `compgen -A file` 的文件名候选、过滤与包装回归覆盖。
 - 增加 `compgen -A helptopic` 候选输出与无匹配状态的回归覆盖。
 - 增加 `compgen -A enabled` 候选输出与无匹配状态的回归覆盖。
+- 增加 `compgen -A disabled` 禁用内建命令候选和 `compgen -A enabled` 排除禁用项的回归覆盖。
 - 增加 `compgen -v` 和 `compgen -A variable` 的变量候选、过滤与包装回归覆盖。
 - 增加 `compgen -a` 和 `compgen -A alias` 的别名候选、过滤与包装回归覆盖。
 - 增加 `compgen -A function` 的函数名候选、过滤与包装回归覆盖。

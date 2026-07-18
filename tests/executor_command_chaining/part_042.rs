@@ -640,6 +640,61 @@ fn test_compgen_enabled_action_filters_prefix_matches() {
 }
 
 #[test]
+fn test_compgen_enabled_action_omits_disabled_builtins() {
+    let output_path = "target/rubash-compgen-enabled-disabled-output.txt";
+    let status_path = "target/rubash-compgen-enabled-disabled-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "enable -n printf; \
+         compgen -A enabled pr > {output_path}; echo $? > {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "");
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "1\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_disabled_action_filters_disabled_builtins() {
+    let output_path = "target/rubash-compgen-disabled-output.txt";
+    let status_path = "target/rubash-compgen-disabled-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "enable -n printf pwd; \
+         compgen -P disabled: -S :end -A disabled -X '*pwd' p > {output_path}; echo first:$? > {status_path}; \
+         compgen -A disabled z >> {output_path}; echo second:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "disabled:printf:end\n"
+    );
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_variable_flag_filters_shell_variables() {
     let output_path = "target/rubash-compgen-variable-output.txt";
     let status_path = "target/rubash-compgen-variable-status.txt";

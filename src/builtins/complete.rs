@@ -12,6 +12,7 @@ use crate::builtins::alias::Alias;
 const EXECUTION_SUCCESS: i32 = 0;
 const EXECUTION_FAILURE: i32 = 1;
 const EX_USAGE: i32 = 2;
+const DISABLED_BUILTINS: &str = "__RUBASH_DISABLED_BUILTINS";
 const EXPORTED_VARS: &str = "__RUBASH_EXPORTED_VARS";
 const READONLY_VARS: &str = "__RUBASH_READONLY_VARS";
 const ARRAY_VARS: &str = "__RUBASH_ARRAY_VARS";
@@ -225,7 +226,22 @@ where
                     stdout,
                 );
             }
-            "enabled" => SHELL_BUILTINS,
+            "disabled" => {
+                let candidates = disabled_builtin_completion_candidates(env_vars);
+                return write_compgen_matches(
+                    candidates.iter().map(String::as_str),
+                    &parsed,
+                    stdout,
+                );
+            }
+            "enabled" => {
+                let candidates = enabled_builtin_completion_candidates(env_vars);
+                return write_compgen_matches(
+                    candidates.iter().map(String::as_str),
+                    &parsed,
+                    stdout,
+                );
+            }
             "export" => {
                 let candidates = exported_variable_completion_candidates(env_vars);
                 return write_compgen_matches(
@@ -312,6 +328,32 @@ fn path_completion_base(word: &str) -> (&str, &str) {
         return (&word[..1], &word[..1]);
     }
     (&word[..separator_index], &word[..=separator_index])
+}
+
+fn enabled_builtin_completion_candidates(env_vars: &HashMap<String, String>) -> Vec<String> {
+    let disabled = disabled_builtin_completion_candidates(env_vars);
+    SHELL_BUILTINS
+        .iter()
+        .copied()
+        .filter(|name| !disabled.iter().any(|disabled_name| disabled_name == name))
+        .map(str::to_string)
+        .collect()
+}
+
+fn disabled_builtin_completion_candidates(env_vars: &HashMap<String, String>) -> Vec<String> {
+    let mut candidates = env_vars
+        .get(DISABLED_BUILTINS)
+        .map(|value| {
+            value
+                .split(':')
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    candidates.sort();
+    candidates.dedup();
+    candidates
 }
 
 fn variable_completion_candidates(env_vars: &HashMap<String, String>) -> Vec<String> {
