@@ -801,6 +801,33 @@ fn test_conditional_v_expands_dynamic_operand() {
 }
 
 #[test]
+fn test_v_checks_dynamic_bash_parameters() {
+    let output_path = "target/rubash-v-dynamic-parameters-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "[[ -v RANDOM ]]; echo cond_random:$? > {output_path}; \
+         [[ -v RANDOM[0] ]]; echo cond_random_zero:$? >> {output_path}; \
+         test -v SECONDS; echo test_seconds:$? >> {output_path}; \
+         test -v 'SECONDS[0]'; echo test_seconds_zero:$? >> {output_path}; \
+         [[ -v BASH_COMMAND ]]; echo cond_command:$? >> {output_path}; \
+         [[ -v missing_dynamic ]]; echo cond_missing:$? >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "cond_random:0\ncond_random_zero:0\ntest_seconds:0\ntest_seconds_zero:0\ncond_command:0\ncond_missing:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_conditional_r_checks_nameref_variables() {
     let output_path = "target/rubash-conditional-nameref-unary-output.txt";
     let _ = fs::remove_file(output_path);

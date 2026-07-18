@@ -27,7 +27,7 @@ pub(crate) fn variable_is_set(operand: &str, env_vars: &HashMap<String, String>)
         let arrays = marked_vars(env_vars, ARRAY_VARS);
         let assocs = marked_vars(env_vars, ASSOC_VARS);
         let Some(value) = env_vars.get(name) else {
-            return false;
+            return subscript == "0" && dynamic_parameter_is_set(name);
         };
 
         if assocs.iter().any(|marked| marked == name) {
@@ -59,7 +59,30 @@ pub(crate) fn variable_is_set(operand: &str, env_vars: &HashMap<String, String>)
             .unwrap_or(false);
     }
 
-    env_vars.contains_key(operand) || env::var_os(operand).is_some()
+    env_vars.contains_key(operand)
+        || env::var_os(operand).is_some()
+        || dynamic_parameter_is_set(operand)
+}
+
+fn dynamic_parameter_is_set(name: &str) -> bool {
+    matches!(
+        name,
+        "EPOCHSECONDS"
+            | "EPOCHREALTIME"
+            | "SECONDS"
+            | "RANDOM"
+            | "SRANDOM"
+            | "BASHPID"
+            | "BASH_SUBSHELL"
+            | "BASH_ARGV0"
+            | "FUNCNAME"
+            | "GROUPS"
+            | "LINENO"
+            | "BASH_COMMAND"
+            | "SHELLOPTS"
+            | "BASHOPTS"
+            | "PIPESTATUS"
+    )
 }
 
 fn parse_array_subscript(value: &str) -> Option<(&str, &str)> {
