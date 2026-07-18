@@ -853,6 +853,7 @@ impl ParsedCompletionOptions {
             'b' => self.action = Some("builtin".to_string()),
             'c' => self.action = Some("command".to_string()),
             'd' => self.action = Some("directory".to_string()),
+            'e' => self.action = Some("export".to_string()),
             'f' => self.action = Some("file".to_string()),
             'g' => self.action = Some("group".to_string()),
             'j' => self.action = Some("job".to_string()),
