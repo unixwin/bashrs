@@ -8,7 +8,7 @@
 
 ### 构建
 
-- CI 在推送 `vX.Y.Z` 标准版本 tag 后，会等待测试通过并自动创建 GitHub Release，支持 `v0.2.0` 这类次版本发行。
+- CI 在推送 `vN.0.0` 大版本 tag 后，会等待测试通过并自动创建 GitHub Release。
 
 ### 修复
 
