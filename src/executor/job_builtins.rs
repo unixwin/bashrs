@@ -630,9 +630,56 @@ impl Executor {
             &mut stdout,
             &mut stderr,
         )?;
+        if matches!(
+            builtin,
+            crate::builtins::complete::CompletionBuiltin::Compgen
+        ) {
+            if let Some(varname) = compgen_array_target(&cmd.words[1..]) {
+                if status == 0 {
+                    let values = String::from_utf8_lossy(&stdout)
+                        .lines()
+                        .map(str::to_string)
+                        .collect();
+                    store_indexed_array(&mut self.env_vars, &varname, values);
+                }
+                stdout.clear();
+            }
+        }
         self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
         Ok(status)
     }
+}
+
+fn compgen_array_target(words: &[String]) -> Option<String> {
+    let mut index = 0;
+    while let Some(word) = words.get(index) {
+        if word == "--" || !word.starts_with('-') || word == "-" {
+            return None;
+        }
+
+        let mut chars = word[1..].char_indices().peekable();
+        while let Some((offset, option)) = chars.next() {
+            match option {
+                'V' => {
+                    let value_start = 1 + offset + option.len_utf8();
+                    if value_start < word.len() {
+                        return Some(word[value_start..].to_string());
+                    }
+                    return words.get(index + 1).cloned();
+                }
+                'A' | 'C' | 'F' | 'G' | 'P' | 'S' | 'W' | 'X' | 'o' => {
+                    if chars.peek().is_none() {
+                        index += 1;
+                    }
+                    break;
+                }
+                _ => {}
+            }
+        }
+        index += 1;
+    }
+
+    None
 }
 
 struct WaitAnyRequest {

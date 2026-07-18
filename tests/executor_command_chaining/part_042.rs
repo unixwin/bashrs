@@ -94,6 +94,59 @@ fn test_compgen_wordlist_prefix_suffix_and_no_match_status() {
 }
 
 #[test]
+fn test_compgen_v_assigns_matches_to_indexed_array() {
+    let output_path = "target/rubash-compgen-v-output.txt";
+    let status_path = "target/rubash-compgen-v-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "compgen -V matches -W 'alpha amber beta' a > {output_path}; \
+         echo $? > {status_path}; \
+         printf '<%s>|<%s>|<%s>\\n' \"${{matches[0]}}\" \"${{matches[1]}}\" \"${{#matches[@]}}\" >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "<alpha>|<amber>|<2>\n"
+    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_compact_v_assigns_matches_to_indexed_array() {
+    let output_path = "target/rubash-compgen-compact-v-output.txt";
+    let status_path = "target/rubash-compgen-compact-v-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "compgen -Vmatches -W 'red blue brown' b > {output_path}; \
+         echo $? > {status_path}; \
+         printf '%s:%s:%s\\n' \"${{matches[0]}}\" \"${{matches[1]}}\" \"${{#matches[@]}}\" >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "blue:brown:2\n");
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_alias_flag_filters_alias_names() {
     let output_path = "target/rubash-compgen-alias-output.txt";
     let status_path = "target/rubash-compgen-alias-status.txt";

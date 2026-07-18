@@ -304,7 +304,7 @@ where
         CompletionBuiltin::Compgen,
         args,
         "abcdefgjksuv",
-        "oAGWFCXPS",
+        "oAGWFCXPSV",
         diagnostic_prefix,
         stderr,
     )?;
@@ -843,6 +843,7 @@ impl ParsedCompletionOptions {
             'X' => self.filter_pattern = Some(value),
             'P' => self.prefix = Some(value),
             'S' => self.suffix = Some(value),
+            'V' => {}
             _ => {}
         }
     }
@@ -970,7 +971,7 @@ where
             "complete: usage: complete [-abcdefgjksuv] [-pr] [-DEI] [-o option] [-A action] [-G globpat] [-W wordlist] [-F function] [-C command] [-X filterpat] [-P prefix] [-S suffix] [name ...]"
         }
         CompletionBuiltin::Compgen => {
-            "compgen: usage: compgen [-abcdefgjksuv] [-o option] [-A action] [-G globpat] [-W wordlist] [-F function] [-C command] [-X filterpat] [-P prefix] [-S suffix] [word]"
+            "compgen: usage: compgen [-V varname] [-abcdefgjksuv] [-o option] [-A action] [-G globpat] [-W wordlist] [-F function] [-C command] [-X filterpat] [-P prefix] [-S suffix] [word]"
         }
         CompletionBuiltin::Compopt => {
             "compopt: usage: compopt [-o|+o option] [-DEI] [name ...]"
