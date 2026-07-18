@@ -5,8 +5,6 @@ on:
   push:
     branches:
       - master
-    tags:
-      - "v[0-9]*.[0-9]*.[0-9]*"
 
 permissions:
   contents: read
@@ -74,67 +72,3 @@ jobs:
             target/bash-upstream-tests/summary.md
             target/bash-upstream-tests/results.tsv
             target/bash-upstream-tests/logs
-
-  github-release:
-    name: Build and publish GitHub release
-    runs-on: ubuntu-latest
-    needs:
-      - rust
-      - shell-functionality
-      - bash-upstream-progress
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Verify release tag matches Cargo version
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
-          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release tags must look like v0.2.0, v1.0.0, etc. Got: $tag" >&2
-            exit 1
-          fi
-
-          version="${tag#v}"
-          cargo_pkgid="$(cargo pkgid)"
-          cargo_version="${cargo_pkgid##*@}"
-          if [[ "$version" != "$cargo_version" ]]; then
-            echo "Tag $tag does not match Cargo.toml version $cargo_version" >&2
-            exit 1
-          fi
-
-      - name: Verify package
-        run: cargo package --locked
-
-      - name: Build release binary
-        run: cargo build --release --locked
-
-      - name: Package Linux binary
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          cp target/release/rubash dist/rubash
-          tar -C dist -czf "dist/rubash-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz" rubash
-          sha256sum "dist/rubash-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz" > dist/SHA256SUMS
-
-      - name: Create GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh release create "$GITHUB_REF_NAME" \
-            "dist/rubash-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz" \
-            "dist/SHA256SUMS" \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes \
-            --verify-tag

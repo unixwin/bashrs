@@ -1,0 +1,136 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rust:
+    name: Rust tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Run cargo tests
+        run: cargo test
+
+  shell-functionality:
+    name: Shell functionality tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build rubash
+        run: cargo build
+
+      - name: Run shell functionality tests
+        run: bash tests/run_all_tests.sh
+
+  bash-upstream-progress:
+    name: Bash upstream test progress
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Run GNU Bash upstream tests
+        run: scripts/run-bash-upstream-tests.sh
+
+      - name: Publish progress summary
+        if: always()
+        run: cat target/bash-upstream-tests/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload upstream test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bash-upstream-test-progress
+          path: |
+            target/bash-upstream-tests/summary.md
+            target/bash-upstream-tests/results.tsv
+            target/bash-upstream-tests/logs
+
+  github-release:
+    name: Build and publish GitHub release
+    runs-on: ubuntu-latest
+    needs:
+      - rust
+      - shell-functionality
+      - bash-upstream-progress
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify release tag matches Cargo version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must look like v0.2.0, v1.0.0, etc. Got: $tag" >&2
+            exit 1
+          fi
+
+          version="${tag#v}"
+          cargo_pkgid="$(cargo pkgid)"
+          cargo_version="${cargo_pkgid##*@}"
+          if [[ "$version" != "$cargo_version" ]]; then
+            echo "Tag $tag does not match Cargo.toml version $cargo_version" >&2
+            exit 1
+          fi
+
+      - name: Verify package
+        run: cargo package --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Package Linux binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp target/release/rubash dist/rubash
+          tar -C dist -czf "dist/rubash-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz" rubash
+          sha256sum "dist/rubash-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz" > dist/SHA256SUMS
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/rubash-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz" \
+            "dist/SHA256SUMS" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag
