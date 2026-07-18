@@ -368,8 +368,9 @@ impl Executor {
         if !backtick_substitution_spans_whole_word(word) {
             return None;
         }
-        let source = word.strip_prefix('`')?.strip_suffix('`')?;
-        Some(self.expand_command_substitution(source))
+        let source =
+            decode_backtick_substitution_source(word.strip_prefix('`')?.strip_suffix('`')?);
+        Some(self.expand_command_substitution(&source))
     }
 
     pub(in crate::executor) fn expand_dirstack_tilde(&self, word: &str) -> Option<String> {
@@ -439,4 +440,22 @@ impl Executor {
             });
         ndirs.checked_sub(rhs)
     }
+}
+
+fn decode_backtick_substitution_source(source: &str) -> String {
+    let mut decoded = String::new();
+    let mut chars = source.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\x1a' => decoded.push('`'),
+            '\\' if chars.peek().copied() == Some('`') => {
+                chars.next();
+                decoded.push('`');
+            }
+            _ => decoded.push(ch),
+        }
+    }
+
+    decoded
 }

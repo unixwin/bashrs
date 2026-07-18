@@ -151,8 +151,26 @@ pub(in crate::executor) fn split_shell_words(source: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut current = String::new();
     let mut quote = None;
-    for ch in source.chars() {
+    let mut backtick = false;
+    let mut chars = source.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if backtick {
+            current.push(ch);
+            if ch == '\\' {
+                if let Some(escaped) = chars.next() {
+                    current.push(escaped);
+                }
+            } else if ch == '`' {
+                backtick = false;
+            }
+            continue;
+        }
+
         match (ch, quote) {
+            ('`', None) => {
+                backtick = true;
+                current.push(ch);
+            }
             ('\'' | '"', None) => quote = Some(ch),
             (q, Some(active)) if q == active => quote = None,
             (' ' | '\t', None) => {

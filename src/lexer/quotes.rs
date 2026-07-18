@@ -57,6 +57,8 @@ pub(crate) fn remove_shell_quotes(raw: &str) -> String {
                 if let Some(escaped) = chars.next() {
                     if escaped == '$' {
                         out.push('\x1f');
+                    } else if escaped == '`' {
+                        out.push('\x1a');
                     } else if escaped == '\'' {
                         out.push('\x17');
                     } else {
@@ -110,6 +112,8 @@ pub(super) fn remove_shell_quotes_outside_backticks(raw: &str) -> String {
                 if let Some(escaped) = chars.next() {
                     if escaped == '\'' {
                         out.push('\x17');
+                    } else if escaped == '`' {
+                        out.push('\x1a');
                     } else {
                         out.push(escaped);
                     }

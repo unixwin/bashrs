@@ -390,7 +390,8 @@ fn backtick_command_substitution(
         }
         if ch == '`' {
             let text = chars[start..=index].iter().collect();
-            let source = chars[start + 1..index].iter().collect();
+            let source =
+                decode_backtick_substitution_source(chars[start + 1..index].iter().copied());
             return Some((
                 command_substitution_node(text, source, true, false, false),
                 index + 1,
@@ -399,6 +400,27 @@ fn backtick_command_substitution(
         index += 1;
     }
     None
+}
+
+fn decode_backtick_substitution_source<I>(chars: I) -> String
+where
+    I: IntoIterator<Item = char>,
+{
+    let mut decoded = String::new();
+    let mut chars = chars.into_iter().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\x1a' => decoded.push('`'),
+            '\\' if chars.peek().copied() == Some('`') => {
+                chars.next();
+                decoded.push('`');
+            }
+            _ => decoded.push(ch),
+        }
+    }
+
+    decoded
 }
 
 fn command_substitution_node(

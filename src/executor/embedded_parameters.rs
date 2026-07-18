@@ -46,7 +46,9 @@ impl Executor {
                     source.push(source_ch);
                 }
                 if closed {
-                    output.push_str(&self.expand_command_substitution(&source));
+                    output.push_str(&self.expand_command_substitution(
+                        &decode_backtick_substitution_source(&source),
+                    ));
                 } else {
                     output.push('`');
                     output.push_str(&self.expand_embedded_parameters(&source));
@@ -262,6 +264,24 @@ impl Executor {
         self.expand_embedded_parameters(&protected)
             .replace(PROTECTED_ESCAPED_SINGLE_QUOTE, "\x17")
     }
+}
+
+fn decode_backtick_substitution_source(source: &str) -> String {
+    let mut decoded = String::new();
+    let mut chars = source.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\x1a' => decoded.push('`'),
+            '\\' if chars.peek().copied() == Some('`') => {
+                chars.next();
+                decoded.push('`');
+            }
+            _ => decoded.push(ch),
+        }
+    }
+
+    decoded
 }
 
 fn update_command_substitution_case_depth(
