@@ -759,6 +759,66 @@ fn test_compgen_export_action_uses_prefix_suffix_and_filter() {
 }
 
 #[test]
+fn test_compgen_readonly_action_filters_readonly_variables() {
+    let output_path = "target/rubash-compgen-readonly-output.txt";
+    let status_path = "target/rubash-compgen-readonly-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "readonly RUBASH_COMPGEN_READONLY_ALPHA=1 RUBASH_COMPGEN_READONLY_BETA=2; \
+         RUBASH_COMPGEN_READONLY_SCALAR=3; \
+         compgen -A readonly RUBASH_COMPGEN_READONLY_ > {output_path}; echo first:$? > {status_path}; \
+         compgen -A readonly RUBASH_COMPGEN_READONLY_Z >> {output_path}; echo second:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "RUBASH_COMPGEN_READONLY_ALPHA\nRUBASH_COMPGEN_READONLY_BETA\n"
+    );
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_readonly_action_uses_prefix_suffix_and_filter() {
+    let output_path = "target/rubash-compgen-readonly-action-output.txt";
+    let status_path = "target/rubash-compgen-readonly-action-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "readonly RUBASH_COMPGEN_READONLY_ACTION_ALPHA=1 RUBASH_COMPGEN_READONLY_ACTION_BETA=2; \
+         compgen -P readonly: -S :end -A readonly -X '*BETA' RUBASH_COMPGEN_READONLY_ACTION_ > {output_path}; \
+         echo $? > {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "readonly:RUBASH_COMPGEN_READONLY_ACTION_ALPHA:end\n"
+    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_keyword_action_filters_prefix_matches() {
     let output_path = "target/rubash-compgen-keyword-output.txt";
     let status_path = "target/rubash-compgen-keyword-status.txt";
