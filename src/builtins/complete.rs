@@ -3,6 +3,7 @@
 //! GNU Bash source ownership:
 // - builtins/complete.def
 
+use std::collections::HashMap;
 use std::io::{self, Write};
 use std::path::Path;
 
@@ -87,6 +88,7 @@ pub enum CompletionBuiltin {
 pub fn execute_with_io<E>(
     builtin: CompletionBuiltin,
     args: &[String],
+    env_vars: &HashMap<String, String>,
     diagnostic_prefix: &str,
     stdout: &mut E,
     stderr: &mut E,
@@ -96,7 +98,9 @@ where
 {
     match builtin {
         CompletionBuiltin::Complete => execute_complete(args, diagnostic_prefix, stdout, stderr),
-        CompletionBuiltin::Compgen => execute_compgen(args, diagnostic_prefix, stdout, stderr),
+        CompletionBuiltin::Compgen => {
+            execute_compgen(args, env_vars, diagnostic_prefix, stdout, stderr)
+        }
         CompletionBuiltin::Compopt => execute_compopt(args, diagnostic_prefix, stderr),
     }
 }
@@ -123,6 +127,7 @@ where
 
 fn execute_compgen<E>(
     args: &[String],
+    env_vars: &HashMap<String, String>,
     diagnostic_prefix: &str,
     stdout: &mut E,
     stderr: &mut E,
@@ -192,6 +197,14 @@ where
                     stdout,
                 );
             }
+            "variable" => {
+                let candidates = variable_completion_candidates(env_vars);
+                return write_compgen_matches(
+                    candidates.iter().map(String::as_str),
+                    &parsed,
+                    stdout,
+                );
+            }
             _ => return Ok(EXECUTION_SUCCESS),
         };
         return write_compgen_matches(candidates.iter().copied(), &parsed, stdout);
@@ -235,6 +248,13 @@ fn path_completion_base(word: &str) -> (&str, &str) {
         return (&word[..1], &word[..1]);
     }
     (&word[..separator_index], &word[..=separator_index])
+}
+
+fn variable_completion_candidates(env_vars: &HashMap<String, String>) -> Vec<String> {
+    let mut candidates: Vec<String> = env_vars.keys().cloned().collect();
+    candidates.sort();
+    candidates.dedup();
+    candidates
 }
 
 fn write_compgen_matches<'a, I, E>(
@@ -390,6 +410,7 @@ impl ParsedCompletionOptions {
             'd' => self.action = Some("directory".to_string()),
             'f' => self.action = Some("file".to_string()),
             'k' => self.action = Some("keyword".to_string()),
+            'v' => self.action = Some("variable".to_string()),
             _ => {}
         }
     }

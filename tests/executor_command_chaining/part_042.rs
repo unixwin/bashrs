@@ -453,6 +453,65 @@ fn test_compgen_enabled_action_filters_prefix_matches() {
 }
 
 #[test]
+fn test_compgen_variable_flag_filters_shell_variables() {
+    let output_path = "target/rubash-compgen-variable-output.txt";
+    let status_path = "target/rubash-compgen-variable-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "RUBASH_COMPGEN_VAR_ALPHA=1; RUBASH_COMPGEN_VAR_BETA=2; \
+         compgen -v RUBASH_COMPGEN_VAR_ > {output_path}; echo first:$? > {status_path}; \
+         compgen -v RUBASH_COMPGEN_VAR_Z >> {output_path}; echo second:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "RUBASH_COMPGEN_VAR_ALPHA\nRUBASH_COMPGEN_VAR_BETA\n"
+    );
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_variable_action_uses_prefix_suffix_and_filter() {
+    let output_path = "target/rubash-compgen-variable-action-output.txt";
+    let status_path = "target/rubash-compgen-variable-action-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "RUBASH_COMPGEN_ACTION_ALPHA=1; RUBASH_COMPGEN_ACTION_BETA=2; \
+         compgen -P var: -S :end -A variable -X '*BETA' RUBASH_COMPGEN_ACTION_ > {output_path}; \
+         echo $? > {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "var:RUBASH_COMPGEN_ACTION_ALPHA:end\n"
+    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_keyword_action_filters_prefix_matches() {
     let output_path = "target/rubash-compgen-keyword-output.txt";
     let status_path = "target/rubash-compgen-keyword-status.txt";

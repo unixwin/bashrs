@@ -616,6 +616,7 @@ impl Executor {
         let status = crate::builtins::complete::execute_with_io(
             builtin,
             &cmd.words[1..],
+            &self.env_vars,
             &self.diagnostic_prefix(),
             &mut stdout,
             &mut stderr,
