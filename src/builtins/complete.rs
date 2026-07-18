@@ -8,6 +8,73 @@ use std::io::{self, Write};
 const EXECUTION_SUCCESS: i32 = 0;
 const EXECUTION_FAILURE: i32 = 1;
 const EX_USAGE: i32 = 2;
+const SHELL_BUILTINS: &[&str] = &[
+    ".",
+    ":",
+    "[",
+    "alias",
+    "bg",
+    "bind",
+    "break",
+    "builtin",
+    "caller",
+    "cd",
+    "command",
+    "compgen",
+    "complete",
+    "compopt",
+    "continue",
+    "declare",
+    "dirs",
+    "disown",
+    "echo",
+    "enable",
+    "eval",
+    "exec",
+    "exit",
+    "export",
+    "false",
+    "fc",
+    "fg",
+    "getopts",
+    "hash",
+    "help",
+    "history",
+    "jobs",
+    "kill",
+    "let",
+    "local",
+    "logout",
+    "mapfile",
+    "popd",
+    "printf",
+    "pushd",
+    "pwd",
+    "read",
+    "readarray",
+    "readonly",
+    "return",
+    "set",
+    "shift",
+    "shopt",
+    "source",
+    "suspend",
+    "test",
+    "times",
+    "trap",
+    "true",
+    "type",
+    "typeset",
+    "ulimit",
+    "umask",
+    "unalias",
+    "unset",
+    "wait",
+];
+const SHELL_KEYWORDS: &[&str] = &[
+    "if", "then", "else", "elif", "fi", "case", "esac", "for", "select", "while", "until", "do",
+    "done", "in", "function", "time", "{", "}", "!",
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CompletionBuiltin {
@@ -74,33 +141,76 @@ where
         return Ok(parsed.status);
     }
 
-    if let Some(wordlist) = parsed.wordlist {
-        let word = parsed
-            .operands
-            .first()
-            .map(String::as_str)
-            .unwrap_or_default();
-        let mut matched = false;
-        for candidate in wordlist.split_whitespace() {
-            if candidate.starts_with(word) {
-                matched = true;
-                writeln!(
-                    stdout,
-                    "{}{}{}",
-                    parsed.prefix.as_deref().unwrap_or_default(),
-                    candidate,
-                    parsed.suffix.as_deref().unwrap_or_default()
-                )?;
-            }
-        }
-        return Ok(if matched {
-            EXECUTION_SUCCESS
-        } else {
-            EXECUTION_FAILURE
-        });
+    if let Some(wordlist) = parsed.wordlist.as_deref() {
+        return write_compgen_matches(
+            wordlist.split_whitespace(),
+            &parsed,
+            CompletionMatchMode::Prefix,
+            stdout,
+        );
+    }
+
+    if let Some(action) = parsed.action.as_deref() {
+        let candidates = match action {
+            "builtin" => SHELL_BUILTINS,
+            "keyword" => SHELL_KEYWORDS,
+            _ => return Ok(EXECUTION_SUCCESS),
+        };
+        return write_compgen_matches(
+            candidates.iter().copied(),
+            &parsed,
+            CompletionMatchMode::Prefix,
+            stdout,
+        );
     }
 
     Ok(EXECUTION_SUCCESS)
+}
+
+#[derive(Clone, Copy)]
+enum CompletionMatchMode {
+    Prefix,
+}
+
+fn write_compgen_matches<'a, I, E>(
+    candidates: I,
+    parsed: &ParsedCompletionOptions,
+    mode: CompletionMatchMode,
+    stdout: &mut E,
+) -> io::Result<i32>
+where
+    I: IntoIterator<Item = &'a str>,
+    E: Write,
+{
+    let word = parsed
+        .operands
+        .first()
+        .map(String::as_str)
+        .unwrap_or_default();
+    let mut matched = false;
+    for candidate in candidates {
+        if completion_candidate_matches(candidate, word, mode) {
+            matched = true;
+            writeln!(
+                stdout,
+                "{}{}{}",
+                parsed.prefix.as_deref().unwrap_or_default(),
+                candidate,
+                parsed.suffix.as_deref().unwrap_or_default()
+            )?;
+        }
+    }
+    Ok(if matched {
+        EXECUTION_SUCCESS
+    } else {
+        EXECUTION_FAILURE
+    })
+}
+
+fn completion_candidate_matches(candidate: &str, word: &str, mode: CompletionMatchMode) -> bool {
+    match mode {
+        CompletionMatchMode::Prefix => candidate.starts_with(word),
+    }
 }
 
 fn execute_compopt<E>(args: &[String], diagnostic_prefix: &str, stderr: &mut E) -> io::Result<i32>
@@ -187,6 +297,7 @@ where
 #[derive(Default)]
 struct ParsedCompletionOptions {
     status: i32,
+    action: Option<String>,
     wordlist: Option<String>,
     prefix: Option<String>,
     suffix: Option<String>,
@@ -203,6 +314,7 @@ impl ParsedCompletionOptions {
 
     fn set_option_arg(&mut self, option: char, value: String) {
         match option {
+            'A' => self.action = Some(value),
             'W' => self.wordlist = Some(value),
             'P' => self.prefix = Some(value),
             'S' => self.suffix = Some(value),
