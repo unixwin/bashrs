@@ -142,12 +142,20 @@ where
     }
 
     if let Some(wordlist) = parsed.wordlist.as_deref() {
-        return write_compgen_matches(
-            wordlist.split_whitespace(),
-            &parsed,
-            CompletionMatchMode::Prefix,
-            stdout,
-        );
+        return write_compgen_matches(wordlist.split_whitespace(), &parsed, stdout);
+    }
+
+    if let Some(glob_pattern) = parsed.glob_pattern.as_deref() {
+        return match crate::executor::glob::pathname_expand_word(
+            glob_pattern,
+            &std::collections::HashMap::new(),
+        ) {
+            crate::executor::glob::PathnameExpansion::Matches(matches) => {
+                write_compgen_matches(matches.iter().map(String::as_str), &parsed, stdout)
+            }
+            crate::executor::glob::PathnameExpansion::NoMatch
+            | crate::executor::glob::PathnameExpansion::Fail(_) => Ok(EXECUTION_FAILURE),
+        };
     }
 
     if let Some(action) = parsed.action.as_deref() {
@@ -159,32 +167,20 @@ where
                 return write_compgen_matches(
                     crate::builtins::set::shell_option_names(),
                     &parsed,
-                    CompletionMatchMode::Prefix,
                     stdout,
                 );
             }
             _ => return Ok(EXECUTION_SUCCESS),
         };
-        return write_compgen_matches(
-            candidates.iter().copied(),
-            &parsed,
-            CompletionMatchMode::Prefix,
-            stdout,
-        );
+        return write_compgen_matches(candidates.iter().copied(), &parsed, stdout);
     }
 
     Ok(EXECUTION_SUCCESS)
 }
 
-#[derive(Clone, Copy)]
-enum CompletionMatchMode {
-    Prefix,
-}
-
 fn write_compgen_matches<'a, I, E>(
     candidates: I,
     parsed: &ParsedCompletionOptions,
-    mode: CompletionMatchMode,
     stdout: &mut E,
 ) -> io::Result<i32>
 where
@@ -198,7 +194,7 @@ where
         .unwrap_or_default();
     let mut matched = false;
     for candidate in candidates {
-        if completion_candidate_matches(candidate, word, mode) {
+        if candidate.starts_with(word) {
             matched = true;
             writeln!(
                 stdout,
@@ -214,12 +210,6 @@ where
     } else {
         EXECUTION_FAILURE
     })
-}
-
-fn completion_candidate_matches(candidate: &str, word: &str, mode: CompletionMatchMode) -> bool {
-    match mode {
-        CompletionMatchMode::Prefix => candidate.starts_with(word),
-    }
 }
 
 fn execute_compopt<E>(args: &[String], diagnostic_prefix: &str, stderr: &mut E) -> io::Result<i32>
@@ -307,6 +297,7 @@ where
 struct ParsedCompletionOptions {
     status: i32,
     action: Option<String>,
+    glob_pattern: Option<String>,
     wordlist: Option<String>,
     prefix: Option<String>,
     suffix: Option<String>,
@@ -324,6 +315,7 @@ impl ParsedCompletionOptions {
     fn set_option_arg(&mut self, option: char, value: String) {
         match option {
             'A' => self.action = Some(value),
+            'G' => self.glob_pattern = Some(value),
             'W' => self.wordlist = Some(value),
             'P' => self.prefix = Some(value),
             'S' => self.suffix = Some(value),

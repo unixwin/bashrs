@@ -3,7 +3,7 @@
 //! Executes parsed AST commands.
 
 pub(crate) mod arithmetic;
-mod glob;
+pub(crate) mod glob;
 pub(crate) mod path;
 mod upstream_scripts;
 use arithmetic::{

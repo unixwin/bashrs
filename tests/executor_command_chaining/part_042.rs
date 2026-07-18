@@ -94,6 +94,74 @@ fn test_compgen_wordlist_prefix_suffix_and_no_match_status() {
 }
 
 #[test]
+fn test_compgen_glob_pattern_outputs_path_matches() {
+    let dir_path = "target/rubash-compgen-glob";
+    let output_path = "target/rubash-compgen-glob-output.txt";
+    let status_path = "target/rubash-compgen-glob-status.txt";
+    let _ = fs::remove_dir_all(dir_path);
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    fs::create_dir_all(dir_path).unwrap();
+    fs::write(format!("{dir_path}/alpha.txt"), "").unwrap();
+    fs::write(format!("{dir_path}/beta.txt"), "").unwrap();
+    fs::write(format!("{dir_path}/gamma.log"), "").unwrap();
+    let input = format!(
+        "compgen -G '{dir_path}/*.txt' > {output_path}; echo first:$? > {status_path}; \
+         compgen -G '{dir_path}/*.zzz' >> {output_path}; echo second:$? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        format!("{dir_path}/alpha.txt\n{dir_path}/beta.txt\n")
+    );
+    assert_eq!(
+        fs::read_to_string(status_path).unwrap(),
+        "first:0\nsecond:1\n"
+    );
+    let _ = fs::remove_dir_all(dir_path);
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_glob_pattern_uses_prefix_and_suffix() {
+    let dir_path = "target/rubash-compgen-glob-wrap";
+    let output_path = "target/rubash-compgen-glob-wrap-output.txt";
+    let status_path = "target/rubash-compgen-glob-wrap-status.txt";
+    let _ = fs::remove_dir_all(dir_path);
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    fs::create_dir_all(dir_path).unwrap();
+    fs::write(format!("{dir_path}/one.rs"), "").unwrap();
+    let input = format!(
+        "compgen -P pre- -S -suf -G '{dir_path}/*.rs' > {output_path}; echo $? > {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        format!("pre-{dir_path}/one.rs-suf\n")
+    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_dir_all(dir_path);
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_builtin_action_filters_prefix_matches() {
     let output_path = "target/rubash-compgen-builtin-output.txt";
     let status_path = "target/rubash-compgen-builtin-status.txt";
