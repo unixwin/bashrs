@@ -52,6 +52,7 @@
 - `compgen -A function` 会基于当前 shell 函数表生成函数名候选。
 - `compgen -c` 和 `compgen -A command` 会合并内建命令、保留字、alias、函数和 `PATH` 文件生成命令名候选。
 - `compgen -A arrayvar` 会基于当前 shell 的 indexed/associative array 标记生成数组变量候选。
+- `compgen -A export` 会基于当前 shell 的 exported 变量标记生成导出变量候选。
 
 ### 测试
 
@@ -94,6 +95,7 @@
 - 增加 `compgen -A function` 的函数名候选、过滤与包装回归覆盖。
 - 增加 `compgen -c` 和 `compgen -A command` 的命令候选、过滤与包装回归覆盖。
 - 增加 `compgen -A arrayvar` 的数组变量候选、过滤与包装回归覆盖。
+- 增加 `compgen -A export` 的导出变量候选、过滤与包装回归覆盖。
 
 ## [0.2.0] - 2026-07-17
 

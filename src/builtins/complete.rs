@@ -12,6 +12,7 @@ use crate::builtins::alias::Alias;
 const EXECUTION_SUCCESS: i32 = 0;
 const EXECUTION_FAILURE: i32 = 1;
 const EX_USAGE: i32 = 2;
+const EXPORTED_VARS: &str = "__RUBASH_EXPORTED_VARS";
 const ARRAY_VARS: &str = "__RUBASH_ARRAY_VARS";
 const ASSOC_VARS: &str = "__RUBASH_ASSOC_VARS";
 const SHELL_BUILTINS: &[&str] = &[
@@ -224,6 +225,14 @@ where
                 );
             }
             "enabled" => SHELL_BUILTINS,
+            "export" => {
+                let candidates = exported_variable_completion_candidates(env_vars);
+                return write_compgen_matches(
+                    candidates.iter().map(String::as_str),
+                    &parsed,
+                    stdout,
+                );
+            }
             "helptopic" => crate::builtins::help::HELP_TOPICS,
             "function" => {
                 let candidates = function_completion_candidates(function_names);
@@ -308,6 +317,13 @@ fn array_variable_completion_candidates(env_vars: &HashMap<String, String>) -> V
     candidates.extend(marked_completion_names(env_vars, ARRAY_VARS));
     candidates.extend(marked_completion_names(env_vars, ASSOC_VARS));
     candidates.into_iter().collect()
+}
+
+fn exported_variable_completion_candidates(env_vars: &HashMap<String, String>) -> Vec<String> {
+    let mut candidates = marked_completion_names(env_vars, EXPORTED_VARS);
+    candidates.sort();
+    candidates.dedup();
+    candidates
 }
 
 fn marked_completion_names(env_vars: &HashMap<String, String>, key: &str) -> Vec<String> {
