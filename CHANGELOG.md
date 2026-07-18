@@ -46,6 +46,7 @@
 - `compgen -d` 和 `compgen -A directory` 会从文件系统生成目录候选，并支持 prefix 过滤、`-P`/`-S` 包装和 `-X` 过滤。
 - `compgen -f` 和 `compgen -A file` 会从文件系统生成文件名候选，包含普通文件和目录，并支持现有候选过滤与包装流程。
 - `compgen -A helptopic` 会复用 `help` 主题表生成帮助主题候选。
+- `compgen -A enabled` 会生成当前支持的启用内建命令候选。
 
 ### 测试
 
@@ -82,6 +83,7 @@
 - 增加 `compgen -d` 和 `compgen -A directory` 的目录候选、过滤与包装回归覆盖。
 - 增加 `compgen -f` 和 `compgen -A file` 的文件名候选、过滤与包装回归覆盖。
 - 增加 `compgen -A helptopic` 候选输出与无匹配状态的回归覆盖。
+- 增加 `compgen -A enabled` 候选输出与无匹配状态的回归覆盖。
 
 ## [0.2.0] - 2026-07-17
 
