@@ -2,6 +2,68 @@ use super::alias_case::*;
 use super::*;
 
 impl Executor {
+    pub(in crate::executor) fn execute_alias_introduced_compound_source(
+        &mut self,
+        ast: &Ast,
+        index: usize,
+    ) -> Result<Option<usize>, ExecuteError> {
+        if !self.alias_expansion_enabled() {
+            return Ok(None);
+        }
+
+        let Some(command) = ast.commands.get(index) else {
+            return Ok(None);
+        };
+        let Some(first_word) = command.words.first() else {
+            return Ok(None);
+        };
+        if self
+            .expanding_aliases
+            .iter()
+            .any(|alias| alias == first_word)
+        {
+            return Ok(None);
+        }
+
+        let Some(mut source) = self.alias_parser_source(first_word, &command.words[1..]) else {
+            return Ok(None);
+        };
+        append_source_redirects(&mut source, command);
+        let Some(end_word) = alias_source_compound_end_word(&source) else {
+            return Ok(None);
+        };
+
+        let mut next_index = index + 1;
+        if !source_has_shell_word(&source, end_word) {
+            for command_index in index + 1..ast.commands.len() {
+                let Some(next_command) = ast.commands.get(command_index) else {
+                    break;
+                };
+                let command_source = bash_command_source_text(next_command);
+                if !command_source.is_empty() {
+                    source.push_str("; ");
+                    source.push_str(&command_source);
+                }
+                next_index = command_index + 1;
+                if source_has_shell_word(&source, end_word) {
+                    break;
+                }
+            }
+        }
+
+        if !source_has_shell_word(&source, end_word) {
+            return Ok(None);
+        }
+
+        self.expanding_aliases.push(first_word.clone());
+        let tokens = crate::lexer::tokenize(&source);
+        let reparsed = crate::parser::parse(&tokens);
+        let result = self.execute_ast(&reparsed);
+        self.expanding_aliases.pop();
+        result?;
+        Ok(Some(next_index))
+    }
+
     pub(in crate::executor) fn execute_alias_introduced_inversion(
         &mut self,
         ast: &Ast,
@@ -668,6 +730,26 @@ fn copy_command_redirects(from: &CommandNode, to: &mut CommandNode) {
     to.heredoc_delimiter = from.heredoc_delimiter.clone();
     to.heredoc_redirects = from.heredoc_redirects.clone();
     to.here_string = from.here_string.clone();
+}
+
+fn alias_source_compound_end_word(source: &str) -> Option<&'static str> {
+    let first = crate::lexer::tokenize(source)
+        .into_iter()
+        .find(|token| token.kind != crate::lexer::TokenKind::Semicolon)?
+        .value;
+
+    match first.as_str() {
+        "if" => Some("fi"),
+        "case" => Some("esac"),
+        "for" | "while" | "until" | "select" => Some("done"),
+        _ => None,
+    }
+}
+
+fn source_has_shell_word(source: &str, word: &str) -> bool {
+    crate::lexer::tokenize(source)
+        .into_iter()
+        .any(|token| token.value == word)
 }
 
 fn alias_time_command_from_words(words: &[String], command: CommandNode) -> TimeCommand {

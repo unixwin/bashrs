@@ -149,3 +149,23 @@ fn test_alias_introduced_while_keeps_nested_alias_for_body() {
     assert_eq!(fs::read_to_string(output_path).unwrap(), "a\nb\n");
     let _ = fs::remove_file(output_path);
 }
+
+#[test]
+fn test_alias_introduced_while_prefix_with_do_skips_body() {
+    let output_path = "target/rubash-alias-while-prefix-do-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "shopt -s expand_aliases; alias w='while false; do'; \
+         w echo bad > {output_path}; done; echo after > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "after\n");
+    let _ = fs::remove_file(output_path);
+}

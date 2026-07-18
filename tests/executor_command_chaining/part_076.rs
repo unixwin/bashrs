@@ -416,3 +416,23 @@ fn test_alias_introduced_for_accepts_brace_group_body() {
     assert_eq!(fs::read_to_string(output_path).unwrap(), "alpha\nbeta\n");
     let _ = fs::remove_file(output_path);
 }
+
+#[test]
+fn test_alias_introduced_for_prefix_with_do_executes_body() {
+    let output_path = "target/rubash-alias-for-prefix-do-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "shopt -s expand_aliases; alias f='for item in alpha beta; do'; \
+         f echo $item >> {output_path}; done"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "alpha\nbeta\n");
+    let _ = fs::remove_file(output_path);
+}

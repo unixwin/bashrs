@@ -49,6 +49,11 @@ impl Executor {
                 continue;
             }
 
+            if let Some(next_index) = self.execute_alias_introduced_compound_source(ast, index)? {
+                index = next_index;
+                continue;
+            }
+
             if let Some(next_index) = crate::builtins::source::execute_simple_if(self, ast, index)?
             {
                 index = next_index;
