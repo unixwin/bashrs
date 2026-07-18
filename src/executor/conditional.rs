@@ -30,6 +30,10 @@ pub(in crate::executor) use extglob::{
 };
 pub(super) use pattern::{case_pattern_matches, case_pattern_matches_nocase};
 
+pub(crate) fn shell_pattern_matches(pattern: &str, word: &str) -> bool {
+    case_pattern_matches(pattern, word)
+}
+
 impl Executor {
     pub(super) fn execute_conditional_command(
         &mut self,

@@ -196,6 +196,9 @@ where
     for candidate in candidates {
         if candidate.starts_with(word) {
             matched = true;
+            if parsed.filter_excludes(candidate) {
+                continue;
+            }
             writeln!(
                 stdout,
                 "{}{}{}",
@@ -299,6 +302,7 @@ struct ParsedCompletionOptions {
     action: Option<String>,
     glob_pattern: Option<String>,
     wordlist: Option<String>,
+    filter_pattern: Option<String>,
     prefix: Option<String>,
     suffix: Option<String>,
     operands: Vec<String>,
@@ -317,9 +321,21 @@ impl ParsedCompletionOptions {
             'A' => self.action = Some(value),
             'G' => self.glob_pattern = Some(value),
             'W' => self.wordlist = Some(value),
+            'X' => self.filter_pattern = Some(value),
             'P' => self.prefix = Some(value),
             'S' => self.suffix = Some(value),
             _ => {}
+        }
+    }
+
+    fn filter_excludes(&self, candidate: &str) -> bool {
+        let Some(filter_pattern) = self.filter_pattern.as_deref() else {
+            return false;
+        };
+        if let Some(pattern) = filter_pattern.strip_prefix('!') {
+            !crate::executor::conditional::shell_pattern_matches(pattern, candidate)
+        } else {
+            crate::executor::conditional::shell_pattern_matches(filter_pattern, candidate)
         }
     }
 }

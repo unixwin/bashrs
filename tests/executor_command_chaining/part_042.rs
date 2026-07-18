@@ -94,6 +94,77 @@ fn test_compgen_wordlist_prefix_suffix_and_no_match_status() {
 }
 
 #[test]
+fn test_compgen_filter_pattern_excludes_matching_candidates() {
+    let output_path = "target/rubash-compgen-filter-output.txt";
+    let status_path = "target/rubash-compgen-filter-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input =
+        format!("compgen -W 'alpha beta bar' -X 'b*' > {output_path}; echo $? > {status_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "alpha\n");
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_filter_pattern_inversion_keeps_matching_candidates() {
+    let output_path = "target/rubash-compgen-filter-invert-output.txt";
+    let status_path = "target/rubash-compgen-filter-invert-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "compgen -P pre- -S -suf -W 'alpha beta bar' -X '!b*' > {output_path}; \
+         echo $? > {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "pre-beta-suf\npre-bar-suf\n"
+    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_compgen_filter_pattern_all_filtered_keeps_generation_status() {
+    let output_path = "target/rubash-compgen-filter-empty-output.txt";
+    let status_path = "target/rubash-compgen-filter-empty-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input =
+        format!("compgen -W 'alpha beta' -X 'a*' a > {output_path}; echo $? > {status_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "");
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_compgen_glob_pattern_outputs_path_matches() {
     let dir_path = "target/rubash-compgen-glob";
     let output_path = "target/rubash-compgen-glob-output.txt";

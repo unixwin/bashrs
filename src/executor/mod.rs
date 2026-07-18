@@ -135,7 +135,7 @@ use redirect_inherit::*;
 use sed_alias_helpers::*;
 use support_names::*;
 
-mod conditional;
+pub(crate) mod conditional;
 use conditional::{case_pattern_matches, case_pattern_matches_nocase, simple_grep_pattern_matches};
 
 use crate::builtins::alias::Alias;
