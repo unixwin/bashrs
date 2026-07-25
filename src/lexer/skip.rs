@@ -42,6 +42,15 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     self.skip_ansi_c_single();
                 }
+                '$' if self.peek() == Some('(') => {
+                    self.advance();
+                    if self.peek() == Some('(') {
+                        self.advance();
+                        self.skip_arith_paren();
+                    } else {
+                        self.skip_cmd_subst();
+                    }
+                }
                 '\'' => self.skip_single(),
                 '"' => self.skip_double(),
                 '<' if self.peek() == Some('<') && self.peek_after(1) == Some('<') => {
@@ -49,6 +58,34 @@ impl<'a> Lexer<'a> {
                     self.advance();
                 }
                 '<' if self.peek() == Some('<') => self.skip_heredoc_in_command_substitution(),
+                _ => {}
+            }
+        }
+    }
+
+    pub(super) fn skip_arith_paren(&mut self) {
+        let mut depth = 0usize;
+        let mut single = false;
+        let mut double = false;
+        let mut escaped = false;
+        while let Some(c) = self.advance() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if c == '\\' {
+                escaped = true;
+                continue;
+            }
+            match c {
+                '\'' if !double => single = !single,
+                '"' if !single => double = !double,
+                '(' if !single && !double => depth += 1,
+                ')' if !single && !double && depth > 0 => depth -= 1,
+                ')' if !single && !double && self.peek() == Some(')') => {
+                    self.advance();
+                    break;
+                }
                 _ => {}
             }
         }
@@ -177,7 +214,12 @@ impl<'a> Lexer<'a> {
                     }
                     Some('(') => {
                         self.advance();
-                        self.skip_cmd_subst();
+                        if self.peek() == Some('(') {
+                            self.advance();
+                            self.skip_arith_paren();
+                        } else {
+                            self.skip_cmd_subst();
+                        }
                     }
                     _ => {}
                 }
@@ -209,7 +251,12 @@ impl<'a> Lexer<'a> {
                 }
                 '$' if self.peek() == Some('(') => {
                     self.advance();
-                    self.skip_cmd_subst();
+                    if self.peek() == Some('(') {
+                        self.advance();
+                        self.skip_arith_paren();
+                    } else {
+                        self.skip_cmd_subst();
+                    }
                 }
                 '$' if self.peek() == Some('[') => {
                     self.advance();
@@ -306,7 +353,12 @@ impl<'a> Lexer<'a> {
                         }
                         Some('(') => {
                             self.advance();
-                            self.skip_cmd_subst();
+                            if self.peek() == Some('(') {
+                                self.advance();
+                                self.skip_arith_paren();
+                            } else {
+                                self.skip_cmd_subst();
+                            }
                         }
                         Some('\'') => {
                             self.advance();

@@ -43,10 +43,12 @@ impl Executor {
             .get(index)
             .is_some_and(|word| word_is_unquoted_indirect_name_list(word));
 
-        ((unquoted_variable && expanded.contains(['\n', '\t']))
+        let field_split_would_split = self.field_split_values(expanded).len() > 1;
+
+        ((unquoted_variable && field_split_would_split)
             || (unquoted_command_substitution && expanded.contains(char::is_whitespace))
             || (unquoted_indirect_name_list && expanded.contains(char::is_whitespace)))
-            && expanded.split_whitespace().nth(1).is_some()
+            && (field_split_would_split || expanded.split_whitespace().nth(1).is_some())
     }
 
     pub(in crate::executor) fn expand_for_word_values_result(

@@ -2179,6 +2179,24 @@ fn test_function_subshell_body_keeps_case_pattern_parentheses() {
 }
 
 #[test]
+fn test_function_assignment_arithmetic_expansion_accepts_base_hash() {
+    let output_path = "target/rubash-function-arithmetic-base-hash-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input =
+        format!("f() {{ value=$((16#de)); printf '%s\\n' \"$value\" > {output_path}; }}; f");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "222\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_function_body_can_be_conditional_command() {
     let output_path = "target/rubash-function-conditional-body-output.txt";
     let _ = fs::remove_file(output_path);
