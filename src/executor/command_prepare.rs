@@ -203,13 +203,14 @@ impl Executor {
 
     pub(in crate::executor) fn apply_alias_expansion_after_word_expansion(
         &mut self,
-        variable_expanded: &CommandNode,
+        mut variable_expanded: CommandNode,
     ) -> CommandNode {
-        let words = self.expand_aliases(&variable_expanded.words);
-        CommandNode {
-            words,
-            ..variable_expanded.clone()
+        if self.aliases.is_empty() {
+            return variable_expanded;
         }
+
+        variable_expanded.words = self.expand_aliases(&variable_expanded.words);
+        variable_expanded
     }
 
     pub(in crate::executor) fn execute_function_command_invocation(
