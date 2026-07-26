@@ -234,6 +234,9 @@ impl Executor {
                 .filter(|_| stage_index == 0)
                 .map(|prefix| &prefix.command)
                 .unwrap_or(command);
+            if stage_index == 0 {
+                input = self.initial_pipeline_input(stage);
+            }
             self.set_current_command(stage);
             let Some((mut next_input, next_stderr, next_status)) =
                 self.execute_pipeline_stage(stage, &input)?
@@ -427,6 +430,16 @@ impl Executor {
             .collect();
         expanded
     }
+
+    fn initial_pipeline_input(&self, command: &CommandNode) -> String {
+        self.stdin_string_for_command(command)
+            .or_else(|| {
+                pipeline_stage_reads_stdin_by_default(command)
+                    .then(|| self.read_inherited_process_stdin_to_string())
+                    .flatten()
+            })
+            .unwrap_or_default()
+    }
 }
 
 fn command_is_compound_pipeline_stage(command: &CommandNode) -> bool {
@@ -443,6 +456,20 @@ fn command_is_compound_pipeline_stage(command: &CommandNode) -> bool {
         || command.conditional_command.is_some()
         || command.inverted_command.is_some()
         || command.background_command.is_some()
+}
+
+fn pipeline_stage_reads_stdin_by_default(command: &CommandNode) -> bool {
+    let Some(command_name) = command.words.first().map(String::as_str) else {
+        return false;
+    };
+    let command_name = command_name
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(command_name);
+    matches!(
+        command_name,
+        "awk" | "cat" | "grep" | "head" | "sed" | "sort" | "tail" | "tr" | "uniq" | "wc"
+    )
 }
 
 struct TimePipelinePrefix {

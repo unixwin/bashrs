@@ -190,6 +190,10 @@ impl Executor {
         let expanded = self.expand_word_mut(word);
         if expanded.is_empty() && self.removes_unquoted_null_word(cmd, index) {
             Vec::new()
+        } else if raw_word_contains_process_substitution(raw)
+            && expanded_word_has_process_substitution(&expanded)
+        {
+            vec![expanded]
         } else if self.splits_unquoted_expanded_word(cmd, index, &expanded) {
             self.field_split_values(&expanded)
         } else {
@@ -201,19 +205,7 @@ impl Executor {
         &mut self,
         variable_expanded: &CommandNode,
     ) -> CommandNode {
-        let mut words = self.expand_aliases(&variable_expanded.words);
-        if words != variable_expanded.words {
-            words = words
-                .into_iter()
-                .map(|word| {
-                    if word.starts_with('$') {
-                        self.expand_word_mut(&word)
-                    } else {
-                        word
-                    }
-                })
-                .collect();
-        }
+        let words = self.expand_aliases(&variable_expanded.words);
         CommandNode {
             words,
             ..variable_expanded.clone()
@@ -269,6 +261,16 @@ impl Executor {
         eprintln!("{}no match: {pattern}", self.diagnostic_prefix());
         self.exit_code = 1;
     }
+}
+
+fn raw_word_contains_process_substitution(raw: Option<&str>) -> bool {
+    raw.is_some_and(|raw| raw.contains("<(") || raw.contains(">("))
+}
+
+fn expanded_word_has_process_substitution(word: &str) -> bool {
+    !WordMetadata::new(0, word.to_string(), word.to_string())
+        .process_substitutions
+        .is_empty()
 }
 
 pub(in crate::executor) fn expand_braces_with_optional_raw(

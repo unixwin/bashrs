@@ -232,7 +232,12 @@ impl<'a> Lexer<'a> {
                 }
                 Some('(') => {
                     self.advance();
-                    self.skip_cmd_subst();
+                    if self.peek() == Some('(') {
+                        self.advance();
+                        self.skip_arith_paren();
+                    } else {
+                        self.skip_cmd_subst();
+                    }
                     if self.peek().is_some_and(|ch| !is_word_delimiter(ch)) {
                         return Some(self.finish_word_token(start, false));
                     }
