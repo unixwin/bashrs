@@ -197,6 +197,9 @@ impl Executor {
         }
 
         let mut ran_body = false;
+        let body_ast = Ast {
+            commands: body.to_vec(),
+        };
         loop {
             if !arithmetic.test.trim().is_empty() {
                 match self.eval_arithmetic_command_value(&arithmetic.test) {
@@ -210,11 +213,8 @@ impl Executor {
             }
 
             ran_body = true;
-            let ast = Ast {
-                commands: body.to_vec(),
-            };
             self.loop_depth += 1;
-            let result = self.execute_ast(&ast);
+            let result = self.execute_ast(&body_ast);
             self.loop_depth -= 1;
             match result {
                 Ok(()) => {}
@@ -338,11 +338,16 @@ impl Executor {
     fn execute_loop_command(&mut self, loop_command: &LoopCommand) -> Result<(), ExecuteError> {
         let mut ran_body = false;
         let mut last_body_status = 0;
+        let condition = Ast {
+            commands: loop_command.condition.clone(),
+        };
+        let body = Ast {
+            commands: crate::builtins::source::normalize_inline_compound_commands(
+                loop_command.body.clone(),
+            ),
+        };
 
         loop {
-            let condition = Ast {
-                commands: loop_command.condition.clone(),
-            };
             self.with_errexit_suppressed(|executor| executor.execute_ast(&condition))?;
             let condition_matched = self.exit_code == 0;
             if condition_matched == loop_command.until {
@@ -350,11 +355,6 @@ impl Executor {
             }
 
             ran_body = true;
-            let body = Ast {
-                commands: crate::builtins::source::normalize_inline_compound_commands(
-                    loop_command.body.clone(),
-                ),
-            };
             self.loop_depth += 1;
             let result = self.execute_ast(&body);
             self.loop_depth -= 1;
