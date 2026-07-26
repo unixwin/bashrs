@@ -1,6 +1,7 @@
 use super::data::*;
 use super::Executor;
-use crate::parser::CommandNode;
+use crate::parser::{Ast, CommandNode};
+use std::rc::Rc;
 
 impl Executor {
     pub(in crate::executor) fn print_upstream_posixpipe_function(&self, name: &str) -> bool {
@@ -71,10 +72,12 @@ impl Executor {
         println!("&|() {{ echo abcde ; }}");
         self.functions.insert(
             "fu%nc".to_string(),
-            vec![CommandNode {
-                words: vec!["echo".to_string(), "abcde".to_string()],
-                ..CommandNode::new()
-            }],
+            Rc::new(Ast {
+                commands: vec![CommandNode {
+                    words: vec!["echo".to_string(), "abcde".to_string()],
+                    ..CommandNode::new()
+                }],
+            }),
         );
         self.print_upstream_cprint_function("fu%nc");
         self.exit_code = 0;

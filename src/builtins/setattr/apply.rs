@@ -97,7 +97,7 @@ where
 
     let readonly = marked_vars(env_vars, READONLY_VARS);
     if readonly.contains(name) && value.is_some() {
-        if let Some(subject) = readonly_error_subject(value.unwrap_or_default(), array) {
+        if let Some(subject) = readonly_error_subject(value.unwrap_or_default(), array, env_vars) {
             writeln!(
                 stderr,
                 "{}{}: {}: readonly variable",

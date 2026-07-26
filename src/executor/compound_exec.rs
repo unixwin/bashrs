@@ -49,7 +49,7 @@ impl Executor {
             if is_exportable_function_name(name) {
                 source.push_str(name);
                 source.push_str("() { ");
-                source.push_str(&bash_command_sequence_text(body));
+                source.push_str(&bash_command_sequence_text(&body.commands));
                 source.push_str("; }; ");
             }
         }
