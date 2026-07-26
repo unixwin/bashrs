@@ -20,6 +20,7 @@ impl Executor {
             set_process_env(name, &value);
         }
         if name == "__RUBASH_SCRIPT_NAME" {
+            self.bash_source_stack = vec![value.clone()];
             store_indexed_array(&mut self.env_vars, "BASH_SOURCE", vec![value]);
         }
     }
