@@ -171,11 +171,13 @@ impl Executor {
         command
     }
 
-    fn apply_external_environment(&self, cmd: &CommandNode, process: &mut Command) {
+    fn apply_external_environment(&mut self, cmd: &CommandNode, process: &mut Command) {
         self.apply_child_environment(process);
         for (var_name, var_value) in &cmd.assignments {
-            if is_valid_process_env(var_name, var_value) {
-                process.env(var_name, var_value);
+            let (base_name, _) = assignment_name_and_append(var_name);
+            let expanded_value = self.expand_assignment_value(var_value);
+            if is_valid_process_env(base_name, &expanded_value) {
+                process.env(base_name, expanded_value);
             }
         }
     }

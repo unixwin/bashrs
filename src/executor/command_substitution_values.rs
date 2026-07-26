@@ -184,15 +184,12 @@ impl Executor {
         words.first()?;
         if words
             .iter()
-            .any(|word| matches!(word.as_str(), "|" | ">" | ">>" | "<" | "2>" | "2>>" | "&>"))
+            .any(|word| matches!(word.as_str(), "|" | ">" | ">>" | "2>" | "2>>" | "&>"))
         {
             return None;
         }
 
-        let expanded_words: Vec<String> = words
-            .iter()
-            .map(|word| strip_matching_quotes(&self.expand_word(word)).to_string())
-            .collect();
+        let (expanded_words, stdin_path) = self.command_substitution_words_and_stdin(words)?;
         let Some(program) = find_user_command(&expanded_words[0], &self.env_vars) else {
             self.last_command_substitution_status.set(Some(127));
             return Some(String::new());
@@ -213,6 +210,10 @@ impl Executor {
         };
 
         self.apply_child_environment(&mut process);
+        if let Some(stdin_path) = stdin_path {
+            let file = File::open(stdin_path).ok()?;
+            process.stdin(Stdio::from(file));
+        }
         let output = process.output().ok()?;
         let status = output.status.code().unwrap_or(1);
         self.last_command_substitution_status.set(Some(status));
@@ -221,6 +222,28 @@ impl Executor {
                 .trim_end_matches('\n')
                 .to_string(),
         )
+    }
+
+    fn command_substitution_words_and_stdin(
+        &self,
+        words: &[String],
+    ) -> Option<(Vec<String>, Option<PathBuf>)> {
+        let mut expanded_words = Vec::new();
+        let mut stdin_path = None;
+        let mut index = 0;
+        while index < words.len() {
+            if words[index] == "<" {
+                let target = words.get(index + 1)?;
+                let expanded = strip_matching_quotes(&self.expand_word(target)).to_string();
+                stdin_path = Some(shell_path_to_windows(&expanded, &self.env_vars));
+                index += 2;
+                continue;
+            }
+            expanded_words
+                .push(strip_matching_quotes(&self.expand_word(&words[index])).to_string());
+            index += 1;
+        }
+        (!expanded_words.is_empty()).then_some((expanded_words, stdin_path))
     }
 
     pub(in crate::executor) fn expand_backtick_substitution(&self, word: &str) -> Option<String> {

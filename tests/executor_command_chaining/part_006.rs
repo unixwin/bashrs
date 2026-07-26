@@ -196,6 +196,41 @@ fn test_external_command_substitution_captures_stdout() {
 }
 
 #[test]
+fn test_external_command_substitution_captures_stdin_redirect() {
+    let bin_dir = "target/rubash-command-substitution-stdin-bin";
+    let helper_path = format!("{bin_dir}/rubash-comsub-stdin-helper");
+    let input_path = target_test_path("rubash-external-command-substitution-stdin-input.txt");
+    let output_path = target_test_path("rubash-external-command-substitution-stdin-output.txt");
+    let shell_input_path = shell_test_path(&input_path);
+    let shell_output_path = shell_test_path(&output_path);
+    let _ = fs::create_dir_all(bin_dir);
+    let _ = fs::remove_file(&helper_path);
+    let _ = fs::remove_file(&input_path);
+    let _ = fs::remove_file(&output_path);
+    write_executable(
+        &helper_path,
+        "#!/bin/sh\ncount=0\nwhile IFS= read -r _line; do count=$((count + 1)); done\nprintf '%s\\n' \"$count\"\n",
+    )
+    .unwrap();
+    fs::write(&input_path, "a\nb\n").unwrap();
+    let input = format!(
+        "n=$(rubash-comsub-stdin-helper < {shell_input_path}); printf 'n=<%s>\\n' \"$n\" > {shell_output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+    executor.set_env("PATH", bin_dir);
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(&output_path).unwrap(), "n=<2>\n");
+    let _ = fs::remove_file(helper_path);
+    let _ = fs::remove_file(input_path);
+    let _ = fs::remove_file(output_path);
+}
+#[test]
 fn test_mktemp_t_command_substitution_succeeds() {
     let output_path = target_test_path("rubash-mktemp-t-command-substitution-output.txt");
     let shell_output_path = shell_test_path(&output_path);

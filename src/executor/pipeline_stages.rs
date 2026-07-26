@@ -122,8 +122,10 @@ impl Executor {
 
         self.apply_child_environment(&mut process);
         for (var_name, var_value) in &command.assignments {
-            if is_valid_process_env(var_name, var_value) {
-                process.env(var_name, var_value);
+            let (base_name, _) = assignment_name_and_append(var_name);
+            let expanded_value = self.expand_assignment_value(var_value);
+            if is_valid_process_env(base_name, &expanded_value) {
+                process.env(base_name, expanded_value);
             }
         }
         process.stdin(Stdio::piped()).stdout(Stdio::piped());
