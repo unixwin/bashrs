@@ -305,6 +305,6 @@ pub(super) fn slice_array_values(
 pub(super) fn is_noassign_bash_array(name: &str) -> bool {
     matches!(
         name,
-        "BASH_ARGC" | "BASH_ARGV" | "BASH_LINENO" | "BASH_SOURCE" | "FUNCNAME"
+        "BASH_ARGC" | "BASH_ARGV" | "BASH_LINENO" | "BASH_SOURCE" | "FUNCNAME" | "PIPESTATUS"
     )
 }

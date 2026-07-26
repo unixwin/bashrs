@@ -111,11 +111,15 @@ impl Executor {
     where
         I: IntoIterator<Item = i32>,
     {
-        let values = statuses
-            .into_iter()
-            .map(|status| status.to_string())
-            .collect();
-        store_indexed_array(&mut self.env_vars, "PIPESTATUS", values);
+        self.pipestatus.clear();
+        self.pipestatus.extend(statuses);
+        if self.pipestatus.is_empty() {
+            self.pipestatus.push(0);
+        }
+    }
+
+    pub(in crate::executor) fn pipestatus_values(&self) -> Vec<String> {
+        self.pipestatus.iter().map(i32::to_string).collect()
     }
 
     pub(crate) fn diagnostic_prefix(&self) -> String {

@@ -46,11 +46,7 @@ impl Executor {
             ),
             "SHELLOPTS" => Some(crate::builtins::set::shellopts_value(&self.env_vars)),
             "BASHOPTS" => Some(crate::builtins::shopt::bashopts_value(&self.env_vars)),
-            "PIPESTATUS" => self
-                .env_vars
-                .get("PIPESTATUS")
-                .and_then(|value| array_value_at(value, 0))
-                .or_else(|| Some("0".to_string())),
+            "PIPESTATUS" => Some(self.pipestatus.first().copied().unwrap_or(0).to_string()),
             _ => None,
         }
     }
@@ -86,6 +82,7 @@ impl Executor {
         let name = self.resolved_variable_name(name)?;
         let name = name.as_str();
         match name {
+            "PIPESTATUS" => return Some(format_indexed_array_values(self.pipestatus_values())),
             "FUNCNAME" => {
                 return Some(format_indexed_array_values(
                     self.function_name_stack.clone(),

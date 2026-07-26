@@ -109,7 +109,45 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<CommandNode, ExecuteError> {
-        let mut variable_expanded = cmd.clone();
+        let preserve_word_metadata = cmd.conditional_command.is_some()
+            || cmd.words.first().is_some_and(|word| word == "[[")
+            || !cmd.process_substitutions.is_empty()
+            || cmd.word_metadata.iter().any(|metadata| {
+                !metadata.process_substitutions.is_empty()
+                    || raw_word_contains_process_substitution(Some(&metadata.raw))
+            });
+        let mut variable_expanded = CommandNode {
+            words: Vec::new(),
+            word_metadata: if preserve_word_metadata {
+                cmd.word_metadata.clone()
+            } else {
+                Vec::new()
+            },
+            word_kinds: Vec::new(),
+            assignments: cmd.assignments.clone(),
+            compound_assignments: cmd.compound_assignments.clone(),
+            array_element_assignments: cmd.array_element_assignments.clone(),
+            process_substitutions: cmd.process_substitutions.clone(),
+            redirects: cmd.redirects.clone(),
+            redirect_in: cmd.redirect_in.clone(),
+            redirect_out: cmd.redirect_out.clone(),
+            append: cmd.append.clone(),
+            redirect_err: cmd.redirect_err.clone(),
+            redirect_err_append: cmd.redirect_err_append.clone(),
+            heredoc: cmd.heredoc.clone(),
+            heredoc_delimiter: cmd.heredoc_delimiter.clone(),
+            heredoc_redirects: cmd.heredoc_redirects.clone(),
+            here_string: cmd.here_string.clone(),
+            pipe: cmd.pipe,
+            background: cmd.background,
+            and_or: cmd.and_or,
+            inverted: cmd.inverted,
+            arithmetic_command: cmd.arithmetic_command.clone(),
+            conditional_command: cmd.conditional_command.clone(),
+            brace_group: cmd.brace_group.clone(),
+            line: cmd.line,
+            ..CommandNode::new()
+        };
         let expanded_words = cmd
             .words
             .iter()
@@ -203,13 +241,14 @@ impl Executor {
 
     pub(in crate::executor) fn apply_alias_expansion_after_word_expansion(
         &mut self,
-        variable_expanded: &CommandNode,
+        mut variable_expanded: CommandNode,
     ) -> CommandNode {
-        let words = self.expand_aliases(&variable_expanded.words);
-        CommandNode {
-            words,
-            ..variable_expanded.clone()
+        if self.aliases.is_empty() {
+            return variable_expanded;
         }
+
+        variable_expanded.words = self.expand_aliases(&variable_expanded.words);
+        variable_expanded
     }
 
     pub(in crate::executor) fn execute_function_command_invocation(

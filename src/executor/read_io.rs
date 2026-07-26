@@ -108,6 +108,7 @@ impl Executor {
         }
 
         let saved_env = self.env_vars.clone();
+        let saved_pipestatus = self.pipestatus.clone();
         let saved_exit_code = self.exit_code;
         let saved_capture = self.stdout_capture.take();
         self.stdout_capture = Some(Vec::new());
@@ -115,6 +116,7 @@ impl Executor {
         let output = self.stdout_capture.take().unwrap_or_default();
         self.stdout_capture = saved_capture;
         self.env_vars = saved_env;
+        self.pipestatus = saved_pipestatus;
         self.exit_code = saved_exit_code;
 
         match result {

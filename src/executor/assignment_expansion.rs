@@ -114,6 +114,7 @@ impl Executor {
 
     fn expand_assignment_tilde_if_needed(&self, value: String) -> String {
         if value.contains('=')
+            || !tilde_expand::assignment_value_needs_tilde_expansion(&value, true)
             || (self.env_vars.get("__RUBASH_POSIX_MODE").map(String::as_str) == Some("1")
                 && !value.starts_with("~/"))
         {
