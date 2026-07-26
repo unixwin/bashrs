@@ -32,6 +32,12 @@ impl Executor {
             .word_kinds
             .get(index)
             .is_some_and(|kind| *kind == TokenKind::Variable);
+        let unquoted_dynamic_parameter = unquoted_variable
+            && cmd
+                .words
+                .get(index)
+                .and_then(|word| dynamic_scalar_parameter_name(word))
+                .is_some_and(|name| self.dynamic_parameter_is_set(name));
         let unquoted_command_substitution = cmd
             .word_metadata
             .get(index)
@@ -45,7 +51,7 @@ impl Executor {
 
         let field_split_would_split = self.field_split_values(expanded).len() > 1;
 
-        ((unquoted_variable && field_split_would_split)
+        ((unquoted_variable && !unquoted_dynamic_parameter && field_split_would_split)
             || (unquoted_command_substitution && expanded.contains(char::is_whitespace))
             || (unquoted_indirect_name_list && expanded.contains(char::is_whitespace)))
             && (field_split_would_split || expanded.split_whitespace().nth(1).is_some())
@@ -130,6 +136,14 @@ impl Executor {
         output.push_str(&tail[end + 1..]);
         Some(output)
     }
+}
+
+fn dynamic_scalar_parameter_name(word: &str) -> Option<&str> {
+    let name = word
+        .strip_prefix("${")
+        .and_then(|word| word.strip_suffix('}'))
+        .or_else(|| word.strip_prefix('$'))?;
+    is_shell_name(name).then_some(name)
 }
 
 fn word_is_unquoted_indirect_name_list(word: &str) -> bool {

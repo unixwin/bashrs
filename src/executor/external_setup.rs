@@ -110,11 +110,25 @@ impl Executor {
         let mut rewritten = cmd.clone();
         let mut files = ProcessSubstitutionFiles::default();
         for word_index in 0..rewritten.words.len() {
-            let substitutions = rewritten
-                .word_metadata
-                .get(word_index)
+            let metadata = rewritten.word_metadata.get(word_index).cloned();
+            let substitutions = metadata
+                .as_ref()
                 .map(|metadata| metadata.process_substitutions.clone())
                 .unwrap_or_default();
+            let substitutions = if substitutions.is_empty()
+                && metadata
+                    .as_ref()
+                    .is_some_and(|metadata| raw_word_contains_process_substitution(&metadata.raw))
+            {
+                WordMetadata::new(
+                    word_index,
+                    rewritten.words[word_index].clone(),
+                    rewritten.words[word_index].clone(),
+                )
+                .process_substitutions
+            } else {
+                substitutions
+            };
             if substitutions.is_empty() {
                 self.materialize_standalone_process_substitution_word(
                     &mut rewritten.words[word_index],
@@ -477,4 +491,8 @@ impl Executor {
         }
         Some(strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(body)).to_string())
     }
+}
+
+fn raw_word_contains_process_substitution(raw: &str) -> bool {
+    raw.contains("<(") || raw.contains(">(")
 }
