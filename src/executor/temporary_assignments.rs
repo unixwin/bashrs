@@ -167,7 +167,7 @@ impl Executor {
         }
         unmark_env_name(&mut self.env_vars, DECLARED_UNSET_VARS, base_name);
         self.env_vars.insert(base_name.to_string(), value.clone());
-        set_process_env(base_name, value);
+        sync_shell_assignment_process_env(&self.env_vars, base_name, value);
         true
     }
 }

@@ -4,7 +4,6 @@ impl Executor {
     pub(in crate::executor) fn update_underscore_parameter(&mut self, cmd: &CommandNode) {
         if let Some(value) = cmd.words.last() {
             self.env_vars.insert("_".to_string(), value.clone());
-            set_process_env("_", value);
         }
     }
 

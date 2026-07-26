@@ -39,6 +39,9 @@ pub fn expand_word_prefix(word: &str, env_vars: &HashMap<String, String>) -> Opt
 
 pub fn expand_assignment_value(value: &str, env_vars: &HashMap<String, String>) -> String {
     let Some(value) = value.strip_prefix(QUOTED_ASSIGNMENT_VALUE) else {
+        if !assignment_value_needs_tilde_expansion(value, true) {
+            return value.to_string();
+        }
         return expand_assignment_tilde_value(value, &home_value(env_vars), true);
     };
 
@@ -47,6 +50,27 @@ pub fn expand_assignment_value(value: &str, env_vars: &HashMap<String, String>) 
 
 pub fn strip_assignment_quote_marker(value: &str) -> &str {
     value.strip_prefix(QUOTED_ASSIGNMENT_VALUE).unwrap_or(value)
+}
+
+pub fn assignment_value_needs_tilde_expansion(value: &str, expand_after_colon: bool) -> bool {
+    let value = strip_assignment_quote_marker(value);
+    let bytes = value.as_bytes();
+    if assignment_tilde_segment_starts_at(bytes, 0) {
+        return true;
+    }
+    if !expand_after_colon {
+        return false;
+    }
+
+    bytes
+        .iter()
+        .enumerate()
+        .any(|(index, byte)| *byte == b':' && assignment_tilde_segment_starts_at(bytes, index + 1))
+}
+
+fn assignment_tilde_segment_starts_at(bytes: &[u8], start: usize) -> bool {
+    bytes.get(start) == Some(&b'~')
+        && matches!(bytes.get(start + 1), None | Some(b'/') | Some(b':'))
 }
 
 pub fn expand_assignment_tilde_value(value: &str, home: &str, expand_after_colon: bool) -> String {
@@ -86,4 +110,23 @@ fn expand_tilde_segment(segment: &str, home: &str) -> String {
     }
 
     segment.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn assignment_tilde_candidate_detects_only_expandable_segments() {
+        assert!(!assignment_value_needs_tilde_expansion("plain", true));
+        assert!(!assignment_value_needs_tilde_expansion("user~name", true));
+        assert!(!assignment_value_needs_tilde_expansion("~user/bin", true));
+        assert!(assignment_value_needs_tilde_expansion("~", true));
+        assert!(assignment_value_needs_tilde_expansion("~/bin", true));
+        assert!(assignment_value_needs_tilde_expansion("bin:~/tools", true));
+        assert!(!assignment_value_needs_tilde_expansion(
+            "bin:~/tools",
+            false
+        ));
+    }
 }

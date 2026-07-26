@@ -123,7 +123,9 @@ use command_subst_helpers::*;
 use command_text::*;
 use env_helpers::*;
 use execution_misc::*;
-use external_setup::ProcessSubstitutionFiles;
+use external_setup::{
+    command_needs_process_substitution_materialization, ProcessSubstitutionFiles,
+};
 use function_env::*;
 use local_helpers::*;
 use parameter_case::*;

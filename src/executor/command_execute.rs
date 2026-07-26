@@ -36,6 +36,10 @@ impl Executor {
             return Ok(());
         }
 
+        if !command_needs_process_substitution_materialization(&cmd) {
+            return self.execute_materialized_command(&cmd, ProcessSubstitutionFiles::default());
+        }
+
         let (materialized_cmd, process_substitution_files) =
             self.command_with_process_substitution_files(&cmd)?;
         self.execute_materialized_command(&materialized_cmd, process_substitution_files)
