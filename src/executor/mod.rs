@@ -157,6 +157,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::rc::Rc;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -220,6 +221,8 @@ enum LoopControlKind {
     Break,
     Continue,
 }
+
+type FunctionBody = Rc<Ast>;
 
 impl LoopControlKind {
     fn name(self) -> &'static str {
@@ -292,7 +295,7 @@ pub struct Executor {
     exit_code: i32,
     env_vars: HashMap<String, String>,
     aliases: HashMap<String, Alias>,
-    functions: HashMap<String, Vec<CommandNode>>,
+    functions: HashMap<String, FunctionBody>,
     function_definition_redirects: HashMap<String, CommandNode>,
     positional_params: Vec<String>,
     local_var_scopes: Vec<HashMap<String, Option<String>>>,

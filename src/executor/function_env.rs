@@ -2,7 +2,7 @@ use super::*;
 
 pub(in crate::executor) fn import_exported_functions_from_env(
     env_vars: &HashMap<String, String>,
-) -> HashMap<String, Vec<CommandNode>> {
+) -> HashMap<String, FunctionBody> {
     let mut functions = HashMap::new();
     for (env_name, value) in env_vars {
         let Some(name) = imported_function_name(env_name) else {
@@ -11,7 +11,7 @@ pub(in crate::executor) fn import_exported_functions_from_env(
         let Some(body) = parse_exported_function_body(value) else {
             continue;
         };
-        functions.insert(name.to_string(), body);
+        functions.insert(name.to_string(), Rc::new(Ast { commands: body }));
     }
     functions
 }

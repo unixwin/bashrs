@@ -25,13 +25,17 @@ pub(super) fn array_attribute_assignment_value(
     value.to_string()
 }
 
-pub(super) fn readonly_error_subject(value: &str, explicit_array: bool) -> Option<String> {
+pub(super) fn readonly_error_subject(
+    value: &str,
+    explicit_array: bool,
+    env_vars: &HashMap<String, String>,
+) -> Option<String> {
     // TODO(builtins/setattr.def/variables.c/execute_cmd.c): Bash diagnostics
     // depend on whether assignment processing or the builtin detects the
     // readonly attribute. Preserve attr.tests' split until assignment words
     // carry full parse metadata.
     if explicit_array && value.starts_with(COMPOUND_ASSIGNMENT_MARKER) {
-        return env::var("__RUBASH_CURRENT_FUNCTION").ok();
+        return env_vars.get("__RUBASH_CURRENT_FUNCTION").cloned();
     }
     if explicit_array {
         return Some("readonly".to_string());

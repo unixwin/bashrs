@@ -148,7 +148,7 @@ impl Executor {
             names.sort();
             for name in names {
                 if let Some(body) = self.functions.get(&name) {
-                    self.write_function_definition(&name, body, true, stdout)?;
+                    self.write_function_definition(&name, &body.commands, true, stdout)?;
                 }
             }
             return Ok(0);

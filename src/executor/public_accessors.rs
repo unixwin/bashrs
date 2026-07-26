@@ -90,15 +90,20 @@ impl Executor {
             let line = line.to_string();
             self.env_vars
                 .insert("__RUBASH_CURRENT_LINE".to_string(), line.clone());
-            set_process_env("__RUBASH_CURRENT_LINE", line);
+            if command_needs_process_line_env(cmd) {
+                set_process_env("__RUBASH_CURRENT_LINE", line);
+            }
         }
     }
 
     pub(in crate::executor) fn set_current_command(&mut self, cmd: &CommandNode) {
+        if !command_references_bash_command(cmd) {
+            self.env_vars.remove("__RUBASH_CURRENT_COMMAND");
+            return;
+        }
         let command = bash_command_text(cmd);
         self.env_vars
-            .insert("__RUBASH_CURRENT_COMMAND".to_string(), command.clone());
-        set_process_env("__RUBASH_CURRENT_COMMAND", command);
+            .insert("__RUBASH_CURRENT_COMMAND".to_string(), command);
     }
 
     pub(in crate::executor) fn set_pipestatus<I>(&mut self, statuses: I)
