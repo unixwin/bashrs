@@ -3,6 +3,14 @@ use crate::executor::assoc_keys;
 
 impl Executor {
     pub(in crate::executor) fn indexed_array_stack(&self, name: &str) -> Vec<String> {
+        match name {
+            "FUNCNAME" => return self.function_name_stack.clone(),
+            "BASH_ARGC" => return self.bash_argc_stack.clone(),
+            "BASH_ARGV" => return self.bash_argv_stack.clone(),
+            "BASH_LINENO" => return self.bash_lineno_stack.clone(),
+            "BASH_SOURCE" => return self.bash_source_stack.clone(),
+            _ => {}
+        }
         self.env_vars
             .get(name)
             .map(|value| array_values(value))

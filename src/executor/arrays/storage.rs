@@ -108,13 +108,22 @@ pub(in crate::executor) fn format_indexed_array_storage(
     format!("\x1d({rendered})")
 }
 
+pub(in crate::executor) fn format_indexed_array_values(values: Vec<String>) -> String {
+    let rendered = values
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| format!("[{index}]={}", quote_array_value(&value)))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("\x1d({rendered})")
+}
+
 pub(in crate::executor) fn store_indexed_array(
     env_vars: &mut HashMap<String, String>,
     name: &str,
     values: Vec<String>,
 ) {
-    let entries = values.into_iter().enumerate().collect();
-    env_vars.insert(name.to_string(), format_indexed_array_storage(entries));
+    env_vars.insert(name.to_string(), format_indexed_array_values(values));
     mark_env_name(env_vars, ARRAY_VARS, name);
 }
 

@@ -93,23 +93,8 @@ impl Executor {
         } else {
             self.function_call_stdin(call_cmd)?
         };
-        let (
-            old_function,
-            old_funcname,
-            old_bash_argc,
-            old_bash_argv,
-            old_bash_lineno,
-            old_bash_source,
-            old_function_stdin,
-            old_function_stdin_offset,
-            old_positional_params,
-        ) = {
+        let (old_function, old_function_stdin, old_function_stdin_offset, old_positional_params) = {
             let old_function = self.env_vars.get("__RUBASH_CURRENT_FUNCTION").cloned();
-            let old_funcname = self.env_vars.get("FUNCNAME").cloned();
-            let old_bash_argc = self.env_vars.get("BASH_ARGC").cloned();
-            let old_bash_argv = self.env_vars.get("BASH_ARGV").cloned();
-            let old_bash_lineno = self.env_vars.get("BASH_LINENO").cloned();
-            let old_bash_source = self.env_vars.get("BASH_SOURCE").cloned();
             let old_function_stdin = self.env_vars.get(FUNCTION_STDIN).cloned();
             let old_function_stdin_offset = self.env_vars.get(FUNCTION_STDIN_OFFSET).cloned();
             let old_positional_params = self.positional_params.clone();
@@ -120,31 +105,17 @@ impl Executor {
                 self.env_vars
                     .insert(FUNCTION_STDIN_OFFSET.to_string(), "0".to_string());
             }
-            let mut funcname_stack = self.funcname_stack();
-            funcname_stack.insert(0, name.to_string());
-            store_indexed_array(&mut self.env_vars, "FUNCNAME", funcname_stack);
-            let mut lineno_stack = self.indexed_array_stack("BASH_LINENO");
-            lineno_stack.insert(0, call_cmd.line.unwrap_or(0).to_string());
-            store_indexed_array(&mut self.env_vars, "BASH_LINENO", lineno_stack);
-            let mut source_stack = self.indexed_array_stack("BASH_SOURCE");
-            source_stack.insert(0, self.current_bash_source());
-            store_indexed_array(&mut self.env_vars, "BASH_SOURCE", source_stack);
-            let mut argc_stack = self.indexed_array_stack("BASH_ARGC");
-            argc_stack.insert(0, args.len().to_string());
-            store_indexed_array(&mut self.env_vars, "BASH_ARGC", argc_stack);
-            let mut argv_stack = self.indexed_array_stack("BASH_ARGV");
+            self.function_name_stack.insert(0, name.to_string());
+            self.bash_lineno_stack
+                .insert(0, call_cmd.line.unwrap_or(0).to_string());
+            self.bash_source_stack.insert(0, self.current_bash_source());
+            self.bash_argc_stack.insert(0, args.len().to_string());
             for arg in args {
-                argv_stack.insert(0, arg.clone());
+                self.bash_argv_stack.insert(0, arg.clone());
             }
-            store_indexed_array(&mut self.env_vars, "BASH_ARGV", argv_stack);
             self.positional_params = args.to_vec();
             (
                 old_function,
-                old_funcname,
-                old_bash_argc,
-                old_bash_argv,
-                old_bash_lineno,
-                old_bash_source,
                 old_function_stdin,
                 old_function_stdin_offset,
                 old_positional_params,
@@ -153,25 +124,28 @@ impl Executor {
         self.local_var_scopes.push(HashMap::new());
         self.local_attr_scopes.push(HashMap::new());
         self.function_depth += 1;
-        let result = self.execute_ast(body_ast);
+        let result = self.execute_ast_inner(body_ast);
         {
             self.function_depth -= 1;
             self.restore_function_locals();
             self.positional_params = old_positional_params;
-            match old_funcname {
-                Some(value) => {
-                    self.env_vars.insert("FUNCNAME".to_string(), value);
-                    mark_env_name(&mut self.env_vars, ARRAY_VARS, "FUNCNAME");
-                }
-                None => {
-                    self.env_vars.insert("FUNCNAME".to_string(), String::new());
-                    mark_env_name(&mut self.env_vars, ARRAY_VARS, "FUNCNAME");
+            if !self.function_name_stack.is_empty() {
+                self.function_name_stack.remove(0);
+            }
+            if !self.bash_lineno_stack.is_empty() {
+                self.bash_lineno_stack.remove(0);
+            }
+            if !self.bash_source_stack.is_empty() {
+                self.bash_source_stack.remove(0);
+            }
+            if !self.bash_argc_stack.is_empty() {
+                self.bash_argc_stack.remove(0);
+            }
+            for _ in args {
+                if !self.bash_argv_stack.is_empty() {
+                    self.bash_argv_stack.remove(0);
                 }
             }
-            self.restore_indexed_array("BASH_ARGC", old_bash_argc);
-            self.restore_indexed_array("BASH_ARGV", old_bash_argv);
-            self.restore_indexed_array("BASH_LINENO", old_bash_lineno);
-            self.restore_indexed_array("BASH_SOURCE", old_bash_source);
             restore_optional_env_var(&mut self.env_vars, FUNCTION_STDIN, old_function_stdin);
             restore_optional_env_var(
                 &mut self.env_vars,

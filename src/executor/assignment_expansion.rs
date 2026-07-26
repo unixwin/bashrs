@@ -32,6 +32,11 @@ impl Executor {
         {
             return format!("{COMPOUND_ASSIGNMENT_MARKER}{value}");
         }
+        if !quoted && !compound_assignment {
+            if let Some(expanded) = self.expand_fast_assignment_value(value) {
+                return expanded;
+            }
+        }
         self.apply_parameter_assignment_expansions_in_word(value);
         if let Some(expanded) = self.expand_compound_positional_at_assignment(value) {
             if compound_assignment {
@@ -70,6 +75,52 @@ impl Executor {
         // path positions. Keep it centralized here until Rubash ports the
         // `expand_string_assignment`/SHELL_VAR path more directly.
         self.expand_assignment_tilde(&expanded)
+    }
+
+    fn expand_fast_assignment_value(&mut self, value: &str) -> Option<String> {
+        if let Some(expression) = value
+            .strip_prefix("$((")
+            .and_then(|rest| rest.strip_suffix("))"))
+            .filter(|expression| !expression.contains("${"))
+        {
+            let value = self.eval_arithmetic_command_value(expression)?.to_string();
+            return Some(self.expand_assignment_tilde_if_needed(value));
+        }
+
+        let parameter = value.strip_prefix('$')?;
+        if parameter.len() != 1 {
+            return None;
+        }
+
+        let expanded = match parameter.as_bytes()[0] {
+            b'0' => self.script_name_value(),
+            b'1'..=b'9' => {
+                let index = usize::from(parameter.as_bytes()[0] - b'0' - 1);
+                self.positional_params
+                    .get(index)
+                    .cloned()
+                    .unwrap_or_default()
+            }
+            b'@' | b'*' => self.positional_params.join(" "),
+            b'#' => self.positional_params.len().to_string(),
+            b'?' => self.exit_code.to_string(),
+            b'$' => std::process::id().to_string(),
+            b'!' => self.last_background_pid_value(),
+            b'-' => self.shell_option_flags(),
+            _ => return None,
+        };
+        Some(self.expand_assignment_tilde_if_needed(expanded))
+    }
+
+    fn expand_assignment_tilde_if_needed(&self, value: String) -> String {
+        if value.contains('=')
+            || (self.env_vars.get("__RUBASH_POSIX_MODE").map(String::as_str) == Some("1")
+                && !value.starts_with("~/"))
+        {
+            return value;
+        }
+
+        self.expand_assignment_tilde(&value)
     }
 
     pub(in crate::executor) fn expand_compound_positional_at_assignment(
