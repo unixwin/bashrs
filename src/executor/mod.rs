@@ -300,6 +300,7 @@ pub struct Executor {
     functions: HashMap<String, FunctionBody>,
     function_definition_redirects: HashMap<String, CommandNode>,
     positional_params: Vec<String>,
+    pipestatus: Vec<i32>,
     function_name_stack: Vec<String>,
     bash_argc_stack: Vec<String>,
     bash_argv_stack: Vec<String>,

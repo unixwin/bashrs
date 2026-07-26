@@ -309,6 +309,7 @@ impl Executor {
         subshell_command: &SubshellCommand,
     ) -> Result<(), ExecuteError> {
         let saved_env = self.env_vars.clone();
+        let saved_pipestatus = self.pipestatus.clone();
         let saved_depth = self.subshell_depth.get();
         self.subshell_depth.set(saved_depth + 1);
 
@@ -326,6 +327,7 @@ impl Executor {
         let status = self.exit_code;
 
         self.restore_shell_env(saved_env);
+        self.pipestatus = saved_pipestatus;
         self.subshell_depth.set(saved_depth);
         let finish_result = self.finish_compound_output_process_substitutions(group_outputs);
         self.exit_code = status;
