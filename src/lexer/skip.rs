@@ -1,5 +1,3 @@
-use std::str::from_utf8;
-
 use super::scanner::Lexer;
 
 impl<'a> Lexer<'a> {
@@ -19,7 +17,7 @@ impl<'a> Lexer<'a> {
                 current_word_boundary = true;
                 continue;
             }
-            let rest = from_utf8(&self.input[self.position..]).unwrap_or("");
+            let rest = &self.input[self.position..];
             update_command_substitution_case_depth(
                 c,
                 false,
@@ -126,9 +124,8 @@ impl<'a> Lexer<'a> {
         {
             self.advance();
         }
-        let mut delimiter = from_utf8(&self.input[delimiter_start..self.position])
-            .unwrap_or("")
-            .replace(['\'', '"', '\\'], "");
+        let mut delimiter =
+            self.input[delimiter_start..self.position].replace(['\'', '"', '\\'], "");
         if strip_tabs {
             delimiter = delimiter.trim_start_matches('\t').to_string();
         }
@@ -147,7 +144,7 @@ impl<'a> Lexer<'a> {
             while self.peek().is_some_and(|ch| ch != '\n') {
                 self.advance();
             }
-            let line = from_utf8(&self.input[line_start..self.position]).unwrap_or("");
+            let line = &self.input[line_start..self.position];
             let comparable = if strip_tabs {
                 line.trim_start_matches('\t')
             } else {
@@ -297,7 +294,7 @@ impl<'a> Lexer<'a> {
                 comment_start = false;
                 continue;
             }
-            let rest = from_utf8(&self.input[self.position..]).unwrap_or("");
+            let rest = &self.input[self.position..];
             update_brace_group_case_depth(
                 c,
                 &mut word,
@@ -391,7 +388,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn brace_close_can_end_compact_group(&self) -> bool {
-        let rest = from_utf8(&self.input[self.position..]).unwrap_or("");
+        let rest = &self.input[self.position..];
         let mut saw_blank = false;
         for (index, ch) in rest.char_indices() {
             match ch {

@@ -1,19 +1,14 @@
-use std::str::from_utf8;
-
 use super::classification::{is_brace_expansion, is_word_delimiter};
 use super::token::{Token, TokenKind};
 
 pub(super) struct Lexer<'a> {
-    pub(super) input: &'a [u8],
+    pub(super) input: &'a str,
     pub(super) position: usize,
 }
 
 impl<'a> Lexer<'a> {
     pub(super) fn new(input: &'a str) -> Self {
-        Self {
-            input: input.as_bytes(),
-            position: 0,
-        }
+        Self { input, position: 0 }
     }
 
     #[inline]
@@ -26,16 +21,13 @@ impl<'a> Lexer<'a> {
         if self.at_end() {
             None
         } else {
-            from_utf8(&self.input[self.position..]).ok()?.chars().next()
+            self.input[self.position..].chars().next()
         }
     }
 
     #[inline]
     pub(super) fn peek_after(&self, offset: usize) -> Option<char> {
-        from_utf8(&self.input[self.position..])
-            .ok()?
-            .chars()
-            .nth(offset)
+        self.input[self.position..].chars().nth(offset)
     }
 
     #[inline]
@@ -43,10 +35,7 @@ impl<'a> Lexer<'a> {
         if self.at_end() {
             None
         } else {
-            let c = from_utf8(&self.input[self.position..])
-                .ok()?
-                .chars()
-                .next()?;
+            let c = self.input[self.position..].chars().next()?;
             self.position += c.len_utf8();
             Some(c)
         }
@@ -64,7 +53,7 @@ impl<'a> Lexer<'a> {
 
     pub(super) fn slice(&self, start: usize) -> &str {
         let end = self.position.min(self.input.len());
-        from_utf8(&self.input[start..end]).unwrap_or("")
+        &self.input[start..end]
     }
 
     pub(super) fn next_token(&mut self) -> Option<Token> {
