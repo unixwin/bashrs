@@ -65,3 +65,19 @@ fn test_comment_skip() {
         .skip(1)
         .all(|token| token.kind == TokenKind::Semicolon));
 }
+
+#[test]
+fn test_large_single_quoted_unicode_word_tokenizes() {
+    let payload = "▀".repeat(4096);
+    let script = format!("v='{}'\n:", payload);
+    let tokens = tokenize(&script);
+    let assignment = tokens
+        .iter()
+        .find(|token| token.kind == TokenKind::Assignment)
+        .expect("assignment token");
+
+    assert_eq!(
+        assignment.value.strip_prefix("v=\x1c"),
+        Some(payload.as_str())
+    );
+}
