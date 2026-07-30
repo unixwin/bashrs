@@ -162,7 +162,7 @@ impl Executor {
         } else if let Some(capture) = &mut self.stdout_capture {
             capture.write_all(output.as_bytes())?;
         } else {
-            print!("{output}");
+            self.write_default_stdout(output.as_bytes())?;
         }
         Ok(())
     }

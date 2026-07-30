@@ -78,11 +78,18 @@ impl Executor {
         let Some(command_name) = cmd.words.first() else {
             return Ok(false);
         };
+        let expanded_command_name = self.expand_word(command_name);
+        if let Some(script_path) =
+            direct_windows_shell_script_path(&expanded_command_name, &self.env_vars)
+        {
+            self.execute_direct_shell_script(cmd, &expanded_command_name, &script_path)?;
+            return Ok(true);
+        }
         if self.env_vars.contains_key("__RUBASH_SCRIPT_NAME") {
             return Ok(false);
         }
         let command_uses_this_shell = command_name.contains("THIS_SH");
-        let command_name = self.expand_word(command_name);
+        let command_name = expanded_command_name;
         let normalized_command = command_name.replace('\\', "/");
         let normalized_this_sh = self.env_vars.get("THIS_SH").map(|this_sh| {
             shell_display_path(&shell_path_to_windows(this_sh, &self.env_vars).to_string_lossy())
@@ -148,6 +155,71 @@ impl Executor {
         Ok(true)
     }
 
+    fn execute_direct_shell_script(
+        &mut self,
+        cmd: &CommandNode,
+        script: &str,
+        script_path: &std::path::Path,
+    ) -> Result<(), ExecuteError> {
+        let source = fs::read_to_string(script_path)?;
+        let tokens = crate::lexer::tokenize(&source);
+        let mut ast = crate::parser::parse(&tokens);
+        self.apply_command_output_redirects(cmd, &mut ast)?;
+
+        let saved_env = self.env_vars.clone();
+        let saved_pipestatus = self.pipestatus.clone();
+        let saved_positional_params = self.positional_params.clone();
+        let saved_functions = self.functions.clone();
+        let saved_function_redirects = self.function_definition_redirects.clone();
+        let saved_aliases = self.aliases.clone();
+        let saved_bash_source_stack = self.bash_source_stack.clone();
+        let saved_bash_lineno_stack = self.bash_lineno_stack.clone();
+        let saved_bash_argc_stack = self.bash_argc_stack.clone();
+        let saved_bash_argv_stack = self.bash_argv_stack.clone();
+        let saved_cwd = env::current_dir().ok();
+        let saved_depth = self.subshell_depth.get();
+
+        if let Some(input) = self.function_call_stdin(cmd)? {
+            self.env_vars.insert(FUNCTION_STDIN.to_string(), input);
+            self.env_vars
+                .insert(FUNCTION_STDIN_OFFSET.to_string(), "0".to_string());
+            self.env_vars.remove(INHERIT_PROCESS_STDIN);
+        } else {
+            self.env_vars
+                .insert(INHERIT_PROCESS_STDIN.to_string(), "1".to_string());
+        }
+        self.set_env("__RUBASH_SCRIPT_NAME", script);
+        self.positional_params = cmd.words[1..].to_vec();
+        self.subshell_depth.set(saved_depth + 1);
+
+        let result = self.execute_ast(&ast);
+        let status = self.exit_code;
+
+        self.restore_shell_env(saved_env);
+        self.pipestatus = saved_pipestatus;
+        self.positional_params = saved_positional_params;
+        self.functions = saved_functions;
+        self.function_definition_redirects = saved_function_redirects;
+        self.aliases = saved_aliases;
+        self.bash_source_stack = saved_bash_source_stack;
+        self.bash_lineno_stack = saved_bash_lineno_stack;
+        self.bash_argc_stack = saved_bash_argc_stack;
+        self.bash_argv_stack = saved_bash_argv_stack;
+        self.subshell_depth.set(saved_depth);
+        if let Some(cwd) = saved_cwd {
+            let _ = env::set_current_dir(cwd);
+        }
+        self.exit_code = status;
+
+        match result {
+            Err(ExecuteError::ExitCode(code)) => {
+                self.exit_code = code;
+                Ok(())
+            }
+            other => other,
+        }
+    }
+
     pub(in crate::executor) fn is_this_shell_posixpipe_time_count(
         &self,
         cmd: &CommandNode,
@@ -180,4 +252,23 @@ impl Executor {
                 .iter()
                 .any(|word| matches!(word.as_str(), "wc" | "_cut_leading_spaces" | "-l"))
     }
+}
+
+fn direct_windows_shell_script_path(
+    command_name: &str,
+    env_vars: &std::collections::HashMap<String, String>,
+) -> Option<std::path::PathBuf> {
+    if !cfg!(windows) {
+        return None;
+    }
+
+    let path = shell_path_to_windows(command_name, env_vars);
+    if !path.is_file() {
+        return None;
+    }
+
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("sh"))
+        .then_some(path)
 }

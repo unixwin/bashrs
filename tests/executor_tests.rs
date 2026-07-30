@@ -166,6 +166,46 @@ mod environment_tests {
     }
 }
 
+#[cfg(windows)]
+mod windows_script_commands {
+    use super::*;
+
+    #[test]
+    fn dot_sh_path_command_runs_in_rubash_without_leaking_state() {
+        let dir = target_test_path("windows-direct-sh-script");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("probe.sh");
+        let marker = dir.join("marker.txt");
+        write_executable(
+            &script,
+            format!(
+                "echo \"$__RUBASH_SCRIPT_NAME|$1|$#|$BASH_SUBSHELL\" > {}\ncd ..\nexport RUBASH_DIRECT_SCRIPT_LEAK=1\n",
+                shell_test_path(&marker)
+            ),
+        )
+        .unwrap();
+
+        let old_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+
+        let tokens = tokenize("./probe.sh one two");
+        let ast = parse(&tokens);
+        let mut executor = Executor::new();
+        executor.set_env("__RUBASH_SCRIPT_NAME", "winuxsh");
+        executor.execute_ast(&ast).unwrap();
+        let current_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(old_cwd).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&marker).unwrap().trim(),
+            "./probe.sh|one|2|1"
+        );
+        assert_eq!(executor.get_env("RUBASH_DIRECT_SCRIPT_LEAK"), None);
+        assert_eq!(current_cwd, dir);
+    }
+}
+
 #[path = "executor_command_chaining/mod.rs"]
 mod command_chaining;
 
