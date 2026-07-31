@@ -45,8 +45,8 @@ impl Executor {
             return Ok(());
         };
 
-        let used_shell = should_run_with_shell(&program);
-        let mut process = self.external_process_for(cmd, &program);
+        let (mut process, used_shell) =
+            external_command_for_program(&program, &cmd.words[1..], &self.env_vars);
         self.apply_external_environment(cmd, &mut process);
         self.apply_external_redirects(cmd, &mut process)?;
         self.spawn_external_process(cmd, &program, process, used_shell)
@@ -157,20 +157,6 @@ impl Executor {
         Ok(true)
     }
 
-    fn external_process_for(&self, cmd: &CommandNode, program: &PathBuf) -> Command {
-        if should_run_with_shell(program) {
-            if let Some(shell) = find_shell(&self.env_vars) {
-                let mut command = Command::new(shell);
-                command.arg(program);
-                command.args(&cmd.words[1..]);
-                return command;
-            }
-        }
-        let mut command = Command::new(program);
-        command.args(&cmd.words[1..]);
-        command
-    }
-
     fn apply_external_environment(&mut self, cmd: &CommandNode, process: &mut Command) {
         self.apply_child_environment(process);
         for (var_name, var_value) in &cmd.assignments {
@@ -205,9 +191,6 @@ impl Executor {
                                 &output.stdout,
                                 &output.stderr,
                             )?;
-                            if used_shell {
-                                self.filter_external_shell_stderr_noise(cmd)?;
-                            }
                             self.exit_code = output.status.code().unwrap_or(1);
                         }
                         Err(error) => self.report_external_spawn_error(cmd, error)?,
@@ -215,9 +198,6 @@ impl Executor {
                 } else {
                     match child.wait() {
                         Ok(status) => {
-                            if used_shell {
-                                self.filter_external_shell_stderr_noise(cmd)?;
-                            }
                             self.exit_code = status.code().unwrap_or(1);
                         }
                         Err(error) => self.report_external_spawn_error(cmd, error)?,

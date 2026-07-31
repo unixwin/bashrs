@@ -402,6 +402,7 @@ impl Executor {
                 process.env(&name, self.child_env_value(&name, &value));
             }
         }
+        apply_required_windows_child_environment(process, &self.env_vars);
         self.apply_exported_functions_to_child(process);
     }
 

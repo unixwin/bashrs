@@ -42,30 +42,6 @@ impl Executor {
         Ok(())
     }
 
-    pub(in crate::executor) fn filter_external_shell_stderr_noise(
-        &self,
-        cmd: &CommandNode,
-    ) -> Result<(), ExecuteError> {
-        const GIT_BASH_TMP_WARNING: &str =
-            "bash.exe: warning: could not find /tmp, please create!\n";
-        let redirect = cmd
-            .redirect_err
-            .as_ref()
-            .or(cmd.redirect_err_append.as_ref());
-        let Some(redirect) = redirect else {
-            return Ok(());
-        };
-        let target = self.expand_word(&redirect.target);
-        let path = shell_path_to_windows(&target, &self.env_vars);
-        let Ok(contents) = fs::read_to_string(&path) else {
-            return Ok(());
-        };
-        if contents.contains(GIT_BASH_TMP_WARNING) {
-            fs::write(path, contents.replace(GIT_BASH_TMP_WARNING, ""))?;
-        }
-        Ok(())
-    }
-
     pub(in crate::executor) fn execute_same_shell_script(
         &mut self,
         cmd: &CommandNode,

@@ -19,9 +19,10 @@ fn test_disabled_builtin_dispatch_uses_external_commands() {
     }
     fs::create_dir_all(bin_dir).unwrap();
     for name in ["cd", "alias", "type", "command"] {
-        write_executable(
-            format!("{bin_dir}/{name}"),
+        write_test_command(
+            test_command_path(bin_dir, name),
             format!("echo external-{name}\n"),
+            format!("@echo off\r\necho external-{name}\r\n"),
         )
         .unwrap();
     }
@@ -73,7 +74,7 @@ fn test_disabled_builtin_dispatch_uses_external_commands() {
             "external-command\n",
         ),
     ] {
-        assert_eq!(fs::read_to_string(path).unwrap(), expected);
+        assert_eq!(read_normalized(path), expected);
         let _ = fs::remove_file(path);
     }
     let _ = fs::remove_dir_all(bin_dir);

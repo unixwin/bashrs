@@ -194,20 +194,8 @@ impl Executor {
             self.last_command_substitution_status.set(Some(127));
             return Some(String::new());
         };
-        let mut process = if should_run_with_shell(&program) {
-            if let Some(shell) = find_shell(&self.env_vars) {
-                let mut command = Command::new(shell);
-                command.arg(&program);
-                command.args(&expanded_words[1..]);
-                command
-            } else {
-                Command::new(&program)
-            }
-        } else {
-            let mut command = Command::new(&program);
-            command.args(&expanded_words[1..]);
-            command
-        };
+        let (mut process, _) =
+            external_command_for_program(&program, &expanded_words[1..], &self.env_vars);
 
         self.apply_child_environment(&mut process);
         if let Some(stdin_path) = stdin_path {

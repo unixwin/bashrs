@@ -4,12 +4,17 @@ use std::fs;
 #[test]
 fn test_disabled_pwd_builtin_uses_external_command() {
     let bin_dir = "target/rubash-disabled-pwd-bin";
-    let script_path = format!("{bin_dir}/pwd");
+    let script_path = test_command_path(bin_dir, "pwd");
     let output_path = "target/rubash-disabled-pwd-output.txt";
     let _ = fs::remove_file(&script_path);
     let _ = fs::remove_file(output_path);
     fs::create_dir_all(bin_dir).unwrap();
-    write_executable(&script_path, "echo external-pwd\n").unwrap();
+    write_test_command(
+        &script_path,
+        "echo external-pwd\n",
+        "@echo off\r\necho external-pwd\r\n",
+    )
+    .unwrap();
     let input = format!("enable -n pwd; pwd > {output_path}; enable pwd");
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
@@ -25,7 +30,7 @@ fn test_disabled_pwd_builtin_uses_external_command() {
 
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
-    assert_eq!(fs::read_to_string(output_path).unwrap(), "external-pwd\n");
+    assert_eq!(read_normalized(output_path), "external-pwd\n");
     let _ = fs::remove_file(script_path);
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_dir(bin_dir);
@@ -34,12 +39,17 @@ fn test_disabled_pwd_builtin_uses_external_command() {
 #[test]
 fn test_command_uses_external_pwd_when_builtin_is_disabled() {
     let bin_dir = "target/rubash-disabled-command-pwd-bin";
-    let script_path = format!("{bin_dir}/pwd");
+    let script_path = test_command_path(bin_dir, "pwd");
     let output_path = "target/rubash-disabled-command-pwd-output.txt";
     let _ = fs::remove_file(&script_path);
     let _ = fs::remove_file(output_path);
     fs::create_dir_all(bin_dir).unwrap();
-    write_executable(&script_path, "echo external-command-pwd\n").unwrap();
+    write_test_command(
+        &script_path,
+        "echo external-command-pwd\n",
+        "@echo off\r\necho external-command-pwd\r\n",
+    )
+    .unwrap();
     let input = format!("enable -n pwd; command pwd > {output_path}; enable pwd");
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
@@ -55,10 +65,7 @@ fn test_command_uses_external_pwd_when_builtin_is_disabled() {
 
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
-    assert_eq!(
-        fs::read_to_string(output_path).unwrap(),
-        "external-command-pwd\n"
-    );
+    assert_eq!(read_normalized(output_path), "external-command-pwd\n");
     let _ = fs::remove_file(script_path);
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_dir(bin_dir);
@@ -105,9 +112,10 @@ fn test_disabled_status_and_state_builtins_use_external_commands() {
     }
     fs::create_dir_all(bin_dir).unwrap();
     for name in ["true", "false", "hash", "umask"] {
-        write_executable(
-            format!("{bin_dir}/{name}"),
+        write_test_command(
+            test_command_path(bin_dir, name),
             format!("echo external-{name}\n"),
+            format!("@echo off\r\necho external-{name}\r\n"),
         )
         .unwrap();
     }
@@ -165,7 +173,7 @@ fn test_disabled_status_and_state_builtins_use_external_commands() {
             "external-umask\n",
         ),
     ] {
-        assert_eq!(fs::read_to_string(path).unwrap(), expected);
+        assert_eq!(read_normalized(path), expected);
         let _ = fs::remove_file(path);
     }
     let _ = fs::remove_dir_all(bin_dir);

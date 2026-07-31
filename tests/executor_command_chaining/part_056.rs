@@ -130,27 +130,13 @@ fn test_local_p_prints_without_reinitializing_local() {
 #[test]
 fn test_local_without_assignment_unsets_shell_value_but_preserves_export_env() {
     let output_path = target_test_path("rubash-local-export-env-output.txt");
-    let script_path = target_test_path("rubash-local-export-env-child.sh");
     let shell_output_path = shell_test_path(&output_path);
-    let shell_script_path = shell_test_path(&script_path);
+    let rubash = shell_test_path(std::path::Path::new(env!("CARGO_BIN_EXE_rubash")));
     let _ = fs::remove_file(&output_path);
-    let _ = fs::remove_file(&script_path);
-    fs::write(
-        &script_path,
-        "printf '%s\\n' \"${RUBASH_LOCAL_ENV-unset}\"\n",
-    )
-    .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = fs::metadata(&script_path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&script_path, permissions).unwrap();
-    }
     let input = format!(
         "unset RUBASH_LOCAL_ENV; export RUBASH_LOCAL_ENV=abc; \
          f() {{ local RUBASH_LOCAL_ENV; echo local:${{RUBASH_LOCAL_ENV-unset}} > {shell_output_path}; \
-                {shell_script_path} >> {shell_output_path}; }}; \
+                {rubash} -c 'printf \"%s\\n\" \"${{RUBASH_LOCAL_ENV-unset}}\"' >> {shell_output_path}; }}; \
          f; echo outer:$RUBASH_LOCAL_ENV >> {shell_output_path}"
     );
     let tokens = tokenize(&input);
@@ -167,7 +153,6 @@ fn test_local_without_assignment_unsets_shell_value_but_preserves_export_env() {
     );
     std::env::remove_var("RUBASH_LOCAL_ENV");
     let _ = fs::remove_file(output_path);
-    let _ = fs::remove_file(script_path);
 }
 
 #[test]

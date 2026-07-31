@@ -5,17 +5,15 @@
 // - findcmd.h
 
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use super::support_names::split_shell_path;
 
 pub fn find_user_command(name: &str, env_vars: &HashMap<String, String>) -> Option<PathBuf> {
     if name.is_empty() {
         return None;
-    }
-
-    if cfg!(windows) && name == "sh" {
-        if let Some(shell) = find_windows_sh_compatible_command(env_vars) {
-            return Some(shell);
-        }
     }
 
     if has_path_separator(name) {
@@ -23,7 +21,7 @@ pub fn find_user_command(name: &str, env_vars: &HashMap<String, String>) -> Opti
         return executable_candidate(&candidate);
     }
 
-    for dir in split_path(env_vars.get("PATH").map(String::as_str).unwrap_or_default()) {
+    for dir in split_shell_path(env_vars.get("PATH").map(String::as_str).unwrap_or_default()) {
         let candidate = shell_path_to_windows(&dir, env_vars).join(name);
         if let Some(found) = executable_candidate(&candidate) {
             return Some(found);
@@ -33,37 +31,31 @@ pub fn find_user_command(name: &str, env_vars: &HashMap<String, String>) -> Opti
     None
 }
 
-pub fn standard_path(env_vars: &HashMap<String, String>) -> String {
+pub fn standard_path(_env_vars: &HashMap<String, String>) -> String {
     if cfg!(windows) {
-        let mut paths = Vec::new();
-        if let Some(root) = git_bash_root(env_vars) {
-            paths.push(root.join("usr").join("local").join("bin"));
-            paths.push(root.join("usr").join("bin"));
-            paths.push(root.join("bin"));
-        }
-        paths.push(PathBuf::from(r"C:\Windows\System32"));
-        paths.push(PathBuf::from(r"C:\Windows"));
-        return paths
-            .into_iter()
-            .map(|path| path.to_string_lossy().to_string())
-            .collect::<Vec<_>>()
-            .join(";");
+        return [
+            PathBuf::from(r"C:\Windows\System32"),
+            PathBuf::from(r"C:\Windows"),
+        ]
+        .into_iter()
+        .map(|path| path.to_string_lossy().to_string())
+        .collect::<Vec<_>>()
+        .join(";");
     }
 
     "/usr/local/bin:/usr/bin:/bin".to_string()
 }
 
 pub fn find_shell(env_vars: &HashMap<String, String>) -> Option<PathBuf> {
-    if cfg!(windows) {
-        return find_windows_git_bash_from_env(env_vars)
-            .or_else(find_windows_git_bash)
-            .or_else(|| find_native_shell_on_path(env_vars));
-    }
-
-    ["sh", "bash"]
+    let path_shell = ["sh", "bash"]
         .into_iter()
-        .find_map(|name| find_user_command(name, env_vars))
-        .or_else(find_standard_unix_shell)
+        .find_map(|name| find_user_command(name, env_vars));
+
+    if cfg!(windows) {
+        path_shell
+    } else {
+        path_shell.or_else(find_standard_unix_shell)
+    }
 }
 
 pub fn should_run_with_shell(path: &Path) -> bool {
@@ -77,20 +69,109 @@ pub fn should_run_with_shell(path: &Path) -> bool {
     }
 }
 
+pub fn external_command_for_program(
+    program: &Path,
+    args: &[String],
+    env_vars: &HashMap<String, String>,
+) -> (Command, bool) {
+    if is_windows_batch_file(program) {
+        let program = cmd_compatible_windows_path(program);
+        let mut command = Command::new(windows_command_processor());
+        command.arg("/D").arg("/C").arg(program);
+        command.args(args);
+        return (command, false);
+    }
+
+    if should_run_with_shell(program) {
+        if let Some(shell) = find_shell(env_vars) {
+            let mut command = Command::new(shell);
+            command.arg(program);
+            command.args(args);
+            return (command, true);
+        }
+    }
+
+    let mut command = Command::new(program);
+    command.args(args);
+    (command, false)
+}
+
+fn is_windows_batch_file(path: &Path) -> bool {
+    cfg!(windows)
+        && path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "bat" | "cmd"))
+}
+
+fn windows_command_processor() -> PathBuf {
+    std::env::var_os("ComSpec")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32\cmd.exe"))
+}
+
+fn cmd_compatible_windows_path(path: &Path) -> PathBuf {
+    let path = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    if !cfg!(windows) {
+        return path;
+    }
+
+    let value = path.to_string_lossy();
+    if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = value.strip_prefix(r"\\?\") {
+        return PathBuf::from(rest);
+    }
+    path
+}
+
+pub fn apply_required_windows_child_environment(
+    process: &mut Command,
+    env_vars: &HashMap<String, String>,
+) {
+    if !cfg!(windows) {
+        return;
+    }
+
+    for name in ["SystemRoot", "WINDIR", "ComSpec"] {
+        let value = env_vars
+            .get(name)
+            .cloned()
+            .or_else(|| std::env::var(name).ok());
+        if let Some(value) = value {
+            if !value.contains('\0') {
+                process.env(name, value);
+            }
+        }
+    }
+}
+
 fn executable_candidate(path: &Path) -> Option<PathBuf> {
+    if cfg!(windows) && path.extension().is_none() {
+        if let Some(candidate) = executable_extension_candidate(path) {
+            return Some(candidate);
+        }
+    }
+
     if path.is_file() {
         return Some(path.to_path_buf());
     }
 
     if cfg!(windows) {
-        for ext in executable_extensions() {
-            let candidate = path.with_extension(ext);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
+        return executable_extension_candidate(path);
     }
 
+    None
+}
+
+fn executable_extension_candidate(path: &Path) -> Option<PathBuf> {
+    for ext in executable_extensions() {
+        let candidate = path.with_extension(ext);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
     None
 }
 
@@ -108,82 +189,6 @@ fn executable_extensions() -> Vec<String> {
         .unwrap_or_else(|| vec!["exe".into(), "com".into(), "bat".into(), "cmd".into()])
 }
 
-fn find_windows_git_bash() -> Option<PathBuf> {
-    if !cfg!(windows) {
-        return None;
-    }
-
-    [
-        r"C:\Program Files\Git\bin\bash.exe",
-        r"C:\Program Files\Git\usr\bin\bash.exe",
-    ]
-    .into_iter()
-    .map(PathBuf::from)
-    .find(|path| path.is_file())
-}
-
-fn find_windows_git_bash_from_env(env_vars: &HashMap<String, String>) -> Option<PathBuf> {
-    for key in ["CLAUDE_CODE_GIT_BASH_PATH", "GIT_BASH_PATH", "SHELL"] {
-        let Some(value) = env_vars.get(key) else {
-            continue;
-        };
-        let path = PathBuf::from(value);
-        if is_native_windows_shell(&path) {
-            return Some(path);
-        }
-    }
-
-    let path = env_vars.get("PATH")?;
-    split_path(path)
-        .into_iter()
-        .map(PathBuf::from)
-        .flat_map(|dir| [dir.join("bash.exe"), dir.join("sh.exe")])
-        .find(|path| is_native_windows_shell(path))
-}
-
-fn find_windows_sh_compatible_command(env_vars: &HashMap<String, String>) -> Option<PathBuf> {
-    if let Some(root) = git_bash_root(env_vars) {
-        if !path_contains_git_bash_dir(env_vars, &root) {
-            return None;
-        }
-        for candidate in [
-            root.join("usr").join("bin").join("sh.exe"),
-            root.join("bin").join("sh.exe"),
-            root.join("bin").join("bash.exe"),
-            root.join("usr").join("bin").join("bash.exe"),
-        ] {
-            if is_native_windows_shell(&candidate) {
-                return Some(candidate);
-            }
-        }
-    }
-
-    find_windows_git_bash_from_env(env_vars).or_else(find_windows_git_bash)
-}
-
-fn path_contains_git_bash_dir(env_vars: &HashMap<String, String>, root: &Path) -> bool {
-    let Some(path) = env_vars.get("PATH") else {
-        return false;
-    };
-    let bin = root.join("bin");
-    let usr_bin = root.join("usr").join("bin");
-    split_path(path).into_iter().any(|entry| {
-        let path = shell_path_to_windows(&entry, env_vars);
-        path.to_string_lossy()
-            .eq_ignore_ascii_case(&bin.to_string_lossy())
-            || path
-                .to_string_lossy()
-                .eq_ignore_ascii_case(&usr_bin.to_string_lossy())
-    })
-}
-
-fn find_native_shell_on_path(env_vars: &HashMap<String, String>) -> Option<PathBuf> {
-    ["sh", "bash"]
-        .into_iter()
-        .filter_map(|name| find_user_command(name, env_vars))
-        .find(|path| is_native_windows_shell(path))
-}
-
 fn find_standard_unix_shell() -> Option<PathBuf> {
     if cfg!(windows) {
         return None;
@@ -193,38 +198,6 @@ fn find_standard_unix_shell() -> Option<PathBuf> {
         .into_iter()
         .map(PathBuf::from)
         .find(|path| path.is_file())
-}
-
-fn is_native_windows_shell(path: &Path) -> bool {
-    path.is_file()
-        && path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
-}
-
-fn split_path(path: &str) -> Vec<String> {
-    if path.contains(';') {
-        path.split(';')
-            .filter(|entry| !entry.is_empty())
-            .map(str::to_string)
-            .collect()
-    } else if cfg!(windows) && starts_with_windows_drive(path) {
-        vec![path.to_string()]
-    } else {
-        path.split(':')
-            .filter(|entry| !entry.is_empty())
-            .map(str::to_string)
-            .collect()
-    }
-}
-
-fn starts_with_windows_drive(path: &str) -> bool {
-    let bytes = path.as_bytes();
-    bytes.len() >= 3
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
-        && matches!(bytes[2], b'\\' | b'/')
 }
 
 fn has_path_separator(name: &str) -> bool {
@@ -253,18 +226,6 @@ pub(crate) fn shell_path_to_windows(path: &str, env_vars: &HashMap<String, Strin
         );
     }
 
-    if let Some(rest) = normalized.strip_prefix("/usr/bin/") {
-        if let Some(root) = git_bash_root(env_vars) {
-            return root.join("usr").join("bin").join(rest);
-        }
-    }
-
-    if let Some(rest) = normalized.strip_prefix("/bin/") {
-        if let Some(root) = git_bash_root(env_vars) {
-            return root.join("usr").join("bin").join(rest);
-        }
-    }
-
     if normalized == "/tmp" {
         if let Some(tmpdir) = env_vars.get("TMPDIR") {
             if tmpdir.replace('\\', "/") == "/tmp" {
@@ -286,35 +247,6 @@ pub(crate) fn shell_path_to_windows(path: &str, env_vars: &HashMap<String, Strin
     PathBuf::from(path)
 }
 
-fn git_root(env_vars: &HashMap<String, String>) -> Option<PathBuf> {
-    let exepath = env_vars.get("EXEPATH")?;
-    let bin = Path::new(exepath);
-    bin.parent().map(Path::to_path_buf)
-}
-
-fn git_bash_root(env_vars: &HashMap<String, String>) -> Option<PathBuf> {
-    if let Some(root) = git_root(env_vars) {
-        return Some(root);
-    }
-
-    for key in ["CLAUDE_CODE_GIT_BASH_PATH", "GIT_BASH_PATH", "SHELL"] {
-        let Some(value) = env_vars.get(key) else {
-            continue;
-        };
-        let path = PathBuf::from(value);
-        if !is_native_windows_shell(&path) {
-            continue;
-        }
-        if let Some(bin) = path.parent() {
-            if let Some(root) = bin.parent() {
-                return Some(root.to_path_buf());
-            }
-        }
-    }
-
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,42 +264,34 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn windows_shell_prefers_native_exe_from_env() {
+    fn windows_shell_lookup_ignores_compatible_shell_env() {
         let native_exe = std::env::current_exe().unwrap();
         let mut env_vars = HashMap::new();
         env_vars.insert(
-            "CLAUDE_CODE_GIT_BASH_PATH".to_string(),
+            "RUBASH_COMPATIBLE_SHELL_PATH".to_string(),
             native_exe.to_string_lossy().to_string(),
         );
-        env_vars.insert(
-            "PATH".to_string(),
-            r"D:\tmp\guard-bin;D:\Git\bin".to_string(),
-        );
+        env_vars.insert("PATH".to_string(), String::new());
 
-        assert_eq!(find_shell(&env_vars), Some(native_exe));
+        assert_eq!(find_shell(&env_vars), None);
+        assert_eq!(find_user_command("sh", &env_vars), None);
     }
 
     #[cfg(windows)]
     #[test]
-    fn windows_absolute_usr_bin_command_uses_pathext() {
-        let root = std::env::temp_dir().join("rubash-path-test-git");
-        let bin = root.join("bin");
-        let usr_bin = root.join("usr").join("bin");
-        fs::create_dir_all(&bin).unwrap();
-        fs::create_dir_all(&usr_bin).unwrap();
-        let bash = bin.join("bash.exe");
-        let env = usr_bin.join("env.exe");
-        fs::write(&bash, "").unwrap();
-        fs::write(&env, "").unwrap();
+    fn windows_shell_lookup_uses_path_only() {
+        let bin_dir = std::env::temp_dir().join("rubash-path-only-shell-bin");
+        let _ = fs::remove_dir_all(&bin_dir);
+        fs::create_dir_all(&bin_dir).unwrap();
+        let shell = bin_dir.join("sh.exe");
+        fs::write(&shell, "").unwrap();
 
         let mut env_vars = HashMap::new();
-        env_vars.insert(
-            "CLAUDE_CODE_GIT_BASH_PATH".to_string(),
-            bash.to_string_lossy().to_string(),
-        );
+        env_vars.insert("PATH".to_string(), bin_dir.to_string_lossy().to_string());
 
-        assert_eq!(find_user_command("/usr/bin/env", &env_vars), Some(env));
-        let _ = fs::remove_dir_all(root);
+        assert_eq!(find_shell(&env_vars), Some(shell.clone()));
+        assert_eq!(find_user_command("sh", &env_vars), Some(shell));
+        let _ = fs::remove_dir_all(bin_dir);
     }
 
     #[cfg(windows)]
@@ -422,5 +346,53 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&target_dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_find_user_command_splits_bash_style_prefix_before_native_path() {
+        let empty_dir = std::env::temp_dir().join("rubash-bash-style-path-prefix-empty");
+        let bin_dir = std::env::temp_dir().join("rubash-bash-style-path-prefix-bin");
+        let _ = fs::remove_dir_all(&empty_dir);
+        let _ = fs::remove_dir_all(&bin_dir);
+        fs::create_dir_all(&empty_dir).unwrap();
+        fs::create_dir_all(&bin_dir).unwrap();
+
+        let marker = bin_dir.join("clear.exe");
+        fs::write(&marker, "").unwrap();
+
+        let mut env_vars = HashMap::new();
+        env_vars.insert(
+            "PATH".to_string(),
+            format!(
+                "{}:{};C:/definitely/missing",
+                windows_shell_path(&empty_dir),
+                windows_shell_path(&bin_dir)
+            ),
+        );
+
+        assert_eq!(find_user_command("clear", &env_vars), Some(marker));
+
+        let _ = fs::remove_dir_all(empty_dir);
+        let _ = fs::remove_dir_all(bin_dir);
+    }
+
+    #[cfg(windows)]
+    fn windows_shell_path(path: &Path) -> String {
+        let value = path.to_string_lossy().replace('\\', "/");
+        let bytes = value.as_bytes();
+        if bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && bytes[2] == b'/'
+        {
+            format!(
+                "/{}/{}",
+                (bytes[0] as char).to_ascii_lowercase(),
+                &value[3..]
+            )
+        } else {
+            value
+        }
     }
 }

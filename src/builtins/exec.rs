@@ -154,23 +154,14 @@ where
     W: Write,
     E: Write,
 {
-    let mut process = if crate::executor::path::should_run_with_shell(program) {
-        if let Some(shell) = crate::executor::path::find_shell(env_vars) {
-            let mut command = Command::new(shell);
-            command.arg(program);
-            command
-        } else {
-            Command::new(program)
-        }
-    } else {
-        Command::new(program)
-    };
+    let (mut process, _) =
+        crate::executor::path::external_command_for_program(program, operands, env_vars);
 
     process.env_clear();
     if !clean_env {
         apply_exported_environment(&mut process, env_vars);
+        crate::executor::path::apply_required_windows_child_environment(&mut process, env_vars);
     }
-    process.args(operands);
     process.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     match process.output() {

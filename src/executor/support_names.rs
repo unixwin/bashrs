@@ -331,16 +331,92 @@ pub(in crate::executor) fn apply_stderr_append_redirect(
 }
 
 pub(in crate::executor) fn split_shell_path(path: &str) -> Vec<String> {
-    if path.contains(';') {
-        path.split(';')
-            .filter(|entry| !entry.is_empty())
-            .map(str::to_string)
-            .collect()
+    if cfg!(windows) {
+        split_windows_shell_path(path)
     } else {
         path.split(':')
             .filter(|entry| !entry.is_empty())
             .map(str::to_string)
             .collect()
+    }
+}
+
+fn split_windows_shell_path(path: &str) -> Vec<String> {
+    let mut entries = Vec::new();
+    let bytes = path.as_bytes();
+    let mut entry_start = 0;
+
+    for (index, byte) in bytes.iter().enumerate() {
+        let is_separator = match byte {
+            b';' => true,
+            b':' => !is_windows_drive_colon(bytes, entry_start, index),
+            _ => false,
+        };
+
+        if is_separator {
+            push_path_entry(&mut entries, path, entry_start, index);
+            entry_start = index + 1;
+        }
+    }
+
+    push_path_entry(&mut entries, path, entry_start, path.len());
+    entries
+}
+
+fn push_path_entry(entries: &mut Vec<String>, path: &str, start: usize, end: usize) {
+    if start < end {
+        entries.push(path[start..end].to_string());
+    }
+}
+
+fn is_windows_drive_colon(bytes: &[u8], entry_start: usize, colon: usize) -> bool {
+    colon == entry_start + 1
+        && bytes[entry_start].is_ascii_alphabetic()
+        && bytes
+            .get(colon + 1)
+            .is_some_and(|next| matches!(next, b'\\' | b'/'))
+}
+
+#[cfg(test)]
+mod split_shell_path_tests {
+    use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_splits_bash_style_prefix_before_native_path() {
+        assert_eq!(
+            split_shell_path("/c/tools/cloc:/c/tools/winuxcmd;C:/Windows"),
+            vec![
+                "/c/tools/cloc".to_string(),
+                "/c/tools/winuxcmd".to_string(),
+                "C:/Windows".to_string(),
+            ]
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_preserves_drive_colons_while_accepting_colon_separators() {
+        assert_eq!(
+            split_shell_path("C:/Windows;D:\\Tools:/c/bin"),
+            vec![
+                "C:/Windows".to_string(),
+                "D:\\Tools".to_string(),
+                "/c/bin".to_string(),
+            ]
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_splits_only_on_colons() {
+        assert_eq!(
+            split_shell_path("/usr/bin:/bin;/literal-semicolon"),
+            vec![
+                "/usr/bin".to_string(),
+                "/bin;/literal-semicolon".to_string()
+            ]
+        );
     }
 }
 

@@ -264,9 +264,7 @@ impl Executor {
                     .iter()
                     .map(|word| self.expand_word(word))
                     .collect::<Vec<_>>();
-                let mut output = echo_command_substitution_output(&args);
-                output.push('\n');
-                Some(output)
+                Some(echo_raw_output(&args))
             }
             "printf" => {
                 let expanded_args: Vec<String> = words[1..]

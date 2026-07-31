@@ -164,7 +164,8 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use self::path::{
-    find_shell, find_user_command, shell_path_to_windows, should_run_with_shell, standard_path,
+    apply_required_windows_child_environment, external_command_for_program, find_shell,
+    find_user_command, shell_path_to_windows, standard_path,
 };
 
 const EXPORTED_VARS: &str = "__RUBASH_EXPORTED_VARS";

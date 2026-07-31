@@ -49,6 +49,30 @@ fn write_executable(
     Ok(())
 }
 
+fn test_command_path(bin_dir: &str, name: &str) -> String {
+    if cfg!(windows) {
+        format!("{bin_dir}/{name}.cmd")
+    } else {
+        format!("{bin_dir}/{name}")
+    }
+}
+
+fn write_test_command(
+    path: impl AsRef<std::path::Path>,
+    unix_contents: impl AsRef<[u8]>,
+    windows_contents: impl AsRef<[u8]>,
+) -> std::io::Result<()> {
+    if cfg!(windows) {
+        write_executable(path, windows_contents)
+    } else {
+        write_executable(path, unix_contents)
+    }
+}
+
+fn read_normalized(path: impl AsRef<std::path::Path>) -> String {
+    std::fs::read_to_string(path).unwrap().replace("\r\n", "\n")
+}
+
 mod simple_execution {
     use super::*;
 

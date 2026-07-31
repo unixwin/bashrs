@@ -171,34 +171,28 @@ fn test_read_file_command_substitution_missing_file_sets_status() {
 
 #[test]
 fn test_external_command_substitution_captures_stdout() {
-    let bin_dir = "target/rubash-command-substitution-bin";
-    let helper_path = format!("{bin_dir}/rubash-comsub-helper");
     let output_path = "target/rubash-external-command-substitution-output.txt";
-    let _ = fs::create_dir_all(bin_dir);
-    let _ = fs::remove_file(&helper_path);
+    let rubash = shell_test_path(std::path::Path::new(env!("CARGO_BIN_EXE_rubash")));
     let _ = fs::remove_file(output_path);
-    write_executable(&helper_path, "#!/bin/sh\nprintf 'a\\nb\\n\\n'\n").unwrap();
     let input = format!(
-        "v=$(rubash-comsub-helper); printf 'v=<%s> len:%s\\n' \"$v\" \"${{#v}}\" > {output_path}"
+        "v=$({rubash} -c 'printf \"a\\nb\\n\\n\"'); printf 'v=<%s> len:%s\\n' \"$v\" \"${{#v}}\" > {output_path}"
     );
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
     let mut executor = Executor::new();
-    executor.set_env("PATH", bin_dir);
 
     let result = executor.execute_ast(&ast);
 
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(fs::read_to_string(output_path).unwrap(), "v=<a\nb> len:3\n");
-    let _ = fs::remove_file(helper_path);
     let _ = fs::remove_file(output_path);
 }
 
 #[test]
 fn test_external_command_substitution_captures_stdin_redirect() {
     let bin_dir = "target/rubash-command-substitution-stdin-bin";
-    let helper_path = format!("{bin_dir}/rubash-comsub-stdin-helper");
+    let helper_path = test_command_path(bin_dir, "rubash-comsub-stdin-helper");
     let input_path = target_test_path("rubash-external-command-substitution-stdin-input.txt");
     let output_path = target_test_path("rubash-external-command-substitution-stdin-output.txt");
     let shell_input_path = shell_test_path(&input_path);
@@ -207,9 +201,10 @@ fn test_external_command_substitution_captures_stdin_redirect() {
     let _ = fs::remove_file(&helper_path);
     let _ = fs::remove_file(&input_path);
     let _ = fs::remove_file(&output_path);
-    write_executable(
+    write_test_command(
         &helper_path,
         "#!/bin/sh\ncount=0\nwhile IFS= read -r _line; do count=$((count + 1)); done\nprintf '%s\\n' \"$count\"\n",
+        "@echo off\r\n\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -Command \"$count=0; $input | ForEach-Object { $count++ }; [Console]::Out.Write($count)\"\r\n",
     )
     .unwrap();
     fs::write(&input_path, "a\nb\n").unwrap();
