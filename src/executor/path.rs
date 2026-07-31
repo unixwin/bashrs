@@ -18,12 +18,12 @@ pub fn find_user_command(name: &str, env_vars: &HashMap<String, String>) -> Opti
 
     if has_path_separator(name) {
         let candidate = shell_path_to_windows(name, env_vars);
-        return executable_candidate(&candidate);
+        return executable_candidate(&candidate, env_vars);
     }
 
     for dir in split_shell_path(env_vars.get("PATH").map(String::as_str).unwrap_or_default()) {
         let candidate = shell_path_to_windows(&dir, env_vars).join(name);
-        if let Some(found) = executable_candidate(&candidate) {
+        if let Some(found) = executable_candidate(&candidate, env_vars) {
             return Some(found);
         }
     }
@@ -74,6 +74,19 @@ pub fn external_command_for_program(
     args: &[String],
     env_vars: &HashMap<String, String>,
 ) -> (Command, bool) {
+    if is_windows_powershell_script(program) {
+        let program = cmd_compatible_windows_path(program);
+        let mut command = Command::new(windows_powershell_processor(env_vars));
+        command
+            .arg("-NoProfile")
+            .arg("-ExecutionPolicy")
+            .arg("Bypass")
+            .arg("-File")
+            .arg(program);
+        command.args(args);
+        return (command, false);
+    }
+
     if is_windows_batch_file(program) {
         let program = cmd_compatible_windows_path(program);
         let mut command = Command::new(windows_command_processor());
@@ -89,11 +102,29 @@ pub fn external_command_for_program(
             command.args(args);
             return (command, true);
         }
+        if let Some(shell) = current_shell_processor() {
+            let mut command = Command::new(shell);
+            command.arg(program);
+            command.args(args);
+            return (command, true);
+        }
     }
 
     let mut command = Command::new(program);
     command.args(args);
     (command, false)
+}
+
+fn current_shell_processor() -> Option<PathBuf> {
+    std::env::current_exe().ok()
+}
+
+fn is_windows_powershell_script(path: &Path) -> bool {
+    cfg!(windows)
+        && path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("ps1"))
 }
 
 fn is_windows_batch_file(path: &Path) -> bool {
@@ -102,6 +133,26 @@ fn is_windows_batch_file(path: &Path) -> bool {
             .extension()
             .and_then(|ext| ext.to_str())
             .is_some_and(|ext| matches!(ext.to_ascii_lowercase().as_str(), "bat" | "cmd"))
+}
+
+fn windows_powershell_processor(env_vars: &HashMap<String, String>) -> PathBuf {
+    find_user_command("pwsh", env_vars)
+        .or_else(|| find_user_command("powershell", env_vars))
+        .or_else(|| {
+            let system_root = env_vars
+                .get("SystemRoot")
+                .or_else(|| env_vars.get("WINDIR"))
+                .cloned()
+                .or_else(|| std::env::var("SystemRoot").ok())
+                .or_else(|| std::env::var("WINDIR").ok())?;
+            let path = PathBuf::from(system_root)
+                .join("System32")
+                .join("WindowsPowerShell")
+                .join("v1.0")
+                .join("powershell.exe");
+            path.is_file().then_some(path)
+        })
+        .unwrap_or_else(|| PathBuf::from("pwsh"))
 }
 
 fn windows_command_processor() -> PathBuf {
@@ -147,9 +198,9 @@ pub fn apply_required_windows_child_environment(
     }
 }
 
-fn executable_candidate(path: &Path) -> Option<PathBuf> {
+fn executable_candidate(path: &Path, env_vars: &HashMap<String, String>) -> Option<PathBuf> {
     if cfg!(windows) && path.extension().is_none() {
-        if let Some(candidate) = executable_extension_candidate(path) {
+        if let Some(candidate) = executable_extension_candidate(path, env_vars) {
             return Some(candidate);
         }
     }
@@ -159,14 +210,17 @@ fn executable_candidate(path: &Path) -> Option<PathBuf> {
     }
 
     if cfg!(windows) {
-        return executable_extension_candidate(path);
+        return executable_extension_candidate(path, env_vars);
     }
 
     None
 }
 
-fn executable_extension_candidate(path: &Path) -> Option<PathBuf> {
-    for ext in executable_extensions() {
+fn executable_extension_candidate(
+    path: &Path,
+    env_vars: &HashMap<String, String>,
+) -> Option<PathBuf> {
+    for ext in executable_extensions(env_vars) {
         let candidate = path.with_extension(ext);
         if candidate.is_file() {
             return Some(candidate);
@@ -175,9 +229,11 @@ fn executable_extension_candidate(path: &Path) -> Option<PathBuf> {
     None
 }
 
-fn executable_extensions() -> Vec<String> {
-    std::env::var("PATHEXT")
-        .ok()
+fn executable_extensions(env_vars: &HashMap<String, String>) -> Vec<String> {
+    let mut exts = env_vars
+        .get("PATHEXT")
+        .cloned()
+        .or_else(|| std::env::var("PATHEXT").ok())
         .map(|value| {
             value
                 .split(';')
@@ -186,7 +242,17 @@ fn executable_extensions() -> Vec<String> {
                 .map(str::to_ascii_lowercase)
                 .collect()
         })
-        .unwrap_or_else(|| vec!["exe".into(), "com".into(), "bat".into(), "cmd".into()])
+        .unwrap_or_else(|| vec!["exe".into(), "com".into(), "bat".into(), "cmd".into()]);
+
+    for ext in ["exe", "com", "bat", "cmd", "ps1"] {
+        if !exts
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(ext))
+        {
+            exts.push(ext.into());
+        }
+    }
+    exts
 }
 
 fn find_standard_unix_shell() -> Option<PathBuf> {
@@ -374,6 +440,119 @@ mod tests {
         assert_eq!(find_user_command("clear", &env_vars), Some(marker));
 
         let _ = fs::remove_dir_all(empty_dir);
+        let _ = fs::remove_dir_all(bin_dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_find_user_command_prefers_native_wrapper_before_extensionless_script() {
+        let bin_dir = std::env::temp_dir().join("rubash-native-wrapper-before-script");
+        let _ = fs::remove_dir_all(&bin_dir);
+        fs::create_dir_all(&bin_dir).unwrap();
+        let script = bin_dir.join("code");
+        let wrapper = bin_dir.join("code.cmd");
+        fs::write(&script, "#!/usr/bin/env sh\n").unwrap();
+        fs::write(&wrapper, "@echo off\r\n").unwrap();
+
+        let mut env_vars = HashMap::new();
+        env_vars.insert("PATH".to_string(), bin_dir.to_string_lossy().to_string());
+        env_vars.insert("PATHEXT".to_string(), ".EXE;.PS1".to_string());
+
+        assert_eq!(find_user_command("code", &env_vars), Some(wrapper));
+
+        let _ = fs::remove_dir_all(bin_dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_find_user_command_prefers_ps1_before_extensionless_script() {
+        let bin_dir = std::env::temp_dir().join("rubash-ps1-before-script");
+        let _ = fs::remove_dir_all(&bin_dir);
+        fs::create_dir_all(&bin_dir).unwrap();
+        let script = bin_dir.join("tool");
+        let wrapper = bin_dir.join("tool.ps1");
+        fs::write(&script, "#!/usr/bin/env sh\n").unwrap();
+        fs::write(&wrapper, "Write-Output tool\r\n").unwrap();
+
+        let mut env_vars = HashMap::new();
+        env_vars.insert("PATH".to_string(), bin_dir.to_string_lossy().to_string());
+        env_vars.insert("PATHEXT".to_string(), ".EXE".to_string());
+
+        assert_eq!(find_user_command("tool", &env_vars), Some(wrapper));
+
+        let _ = fs::remove_dir_all(bin_dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_extensionless_script_without_sh_falls_back_to_current_shell() {
+        let bin_dir = std::env::temp_dir().join("rubash-extensionless-self-shell");
+        let _ = fs::remove_dir_all(&bin_dir);
+        fs::create_dir_all(&bin_dir).unwrap();
+        let script = bin_dir.join("code");
+        fs::write(&script, "#!/usr/bin/env sh\n").unwrap();
+
+        let mut env_vars = HashMap::new();
+        env_vars.insert("PATH".to_string(), String::new());
+
+        let (command, used_shell) = external_command_for_program(&script, &[".".into()], &env_vars);
+        let args = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(used_shell);
+        assert_eq!(
+            PathBuf::from(command.get_program()),
+            std::env::current_exe().unwrap()
+        );
+        assert_eq!(
+            args,
+            vec![script.to_string_lossy().to_string(), ".".to_string()]
+        );
+
+        let _ = fs::remove_dir_all(bin_dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_ps1_commands_run_through_powershell_file() {
+        let bin_dir = std::env::temp_dir().join("rubash-powershell-bin");
+        let _ = fs::remove_dir_all(&bin_dir);
+        fs::create_dir_all(&bin_dir).unwrap();
+        let pwsh = bin_dir.join("pwsh");
+        fs::write(&pwsh, "").unwrap();
+        let script = bin_dir.join("probe.ps1");
+        fs::write(&script, "").unwrap();
+
+        let mut env_vars = HashMap::new();
+        env_vars.insert("PATH".to_string(), bin_dir.to_string_lossy().to_string());
+
+        let (command, used_shell) =
+            external_command_for_program(&script, &["one".into(), "two".into()], &env_vars);
+        let expected_script = cmd_compatible_windows_path(&script)
+            .to_string_lossy()
+            .to_string();
+        let args = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(!used_shell);
+        assert_eq!(PathBuf::from(command.get_program()), pwsh);
+        assert_eq!(
+            args,
+            vec![
+                "-NoProfile".to_string(),
+                "-ExecutionPolicy".to_string(),
+                "Bypass".to_string(),
+                "-File".to_string(),
+                expected_script,
+                "one".to_string(),
+                "two".to_string(),
+            ]
+        );
+
         let _ = fs::remove_dir_all(bin_dir);
     }
 

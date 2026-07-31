@@ -228,6 +228,52 @@ mod windows_script_commands {
         assert_eq!(executor.get_env("RUBASH_DIRECT_SCRIPT_LEAK"), None);
         assert_eq!(current_cwd, dir);
     }
+
+    #[test]
+    fn dot_ps1_path_command_runs_with_powershell() {
+        if !powershell_runtime_available() {
+            return;
+        }
+
+        let dir = target_test_path("windows-direct-ps1-script");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("probe.ps1");
+        let marker = dir.join("marker.txt");
+        let marker_literal = marker.to_string_lossy().replace('\'', "''");
+        write_executable(
+            &script,
+            format!("Set-Content -Path '{marker_literal}' -Value ('ps1:' + ($args -join ','))\n"),
+        )
+        .unwrap();
+
+        let old_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+
+        let tokens = tokenize("./probe.ps1 one two");
+        let ast = parse(&tokens);
+        let mut executor = Executor::new();
+        executor.execute_ast(&ast).unwrap();
+        let status = executor.last_exit_code();
+        std::env::set_current_dir(old_cwd).unwrap();
+
+        assert_eq!(status, 0);
+        assert_eq!(
+            std::fs::read_to_string(&marker).unwrap().trim(),
+            "ps1:one,two"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn powershell_runtime_available() -> bool {
+        ["pwsh.exe", "powershell.exe"].into_iter().any(|name| {
+            std::process::Command::new("where.exe")
+                .arg(name)
+                .output()
+                .is_ok_and(|output| output.status.success())
+        })
+    }
 }
 
 #[path = "executor_command_chaining/mod.rs"]
