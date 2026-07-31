@@ -5,6 +5,9 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<bool, ExecuteError> {
+        if !self.external_file_builtins_enabled {
+            return Ok(false);
+        }
         match cmd.words[0].as_str() {
             "mkdir" => self.external_mkdir(cmd),
             "touch" => self.external_touch(cmd),

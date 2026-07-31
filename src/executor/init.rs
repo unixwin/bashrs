@@ -122,6 +122,8 @@ impl Executor {
             last_command_substitution_status: Cell::new(None),
             stdout_capture: None,
             stderr_capture: None,
+            host_external_command_handler: None,
+            external_file_builtins_enabled: true,
             process_env_snapshot,
         }
     }

@@ -158,6 +158,22 @@ use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
+
+pub struct HostExternalCommandOutput {
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+    pub status: i32,
+}
+
+struct HostExternalCommandHandler(
+    Box<dyn FnMut(&[String], &HashMap<String, String>) -> Option<HostExternalCommandOutput>>,
+);
+
+impl std::fmt::Debug for HostExternalCommandHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("HostExternalCommandHandler(..)")
+    }
+}
 use std::process::{Command, Stdio};
 use std::rc::Rc;
 use std::sync::Mutex;
@@ -322,6 +338,8 @@ pub struct Executor {
     last_command_substitution_status: Cell<Option<i32>>,
     stdout_capture: Option<Vec<u8>>,
     stderr_capture: Option<Vec<u8>>,
+    host_external_command_handler: Option<HostExternalCommandHandler>,
+    external_file_builtins_enabled: bool,
     process_env_snapshot: HashMap<String, String>,
 }
 

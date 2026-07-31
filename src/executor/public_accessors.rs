@@ -9,6 +9,18 @@ impl Executor {
         self.exit_code = exit_code;
     }
 
+    pub fn set_external_file_builtins_enabled(&mut self, enabled: bool) {
+        self.external_file_builtins_enabled = enabled;
+    }
+
+    pub fn set_host_external_command_handler<F>(&mut self, handler: F)
+    where
+        F: FnMut(&[String], &HashMap<String, String>) -> Option<HostExternalCommandOutput>
+            + 'static,
+    {
+        self.host_external_command_handler = Some(HostExternalCommandHandler(Box::new(handler)));
+    }
+
     pub fn set_env(&mut self, name: &str, value: &str) {
         let value = if name == "TMPDIR" && value.contains('\0') {
             safe_temp_dir_string()

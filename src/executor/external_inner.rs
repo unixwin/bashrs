@@ -13,6 +13,10 @@ impl Executor {
             return Ok(());
         }
 
+        if self.handle_host_external_command(cmd)? {
+            return Ok(());
+        }
+
         if self.handle_external_file_builtins(cmd)? {
             return Ok(());
         }
@@ -50,6 +54,32 @@ impl Executor {
         self.apply_external_environment(cmd, &mut process);
         self.apply_external_redirects(cmd, &mut process)?;
         self.spawn_external_process(cmd, &program, process, used_shell)
+    }
+
+    fn handle_host_external_command(&mut self, cmd: &CommandNode) -> Result<bool, ExecuteError> {
+        let Some(output) = self.invoke_host_external_command(cmd) else {
+            return Ok(false);
+        };
+        self.write_buffered_builtin_output(cmd, &output.stdout, &output.stderr)?;
+        self.exit_code = output.status;
+        Ok(true)
+    }
+
+    pub(in crate::executor) fn invoke_host_external_command(
+        &mut self,
+        cmd: &CommandNode,
+    ) -> Option<HostExternalCommandOutput> {
+        let mut env_vars = self.env_vars.clone();
+        for (var_name, var_value) in &cmd.assignments {
+            let (base_name, _) = assignment_name_and_append(var_name);
+            let expanded_value = self.expand_assignment_value(var_value);
+            if is_valid_process_env(base_name, &expanded_value) {
+                env_vars.insert(base_name.to_string(), expanded_value);
+            }
+        }
+        self.host_external_command_handler
+            .as_mut()
+            .and_then(|handler| (handler.0)(&cmd.words, &env_vars))
     }
 
     fn handle_external_shortcuts(&mut self, cmd: &CommandNode) -> Result<bool, ExecuteError> {

@@ -97,6 +97,13 @@ impl Executor {
         let Some(name) = command.words.first() else {
             return Ok(Some((String::new(), String::new(), 0)));
         };
+        if let Some(output) = self.invoke_host_external_command(command) {
+            return Ok(Some((
+                String::from_utf8_lossy(&output.stdout).into_owned(),
+                String::from_utf8_lossy(&output.stderr).into_owned(),
+                output.status,
+            )));
+        }
         let Some(program) = find_user_command(&self.expand_word(name), &self.env_vars) else {
             return Ok(None);
         };
