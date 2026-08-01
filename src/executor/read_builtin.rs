@@ -1769,7 +1769,10 @@ impl Executor {
                     scalar_field_count,
                 );
                 0
-            } else if read_fd.is_some() || command_closes_stdin(cmd) {
+            } else if read_fd.is_some()
+                || command_closes_stdin(cmd)
+                || self.env_vars.contains_key(&fd_closed_key(0))
+            {
                 self.assign_read_scalar_names(&scalar_names, "", raw);
                 1
             } else if self.env_vars.contains_key(FUNCTION_STDIN) {
