@@ -126,12 +126,20 @@ impl Executor {
                 Ok(())
             }
             "set" => self.execute_set_command(cmd),
+            "setopt" => {
+                self.exit_code = self.execute_zsh_option_builtin(cmd, true)?;
+                Ok(())
+            }
             "getopts" => {
                 self.exit_code = self.execute_getopts_command(cmd)?;
                 Ok(())
             }
             "shopt" => {
                 self.exit_code = self.execute_shopt(cmd)?;
+                Ok(())
+            }
+            "unsetopt" => {
+                self.exit_code = self.execute_zsh_option_builtin(cmd, false)?;
                 Ok(())
             }
             "hash" => {

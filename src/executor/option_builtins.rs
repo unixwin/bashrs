@@ -139,6 +139,26 @@ impl Executor {
         )?)
     }
 
+    pub(in crate::executor) fn execute_zsh_option_builtin(
+        &mut self,
+        cmd: &CommandNode,
+        enable: bool,
+    ) -> Result<i32, ExecuteError> {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let command_name = if enable { "setopt" } else { "unsetopt" };
+        let status = crate::builtins::zsh_options::execute_with_io(
+            command_name,
+            enable,
+            &cmd.words[1..],
+            &mut self.env_vars,
+            &mut stdout,
+            &mut stderr,
+        )?;
+        self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+        Ok(status)
+    }
+
     pub(in crate::executor) fn execute_umask(
         &mut self,
         cmd: &CommandNode,

@@ -103,6 +103,20 @@ git submodule update --init --depth 1 third_party/bash
 scripts/run-bash-upstream-tests.sh
 ```
 
+Windows 本地建议用 Git Bash 驱动上游 `run-*` 脚本；如果 `bash` 不在当前
+`PATH`，可以显式使用 Git for Windows 的 Bash。MSVC 工具链下还需要先进入
+Visual Studio Developer Command Prompt，或先初始化 `vcvars64.bat`，否则
+runner 内部的 `cargo build` 可能在链接阶段失败。
+
+```bash
+winuxsh -c 'cd C:/path/to/rubash && BASH_UPSTREAM_STRICT=1 C:/Progra~1/Git/bin/bash.exe scripts/run-bash-upstream-tests.sh'
+```
+
+如果大量 runner 都是 `exit 126`，先看
+`target/bash-upstream-tests/logs/*.log`。`Refusing rm outside Bash upstream
+work dir` 这类日志通常是 Git Bash `/c/...` 和 Windows `C:/...` 路径格式没有
+被同一化，不是 Rubash 语义失败；不要为了过测试删掉安全 guard。
+
 必须通过这个 runner 运行上游测试，不要直接在 `third_party/bash/tests` 或用户目录
 里执行 `run-*`。Runner 会拒绝以 `/`、`$HOME`、桌面、下载、文档等位置作为仓库
 根目录；每个上游测试都会被复制到 `target/bash-upstream-tests/work/<runner>/`

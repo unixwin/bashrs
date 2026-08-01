@@ -107,12 +107,20 @@ impl Executor {
                 Ok(())
             }
             "set" => self.execute_set_command(&builtin_cmd),
+            "setopt" => {
+                self.exit_code = self.execute_zsh_option_builtin(&builtin_cmd, true)?;
+                Ok(())
+            }
             "getopts" => {
                 self.exit_code = self.execute_getopts_command(&builtin_cmd)?;
                 Ok(())
             }
             "shopt" => {
                 self.exit_code = self.execute_shopt(&builtin_cmd)?;
+                Ok(())
+            }
+            "unsetopt" => {
+                self.exit_code = self.execute_zsh_option_builtin(&builtin_cmd, false)?;
                 Ok(())
             }
             "enable" => {

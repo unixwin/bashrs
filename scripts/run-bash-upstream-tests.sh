@@ -10,11 +10,25 @@ OUT_DIR="$ROOT_DIR/target/bash-upstream-tests"
 STRICT="${BASH_UPSTREAM_STRICT:-0}"
 
 real_path() {
+  local resolved
   if command -v realpath >/dev/null 2>&1; then
-    realpath -m "$1"
+    resolved="$(realpath -m "$1")"
   else
-    (cd "$(dirname "$1")" && printf '%s/%s\n' "$PWD" "$(basename "$1")")
+    resolved="$(cd "$(dirname "$1")" && printf '%s/%s\n' "$PWD" "$(basename "$1")")"
   fi
+
+  normalize_real_path "$resolved"
+}
+
+normalize_real_path() {
+  local path="${1//\\//}"
+  if [[ "$path" =~ ^/([a-zA-Z])(/.*)?$ ]]; then
+    local drive="${BASH_REMATCH[1]^^}"
+    local rest="${BASH_REMATCH[2]:-/}"
+    printf '%s:%s\n' "$drive" "$rest"
+    return
+  fi
+  printf '%s\n' "$path"
 }
 
 die() {
@@ -162,6 +176,7 @@ for runner in "${RUNNERS[@]}"; do
   refuse_unsafe_dir "$test_workdir"
   workdir_real="$(real_path "$workdir")"
   expected_dir_real="$(real_path "$expected_dir")"
+  shell_wrapper_real="$(real_path "$shell_wrapper")"
 
   find "$test_workdir" -maxdepth 1 -type f -name 'run-*' -exec \
     sed -i -E "s@([[:alnum:]_.+-]+\\.right)@$expected_dir_real/\\1@g" {} +
@@ -172,8 +187,18 @@ for runner in "${RUNNERS[@]}"; do
 #!/usr/bin/env bash
 set -euo pipefail
 PATH="/usr/bin:/bin:\$PATH"
-allowed="$workdir_real"
-cwd="\$(realpath -m "\$PWD")"
+normalize_real_path() {
+  local path="\${1//\\\\//}"
+  if [[ "\$path" =~ ^/([a-zA-Z])(/.*)?$ ]]; then
+    local drive="\${BASH_REMATCH[1]^^}"
+    local rest="\${BASH_REMATCH[2]:-/}"
+    printf '%s:%s\n' "\$drive" "\$rest"
+    return
+  fi
+  printf '%s\n' "\$path"
+}
+allowed="\$(normalize_real_path "$workdir_real")"
+cwd="\$(normalize_real_path "\$(realpath -m "\$PWD")")"
 case "\$cwd" in
   "\$allowed"|"\$allowed"/*) ;;
   *)
@@ -196,7 +221,7 @@ for arg in "\$@"; do
     "") continue ;;
   esac
 
-  candidate="\$(realpath -m -- "\$arg")"
+  candidate="\$(normalize_real_path "\$(realpath -m -- "\$arg")")"
   if [[ "$guarded_cmd" == "cp" && "\$candidate" == "/dev/null" ]]; then
     continue
   fi
@@ -218,8 +243,18 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 PATH="$guard_bin:/usr/bin:/bin:\$PATH"
-allowed="$workdir_real"
-cwd="\$(realpath -m "\$PWD")"
+normalize_real_path() {
+  local path="\${1//\\\\//}"
+  if [[ "\$path" =~ ^/([a-zA-Z])(/.*)?$ ]]; then
+    local drive="\${BASH_REMATCH[1]^^}"
+    local rest="\${BASH_REMATCH[2]:-/}"
+    printf '%s:%s\n' "\$drive" "\$rest"
+    return
+  fi
+  printf '%s\n' "\$path"
+}
+allowed="\$(normalize_real_path "$workdir_real")"
+cwd="\$(normalize_real_path "\$(realpath -m "\$PWD")")"
 case "\$cwd" in
   "\$allowed"|"\$allowed"/*) ;;
   *)
@@ -254,6 +289,7 @@ EOF
   grep -v -x \
     -e 'declare -r SHELLOPTS="braceexpand:hashall:interactive-comments"' \
     -e "Testing $shell_wrapper" \
+    -e "Testing $shell_wrapper_real" \
     -e 'version: .*' \
     -e 'HOSTTYPE = .*' \
     -e 'OSTYPE = .*' \

@@ -52,6 +52,31 @@ Use the project runner instead of invoking upstream scripts directly:
 scripts/run-bash-upstream-tests.sh
 ```
 
+On Windows, run the harness from an environment that can build Rubash and can
+execute the upstream Bash `run-*` drivers. In practice this usually means:
+
+- initialize the Visual Studio/MSVC build environment first, or use a Developer
+  Command Prompt, so the `cargo build` inside the runner can link;
+- use Git Bash as the driver shell; if `bash` is not on `PATH`, call it by
+  absolute path.
+
+Example from a Windows host where Git for Windows is installed in the default
+location:
+
+```sh
+winuxsh -c 'cd C:/path/to/rubash && BASH_UPSTREAM_STRICT=1 C:/Progra~1/Git/bin/bash.exe scripts/run-bash-upstream-tests.sh'
+```
+
+Replace `C:/path/to/rubash` and the Git Bash path for your machine. The short
+`C:/Progra~1/...` form avoids quoting the `Program Files` space through nested
+shells.
+
+For focused debugging, pass one upstream runner name after the script:
+
+```sh
+winuxsh -c 'cd C:/path/to/rubash && BASH_UPSTREAM_STRICT=1 C:/Progra~1/Git/bin/bash.exe scripts/run-bash-upstream-tests.sh run-minimal'
+```
+
 ## Safety Model
 
 Do not run upstream Bash `tests/run-*` scripts directly from a user directory.
@@ -94,6 +119,34 @@ The runner writes:
 By default the upstream progress run is non-blocking and exits successfully even
 when upstream tests fail. Set `BASH_UPSTREAM_STRICT=1` to make any upstream
 failure fail the command.
+
+## Windows Troubleshooting
+
+If many or all runners fail with exit `126`, inspect one log under
+`target/bash-upstream-tests/logs/`. A message like this means the harness
+safety guard rejected a path before Rubash actually ran the Bash test:
+
+```text
+Refusing rm outside Bash upstream work dir: /c/.../work/run-alias/tests
+Allowed: C:/.../work/run-alias
+```
+
+That is a path-format mismatch between Git Bash `/c/...` paths and Windows
+`C:/...` paths, not a shell compatibility failure. The guard exists to keep
+upstream tests from deleting files outside the isolated work directory. Do not
+remove or weaken it; preserve normalization so `/c/...` and `C:/...` compare as
+the same path.
+
+`run-minimal` may print both `Testing /c/.../rubash-wrapper` and
+`Testing C:/.../rubash-wrapper`. The runner filters both forms; if the test
+exits `0` but only one of those banner lines remains in
+`*.unexpected.log`, update the filter rather than treating it as a Rubash
+semantic failure.
+
+If the command fails before tests start because `bash` is missing, use an
+explicit Git Bash executable as shown above. If it fails during `cargo build`,
+rerun from a Visual Studio Developer Command Prompt or initialize `vcvars64.bat`
+before starting the harness.
 
 Current local baseline:
 

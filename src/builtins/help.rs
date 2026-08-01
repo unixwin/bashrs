@@ -353,6 +353,8 @@ const HELP_LIST: &[&str] = &[
     " getopts optstring name [arg ...]        while COMMANDS; do COMMANDS-2; done",
     " hash [-lr] [-p pathname] [-dt] [name >  { COMMANDS ; }",
     " help [-dms] [pattern ...]",
+    " setopt [--] [optname ...]",
+    " unsetopt [--] [optname ...]",
 ];
 
 fn diagnostic_prefix() -> String {

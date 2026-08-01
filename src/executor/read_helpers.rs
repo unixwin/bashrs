@@ -1,19 +1,45 @@
 use super::*;
 
-pub(in crate::executor) fn print_posix_time() {
-    eprintln!("real 0.00");
-    eprintln!("user 0.00");
-    eprintln!("sys 0.00");
+#[derive(Clone, Copy, Debug)]
+pub(in crate::executor) struct TimeCommandMetrics {
+    real: std::time::Duration,
+    user: std::time::Duration,
+    sys: std::time::Duration,
 }
 
-pub(in crate::executor) fn print_time(env_vars: &HashMap<String, String>, posix_format: bool) {
+impl TimeCommandMetrics {
+    fn from_start(started: std::time::Instant) -> Self {
+        Self {
+            real: started.elapsed(),
+            user: std::time::Duration::ZERO,
+            sys: std::time::Duration::ZERO,
+        }
+    }
+}
+
+pub(in crate::executor) fn time_command_started() -> std::time::Instant {
+    std::time::Instant::now()
+}
+
+pub(in crate::executor) fn print_posix_time(metrics: TimeCommandMetrics) {
+    eprintln!("real {}", format_time_seconds(metrics.real, Some(2), false));
+    eprintln!("user {}", format_time_seconds(metrics.user, Some(2), false));
+    eprintln!("sys {}", format_time_seconds(metrics.sys, Some(2), false));
+}
+
+pub(in crate::executor) fn print_time(
+    env_vars: &HashMap<String, String>,
+    posix_format: bool,
+    started: std::time::Instant,
+) {
+    let metrics = TimeCommandMetrics::from_start(started);
     if posix_format {
-        print_posix_time();
+        print_posix_time(metrics);
         return;
     }
 
     let Some(format) = env_vars.get("TIMEFORMAT") else {
-        print_posix_time();
+        print_posix_time(metrics);
         return;
     };
 
@@ -21,19 +47,19 @@ pub(in crate::executor) fn print_time(env_vars: &HashMap<String, String>, posix_
         return;
     }
 
-    match expand_time_format(format) {
+    match expand_time_format(format, metrics) {
         Ok(output) => eprintln!("{output}"),
         Err(invalid) => eprintln!("rubash: TIMEFORMAT: `{invalid}': invalid format character"),
     }
 }
 
-fn expand_time_format(format: &str) -> Result<String, char> {
+fn expand_time_format(format: &str, metrics: TimeCommandMetrics) -> Result<String, char> {
     let mut output = String::new();
     let mut chars = format.chars().peekable();
 
     while let Some(ch) = chars.next() {
         match ch {
-            '%' => expand_time_format_percent(&mut output, &mut chars)?,
+            '%' => expand_time_format_percent(&mut output, &mut chars, metrics)?,
             '\\' => match chars.next() {
                 Some('n') => output.push('\n'),
                 Some('t') => output.push('\t'),
@@ -54,6 +80,7 @@ fn expand_time_format(format: &str) -> Result<String, char> {
 fn expand_time_format_percent<I>(
     output: &mut String,
     chars: &mut std::iter::Peekable<I>,
+    metrics: TimeCommandMetrics,
 ) -> Result<(), char>
 where
     I: Iterator<Item = char>,
@@ -76,8 +103,10 @@ where
             output.push('%');
         }
         Some('%') => return Err('%'),
-        Some('R' | 'U' | 'S') => output.push_str(&format_time_seconds(precision, long)),
-        Some('P') if precision.is_none() && !long => output.push_str("0.00"),
+        Some('R') => output.push_str(&format_time_seconds(metrics.real, precision, long)),
+        Some('U') => output.push_str(&format_time_seconds(metrics.user, precision, long)),
+        Some('S') => output.push_str(&format_time_seconds(metrics.sys, precision, long)),
+        Some('P') if precision.is_none() && !long => output.push_str(&format_cpu_percent(metrics)),
         Some('P') => return Err('P'),
         Some(other) => return Err(other),
         None => {
@@ -89,21 +118,38 @@ where
     Ok(())
 }
 
-fn format_time_seconds(precision: Option<usize>, long: bool) -> String {
+fn format_time_seconds(
+    duration: std::time::Duration,
+    precision: Option<usize>,
+    long: bool,
+) -> String {
     let precision = precision.unwrap_or(3);
+    let seconds = duration.as_secs_f64();
     if precision == 0 {
         if long {
-            return "0m0s".to_string();
+            let minutes = (seconds / 60.0).floor() as u64;
+            let remainder = (seconds - (minutes as f64 * 60.0)).round() as u64;
+            return format!("{minutes}m{remainder}s");
         }
-        return "0".to_string();
+        return format!("{seconds:.0}");
     }
 
-    let fraction = "0".repeat(precision);
     if long {
-        format!("0m0.{fraction}s")
+        let minutes = (seconds / 60.0).floor() as u64;
+        let remainder = seconds - (minutes as f64 * 60.0);
+        format!("{minutes}m{remainder:.precision$}s")
     } else {
-        format!("0.{fraction}")
+        format!("{seconds:.precision$}")
     }
+}
+
+fn format_cpu_percent(metrics: TimeCommandMetrics) -> String {
+    let real = metrics.real.as_secs_f64();
+    if real <= f64::EPSILON {
+        return "0.00".to_string();
+    }
+    let cpu = metrics.user.as_secs_f64() + metrics.sys.as_secs_f64();
+    format!("{:.2}", (cpu / real) * 100.0)
 }
 
 pub(in crate::executor) fn read_char_limit_argument<S>(

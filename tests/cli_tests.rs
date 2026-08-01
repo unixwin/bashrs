@@ -2,6 +2,8 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use std::{fs, path::Path};
 
+use regex::Regex;
+
 #[path = "cli_tests/examples.rs"]
 mod examples;
 #[path = "cli_tests/fd_redirects.rs"]
@@ -17,6 +19,22 @@ fn shell_test_path(path: &Path) -> String {
     } else {
         value
     }
+}
+
+fn assert_stderr_matches(stderr: &str, pattern: &str) {
+    let regex = Regex::new(pattern).expect("valid regex");
+    assert!(
+        regex.is_match(stderr),
+        "stderr {stderr:?} did not match {pattern:?}"
+    );
+}
+
+fn posix_real_seconds(stderr: &str) -> f64 {
+    let real = stderr
+        .lines()
+        .find_map(|line| line.strip_prefix("real "))
+        .expect("real time line");
+    real.parse::<f64>().expect("numeric real seconds")
 }
 
 #[test]
@@ -79,9 +97,9 @@ fn time_uses_timeformat_variable() {
 
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), "");
-    assert_eq!(
-        String::from_utf8_lossy(&output.stderr),
-        "elapsed:0.000 cpu:0.00 percent:%\n"
+    assert_stderr_matches(
+        &String::from_utf8_lossy(&output.stderr),
+        r"^elapsed:\d+\.\d{3} cpu:0\.00 percent:%\n$",
     );
 }
 
@@ -95,9 +113,9 @@ fn time_p_ignores_timeformat_variable() {
 
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), "");
-    assert_eq!(
-        String::from_utf8_lossy(&output.stderr),
-        "real 0.00\nuser 0.00\nsys 0.00\n"
+    assert_stderr_matches(
+        &String::from_utf8_lossy(&output.stderr),
+        r"^real \d+\.\d{2}\nuser 0\.00\nsys 0\.00\n$",
     );
 }
 
@@ -111,9 +129,32 @@ fn timeformat_supports_precision_and_long_modifiers() {
 
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), "");
-    assert_eq!(
-        String::from_utf8_lossy(&output.stderr),
-        "r:0.000 u:0.00 s:0 long:0m0.00s p:0.00\n"
+    assert_stderr_matches(
+        &String::from_utf8_lossy(&output.stderr),
+        r"^r:\d+\.\d{3} u:0\.00 s:0 long:\d+m\d+\.\d{2}s p:0\.00\n$",
+    );
+}
+
+#[test]
+fn time_reports_elapsed_wall_clock_for_slow_command() {
+    let slow_command = if cfg!(windows) {
+        "powershell.exe -NoProfile -Command Start-Sleep -Milliseconds 650"
+    } else {
+        "sh -c 'sleep 0.65'"
+    };
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(format!("time -p {slow_command}"))
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_stderr_matches(&stderr, r"^real \d+\.\d{2}\nuser 0\.00\nsys 0\.00\n$");
+    assert!(
+        posix_real_seconds(&stderr) >= 0.50,
+        "expected non-zero wall time, got stderr {stderr:?}"
     );
 }
 

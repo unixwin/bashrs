@@ -329,9 +329,11 @@ fn command_word_needs_process_line_env(word: &str) -> bool {
             | "let"
             | "local"
             | "shopt"
+            | "setopt"
             | "shift"
             | "ulimit"
             | "unset"
+            | "unsetopt"
     )
 }
 

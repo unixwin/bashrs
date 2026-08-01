@@ -81,6 +81,12 @@ impl Executor {
         self.env_vars = saved_env;
     }
 
+    pub fn aliases_snapshot(&self) -> HashMap<String, String> {
+        self.aliases
+            .iter()
+            .map(|(name, alias)| (name.clone(), alias.value.clone()))
+            .collect()
+    }
     pub(crate) fn env_vars(&self) -> &HashMap<String, String> {
         &self.env_vars
     }

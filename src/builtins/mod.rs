@@ -38,3 +38,4 @@ pub mod r#type;
 pub mod ulimit;
 pub mod umask;
 pub mod wait;
+pub mod zsh_options;

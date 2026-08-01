@@ -180,6 +180,7 @@ fn is_shell_builtin(name: &str) -> bool {
             | "readonly"
             | "return"
             | "set"
+            | "setopt"
             | "shift"
             | "shopt"
             | "source"
@@ -194,6 +195,7 @@ fn is_shell_builtin(name: &str) -> bool {
             | "umask"
             | "unalias"
             | "unset"
+            | "unsetopt"
             | "wait"
     )
 }

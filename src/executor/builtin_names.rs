@@ -82,6 +82,7 @@ pub(in crate::executor) fn is_shell_builtin_name(name: &str) -> bool {
             | "readonly"
             | "return"
             | "set"
+            | "setopt"
             | "shift"
             | "shopt"
             | "source"
@@ -96,6 +97,7 @@ pub(in crate::executor) fn is_shell_builtin_name(name: &str) -> bool {
             | "umask"
             | "unalias"
             | "unset"
+            | "unsetopt"
             | "wait"
     )
 }

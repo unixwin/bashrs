@@ -61,6 +61,7 @@ impl Executor {
         &mut self,
         time_command: &TimeCommand,
     ) -> Result<(), ExecuteError> {
+        let started = time_command_started();
         if let Some(coproc_cmd) = &time_command.command.coproc_command {
             self.execute_coproc_command(&time_command.command, coproc_cmd)?;
         } else if time_command.command.words.is_empty()
@@ -76,7 +77,7 @@ impl Executor {
         } else {
             self.execute_command(&time_command.command)?;
         }
-        print_time(&self.env_vars, time_command.posix_format);
+        print_time(&self.env_vars, time_command.posix_format, started);
         if time_command.inverted {
             self.exit_code = invert_exit_status(self.exit_code);
         }
@@ -105,6 +106,7 @@ impl Executor {
         let inverted = time_prefix_parts(&cmd.words)
             .map(|parts| parts.inverted)
             .unwrap_or(false);
+        let started = time_command_started();
         let result = if let Some(for_command) = &cmd.for_command {
             self.execute_for_command_with_redirects(for_command, cmd)
         } else if let Some(if_command) = &cmd.if_command {
@@ -127,6 +129,7 @@ impl Executor {
         print_time(
             &self.env_vars,
             time_prefix_parts(&cmd.words).is_some_and(|parts| parts.posix_format),
+            started,
         );
         result?;
         if inverted {
@@ -166,6 +169,7 @@ impl Executor {
             }
         }
 
+        let started = time_command_started();
         let next_index = match timed_ast.commands[0].words.first().map(String::as_str) {
             Some("if") => crate::builtins::source::execute_simple_if(self, &timed_ast, 0)?,
             Some("while" | "until") => self.execute_simple_loop(&timed_ast, 0)?,
@@ -175,7 +179,7 @@ impl Executor {
             return Ok(None);
         };
 
-        print_time(&self.env_vars, prefix.posix_format);
+        print_time(&self.env_vars, prefix.posix_format, started);
         if prefix.inverted {
             self.exit_code = invert_exit_status(self.exit_code);
         }

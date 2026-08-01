@@ -252,6 +252,7 @@ impl Executor {
             }
         }
 
+        let started = time_command_started();
         let output = self.timed_command_substitution_inner(&words[index..])?;
         print_time(
             &self.env_vars,
@@ -260,6 +261,7 @@ impl Executor {
                 .skip(1)
                 .take_while(|word| word.as_str() != "!")
                 .any(|word| word == "-p"),
+            started,
         );
         let status = self.last_command_substitution_status.get().unwrap_or(0);
         self.last_command_substitution_status.set(Some(if inverted {

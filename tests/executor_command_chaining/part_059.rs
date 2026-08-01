@@ -102,6 +102,114 @@ fn test_bashopts_assignment_reports_readonly() {
 }
 
 #[test]
+fn test_setopt_tracks_compat_options_and_maps_shell_state() {
+    let output_path = "target/rubash-setopt-zsh-options-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "setopt hist_ignore_dups hist_ignore_space prompt_subst prompt_percent brace_expand null_glob; \
+         unsetopt prompt_percent; \
+         setopt > {output_path}; \
+         echo hist:$WINUXSH_HIST_IGNORE_DUPS:$WINUXSH_HIST_IGNORE_SPACE >> {output_path}; \
+         shopt -q nullglob; echo nullglob:$? >> {output_path}; \
+         shopt -q promptvars; echo promptvars:$? >> {output_path}; \
+         [[ -o braceexpand ]]; echo brace:$? >> {output_path}; \
+         setopt no_null_glob; shopt -q nullglob; echo nullglob_off:$? >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    let output = fs::read_to_string(output_path).unwrap();
+    assert!(output.contains("hist_ignore_dups\n"));
+    assert!(output.contains("hist_ignore_space\n"));
+    assert!(output.contains("prompt_subst\n"));
+    assert!(!output.contains("prompt_percent\n"));
+    assert!(output.contains("hist:1:1\n"));
+    assert!(output.contains("nullglob:0\n"));
+    assert!(output.contains("promptvars:0\n"));
+    assert!(output.contains("brace:0\n"));
+    assert!(output.contains("nullglob_off:1\n"));
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_command_and_builtin_setopt_update_same_state() {
+    let output_path = "target/rubash-command-builtin-setopt-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "command setopt null_glob; shopt -q nullglob; echo command:$? > {output_path}; \
+         builtin unsetopt null_glob; shopt -q nullglob; echo builtin:$? >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "command:0\nbuiltin:1\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_source_executes_setopt_without_host_preprocessing() {
+    let script_path = "target/rubash-setopt-source.rc";
+    let output_path = "target/rubash-setopt-source-output.txt";
+    let _ = fs::remove_file(script_path);
+    let _ = fs::remove_file(output_path);
+    fs::write(script_path, "setopt hist_ignore_dups null_glob\n").unwrap();
+    let input = format!(
+        "source {script_path}; \
+         echo hist:$WINUXSH_HIST_IGNORE_DUPS > {output_path}; \
+         shopt -q nullglob; echo nullglob:$? >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "hist:1\nnullglob:0\n"
+    );
+    let _ = fs::remove_file(script_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_setopt_invalid_option_reports_failure() {
+    let output_path = "target/rubash-setopt-invalid-output.txt";
+    let error_path = "target/rubash-setopt-invalid-error.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(error_path);
+    let input = format!("setopt no_such_option 2> {error_path}; echo $? > {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "1\n");
+    let error = fs::read_to_string(error_path).unwrap();
+    assert!(error.contains("setopt: no such option: no_such_option"));
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(error_path);
+}
+
+#[test]
 fn test_set_noclobber_updates_shell_flags() {
     let output_path = "target/rubash-set-noclobber-flags-output.txt";
     let _ = fs::remove_file(output_path);

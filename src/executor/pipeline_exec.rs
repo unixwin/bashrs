@@ -226,6 +226,7 @@ impl Executor {
         }
 
         let time_prefix = time_pipeline_prefix(first);
+        let time_prefix_started = time_prefix.as_ref().map(|_| time_command_started());
         let mut input = String::new();
         let mut statuses = Vec::new();
         for (stage_index, command) in commands.iter().enumerate() {
@@ -260,7 +261,9 @@ impl Executor {
         let final_command = commands.last().expect("pipeline has at least one stage");
         self.write_pipeline_output(final_command, &input)?;
         if let Some(prefix) = &time_prefix {
-            print_time(&self.env_vars, prefix.posix_format);
+            if let Some(started) = time_prefix_started {
+                print_time(&self.env_vars, prefix.posix_format, started);
+            }
         }
         let mut status = self.pipeline_exit_status(&statuses);
         if time_prefix.as_ref().is_some_and(|prefix| prefix.inverted) {
@@ -294,12 +297,13 @@ impl Executor {
         input: &str,
     ) -> Result<Option<(String, String, i32)>, ExecuteError> {
         if let Some(time_command) = &command.time_command {
+            let started = time_command_started();
             let Some((output, stderr, status)) =
                 self.execute_pipeline_stage(&time_command.command, input)?
             else {
                 return Ok(None);
             };
-            print_time(&self.env_vars, time_command.posix_format);
+            print_time(&self.env_vars, time_command.posix_format, started);
             let status = if time_command.inverted {
                 invert_exit_status(status)
             } else {
