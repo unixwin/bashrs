@@ -149,16 +149,41 @@ pub(in crate::executor) fn apply_simple_sed_substitution(
     input: &str,
     script: &str,
 ) -> Option<String> {
-    let (pattern, replacement) = parse_sed_substitution(script)?;
+    let substitutions = parse_sed_substitutions(script)?;
     let mut output = input
         .lines()
-        .map(|line| apply_simple_sed_line(line, pattern, replacement))
+        .map(|line| {
+            substitutions
+                .iter()
+                .fold(line.to_string(), |line, (pattern, replacement)| {
+                    apply_simple_sed_line(&line, pattern, replacement)
+                })
+        })
         .collect::<Vec<_>>()
         .join("\n");
     if input.ends_with('\n') {
         output.push('\n');
     }
     Some(output)
+}
+
+fn parse_sed_substitutions(script: &str) -> Option<Vec<(&str, &str)>> {
+    let substitutions = script
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() {
+                None
+            } else {
+                parse_sed_substitution(line)
+            }
+        })
+        .collect::<Vec<_>>();
+    if substitutions.is_empty() {
+        parse_sed_substitution(script).map(|substitution| vec![substitution])
+    } else {
+        Some(substitutions)
+    }
 }
 
 fn parse_sed_substitution(script: &str) -> Option<(&str, &str)> {
@@ -189,11 +214,44 @@ fn split_escaped_separator(value: &str, separator: char) -> Option<(&str, &str)>
 }
 
 fn apply_simple_sed_line(line: &str, pattern: &str, replacement: &str) -> String {
-    match pattern {
+    let pattern = pattern.replace('\x1f', "$");
+    match pattern.as_str() {
         "\\" | r"\\" => line.replace('\\', &unescape_sed_replacement(replacement)),
         r"\!\*" => line.replace("!*", &unescape_sed_replacement(replacement)),
+        r"\!:\([1-9]\)" => replace_aliasconv_positional_markers(line),
+        r"\..*$" | "..*$" => line
+            .split_once('.')
+            .map(|(prefix, _)| format!("{prefix}{replacement}"))
+            .unwrap_or_else(|| line.to_string()),
+        r"^.*\." => line
+            .rsplit_once('.')
+            .map(|(_, suffix)| format!("{replacement}{suffix}"))
+            .unwrap_or_else(|| line.to_string()),
         _ => line.to_string(),
     }
+}
+
+fn replace_aliasconv_positional_markers(line: &str) -> String {
+    let mut output = String::new();
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '!' && chars.peek().copied() == Some(':') {
+            chars.next();
+            if let Some(digit @ '1'..='9') = chars.peek().copied() {
+                chars.next();
+                output.push('"');
+                output.push('$');
+                output.push(digit);
+                output.push('"');
+                continue;
+            }
+            output.push('!');
+            output.push(':');
+            continue;
+        }
+        output.push(ch);
+    }
+    output
 }
 
 fn unescape_sed_replacement(replacement: &str) -> String {
