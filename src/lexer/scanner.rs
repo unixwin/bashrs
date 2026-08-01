@@ -1,4 +1,5 @@
 use super::classification::{is_brace_expansion, is_word_delimiter};
+use super::quotes::normalize_backtick_command_substitution;
 use super::token::{Token, TokenKind};
 
 pub(super) struct Lexer<'a> {
@@ -255,6 +256,9 @@ impl<'a> Lexer<'a> {
                 _ => {
                     let pos = self.position;
                     self.skip_word();
+                    if !is_simple_parameter_tail(self.slice(pos)) {
+                        return Some(self.finish_word_token(start, false));
+                    }
                     Some(Token::new(
                         TokenKind::Variable,
                         &format!("${}", self.slice(pos)),
@@ -267,9 +271,12 @@ impl<'a> Lexer<'a> {
                 if self.peek().is_some_and(|ch| !is_word_delimiter(ch)) {
                     return Some(self.finish_word_token(start, false));
                 }
-                Some(Token::new(
+                let raw = self.slice(start);
+                let value = normalize_backtick_command_substitution(raw);
+                Some(Token::new_with_raw(
                     TokenKind::CommandSubst,
-                    self.slice(start),
+                    &value,
+                    raw,
                     start,
                 ))
             }
@@ -319,6 +326,20 @@ impl<'a> Lexer<'a> {
         };
         Token::new(kind, self.slice(start), start)
     }
+}
+
+fn is_simple_parameter_tail(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+
+    if matches!(first, '?' | '$' | '!' | '@' | '*' | '#' | '-') {
+        return chars.next().is_none();
+    }
+
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
 impl<'a> Iterator for Lexer<'a> {

@@ -1,13 +1,33 @@
 use super::*;
 
 impl Executor {
+    pub(in crate::executor) fn execute_recho_command(
+        &mut self,
+        cmd: &CommandNode,
+    ) -> Result<(), ExecuteError> {
+        let output = self.recho_output(&cmd.words[1..]);
+        self.write_buffered_builtin_output(cmd, output.as_bytes(), &[])?;
+        self.exit_code = 0;
+        Ok(())
+    }
+
     pub(in crate::executor) fn execute_recho(&self, args: &[String]) {
         // TODO(tests/support): GNU Bash's test harness supplies `recho` as an
         // external helper. Keep this compatible print helper until PATH
         // resolution reliably runs the upstream helper scripts on Windows.
+        print!("{}", self.recho_output(args));
+    }
+
+    pub(in crate::executor) fn recho_output(&self, args: &[String]) -> String {
+        let mut output = String::new();
         for (index, arg) in args.iter().enumerate() {
-            println!("argv[{}] = <{}>", index + 1, arg);
+            output.push_str(&format!(
+                "argv[{}] = <{}>\n",
+                index + 1,
+                recho_display_arg(arg)
+            ));
         }
+        output
     }
 
     pub(in crate::executor) fn execute_shift(
@@ -291,4 +311,19 @@ impl Executor {
         self.write_default_stdout(&output)?;
         Ok(())
     }
+}
+
+fn recho_display_arg(arg: &str) -> String {
+    let mut output = String::new();
+    for ch in arg.chars() {
+        if ch == '\x7f' {
+            output.push_str("^?");
+        } else if ch.is_ascii_control() {
+            output.push('^');
+            output.push(((ch as u8) + 0x40) as char);
+        } else {
+            output.push(ch);
+        }
+    }
+    output
 }

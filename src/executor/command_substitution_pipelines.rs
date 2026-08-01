@@ -1,5 +1,76 @@
 use super::*;
 
+#[cfg(windows)]
+use std::ffi::OsString;
+#[cfg(windows)]
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
+
+fn mktemp_command_substitution_display_path(path: &std::path::Path) -> String {
+    if cfg!(windows) {
+        return windows_mktemp_display_path(path);
+    }
+    let display = path.to_string_lossy().replace('\\', "/");
+    shell_display_path(&display)
+}
+
+#[cfg(windows)]
+fn windows_mktemp_display_path(path: &std::path::Path) -> String {
+    let native = windows_slash_drive_to_native(path);
+    let long = windows_long_path(&native);
+    windows_display_path(&long)
+}
+
+#[cfg(windows)]
+fn windows_slash_drive_to_native(path: &std::path::Path) -> std::path::PathBuf {
+    let display = path.to_string_lossy().replace('\\', "/");
+    if display.len() >= 3
+        && display.as_bytes()[0] == b'/'
+        && display.as_bytes()[2] == b'/'
+        && display.as_bytes()[1].is_ascii_alphabetic()
+    {
+        let drive = display.as_bytes()[1] as char;
+        return std::path::PathBuf::from(
+            format!("{}:\\{}", drive.to_ascii_uppercase(), &display[3..]).replace('/', "\\"),
+        );
+    }
+    path.to_path_buf()
+}
+
+#[cfg(windows)]
+fn windows_long_path(path: &std::path::Path) -> std::path::PathBuf {
+    let wide = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let mut buffer = vec![0u16; 32768];
+    let written =
+        unsafe { GetLongPathNameW(wide.as_ptr(), buffer.as_mut_ptr(), buffer.len() as u32) };
+    if written == 0 || written as usize >= buffer.len() {
+        return path.to_path_buf();
+    }
+    buffer.truncate(written as usize);
+    std::path::PathBuf::from(OsString::from_wide(&buffer))
+}
+
+#[cfg(windows)]
+fn windows_display_path(path: &std::path::Path) -> String {
+    let display = path.to_string_lossy().replace('\\', "/");
+    if let Some(rest) = display.strip_prefix("//?/UNC/") {
+        return format!("//{rest}");
+    }
+    if let Some(rest) = display.strip_prefix("//?/") {
+        return rest.to_string();
+    }
+    display
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetLongPathNameW(short_path: *const u16, long_path: *mut u16, buffer_length: u32) -> u32;
+}
+
 impl Executor {
     pub(in crate::executor) fn mktemp_command_substitution(
         &self,
@@ -22,6 +93,10 @@ impl Executor {
                 }
                 "-t" => {
                     template = words.get(index + 1)?.as_str();
+                    index += 2;
+                }
+                "<" | ">" | ">>" | ">|" | "1>" | "1>>" | "1>|" | "2>" | "2>>" | "2>|" => {
+                    words.get(index + 1)?;
                     index += 2;
                 }
                 value if value.starts_with('-') => return None,
@@ -72,9 +147,7 @@ impl Executor {
         }
         let path = path?;
         self.last_command_substitution_status.set(Some(0));
-        Some(shell_display_path(
-            &path.to_string_lossy().replace('\\', "/"),
-        ))
+        Some(mktemp_command_substitution_display_path(&path))
     }
 
     pub(in crate::executor) fn command_substitution_heredoc_output(
@@ -316,6 +389,30 @@ impl Executor {
                     .ok()?;
                 Some(String::from_utf8_lossy(&output.stdout).into_owned())
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod mktemp_display_path_tests {
+    use super::*;
+
+    #[test]
+    fn mktemp_display_path_uses_native_windows_drive() {
+        let display = mktemp_command_substitution_display_path(std::path::Path::new(
+            "/c/Users/example/AppData/Local/Temp/rubash-mktemp.1",
+        ));
+
+        if cfg!(windows) {
+            assert_eq!(
+                display,
+                "C:/Users/example/AppData/Local/Temp/rubash-mktemp.1"
+            );
+        } else {
+            assert_eq!(
+                display,
+                "/c/Users/example/AppData/Local/Temp/rubash-mktemp.1"
+            );
         }
     }
 }

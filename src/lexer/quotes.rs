@@ -53,15 +53,21 @@ pub(crate) fn remove_shell_quotes(raw: &str) -> String {
             '"' => {
                 remove_double_quoted_into(&mut out, &mut chars, false);
             }
+            '`' => {
+                out.push(ch);
+                copy_backtick_body_preserving_syntax(&mut out, &mut chars);
+            }
             '\\' => {
-                if let Some(escaped) = chars.next() {
-                    if escaped == '$' {
-                        out.push('\x1f');
-                    } else if escaped == '\'' {
-                        out.push('\x17');
-                    } else {
-                        out.push(escaped);
-                    }
+                let Some(escaped) = chars.next() else {
+                    out.push(ch);
+                    continue;
+                };
+                if escaped == '$' {
+                    out.push('\x1f');
+                } else if escaped == '\'' {
+                    out.push('\x17');
+                } else {
+                    out.push(escaped);
                 }
             }
             _ => out.push(ch),
@@ -79,17 +85,7 @@ pub(super) fn remove_shell_quotes_outside_backticks(raw: &str) -> String {
         match ch {
             '`' => {
                 out.push(ch);
-                while let Some(inner) = chars.next() {
-                    out.push(inner);
-                    if inner == '`' {
-                        break;
-                    }
-                    if inner == '\\' {
-                        if let Some(escaped) = chars.next() {
-                            out.push(escaped);
-                        }
-                    }
-                }
+                copy_backtick_body_preserving_syntax(&mut out, &mut chars);
             }
             '$' if chars.peek() == Some(&'"') => {
                 chars.next();
@@ -107,18 +103,31 @@ pub(super) fn remove_shell_quotes_outside_backticks(raw: &str) -> String {
                 remove_double_quoted_into(&mut out, &mut chars, true);
             }
             '\\' => {
-                if let Some(escaped) = chars.next() {
-                    if escaped == '\'' {
-                        out.push('\x17');
-                    } else {
-                        out.push(escaped);
-                    }
+                let Some(escaped) = chars.next() else {
+                    out.push(ch);
+                    continue;
+                };
+                if escaped == '\'' {
+                    out.push('\x17');
+                } else {
+                    out.push(escaped);
                 }
             }
             _ => out.push(ch),
         }
     }
 
+    out
+}
+
+pub(super) fn normalize_backtick_command_substitution(raw: &str) -> String {
+    let mut chars = raw.chars().peekable();
+    if chars.next() != Some('`') {
+        return raw.to_string();
+    }
+    let mut out = String::from("`");
+    copy_backtick_body_preserving_syntax(&mut out, &mut chars);
+    out.extend(chars);
     out
 }
 
@@ -140,17 +149,7 @@ fn remove_double_quoted_into(
             '"' => break,
             '`' if preserve_backticks => {
                 out.push(quoted);
-                while let Some(inner) = chars.next() {
-                    out.push(inner);
-                    if inner == '`' {
-                        break;
-                    }
-                    if inner == '\\' {
-                        if let Some(escaped) = chars.next() {
-                            out.push(escaped);
-                        }
-                    }
-                }
+                copy_backtick_body_preserving_syntax(out, chars);
             }
             '\\' => {
                 if let Some(escaped @ ('\\' | '"' | '$' | '`' | '\n')) = chars.peek().copied() {
@@ -272,16 +271,33 @@ fn copy_dollar_paren_body_raw(
 }
 
 fn copy_backtick_raw(out: &mut String, chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
+    copy_backtick_body_preserving_syntax(out, chars);
+}
+
+fn copy_backtick_body_preserving_syntax(
+    out: &mut String,
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) {
     while let Some(ch) = chars.next() {
-        out.push(ch);
         if ch == '`' {
+            out.push(ch);
             break;
         }
         if ch == '\\' {
-            if let Some(escaped) = chars.next() {
-                out.push(escaped);
+            match chars.next() {
+                Some('\n') => {}
+                Some('\r') if chars.peek().copied() == Some('\n') => {
+                    chars.next();
+                }
+                Some(escaped) => {
+                    out.push(ch);
+                    out.push(escaped);
+                }
+                None => out.push(ch),
             }
+            continue;
         }
+        out.push(ch);
     }
 }
 

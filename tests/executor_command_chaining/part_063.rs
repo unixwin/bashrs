@@ -203,6 +203,28 @@ fn test_parameter_replacement_preserves_double_quoted_single_quote_pattern() {
 }
 
 #[test]
+fn test_parameter_replacement_restores_protected_backslash_in_replacement() {
+    let output_path = "target/rubash-param-replacement-protected-backslash-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        r#"test="weferfds'dsfsdf"; printf "%s\n" "'${{test//"'"/\'\\'\'}}'" > {output_path}"#
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "'weferfds'\\\\dsfsdf'\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_parameter_substring_uses_offset_and_length() {
     let output_path = "target/rubash-param-substring-output.txt";
     let _ = fs::remove_file(output_path);

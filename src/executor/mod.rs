@@ -93,6 +93,7 @@ mod type_functions;
 mod unset_arrays;
 mod variable_state;
 
+mod alias_helpers;
 mod assignment_helpers;
 mod ast_exec;
 mod builtin_names;
@@ -113,10 +114,10 @@ mod pipeline_stages;
 mod read_helpers;
 mod read_split;
 mod redirect_inherit;
-mod sed_alias_helpers;
 mod select_exec;
 mod support_names;
 
+use alias_helpers::*;
 use assignment_helpers::*;
 use builtin_names::*;
 use command_subst_helpers::*;
@@ -136,7 +137,6 @@ use parse_helpers::*;
 use read_helpers::*;
 use read_split::*;
 use redirect_inherit::*;
-use sed_alias_helpers::*;
 use support_names::*;
 
 mod conditional;

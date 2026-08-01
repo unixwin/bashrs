@@ -25,13 +25,18 @@ impl Executor {
                 continue;
             }
 
+            if ch == '\x18' {
+                output.push('"');
+                continue;
+            }
+
             if ch == '`' {
                 let mut source = String::new();
                 let mut escaped = false;
                 let mut closed = false;
-                for source_ch in chars.by_ref() {
+                while let Some(source_ch) = chars.next() {
                     if escaped {
-                        source.push(source_ch);
+                        push_backtick_escaped_source_char(&mut source, source_ch, &mut chars);
                         escaped = false;
                         continue;
                     }
@@ -261,6 +266,24 @@ impl Executor {
         let protected = word.replace('\x17', "\x16");
         self.expand_embedded_parameters(&protected)
             .replace(PROTECTED_ESCAPED_SINGLE_QUOTE, "\x17")
+    }
+}
+
+fn push_backtick_escaped_source_char(
+    source: &mut String,
+    ch: char,
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) {
+    match ch {
+        '$' | '`' | '\\' => source.push(ch),
+        '\n' => {}
+        '\r' if chars.peek().copied() == Some('\n') => {
+            chars.next();
+        }
+        _ => {
+            source.push('\\');
+            source.push(ch);
+        }
     }
 }
 
