@@ -4,7 +4,6 @@ impl Executor {
     pub(in crate::executor) fn update_underscore_parameter(&mut self, cmd: &CommandNode) {
         if let Some(value) = cmd.words.last() {
             self.env_vars.insert("_".to_string(), value.clone());
-            set_process_env("_", value);
         }
     }
 
@@ -32,19 +31,29 @@ impl Executor {
             .word_kinds
             .get(index)
             .is_some_and(|kind| *kind == TokenKind::Variable);
+        let unquoted_dynamic_parameter = unquoted_variable
+            && cmd
+                .words
+                .get(index)
+                .and_then(|word| dynamic_scalar_parameter_name(word))
+                .is_some_and(|name| self.dynamic_parameter_is_set(name));
         let unquoted_command_substitution = cmd
-            .words
+            .word_metadata
             .get(index)
-            .is_some_and(|word| word_has_unquoted_command_substitution(word));
+            .map(|metadata| metadata.raw.as_str())
+            .or_else(|| cmd.words.get(index).map(String::as_str))
+            .is_some_and(word_has_unquoted_command_substitution);
         let unquoted_indirect_name_list = cmd
             .words
             .get(index)
             .is_some_and(|word| word_is_unquoted_indirect_name_list(word));
 
-        ((unquoted_variable && expanded.contains(['\n', '\t']))
+        let field_split_would_split = self.field_split_values(expanded).len() > 1;
+
+        ((unquoted_variable && !unquoted_dynamic_parameter && field_split_would_split)
             || (unquoted_command_substitution && expanded.contains(char::is_whitespace))
             || (unquoted_indirect_name_list && expanded.contains(char::is_whitespace)))
-            && expanded.split_whitespace().nth(1).is_some()
+            && (field_split_would_split || expanded.split_whitespace().nth(1).is_some())
     }
 
     pub(in crate::executor) fn expand_for_word_values_result(
@@ -131,6 +140,14 @@ impl Executor {
         output.push_str(&tail[end + 1..]);
         Some(output)
     }
+}
+
+fn dynamic_scalar_parameter_name(word: &str) -> Option<&str> {
+    let name = word
+        .strip_prefix("${")
+        .and_then(|word| word.strip_suffix('}'))
+        .or_else(|| word.strip_prefix('$'))?;
+    is_shell_name(name).then_some(name)
 }
 
 fn word_is_unquoted_indirect_name_list(word: &str) -> bool {

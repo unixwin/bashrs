@@ -6,12 +6,16 @@ impl Executor {
         // ${parameter:=word}, and ${parameter+word} has quote-aware expansion
         // flags. This covers tilde2.tests while the lexer still discards most
         // quote state.
-        let expanded = decode_parameter_word_quotes(&self.expand_embedded_parameters(word));
+        let expanded = unescape_remaining_shell_escapes(&decode_parameter_word_quotes(
+            &self.expand_embedded_parameters(word),
+        ));
         tilde_expand::expand_assignment_tilde_value(&expanded, &self.home_value(), false)
     }
 
     pub(in crate::executor) fn expand_parameter_word_mut(&mut self, word: &str) -> String {
-        let expanded = decode_parameter_word_quotes(&self.expand_embedded_parameters_mut(word));
+        let expanded = unescape_remaining_shell_escapes(&decode_parameter_word_quotes(
+            &self.expand_embedded_parameters_mut(word),
+        ));
         tilde_expand::expand_assignment_tilde_value(&expanded, &self.home_value(), false)
     }
 
@@ -36,7 +40,11 @@ impl Executor {
                     .parameter_operator_value(var_name)
                     .filter(|value| !value.is_empty())
                     .map(|value| shell_safe_value(&value))
-                    .unwrap_or_else(|| self.expand_embedded_parameters(default));
+                    .unwrap_or_else(|| {
+                        expand_quoted_parameter_operator_word(
+                            &self.expand_embedded_parameters(default),
+                        )
+                    });
             }
         }
 
@@ -46,7 +54,9 @@ impl Executor {
                     .parameter_operator_value(var_name)
                     .is_some_and(|value| !value.is_empty())
                 {
-                    return self.expand_embedded_parameters(alternate);
+                    return decode_double_quotes_in_quoted_parameter_word(
+                        &self.expand_embedded_parameters(alternate),
+                    );
                 }
                 return String::new();
             }
@@ -123,7 +133,9 @@ impl Executor {
         if let Some((var_name, alternate)) = name.split_once('+') {
             if is_parameter_error_name(var_name) {
                 if self.parameter_operator_value(var_name).is_some() {
-                    return self.expand_embedded_parameters(alternate);
+                    return decode_double_quotes_in_quoted_parameter_word(
+                        &self.expand_embedded_parameters(alternate),
+                    );
                 }
                 return String::new();
             }
@@ -134,7 +146,11 @@ impl Executor {
                 return self
                     .parameter_operator_value(var_name)
                     .map(|value| shell_safe_value(&value))
-                    .unwrap_or_else(|| self.expand_embedded_parameters(default));
+                    .unwrap_or_else(|| {
+                        expand_quoted_parameter_operator_word(
+                            &self.expand_embedded_parameters(default),
+                        )
+                    });
             }
         }
 
@@ -166,7 +182,11 @@ impl Executor {
                     .parameter_operator_value(var_name)
                     .filter(|value| !value.is_empty())
                     .map(|value| shell_safe_value(&value))
-                    .unwrap_or_else(|| self.expand_embedded_parameters_mut(default));
+                    .unwrap_or_else(|| {
+                        expand_quoted_parameter_operator_word(
+                            &self.expand_embedded_parameters_mut(default),
+                        )
+                    });
             }
         }
 
@@ -176,7 +196,9 @@ impl Executor {
                     .parameter_operator_value(var_name)
                     .is_some_and(|value| !value.is_empty())
                 {
-                    return self.expand_embedded_parameters_mut(alternate);
+                    return decode_double_quotes_in_quoted_parameter_word(
+                        &self.expand_embedded_parameters_mut(alternate),
+                    );
                 }
                 return String::new();
             }
@@ -253,7 +275,9 @@ impl Executor {
         if let Some((var_name, alternate)) = name.split_once('+') {
             if is_parameter_error_name(var_name) {
                 if self.parameter_operator_value(var_name).is_some() {
-                    return self.expand_embedded_parameters_mut(alternate);
+                    return decode_double_quotes_in_quoted_parameter_word(
+                        &self.expand_embedded_parameters_mut(alternate),
+                    );
                 }
                 return String::new();
             }
@@ -264,7 +288,11 @@ impl Executor {
                 return self
                     .parameter_operator_value(var_name)
                     .map(|value| shell_safe_value(&value))
-                    .unwrap_or_else(|| self.expand_embedded_parameters_mut(default));
+                    .unwrap_or_else(|| {
+                        expand_quoted_parameter_operator_word(
+                            &self.expand_embedded_parameters_mut(default),
+                        )
+                    });
             }
         }
 
@@ -363,4 +391,43 @@ impl Executor {
         self.apply_shell_assignment(&target_name, value);
         true
     }
+}
+
+fn decode_double_quotes_in_quoted_parameter_word(word: &str) -> String {
+    let mut output = String::new();
+    let chars = word.chars().collect::<Vec<_>>();
+    let mut index = 0usize;
+    while index < chars.len() {
+        if chars[index] != '"' {
+            output.push(chars[index]);
+            index += 1;
+            continue;
+        }
+
+        index += 1;
+        while index < chars.len() {
+            match chars[index] {
+                '"' => {
+                    index += 1;
+                    break;
+                }
+                '\\' if matches!(chars.get(index + 1), Some('\\' | '"' | '$' | '`' | '\n')) => {
+                    index += 1;
+                    if index < chars.len() && chars[index] != '\n' {
+                        output.push(chars[index]);
+                    }
+                    index += 1;
+                }
+                ch => {
+                    output.push(ch);
+                    index += 1;
+                }
+            }
+        }
+    }
+    output
+}
+
+fn expand_quoted_parameter_operator_word(word: &str) -> String {
+    unescape_remaining_shell_escapes(&decode_double_quotes_in_quoted_parameter_word(word))
 }

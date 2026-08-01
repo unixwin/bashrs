@@ -66,11 +66,6 @@ impl Executor {
             // only checks that this set option parse emits more than 3 lines.
             return "4".to_string();
         }
-        if source == "mktemp" {
-            if let Some(path) = self.mktemp_command_substitution(&["mktemp".to_string()]) {
-                return path;
-            }
-        }
         if source.starts_with("declare -f foo | sed") {
             return "bar() { echo $(< x1); }".to_string();
         }
@@ -79,12 +74,6 @@ impl Executor {
         }
         let words = split_shell_words(source);
         let words = self.expand_aliases(&words);
-
-        if words.first().map(String::as_str) == Some("mktemp") {
-            if let Some(path) = self.mktemp_command_substitution(&words) {
-                return path;
-            }
-        }
 
         if let Some(output) = self.timed_command_substitution_output(&words) {
             return output;
@@ -100,6 +89,17 @@ impl Executor {
                 .map(|word| self.expand_word(word))
                 .collect::<Vec<_>>();
             return echo_command_substitution_output(&expanded_args);
+        }
+
+        if words.first().map(String::as_str) == Some("recho") {
+            let expanded_args = words[1..]
+                .iter()
+                .map(|word| self.expand_word(word))
+                .collect::<Vec<_>>();
+            return self
+                .recho_output(&expanded_args)
+                .trim_end_matches('\n')
+                .to_string();
         }
 
         if words.first().map(String::as_str) == Some("printf") {
@@ -219,6 +219,12 @@ impl Executor {
             return output;
         }
 
+        if words.first().map(String::as_str) == Some("mktemp") {
+            if let Some(path) = self.mktemp_command_substitution(&words) {
+                return path;
+            }
+        }
+
         String::new()
     }
 
@@ -302,6 +308,12 @@ impl Executor {
             functions: self.functions.clone(),
             function_definition_redirects: self.function_definition_redirects.clone(),
             positional_params: self.positional_params.clone(),
+            pipestatus: self.pipestatus.clone(),
+            function_name_stack: self.function_name_stack.clone(),
+            bash_argc_stack: self.bash_argc_stack.clone(),
+            bash_argv_stack: self.bash_argv_stack.clone(),
+            bash_lineno_stack: self.bash_lineno_stack.clone(),
+            bash_source_stack: self.bash_source_stack.clone(),
             local_var_scopes: self.local_var_scopes.clone(),
             local_attr_scopes: self.local_attr_scopes.clone(),
             expanding_aliases: self.expanding_aliases.clone(),
@@ -320,6 +332,8 @@ impl Executor {
             last_command_substitution_status: Cell::new(None),
             stdout_capture: None,
             stderr_capture: None,
+            host_external_command_handler: None,
+            external_file_builtins_enabled: self.external_file_builtins_enabled,
             process_env_snapshot: self.process_env_snapshot.clone(),
         }
     }

@@ -112,7 +112,12 @@ impl<'a> Lexer<'a> {
                         }
                         Some('(') => {
                             self.advance();
-                            self.skip_cmd_subst();
+                            if self.peek() == Some('(') {
+                                self.advance();
+                                self.skip_arith_paren();
+                            } else {
+                                self.skip_cmd_subst();
+                            }
                         }
                         Some('[') => {
                             self.advance();

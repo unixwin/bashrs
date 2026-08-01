@@ -7,10 +7,6 @@ impl Executor {
         input: &str,
     ) -> Option<String> {
         match words.first().map(String::as_str)? {
-            "sed" => {
-                let script = strip_matching_quotes(sed_script_arg(&words[1..])?);
-                apply_simple_sed_substitution(input, script)
-            }
             "sort" => {
                 let unique = words[1..].iter().any(|word| self.expand_word(word) == "-u");
                 let mut lines = input.lines().map(str::to_string).collect::<Vec<_>>();
@@ -25,20 +21,22 @@ impl Executor {
                 Some(output)
             }
             _ => {
-                // Generic external command filter - run command with stdin
                 let cmd_name = self.expand_word(&words[0]);
                 let expanded_args: Vec<String> =
                     words[1..].iter().map(|w| self.expand_word(w)).collect();
                 use std::io::Write;
-                use std::process::{Command, Stdio};
-                let child = Command::new(&cmd_name)
-                    .args(&expanded_args)
+                use std::process::Stdio;
+                let program = find_user_command(&cmd_name, &self.env_vars)?;
+                let (mut process, _) =
+                    external_command_for_program(&program, &expanded_args, &self.env_vars);
+                self.apply_child_environment(&mut process);
+                let mut child = process
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::null())
                     .spawn()
                     .ok()?;
-                child.stdin.as_ref()?.write_all(input.as_bytes()).ok()?;
+                child.stdin.as_mut()?.write_all(input.as_bytes()).ok()?;
                 let output = child.wait_with_output().ok()?;
                 Some(
                     String::from_utf8_lossy(&output.stdout)
@@ -269,6 +267,25 @@ impl Executor {
         Some(values)
     }
 
+    pub(in crate::executor) fn quoted_positional_at_word_values_with_raw(
+        &self,
+        word: &str,
+        raw: Option<&str>,
+        kind: Option<&TokenKind>,
+    ) -> Option<Vec<String>> {
+        if !word.starts_with("${") {
+            if let Some(values) = raw.and_then(|raw| {
+                quoted_positional_at_segments(raw).map(|segments| {
+                    expand_quoted_positional_at_segments(&segments, &self.positional_params)
+                })
+            }) {
+                return Some(values);
+            }
+        }
+
+        self.quoted_positional_at_word_values(word, kind)
+    }
+
     pub(in crate::executor) fn join_array_parameter_values(
         &self,
         value: &str,
@@ -320,45 +337,114 @@ impl Executor {
         words: &[String],
     ) -> Option<String> {
         words.first()?;
-        if words
-            .iter()
-            .any(|word| matches!(word.as_str(), "|" | ">" | ">>" | "<" | "2>" | "2>>" | "&>"))
-        {
-            return None;
-        }
-
-        let expanded_words: Vec<String> = words
-            .iter()
-            .map(|word| strip_matching_quotes(&self.expand_word(word)).to_string())
-            .collect();
-        let Some(program) = find_user_command(&expanded_words[0], &self.env_vars) else {
+        let stdio = self.command_substitution_words_and_stdio(words)?;
+        let Some(program) = find_user_command(&stdio.expanded_words[0], &self.env_vars) else {
+            if stdio.expanded_words.first().map(String::as_str) == Some("mktemp") {
+                return None;
+            }
             self.last_command_substitution_status.set(Some(127));
             return Some(String::new());
         };
-        let mut process = if should_run_with_shell(&program) {
-            if let Some(shell) = find_shell(&self.env_vars) {
-                let mut command = Command::new(shell);
-                command.arg(&program);
-                command.args(&expanded_words[1..]);
-                command
-            } else {
-                Command::new(&program)
-            }
-        } else {
-            let mut command = Command::new(&program);
-            command.args(&expanded_words[1..]);
-            command
-        };
+        let (mut process, _) =
+            external_command_for_program(&program, &stdio.expanded_words[1..], &self.env_vars);
 
         self.apply_child_environment(&mut process);
-        let output = process.output().ok()?;
+        if let Some(stdin_path) = stdio.stdin_path {
+            let file = File::open(stdin_path).ok()?;
+            process.stdin(Stdio::from(file));
+        }
+        if let Some(redirect) = &stdio.stdout_redirect {
+            let file = open_command_substitution_redirect(redirect).ok()?;
+            process.stdout(Stdio::from(file));
+        } else {
+            process.stdout(Stdio::piped());
+        }
+        if let Some(redirect) = &stdio.stderr_redirect {
+            let file = open_command_substitution_redirect(redirect).ok()?;
+            process.stderr(Stdio::from(file));
+        } else {
+            process.stderr(Stdio::piped());
+        }
+        let output = process.spawn().ok()?.wait_with_output().ok()?;
         let status = output.status.code().unwrap_or(1);
+        if stdio.expanded_words.first().map(String::as_str) == Some("mktemp")
+            && status != 0
+            && !stdio.had_redirect
+        {
+            return None;
+        }
         self.last_command_substitution_status.set(Some(status));
+        if stdio.stdout_redirect.is_some() {
+            return Some(String::new());
+        }
         Some(
             String::from_utf8_lossy(&output.stdout)
                 .trim_end_matches('\n')
                 .to_string(),
         )
+    }
+
+    fn command_substitution_words_and_stdio(
+        &self,
+        words: &[String],
+    ) -> Option<CommandSubstitutionStdio> {
+        let mut stdio = CommandSubstitutionStdio::default();
+        let mut index = 0;
+        while index < words.len() {
+            match words[index].as_str() {
+                "|" => return None,
+                "<" => {
+                    stdio.stdin_path =
+                        Some(self.command_substitution_redirect_path(words.get(index + 1)?)?);
+                    stdio.had_redirect = true;
+                    index += 2;
+                }
+                ">" | "1>" | ">|" | "1>|" => {
+                    stdio.stdout_redirect = Some(CommandSubstitutionRedirect {
+                        path: self.command_substitution_redirect_path(words.get(index + 1)?)?,
+                        append: false,
+                    });
+                    stdio.had_redirect = true;
+                    index += 2;
+                }
+                ">>" | "1>>" => {
+                    stdio.stdout_redirect = Some(CommandSubstitutionRedirect {
+                        path: self.command_substitution_redirect_path(words.get(index + 1)?)?,
+                        append: true,
+                    });
+                    stdio.had_redirect = true;
+                    index += 2;
+                }
+                "2>" | "2>|" => {
+                    stdio.stderr_redirect = Some(CommandSubstitutionRedirect {
+                        path: self.command_substitution_redirect_path(words.get(index + 1)?)?,
+                        append: false,
+                    });
+                    stdio.had_redirect = true;
+                    index += 2;
+                }
+                "2>>" => {
+                    stdio.stderr_redirect = Some(CommandSubstitutionRedirect {
+                        path: self.command_substitution_redirect_path(words.get(index + 1)?)?,
+                        append: true,
+                    });
+                    stdio.had_redirect = true;
+                    index += 2;
+                }
+                word => {
+                    stdio
+                        .expanded_words
+                        .push(strip_matching_quotes(&self.expand_word(word)).to_string());
+                    index += 1;
+                }
+            }
+        }
+        (!stdio.expanded_words.is_empty()).then_some(stdio)
+    }
+
+    fn command_substitution_redirect_path(&self, target: &str) -> Option<PathBuf> {
+        let expanded = strip_matching_quotes(&self.expand_word(target)).to_string();
+        Some(shell_path_to_windows(&expanded, &self.env_vars))
     }
 
     pub(in crate::executor) fn expand_backtick_substitution(&self, word: &str) -> Option<String> {
@@ -443,19 +529,166 @@ impl Executor {
 }
 
 fn decode_backtick_substitution_source(source: &str) -> String {
-    let mut decoded = String::new();
-    let mut chars = source.chars().peekable();
+    decode_old_style_backtick_source(source).replace('\x1a', "`")
+}
 
-    while let Some(ch) = chars.next() {
-        match ch {
-            '\x1a' => decoded.push('`'),
-            '\\' if chars.peek().copied() == Some('`') => {
-                chars.next();
-                decoded.push('`');
+#[derive(Default)]
+struct CommandSubstitutionStdio {
+    expanded_words: Vec<String>,
+    stdin_path: Option<PathBuf>,
+    stdout_redirect: Option<CommandSubstitutionRedirect>,
+    stderr_redirect: Option<CommandSubstitutionRedirect>,
+    had_redirect: bool,
+}
+
+struct CommandSubstitutionRedirect {
+    path: PathBuf,
+    append: bool,
+}
+
+fn open_command_substitution_redirect(redirect: &CommandSubstitutionRedirect) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.write(true).create(true);
+    if redirect.append {
+        options.append(true);
+    } else {
+        options.truncate(true);
+    }
+    options.open(&redirect.path)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum QuotedPositionalAtSegment {
+    Literal(String),
+    PositionalAt,
+}
+
+fn quoted_positional_at_segments(raw: &str) -> Option<Vec<QuotedPositionalAtSegment>> {
+    let chars = raw.chars().collect::<Vec<_>>();
+    let mut segments = Vec::new();
+    let mut literal_start = 0usize;
+    let mut index = 0usize;
+    let mut saw_positional_at = false;
+
+    while index < chars.len() {
+        match chars[index] {
+            '"' => {
+                let Some(end) = skip_double_quote(&chars, index + 1) else {
+                    return None;
+                };
+                let body = chars[index + 1..end].iter().collect::<String>();
+                if body == "$@" {
+                    push_quoted_positional_literal_segment(
+                        &mut segments,
+                        &chars[literal_start..index],
+                    )?;
+                    segments.push(QuotedPositionalAtSegment::PositionalAt);
+                    saw_positional_at = true;
+                    index = end + 1;
+                    literal_start = index;
+                    continue;
+                }
+                index = end + 1;
+                continue;
             }
-            _ => decoded.push(ch),
+            '\'' => {
+                index = skip_single_quote(&chars, index + 1)?;
+                continue;
+            }
+            '$' if chars.get(index + 1) == Some(&'\'') => {
+                index = skip_single_quote(&chars, index + 2)?;
+                continue;
+            }
+            '\\' => {
+                index += 2;
+                continue;
+            }
+            _ => index += 1,
         }
     }
 
-    decoded
+    if !saw_positional_at {
+        return None;
+    }
+
+    push_quoted_positional_literal_segment(&mut segments, &chars[literal_start..])?;
+    Some(segments)
+}
+
+fn push_quoted_positional_literal_segment(
+    segments: &mut Vec<QuotedPositionalAtSegment>,
+    chars: &[char],
+) -> Option<()> {
+    if chars.is_empty() {
+        return Some(());
+    }
+    let raw = chars.iter().collect::<String>();
+    if raw.contains(['$', '`', '\\']) {
+        return None;
+    }
+    segments.push(QuotedPositionalAtSegment::Literal(
+        crate::lexer::remove_shell_quotes(&raw),
+    ));
+    Some(())
+}
+
+fn expand_quoted_positional_at_segments(
+    segments: &[QuotedPositionalAtSegment],
+    positional_params: &[String],
+) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut current_present = false;
+
+    for segment in segments {
+        match segment {
+            QuotedPositionalAtSegment::Literal(value) => {
+                current.push_str(value);
+                current_present = true;
+            }
+            QuotedPositionalAtSegment::PositionalAt => {
+                if positional_params.is_empty() {
+                    continue;
+                }
+
+                current.push_str(&positional_params[0]);
+                current_present = true;
+
+                if positional_params.len() > 1 {
+                    words.push(std::mem::take(&mut current));
+                    for value in &positional_params[1..positional_params.len() - 1] {
+                        words.push(value.clone());
+                    }
+                    current.push_str(&positional_params[positional_params.len() - 1]);
+                }
+            }
+        }
+    }
+
+    if current_present {
+        words.push(current);
+    }
+
+    words
+}
+
+fn skip_double_quote(chars: &[char], mut index: usize) -> Option<usize> {
+    while index < chars.len() {
+        match chars[index] {
+            '"' => return Some(index),
+            '\\' => index += 2,
+            _ => index += 1,
+        }
+    }
+    None
+}
+
+fn skip_single_quote(chars: &[char], mut index: usize) -> Option<usize> {
+    while index < chars.len() {
+        if chars[index] == '\'' {
+            return Some(index + 1);
+        }
+        index += 1;
+    }
+    None
 }

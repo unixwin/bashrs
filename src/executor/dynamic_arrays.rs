@@ -46,11 +46,7 @@ impl Executor {
             ),
             "SHELLOPTS" => Some(crate::builtins::set::shellopts_value(&self.env_vars)),
             "BASHOPTS" => Some(crate::builtins::shopt::bashopts_value(&self.env_vars)),
-            "PIPESTATUS" => self
-                .env_vars
-                .get("PIPESTATUS")
-                .and_then(|value| array_value_at(value, 0))
-                .or_else(|| Some("0".to_string())),
+            "PIPESTATUS" => Some(self.pipestatus.first().copied().unwrap_or(0).to_string()),
             _ => None,
         }
     }
@@ -85,6 +81,23 @@ impl Executor {
     pub(in crate::executor) fn parameter_array_storage(&self, name: &str) -> Option<String> {
         let name = self.resolved_variable_name(name)?;
         let name = name.as_str();
+        match name {
+            "PIPESTATUS" => return Some(format_indexed_array_values(self.pipestatus_values())),
+            "FUNCNAME" => {
+                return Some(format_indexed_array_values(
+                    self.function_name_stack.clone(),
+                ))
+            }
+            "BASH_ARGC" => return Some(format_indexed_array_values(self.bash_argc_stack.clone())),
+            "BASH_ARGV" => return Some(format_indexed_array_values(self.bash_argv_stack.clone())),
+            "BASH_LINENO" => {
+                return Some(format_indexed_array_values(self.bash_lineno_stack.clone()))
+            }
+            "BASH_SOURCE" => {
+                return Some(format_indexed_array_values(self.bash_source_stack.clone()))
+            }
+            _ => {}
+        }
         if name == "GROUPS" {
             return Some(format_indexed_array_storage(
                 self.groups_words().into_iter().enumerate().collect(),
@@ -154,22 +167,7 @@ impl Executor {
     }
 
     pub(in crate::executor) fn funcname_stack(&self) -> Vec<String> {
-        self.env_vars
-            .get("FUNCNAME")
-            .map(|value| array_values(value))
-            .unwrap_or_default()
-    }
-
-    pub(in crate::executor) fn restore_indexed_array(&mut self, name: &str, value: Option<String>) {
-        match value {
-            Some(value) => {
-                self.env_vars.insert(name.to_string(), value);
-            }
-            None => {
-                self.env_vars.insert(name.to_string(), String::new());
-            }
-        }
-        mark_env_name(&mut self.env_vars, ARRAY_VARS, name);
+        self.function_name_stack.clone()
     }
 
     pub(in crate::executor) fn current_bash_source(&self) -> String {

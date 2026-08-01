@@ -1,5 +1,3 @@
-use std::str::from_utf8;
-
 use super::scanner::Lexer;
 
 impl<'a> Lexer<'a> {
@@ -19,7 +17,7 @@ impl<'a> Lexer<'a> {
                 current_word_boundary = true;
                 continue;
             }
-            let rest = from_utf8(&self.input[self.position..]).unwrap_or("");
+            let rest = &self.input[self.position..];
             update_command_substitution_case_depth(
                 c,
                 false,
@@ -42,6 +40,15 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     self.skip_ansi_c_single();
                 }
+                '$' if self.peek() == Some('(') => {
+                    self.advance();
+                    if self.peek() == Some('(') {
+                        self.advance();
+                        self.skip_arith_paren();
+                    } else {
+                        self.skip_cmd_subst();
+                    }
+                }
                 '\'' => self.skip_single(),
                 '"' => self.skip_double(),
                 '<' if self.peek() == Some('<') && self.peek_after(1) == Some('<') => {
@@ -49,6 +56,34 @@ impl<'a> Lexer<'a> {
                     self.advance();
                 }
                 '<' if self.peek() == Some('<') => self.skip_heredoc_in_command_substitution(),
+                _ => {}
+            }
+        }
+    }
+
+    pub(super) fn skip_arith_paren(&mut self) {
+        let mut depth = 0usize;
+        let mut single = false;
+        let mut double = false;
+        let mut escaped = false;
+        while let Some(c) = self.advance() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if c == '\\' {
+                escaped = true;
+                continue;
+            }
+            match c {
+                '\'' if !double => single = !single,
+                '"' if !single => double = !double,
+                '(' if !single && !double => depth += 1,
+                ')' if !single && !double && depth > 0 => depth -= 1,
+                ')' if !single && !double && self.peek() == Some(')') => {
+                    self.advance();
+                    break;
+                }
                 _ => {}
             }
         }
@@ -89,9 +124,8 @@ impl<'a> Lexer<'a> {
         {
             self.advance();
         }
-        let mut delimiter = from_utf8(&self.input[delimiter_start..self.position])
-            .unwrap_or("")
-            .replace(['\'', '"', '\\'], "");
+        let mut delimiter =
+            self.input[delimiter_start..self.position].replace(['\'', '"', '\\'], "");
         if strip_tabs {
             delimiter = delimiter.trim_start_matches('\t').to_string();
         }
@@ -110,7 +144,7 @@ impl<'a> Lexer<'a> {
             while self.peek().is_some_and(|ch| ch != '\n') {
                 self.advance();
             }
-            let line = from_utf8(&self.input[line_start..self.position]).unwrap_or("");
+            let line = &self.input[line_start..self.position];
             let comparable = if strip_tabs {
                 line.trim_start_matches('\t')
             } else {
@@ -177,7 +211,12 @@ impl<'a> Lexer<'a> {
                     }
                     Some('(') => {
                         self.advance();
-                        self.skip_cmd_subst();
+                        if self.peek() == Some('(') {
+                            self.advance();
+                            self.skip_arith_paren();
+                        } else {
+                            self.skip_cmd_subst();
+                        }
                     }
                     _ => {}
                 }
@@ -209,7 +248,12 @@ impl<'a> Lexer<'a> {
                 }
                 '$' if self.peek() == Some('(') => {
                     self.advance();
-                    self.skip_cmd_subst();
+                    if self.peek() == Some('(') {
+                        self.advance();
+                        self.skip_arith_paren();
+                    } else {
+                        self.skip_cmd_subst();
+                    }
                 }
                 '$' if self.peek() == Some('[') => {
                     self.advance();
@@ -250,7 +294,7 @@ impl<'a> Lexer<'a> {
                 comment_start = false;
                 continue;
             }
-            let rest = from_utf8(&self.input[self.position..]).unwrap_or("");
+            let rest = &self.input[self.position..];
             update_brace_group_case_depth(
                 c,
                 &mut word,
@@ -306,7 +350,12 @@ impl<'a> Lexer<'a> {
                         }
                         Some('(') => {
                             self.advance();
-                            self.skip_cmd_subst();
+                            if self.peek() == Some('(') {
+                                self.advance();
+                                self.skip_arith_paren();
+                            } else {
+                                self.skip_cmd_subst();
+                            }
                         }
                         Some('\'') => {
                             self.advance();
@@ -339,7 +388,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn brace_close_can_end_compact_group(&self) -> bool {
-        let rest = from_utf8(&self.input[self.position..]).unwrap_or("");
+        let rest = &self.input[self.position..];
         let mut saw_blank = false;
         for (index, ch) in rest.char_indices() {
             match ch {

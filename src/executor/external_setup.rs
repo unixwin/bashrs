@@ -24,6 +24,39 @@ fn exec_keeps_output_process_substitution(words: &[String], redirect: &Redirect)
         || matches!(words, [command, fd] if command == "exec" && dynamic_fd_word(fd).is_some())
 }
 
+pub(in crate::executor) fn command_needs_process_substitution_materialization(
+    cmd: &CommandNode,
+) -> bool {
+    if cmd.redirects.is_empty()
+        && cmd.redirect_in.is_none()
+        && cmd.redirect_out.is_none()
+        && cmd.append.is_none()
+        && cmd.redirect_err.is_none()
+        && cmd.redirect_err_append.is_none()
+        && cmd.heredoc.is_none()
+        && cmd.heredoc_redirects.is_empty()
+        && cmd.here_string.is_none()
+        && cmd.process_substitutions.is_empty()
+        && !cmd
+            .word_metadata
+            .iter()
+            .any(word_metadata_needs_process_substitution_materialization)
+    {
+        return cmd.words.iter().any(|word| {
+            word.strip_prefix("<(")
+                .or_else(|| word.strip_prefix(">("))
+                .is_some_and(|word| word.ends_with(')'))
+        });
+    }
+
+    true
+}
+
+fn word_metadata_needs_process_substitution_materialization(metadata: &WordMetadata) -> bool {
+    !metadata.process_substitutions.is_empty()
+        || raw_word_contains_process_substitution(&metadata.raw)
+}
+
 pub(in crate::executor) fn shared_combined_output_process_substitution(
     first: Option<&Redirect>,
     second: Option<&Redirect>,
@@ -110,11 +143,25 @@ impl Executor {
         let mut rewritten = cmd.clone();
         let mut files = ProcessSubstitutionFiles::default();
         for word_index in 0..rewritten.words.len() {
-            let substitutions = rewritten
-                .word_metadata
-                .get(word_index)
+            let metadata = rewritten.word_metadata.get(word_index).cloned();
+            let substitutions = metadata
+                .as_ref()
                 .map(|metadata| metadata.process_substitutions.clone())
                 .unwrap_or_default();
+            let substitutions = if substitutions.is_empty()
+                && metadata
+                    .as_ref()
+                    .is_some_and(|metadata| raw_word_contains_process_substitution(&metadata.raw))
+            {
+                WordMetadata::new(
+                    word_index,
+                    rewritten.words[word_index].clone(),
+                    rewritten.words[word_index].clone(),
+                )
+                .process_substitutions
+            } else {
+                substitutions
+            };
             if substitutions.is_empty() {
                 self.materialize_standalone_process_substitution_word(
                     &mut rewritten.words[word_index],
@@ -547,4 +594,8 @@ impl Executor {
         }
         Some(strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(body)).to_string())
     }
+}
+
+fn raw_word_contains_process_substitution(raw: &str) -> bool {
+    raw.contains("<(") || raw.contains(">(")
 }

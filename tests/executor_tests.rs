@@ -49,6 +49,30 @@ fn write_executable(
     Ok(())
 }
 
+fn test_command_path(bin_dir: &str, name: &str) -> String {
+    if cfg!(windows) {
+        format!("{bin_dir}/{name}.cmd")
+    } else {
+        format!("{bin_dir}/{name}")
+    }
+}
+
+fn write_test_command(
+    path: impl AsRef<std::path::Path>,
+    unix_contents: impl AsRef<[u8]>,
+    windows_contents: impl AsRef<[u8]>,
+) -> std::io::Result<()> {
+    if cfg!(windows) {
+        write_executable(path, windows_contents)
+    } else {
+        write_executable(path, unix_contents)
+    }
+}
+
+fn read_normalized(path: impl AsRef<std::path::Path>) -> String {
+    std::fs::read_to_string(path).unwrap().replace("\r\n", "\n")
+}
+
 mod simple_execution {
     use super::*;
 
@@ -163,6 +187,92 @@ mod environment_tests {
         let mut executor = Executor::new();
         let result = executor.execute_ast(&ast);
         assert!(result.is_ok());
+    }
+}
+
+#[cfg(windows)]
+mod windows_script_commands {
+    use super::*;
+
+    #[test]
+    fn dot_sh_path_command_runs_in_rubash_without_leaking_state() {
+        let dir = target_test_path("windows-direct-sh-script");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("probe.sh");
+        let marker = dir.join("marker.txt");
+        write_executable(
+            &script,
+            format!(
+                "echo \"$__RUBASH_SCRIPT_NAME|$1|$#|$BASH_SUBSHELL\" > {}\ncd ..\nexport RUBASH_DIRECT_SCRIPT_LEAK=1\n",
+                shell_test_path(&marker)
+            ),
+        )
+        .unwrap();
+
+        let old_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+
+        let tokens = tokenize("./probe.sh one two");
+        let ast = parse(&tokens);
+        let mut executor = Executor::new();
+        executor.set_env("__RUBASH_SCRIPT_NAME", "winuxsh");
+        executor.execute_ast(&ast).unwrap();
+        let current_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(old_cwd).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&marker).unwrap().trim(),
+            "./probe.sh|one|2|1"
+        );
+        assert_eq!(executor.get_env("RUBASH_DIRECT_SCRIPT_LEAK"), None);
+        assert_eq!(current_cwd, dir);
+    }
+
+    #[test]
+    fn dot_ps1_path_command_runs_with_powershell() {
+        if !powershell_runtime_available() {
+            return;
+        }
+
+        let dir = target_test_path("windows-direct-ps1-script");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("probe.ps1");
+        let marker = dir.join("marker.txt");
+        let marker_literal = marker.to_string_lossy().replace('\'', "''");
+        write_executable(
+            &script,
+            format!("Set-Content -Path '{marker_literal}' -Value ('ps1:' + ($args -join ','))\n"),
+        )
+        .unwrap();
+
+        let old_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+
+        let tokens = tokenize("./probe.ps1 one two");
+        let ast = parse(&tokens);
+        let mut executor = Executor::new();
+        executor.execute_ast(&ast).unwrap();
+        let status = executor.last_exit_code();
+        std::env::set_current_dir(old_cwd).unwrap();
+
+        assert_eq!(status, 0);
+        assert_eq!(
+            std::fs::read_to_string(&marker).unwrap().trim(),
+            "ps1:one,two"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn powershell_runtime_available() -> bool {
+        ["pwsh.exe", "powershell.exe"].into_iter().any(|name| {
+            std::process::Command::new("where.exe")
+                .arg(name)
+                .output()
+                .is_ok_and(|output| output.status.success())
+        })
     }
 }
 

@@ -153,6 +153,13 @@ impl Executor {
         let Some(name) = command.words.first() else {
             return Ok(Some((String::new(), String::new(), 0)));
         };
+        if let Some(output) = self.invoke_host_external_command(command) {
+            return Ok(Some((
+                String::from_utf8_lossy(&output.stdout).into_owned(),
+                String::from_utf8_lossy(&output.stderr).into_owned(),
+                output.status,
+            )));
+        }
         let Some(program) = find_user_command(&self.expand_word(name), &self.env_vars) else {
             return Ok(None);
         };
@@ -161,25 +168,14 @@ impl Executor {
             .iter()
             .map(|word| self.expand_word(word))
             .collect();
-        let mut process = if should_run_with_shell(&program) {
-            if let Some(shell) = find_shell(&self.env_vars) {
-                let mut command = Command::new(shell);
-                command.arg(&program);
-                command.args(&args);
-                command
-            } else {
-                Command::new(&program)
-            }
-        } else {
-            let mut command = Command::new(&program);
-            command.args(&args);
-            command
-        };
+        let (mut process, _) = external_command_for_program(&program, &args, &self.env_vars);
 
         self.apply_child_environment(&mut process);
         for (var_name, var_value) in &command.assignments {
-            if is_valid_process_env(var_name, var_value) {
-                process.env(var_name, var_value);
+            let (base_name, _) = assignment_name_and_append(var_name);
+            let expanded_value = self.expand_assignment_value(var_value);
+            if is_valid_process_env(base_name, &expanded_value) {
+                process.env(base_name, expanded_value);
             }
         }
         process.stdin(Stdio::piped()).stdout(Stdio::piped());
@@ -213,6 +209,8 @@ impl Executor {
                 .append(true)
                 .open(shell_path_to_windows(&target, &self.env_vars))?;
             file.write_all(output.as_bytes())?;
+        } else if let Some(capture) = &mut self.stdout_capture {
+            capture.write_all(output.as_bytes())?;
         } else {
             self.write_default_stdout(output.as_bytes())?;
         }

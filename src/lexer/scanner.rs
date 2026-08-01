@@ -1,19 +1,15 @@
-use std::str::from_utf8;
-
 use super::classification::{is_brace_expansion, is_word_delimiter};
+use super::quotes::normalize_backtick_command_substitution;
 use super::token::{Token, TokenKind};
 
 pub(super) struct Lexer<'a> {
-    pub(super) input: &'a [u8],
+    pub(super) input: &'a str,
     pub(super) position: usize,
 }
 
 impl<'a> Lexer<'a> {
     pub(super) fn new(input: &'a str) -> Self {
-        Self {
-            input: input.as_bytes(),
-            position: 0,
-        }
+        Self { input, position: 0 }
     }
 
     #[inline]
@@ -26,16 +22,13 @@ impl<'a> Lexer<'a> {
         if self.at_end() {
             None
         } else {
-            from_utf8(&self.input[self.position..]).ok()?.chars().next()
+            self.input[self.position..].chars().next()
         }
     }
 
     #[inline]
     pub(super) fn peek_after(&self, offset: usize) -> Option<char> {
-        from_utf8(&self.input[self.position..])
-            .ok()?
-            .chars()
-            .nth(offset)
+        self.input[self.position..].chars().nth(offset)
     }
 
     #[inline]
@@ -43,10 +36,7 @@ impl<'a> Lexer<'a> {
         if self.at_end() {
             None
         } else {
-            let c = from_utf8(&self.input[self.position..])
-                .ok()?
-                .chars()
-                .next()?;
+            let c = self.input[self.position..].chars().next()?;
             self.position += c.len_utf8();
             Some(c)
         }
@@ -64,7 +54,7 @@ impl<'a> Lexer<'a> {
 
     pub(super) fn slice(&self, start: usize) -> &str {
         let end = self.position.min(self.input.len());
-        from_utf8(&self.input[start..end]).unwrap_or("")
+        &self.input[start..end]
     }
 
     pub(super) fn next_token(&mut self) -> Option<Token> {
@@ -232,7 +222,12 @@ impl<'a> Lexer<'a> {
                 }
                 Some('(') => {
                     self.advance();
-                    self.skip_cmd_subst();
+                    if self.peek() == Some('(') {
+                        self.advance();
+                        self.skip_arith_paren();
+                    } else {
+                        self.skip_cmd_subst();
+                    }
                     if self.peek().is_some_and(|ch| !is_word_delimiter(ch)) {
                         return Some(self.finish_word_token(start, false));
                     }
@@ -261,6 +256,9 @@ impl<'a> Lexer<'a> {
                 _ => {
                     let pos = self.position;
                     self.skip_word();
+                    if !is_simple_parameter_tail(self.slice(pos)) {
+                        return Some(self.finish_word_token(start, false));
+                    }
                     Some(Token::new(
                         TokenKind::Variable,
                         &format!("${}", self.slice(pos)),
@@ -273,9 +271,12 @@ impl<'a> Lexer<'a> {
                 if self.peek().is_some_and(|ch| !is_word_delimiter(ch)) {
                     return Some(self.finish_word_token(start, false));
                 }
-                Some(Token::new(
+                let raw = self.slice(start);
+                let value = normalize_backtick_command_substitution(raw);
+                Some(Token::new_with_raw(
                     TokenKind::CommandSubst,
-                    self.slice(start),
+                    &value,
+                    raw,
                     start,
                 ))
             }
@@ -325,6 +326,24 @@ impl<'a> Lexer<'a> {
         };
         Token::new(kind, self.slice(start), start)
     }
+}
+
+fn is_simple_parameter_tail(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+
+    if matches!(first, '?' | '$' | '!' | '@' | '*' | '#' | '-') {
+        return chars.next().is_none();
+    }
+
+    if first.is_ascii_digit() {
+        return chars.next().is_none();
+    }
+
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
 impl<'a> Iterator for Lexer<'a> {

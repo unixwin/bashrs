@@ -26,7 +26,9 @@ impl Executor {
             if !skip_functions {
                 if let Some(body) = self.functions.get(name) {
                     match mode {
-                        TypeDescribeMode::Verbose => self.print_function_description(name, body),
+                        TypeDescribeMode::Verbose => {
+                            self.print_function_description(name, &body.commands)
+                        }
                         TypeDescribeMode::Reusable => println!("{name}"),
                         TypeDescribeMode::TypeOnly => println!("function"),
                         TypeDescribeMode::PathOnly => {}
@@ -118,7 +120,7 @@ impl Executor {
                 if let Some(body) = self.functions.get(name) {
                     match mode {
                         TypeDescribeMode::Verbose => {
-                            self.write_function_description(name, body, stdout)?
+                            self.write_function_description(name, &body.commands, stdout)?
                         }
                         TypeDescribeMode::Reusable => writeln!(stdout, "{name}")?,
                         TypeDescribeMode::TypeOnly => writeln!(stdout, "function")?,
@@ -219,7 +221,7 @@ impl Executor {
                 if let Some(body) = self.functions.get(name) {
                     match mode {
                         TypeDescribeMode::Verbose => {
-                            self.write_function_description(name, body, stdout)?
+                            self.write_function_description(name, &body.commands, stdout)?
                         }
                         TypeDescribeMode::Reusable => writeln!(stdout, "{name}")?,
                         TypeDescribeMode::TypeOnly => writeln!(stdout, "function")?,

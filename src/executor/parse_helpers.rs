@@ -180,16 +180,15 @@ pub(in crate::executor) fn has_unclosed_quote(value: &str) -> bool {
 }
 
 pub(in crate::executor) fn shell_safe_value(value: &str) -> String {
-    // TODO(subst.c/findcmd.c): On Windows, Git Bash passes many environment
-    // paths to native executables as `C:\...`. If those values are substituted
-    // back into shell input for alias reparsing, backslashes are treated as
-    // shell escapes. Keep absolute drive paths in `/c/...` form until Rubash
-    // has a dedicated shell path type.
+    // TODO(subst.c/findcmd.c): Native Windows environments expose many paths as
+    // `C:\...`. If those values are substituted back into shell input for alias
+    // reparsing, backslashes are treated as shell escapes. Forward-slash drive
+    // paths like `C:/...` are already shell-safe and should stay native.
     if cfg!(windows) {
         let bytes = value.as_bytes();
         if bytes.len() >= 3
             && bytes[1] == b':'
-            && (bytes[2] == b'\\' || bytes[2] == b'/')
+            && bytes[2] == b'\\'
             && bytes[0].is_ascii_alphabetic()
         {
             let drive = (bytes[0] as char).to_ascii_lowercase();

@@ -125,7 +125,7 @@ impl Executor {
             names.sort();
             for name in names {
                 if let Some(body) = self.functions.get(&name) {
-                    self.write_function_definition(&name, body, false, stdout)?;
+                    self.write_function_definition(&name, &body.commands, false, stdout)?;
                     writeln!(stdout, "declare -fr {name}")?;
                 }
             }
@@ -144,7 +144,7 @@ impl Executor {
                 continue;
             };
             if print {
-                self.write_function_definition(name, body, false, stdout)?;
+                self.write_function_definition(name, &body.commands, false, stdout)?;
                 writeln!(stdout, "declare -fr {name}")?;
             }
             mark_env_name(&mut self.env_vars, READONLY_FUNCTIONS, name);
@@ -383,7 +383,7 @@ impl Executor {
             };
             process.env(
                 exported_function_env_name(&name),
-                exported_function_env_value(body),
+                exported_function_env_value(&body.commands),
             );
         }
     }
@@ -402,6 +402,7 @@ impl Executor {
                 process.env(&name, self.child_env_value(&name, &value));
             }
         }
+        apply_required_windows_child_environment(process, &self.env_vars);
         self.apply_exported_functions_to_child(process);
     }
 

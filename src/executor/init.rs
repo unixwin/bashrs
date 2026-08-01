@@ -51,7 +51,7 @@ impl Executor {
             crate::builtins::shopt::bashopts_value(&env_vars),
         );
         mark_env_name(&mut env_vars, READONLY_VARS, "BASHOPTS");
-        store_indexed_array(&mut env_vars, "PIPESTATUS", vec!["0".to_string()]);
+        mark_env_name(&mut env_vars, ARRAY_VARS, "PIPESTATUS");
         env_vars.insert("OPTIND".to_string(), "1".to_string());
         env_vars.remove("OPTARG");
         env_vars.remove("__RUBASH_GETOPTS_OFFSET");
@@ -101,6 +101,12 @@ impl Executor {
             functions: imported_functions,
             function_definition_redirects: HashMap::new(),
             positional_params: Vec::new(),
+            pipestatus: vec![0],
+            function_name_stack: Vec::new(),
+            bash_argc_stack: Vec::new(),
+            bash_argv_stack: Vec::new(),
+            bash_lineno_stack: vec!["0".to_string()],
+            bash_source_stack: Vec::new(),
             local_var_scopes: Vec::new(),
             local_attr_scopes: Vec::new(),
             expanding_aliases: Vec::new(),
@@ -119,6 +125,8 @@ impl Executor {
             last_command_substitution_status: Cell::new(None),
             stdout_capture: None,
             stderr_capture: None,
+            host_external_command_handler: None,
+            external_file_builtins_enabled: true,
             process_env_snapshot,
         }
     }

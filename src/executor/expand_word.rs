@@ -61,11 +61,11 @@ impl Executor {
             return value;
         }
 
-        if let Some(value) = self.expand_braced_operator_or_array_parameter(name) {
+        if let Some(value) = self.expand_braced_pattern_or_transform_parameter(name) {
             return value;
         }
 
-        if let Some(value) = self.expand_braced_pattern_or_transform_parameter(name) {
+        if let Some(value) = self.expand_braced_operator_or_array_parameter(name) {
             return value;
         }
 

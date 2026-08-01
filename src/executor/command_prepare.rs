@@ -122,7 +122,45 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<CommandNode, ExecuteError> {
-        let mut variable_expanded = cmd.clone();
+        let preserve_word_metadata = cmd.conditional_command.is_some()
+            || cmd.words.first().is_some_and(|word| word == "[[")
+            || !cmd.process_substitutions.is_empty()
+            || cmd.word_metadata.iter().any(|metadata| {
+                !metadata.process_substitutions.is_empty()
+                    || raw_word_contains_process_substitution(Some(&metadata.raw))
+            });
+        let mut variable_expanded = CommandNode {
+            words: Vec::new(),
+            word_metadata: if preserve_word_metadata {
+                cmd.word_metadata.clone()
+            } else {
+                Vec::new()
+            },
+            word_kinds: Vec::new(),
+            assignments: cmd.assignments.clone(),
+            compound_assignments: cmd.compound_assignments.clone(),
+            array_element_assignments: cmd.array_element_assignments.clone(),
+            process_substitutions: cmd.process_substitutions.clone(),
+            redirects: cmd.redirects.clone(),
+            redirect_in: cmd.redirect_in.clone(),
+            redirect_out: cmd.redirect_out.clone(),
+            append: cmd.append.clone(),
+            redirect_err: cmd.redirect_err.clone(),
+            redirect_err_append: cmd.redirect_err_append.clone(),
+            heredoc: cmd.heredoc.clone(),
+            heredoc_delimiter: cmd.heredoc_delimiter.clone(),
+            heredoc_redirects: cmd.heredoc_redirects.clone(),
+            here_string: cmd.here_string.clone(),
+            pipe: cmd.pipe,
+            background: cmd.background,
+            and_or: cmd.and_or,
+            inverted: cmd.inverted,
+            arithmetic_command: cmd.arithmetic_command.clone(),
+            conditional_command: cmd.conditional_command.clone(),
+            brace_group: cmd.brace_group.clone(),
+            line: cmd.line,
+            ..CommandNode::new()
+        };
         let expanded_words = cmd
             .words
             .iter()
@@ -181,6 +219,9 @@ impl Executor {
         {
             return vec![word.to_string()];
         }
+        if let Some(values) = self.braced_alternate_word_values(word) {
+            return values;
+        }
         if let Some(values) = self.array_at_word_values(word) {
             if word_is_unquoted_array_list_expansion(word) {
                 return field_split_array_values_with_ifs(
@@ -190,7 +231,8 @@ impl Executor {
             }
             return values;
         }
-        if let Some(values) = self.quoted_positional_at_word_values(word, cmd.word_kinds.get(index))
+        if let Some(values) =
+            self.quoted_positional_at_word_values_with_raw(word, raw, cmd.word_kinds.get(index))
         {
             if self.word_is_unquoted_positional_modified_list_expansion(word) {
                 return field_split_array_values_with_ifs(
@@ -206,9 +248,21 @@ impl Executor {
                 return braced;
             }
         }
+        if raw_word_is_quoted(raw) {
+            if let Some(expanded) = self.expand_backtick_substitution(word) {
+                return vec![expanded];
+            }
+        }
         let expanded = self.expand_word_mut(word);
         if expanded.is_empty() && self.removes_unquoted_null_word(cmd, index) {
             Vec::new()
+        } else if raw_word_contains_process_substitution(raw)
+            && expanded_word_has_process_substitution(&expanded)
+        {
+            vec![expanded]
+        } else if let Some(values) = self.field_split_word_with_quoted_empty_suffix(raw, &expanded)
+        {
+            values
         } else if self.splits_unquoted_expanded_word(cmd, index, &expanded) {
             self.field_split_values(&expanded)
         } else {
@@ -216,27 +270,73 @@ impl Executor {
         }
     }
 
+    fn field_split_word_with_quoted_empty_suffix(
+        &self,
+        raw: Option<&str>,
+        expanded: &str,
+    ) -> Option<Vec<String>> {
+        let raw = raw?;
+        if !raw_has_quoted_empty_suffix(raw) || !expanded_ends_with_ifs_separator(expanded, self) {
+            return None;
+        }
+
+        let mut values = self.field_split_values(expanded);
+        values.push(String::new());
+        Some(values)
+    }
+
+    fn braced_alternate_word_values(&mut self, word: &str) -> Option<Vec<String>> {
+        let name = word.strip_prefix("${")?.strip_suffix('}')?;
+        if !braced_parameter_spans_whole_word(word) {
+            return None;
+        }
+
+        let (var_name, alternate, require_non_empty) =
+            if let Some((var_name, alternate)) = name.split_once(":+") {
+                (var_name, alternate, true)
+            } else if let Some((var_name, alternate)) = name.split_once('+') {
+                (var_name, alternate, false)
+            } else {
+                return None;
+            };
+
+        let value = self.parameter_operator_value(var_name)?;
+        if require_non_empty && value.is_empty() {
+            return None;
+        }
+
+        Some(self.expand_alternate_word_fragment(alternate))
+    }
+
+    fn expand_alternate_word_fragment(&mut self, fragment: &str) -> Vec<String> {
+        let source = format!("__rubash_parameter_alternate__ {fragment}");
+        let tokens = crate::lexer::tokenize(&source);
+        let ast = crate::parser::parse(&tokens);
+        let Some(cmd) = ast.commands.first() else {
+            return Vec::new();
+        };
+
+        let mut values = Vec::new();
+        for index in 1..cmd.words.len() {
+            let raw = cmd
+                .word_metadata
+                .get(index)
+                .map(|metadata| metadata.raw.as_str());
+            values.extend(self.expand_command_word(cmd, index, &cmd.words[index], raw));
+        }
+        values
+    }
+
     pub(in crate::executor) fn apply_alias_expansion_after_word_expansion(
         &mut self,
-        variable_expanded: &CommandNode,
+        mut variable_expanded: CommandNode,
     ) -> CommandNode {
-        let mut words = self.expand_aliases(&variable_expanded.words);
-        if words != variable_expanded.words {
-            words = words
-                .into_iter()
-                .map(|word| {
-                    if word.starts_with('$') {
-                        self.expand_word_mut(&word)
-                    } else {
-                        word
-                    }
-                })
-                .collect();
+        if self.aliases.is_empty() {
+            return variable_expanded;
         }
-        CommandNode {
-            words,
-            ..variable_expanded.clone()
-        }
+
+        variable_expanded.words = self.expand_aliases(&variable_expanded.words);
+        variable_expanded
     }
 
     pub(in crate::executor) fn execute_function_command_invocation(
@@ -301,6 +401,16 @@ impl Executor {
     }
 }
 
+fn raw_word_contains_process_substitution(raw: Option<&str>) -> bool {
+    raw.is_some_and(|raw| raw.contains("<(") || raw.contains(">("))
+}
+
+fn expanded_word_has_process_substitution(word: &str) -> bool {
+    !WordMetadata::new(0, word.to_string(), word.to_string())
+        .process_substitutions
+        .is_empty()
+}
+
 pub(in crate::executor) fn expand_braces_with_optional_raw(
     word: &str,
     raw: Option<&str>,
@@ -346,6 +456,22 @@ fn raw_word_is_quoted(raw: Option<&str>) -> bool {
         index += 1;
     }
     false
+}
+
+fn raw_has_quoted_empty_suffix(raw: &str) -> bool {
+    raw.ends_with("''") || raw.ends_with("\"\"")
+}
+
+fn expanded_ends_with_ifs_separator(expanded: &str, executor: &Executor) -> bool {
+    let Some(last) = expanded.chars().last() else {
+        return false;
+    };
+    executor
+        .env_vars
+        .get("IFS")
+        .map(String::as_str)
+        .unwrap_or(" \t\n")
+        .contains(last)
 }
 
 fn skip_raw_command_substitution(chars: &[char], mut index: usize) -> usize {

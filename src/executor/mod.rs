@@ -91,6 +91,7 @@ mod type_functions;
 mod unset_arrays;
 mod variable_state;
 
+mod alias_helpers;
 mod assignment_helpers;
 mod ast_exec;
 mod builtin_names;
@@ -111,17 +112,19 @@ mod pipeline_stages;
 mod read_helpers;
 mod read_split;
 mod redirect_inherit;
-mod sed_alias_helpers;
 mod select_exec;
 mod support_names;
 
+use alias_helpers::*;
 use assignment_helpers::*;
 use builtin_names::*;
 use command_subst_helpers::*;
 use command_text::*;
 use env_helpers::*;
 use execution_misc::*;
-use external_setup::ProcessSubstitutionFiles;
+use external_setup::{
+    command_needs_process_substitution_materialization, ProcessSubstitutionFiles,
+};
 use function_env::*;
 use local_helpers::*;
 use parameter_case::*;
@@ -132,7 +135,6 @@ use parse_helpers::*;
 use read_helpers::*;
 use read_split::*;
 use redirect_inherit::*;
-use sed_alias_helpers::*;
 use support_names::*;
 
 pub(crate) mod conditional;
@@ -154,12 +156,30 @@ use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
+
+pub struct HostExternalCommandOutput {
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+    pub status: i32,
+}
+
+struct HostExternalCommandHandler(
+    Box<dyn FnMut(&[String], &HashMap<String, String>) -> Option<HostExternalCommandOutput>>,
+);
+
+impl std::fmt::Debug for HostExternalCommandHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("HostExternalCommandHandler(..)")
+    }
+}
 use std::process::{Command, Stdio};
+use std::rc::Rc;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use self::path::{
-    find_shell, find_user_command, shell_path_to_windows, should_run_with_shell, standard_path,
+    apply_required_windows_child_environment, external_command_for_program, find_shell,
+    find_user_command, shell_path_to_windows, standard_path,
 };
 
 const EXPORTED_VARS: &str = "__RUBASH_EXPORTED_VARS";
@@ -218,6 +238,8 @@ enum LoopControlKind {
     Break,
     Continue,
 }
+
+type FunctionBody = Rc<Ast>;
 
 impl LoopControlKind {
     fn name(self) -> &'static str {
@@ -290,9 +312,15 @@ pub struct Executor {
     exit_code: i32,
     env_vars: HashMap<String, String>,
     aliases: HashMap<String, Alias>,
-    functions: HashMap<String, Vec<CommandNode>>,
+    functions: HashMap<String, FunctionBody>,
     function_definition_redirects: HashMap<String, CommandNode>,
     positional_params: Vec<String>,
+    pipestatus: Vec<i32>,
+    function_name_stack: Vec<String>,
+    bash_argc_stack: Vec<String>,
+    bash_argv_stack: Vec<String>,
+    bash_lineno_stack: Vec<String>,
+    bash_source_stack: Vec<String>,
     local_var_scopes: Vec<HashMap<String, Option<String>>>,
     local_attr_scopes: Vec<HashMap<String, VarAttrs>>,
     expanding_aliases: Vec<String>,
@@ -311,6 +339,8 @@ pub struct Executor {
     last_command_substitution_status: Cell<Option<i32>>,
     stdout_capture: Option<Vec<u8>>,
     stderr_capture: Option<Vec<u8>>,
+    host_external_command_handler: Option<HostExternalCommandHandler>,
+    external_file_builtins_enabled: bool,
     process_env_snapshot: HashMap<String, String>,
 }
 

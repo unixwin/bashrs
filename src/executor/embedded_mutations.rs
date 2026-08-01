@@ -4,10 +4,10 @@ use crate::executor::parameter_core::word_contains_current_shell_command_substit
 impl Executor {
     pub(in crate::executor) fn expand_embedded_parameters_mut(&mut self, word: &str) -> String {
         self.apply_parameter_assignment_expansions_in_word(word);
-        let saved_parameter_env =
-            word_contains_current_shell_command_substitution(word).then(|| self.env_vars.clone());
+        let saved_parameter_state = word_contains_current_shell_command_substitution(word)
+            .then(|| (self.env_vars.clone(), self.pipestatus.clone()));
         let expanded =
-            self.expand_embedded_parameters_ordered_mut(word, saved_parameter_env.as_ref());
+            self.expand_embedded_parameters_ordered_mut(word, saved_parameter_state.as_ref());
         let expanded = if word.contains("$(") || word.contains('`') {
             unescape_remaining_shell_escapes(&expanded)
                 .replace("\\\\'", "'")
@@ -23,7 +23,7 @@ impl Executor {
     fn expand_embedded_parameters_ordered_mut(
         &mut self,
         word: &str,
-        saved_parameter_env: Option<&std::collections::HashMap<String, String>>,
+        saved_parameter_state: Option<&(std::collections::HashMap<String, String>, Vec<i32>)>,
     ) -> String {
         let mut output = String::new();
         let mut chars = word.chars().peekable();
@@ -112,7 +112,7 @@ impl Executor {
                     } else {
                         let name = collect_braced_parameter_name(&mut chars);
                         output.push_str(
-                            &self.expand_with_parameter_env(saved_parameter_env, |executor| {
+                            &self.expand_with_parameter_env(saved_parameter_state, |executor| {
                                 executor.expand_word_mut(&format!("${{{name}}}"))
                             }),
                         );
@@ -177,7 +177,7 @@ impl Executor {
                         name.push(name_ch);
                     }
                     if let Some(value) =
-                        self.expand_with_parameter_env(saved_parameter_env, |executor| {
+                        self.expand_with_parameter_env(saved_parameter_state, |executor| {
                             executor.dynamic_parameter_value(&name).or_else(|| {
                                 executor
                                     .shell_variable_value(&name)
@@ -202,16 +202,19 @@ impl Executor {
 
     fn expand_with_parameter_env<T>(
         &mut self,
-        saved_parameter_env: Option<&std::collections::HashMap<String, String>>,
+        saved_parameter_state: Option<&(std::collections::HashMap<String, String>, Vec<i32>)>,
         expand: impl FnOnce(&mut Self) -> T,
     ) -> T {
-        let Some(saved_parameter_env) = saved_parameter_env else {
+        let Some((saved_parameter_env, saved_parameter_pipestatus)) = saved_parameter_state else {
             return expand(self);
         };
 
         let current_env = std::mem::replace(&mut self.env_vars, saved_parameter_env.clone());
+        let current_pipestatus =
+            std::mem::replace(&mut self.pipestatus, saved_parameter_pipestatus.clone());
         let expanded = expand(self);
         self.env_vars = current_env;
+        self.pipestatus = current_pipestatus;
         expanded
     }
 
@@ -354,6 +357,7 @@ impl Executor {
         }
 
         let saved_env = self.env_vars.clone();
+        let saved_pipestatus = self.pipestatus.clone();
         let saved_functions = self.functions.clone();
         let saved_function_redirects = self.function_definition_redirects.clone();
         let saved_aliases = self.aliases.clone();
@@ -376,6 +380,7 @@ impl Executor {
         };
 
         self.restore_shell_env(saved_env);
+        self.pipestatus = saved_pipestatus;
         self.functions = saved_functions;
         self.function_definition_redirects = saved_function_redirects;
         self.aliases = saved_aliases;
@@ -410,6 +415,7 @@ impl Executor {
         call.words = words.to_vec();
 
         let saved_env = self.env_vars.clone();
+        let saved_pipestatus = self.pipestatus.clone();
         let saved_exit_code = self.exit_code;
         let saved_capture = self.stdout_capture.take();
         self.stdout_capture = Some(Vec::new());
@@ -423,6 +429,7 @@ impl Executor {
             Err(_) => 1,
         };
         self.env_vars = saved_env;
+        self.pipestatus = saved_pipestatus;
         self.exit_code = saved_exit_code;
         self.last_command_substitution_status.set(Some(status));
 

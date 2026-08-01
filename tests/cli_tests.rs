@@ -342,6 +342,39 @@ fn script_file_accepts_shell_style_drive_path() {
     let _ = fs::remove_file(script_path);
 }
 
+#[cfg(windows)]
+#[test]
+fn extensionless_shell_script_on_path_runs_without_external_sh() {
+    let bin_dir = Path::new("target").join("rubash-cli-extensionless-bin");
+    let _ = fs::remove_dir_all(&bin_dir);
+    fs::create_dir_all(&bin_dir).unwrap();
+    let script_path = bin_dir.join("tool");
+    fs::write(
+        &script_path,
+        "#!/usr/bin/env sh\nprintf 'script:%s:%s:%s\\n' \"$0\" \"$1\" \"$#\"\n",
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("tool alpha beta")
+        .env("PATH", bin_dir.to_string_lossy().to_string())
+        .output()
+        .expect("run rubash");
+
+    let _ = fs::remove_dir_all(&bin_dir);
+    assert!(
+        output.status.success(),
+        "stdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!("script:{}:alpha:2\n", script_path.to_string_lossy())
+    );
+}
+
 #[test]
 fn double_dash_allows_script_file_after_options() {
     let script_path = Path::new("target").join("rubash-cli-double-dash-script.sh");

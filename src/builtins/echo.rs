@@ -49,7 +49,7 @@ where
             let normalized =
                 remove_residual_shell_quotes(arg, writes_alias_definition && position > 0);
             let expanded = expand_escapes(&normalized);
-            writer.write_all(expanded.output.as_bytes())?;
+            writer.write_all(&expanded.output)?;
             if expanded.stop {
                 suppress_remaining = true;
                 display_newline = false;
@@ -98,43 +98,52 @@ fn is_echo_option(arg: &str) -> bool {
 
 #[derive(Debug, PartialEq, Eq)]
 struct EscapeExpansion {
-    output: String,
+    output: Vec<u8>,
     stop: bool,
 }
 
 fn expand_escapes(input: &str) -> EscapeExpansion {
-    let mut output = String::new();
+    let mut output = Vec::new();
     let mut chars = input.chars().peekable();
 
     while let Some(ch) = chars.next() {
         if ch != '\\' {
-            output.push(ch);
+            push_char(&mut output, ch);
             continue;
         }
 
         let Some(escaped) = chars.next() else {
-            output.push('\\');
+            output.push(b'\\');
             break;
         };
 
         match escaped {
-            'a' => output.push('\x07'),
-            'b' => output.push('\x08'),
+            'a' => output.push(0x07),
+            'b' => output.push(0x08),
             'c' => return EscapeExpansion { output, stop: true },
-            'e' | 'E' => output.push('\x1b'),
-            'f' => output.push('\x0c'),
-            'n' => output.push('\n'),
-            'r' => output.push('\r'),
-            't' => output.push('\t'),
-            'v' => output.push('\x0b'),
-            '\\' => output.push('\\'),
-            '0' => push_codepoint(&mut output, read_digits(&mut chars, 8, 3)),
-            'x' => push_codepoint(&mut output, read_digits(&mut chars, 16, 2)),
-            'u' => push_codepoint(&mut output, read_digits(&mut chars, 16, 4)),
-            'U' => push_codepoint(&mut output, read_digits(&mut chars, 16, 8)),
+            'e' | 'E' => output.push(0x1b),
+            'f' => output.push(0x0c),
+            'n' => output.push(b'\n'),
+            'r' => output.push(b'\r'),
+            't' => output.push(b'\t'),
+            'v' => output.push(0x0b),
+            '\\' => output.push(b'\\'),
+            '0' => output.push((read_digits(&mut chars, 8, 3).unwrap_or(0) & 0xff) as u8),
+            'x' => match read_digits(&mut chars, 16, 2) {
+                Some(value) => output.push((value & 0xff) as u8),
+                None => output.extend_from_slice(b"\\x"),
+            },
+            'u' => match read_digits(&mut chars, 16, 4) {
+                Some(value) => push_codepoint(&mut output, value),
+                None => output.extend_from_slice(b"\\u"),
+            },
+            'U' => match read_digits(&mut chars, 16, 8) {
+                Some(value) => push_codepoint(&mut output, value),
+                None => output.extend_from_slice(b"\\U"),
+            },
             other => {
-                output.push('\\');
-                output.push(other);
+                output.push(b'\\');
+                push_char(&mut output, other);
             }
         }
     }
@@ -171,13 +180,14 @@ where
     }
 }
 
-fn push_codepoint(output: &mut String, value: Option<u32>) {
-    let Some(value) = value else {
-        return;
-    };
+fn push_char(output: &mut Vec<u8>, ch: char) {
+    let mut buf = [0; 4];
+    output.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+}
 
+fn push_codepoint(output: &mut Vec<u8>, value: u32) {
     if let Some(ch) = char::from_u32(value) {
-        output.push(ch);
+        push_char(output, ch);
     }
 }
 
@@ -186,9 +196,13 @@ mod tests {
     use super::*;
 
     fn render(args: &[&str]) -> String {
+        String::from_utf8(render_bytes(args)).unwrap()
+    }
+
+    fn render_bytes(args: &[&str]) -> Vec<u8> {
         let mut output = Vec::new();
         write_echo(args.iter().copied(), &mut output).unwrap();
-        String::from_utf8(output).unwrap()
+        output
     }
 
     #[test]
@@ -204,6 +218,7 @@ mod tests {
     #[test]
     fn treats_invalid_option_as_operand() {
         assert_eq!(render(&["-x", "hello"]), "-x hello\n");
+        assert_eq!(render(&["--help"]), "--help\n");
     }
 
     #[test]
@@ -220,5 +235,22 @@ mod tests {
     #[test]
     fn supports_numeric_escapes() {
         assert_eq!(render(&["-e", "\\0101\\x42\\u43\\U44"]), "ABCD\n");
+    }
+
+    #[test]
+    fn supports_nul_and_raw_byte_escapes() {
+        assert_eq!(render_bytes(&["-e", "\\0"]), b"\0\n");
+        assert_eq!(render_bytes(&["-e", "\\0z"]), b"\0z\n");
+        assert_eq!(render_bytes(&["-e", "\\0400"]), b"\0\n");
+        assert_eq!(render_bytes(&["-e", "\\0777"]), vec![0xff, b'\n']);
+        assert_eq!(render_bytes(&["-e", "\\xff"]), vec![0xff, b'\n']);
+    }
+
+    #[test]
+    fn preserves_incomplete_hex_and_unicode_escapes() {
+        assert_eq!(render(&["-e", "\\x"]), "\\x\n");
+        assert_eq!(render(&["-e", "\\xz"]), "\\xz\n");
+        assert_eq!(render(&["-e", "\\u"]), "\\u\n");
+        assert_eq!(render(&["-e", "\\U"]), "\\U\n");
     }
 }

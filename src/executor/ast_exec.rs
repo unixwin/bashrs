@@ -26,6 +26,7 @@ impl Executor {
 
         let mut index = 0;
         let mut subshell_env: Option<HashMap<String, String>> = None;
+        let mut subshell_pipestatus: Option<Vec<i32>> = None;
         let mut subshell_depth: Option<usize> = None;
         let mut subshell_stdin: Option<(String, String)> = None;
         while index < ast.commands.len() {
@@ -35,6 +36,9 @@ impl Executor {
                 if command.subshell_end {
                     if let Some(saved_env) = subshell_env.take() {
                         self.restore_shell_env(saved_env);
+                    }
+                    if let Some(saved_pipestatus) = subshell_pipestatus.take() {
+                        self.pipestatus = saved_pipestatus;
                     }
                     if let Some(saved_depth) = subshell_depth.take() {
                         self.subshell_depth.set(saved_depth);
@@ -223,6 +227,7 @@ impl Executor {
 
             if command.subshell && subshell_env.is_none() {
                 subshell_env = Some(self.env_vars.clone());
+                subshell_pipestatus = Some(self.pipestatus.clone());
                 let old_depth = self.subshell_depth.get();
                 subshell_depth = Some(old_depth);
                 self.subshell_depth.set(old_depth + 1);
@@ -291,6 +296,9 @@ impl Executor {
                 }
                 if let Some(saved_env) = subshell_env.take() {
                     self.restore_shell_env(saved_env);
+                }
+                if let Some(saved_pipestatus) = subshell_pipestatus.take() {
+                    self.pipestatus = saved_pipestatus;
                 }
                 if let Some(saved_depth) = subshell_depth.take() {
                     self.subshell_depth.set(saved_depth);

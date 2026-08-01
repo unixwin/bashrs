@@ -47,8 +47,8 @@ impl Executor {
             return Ok(false);
         };
         match fd_target.as_str() {
-            FD_STDOUT_TARGET => std::io::stdout().lock().write_all(output)?,
-            FD_STDERR_TARGET => std::io::stderr().lock().write_all(output)?,
+            FD_STDOUT_TARGET => write_stdout_bytes(output)?,
+            FD_STDERR_TARGET => write_stderr_bytes(output)?,
             path => {
                 let mut file = OpenOptions::new()
                     .create(true)
@@ -93,11 +93,11 @@ impl Executor {
 
         if let Some(target) = self.env_vars.get(&fd_output_key(1)).cloned() {
             if target == FD_STDOUT_TARGET {
-                std::io::stdout().lock().write_all(output)?;
+                write_stdout_bytes(output)?;
                 return Ok(());
             }
             if target == FD_STDERR_TARGET {
-                std::io::stderr().lock().write_all(output)?;
+                write_stderr_bytes(output)?;
                 return Ok(());
             }
             let mut file = OpenOptions::new()
@@ -108,7 +108,7 @@ impl Executor {
             return Ok(());
         }
 
-        std::io::stdout().lock().write_all(output)?;
+        write_stdout_bytes(output)?;
         Ok(())
     }
 
@@ -122,11 +122,11 @@ impl Executor {
 
         if let Some(target) = self.env_vars.get(&fd_output_key(2)).cloned() {
             if target == FD_STDOUT_TARGET {
-                std::io::stdout().lock().write_all(output)?;
+                write_stdout_bytes(output)?;
                 return Ok(());
             }
             if target == FD_STDERR_TARGET {
-                std::io::stderr().lock().write_all(output)?;
+                write_stderr_bytes(output)?;
                 return Ok(());
             }
             if is_null_device(&target) {
@@ -145,7 +145,7 @@ impl Executor {
             return Ok(());
         }
 
-        std::io::stderr().lock().write_all(output)?;
+        write_stderr_bytes(output)?;
         Ok(())
     }
 
@@ -403,5 +403,128 @@ impl Executor {
         let mut input = decode_ansi_c_quoted_word(word).unwrap_or_else(|| self.expand_word(word));
         input.push('\n');
         Some(input)
+    }
+}
+
+fn write_stdout_bytes(output: &[u8]) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        return trace_stdio_write("stdout", output.len(), || {
+            windows_raw_stdio::write_stdout(output)
+        });
+    }
+
+    #[cfg(not(windows))]
+    {
+        trace_stdio_write("stdout", output.len(), || {
+            std::io::stdout().lock().write_all(output)
+        })
+    }
+}
+
+fn write_stderr_bytes(output: &[u8]) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        return windows_raw_stdio::write_stderr(output);
+    }
+
+    #[cfg(not(windows))]
+    {
+        std::io::stderr().lock().write_all(output)
+    }
+}
+
+fn trace_stdio_write(
+    stream: &str,
+    bytes: usize,
+    write: impl FnOnce() -> io::Result<()>,
+) -> io::Result<()> {
+    if std::env::var_os("RUBASH_STDIO_TRACE").is_none() {
+        return write();
+    }
+
+    let start = std::time::Instant::now();
+    let result = write();
+    if bytes >= 1024 {
+        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let _ = writeln!(
+            std::io::stderr().lock(),
+            "rubash_stdio_trace stream={stream} bytes={bytes} elapsed_ms={elapsed_ms:.1}"
+        );
+    }
+    result
+}
+
+#[cfg(windows)]
+mod windows_raw_stdio {
+    use std::ffi::c_void;
+    use std::io;
+    use std::ptr;
+
+    const CP_UTF8: u32 = 65001;
+    const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
+    const STD_ERROR_HANDLE: u32 = -12i32 as u32;
+    const INVALID_HANDLE_VALUE: *mut c_void = -1isize as *mut c_void;
+    const WRITE_CHUNK_SIZE: usize = 1024 * 1024;
+
+    extern "system" {
+        fn GetStdHandle(nStdHandle: u32) -> *mut c_void;
+        fn SetConsoleOutputCP(wCodePageID: u32) -> i32;
+        fn WriteFile(
+            hFile: *mut c_void,
+            lpBuffer: *const c_void,
+            nNumberOfBytesToWrite: u32,
+            lpNumberOfBytesWritten: *mut u32,
+            lpOverlapped: *mut c_void,
+        ) -> i32;
+    }
+
+    pub(super) fn write_stdout(output: &[u8]) -> io::Result<()> {
+        write_handle(STD_OUTPUT_HANDLE, output)
+    }
+
+    pub(super) fn write_stderr(output: &[u8]) -> io::Result<()> {
+        write_handle(STD_ERROR_HANDLE, output)
+    }
+
+    fn write_handle(std_handle: u32, mut output: &[u8]) -> io::Result<()> {
+        if output.is_empty() {
+            return Ok(());
+        }
+
+        let handle = unsafe { GetStdHandle(std_handle) };
+        if handle.is_null() || handle == INVALID_HANDLE_VALUE {
+            return Err(io::Error::last_os_error());
+        }
+
+        unsafe {
+            SetConsoleOutputCP(CP_UTF8);
+        }
+
+        while !output.is_empty() {
+            let chunk_len = output.len().min(WRITE_CHUNK_SIZE);
+            let mut written = 0u32;
+            let ok = unsafe {
+                WriteFile(
+                    handle,
+                    output.as_ptr().cast(),
+                    chunk_len as u32,
+                    &mut written,
+                    ptr::null_mut(),
+                )
+            };
+            if ok == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            if written == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::WriteZero,
+                    "failed to write stdout bytes",
+                ));
+            }
+            output = &output[written as usize..];
+        }
+
+        Ok(())
     }
 }

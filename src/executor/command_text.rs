@@ -284,6 +284,57 @@ pub(in crate::executor) fn command_has_input_or_output_redirects(cmd: &CommandNo
         || command_has_output_redirects(cmd)
 }
 
+pub(in crate::executor) fn command_references_bash_command(cmd: &CommandNode) -> bool {
+    cmd.parameter_expansions.iter().any(|parameter| {
+        parameter.name == "BASH_COMMAND"
+            || parameter.text.contains("BASH_COMMAND")
+            || parameter.text.contains("${!")
+    }) || cmd.words.iter().any(|word| word.contains("BASH_COMMAND"))
+        || cmd
+            .word_metadata
+            .iter()
+            .any(|metadata| metadata.raw.contains("BASH_COMMAND") || metadata.raw.contains("${!"))
+        || cmd
+            .assignments
+            .iter()
+            .any(|(name, value)| name.contains("BASH_COMMAND") || value.contains("BASH_COMMAND"))
+        || cmd
+            .redirects
+            .iter()
+            .any(|redirect| redirect.target.contains("BASH_COMMAND"))
+        || cmd
+            .here_string
+            .as_ref()
+            .is_some_and(|value| value.contains("BASH_COMMAND"))
+}
+
+pub(in crate::executor) fn command_needs_process_line_env(cmd: &CommandNode) -> bool {
+    cmd.words
+        .iter()
+        .any(|word| command_word_needs_process_line_env(word))
+}
+
+fn command_word_needs_process_line_env(word: &str) -> bool {
+    matches!(
+        word,
+        "alias"
+            | "unalias"
+            | "declare"
+            | "typeset"
+            | "export"
+            | "readonly"
+            | "hash"
+            | "help"
+            | "kill"
+            | "let"
+            | "local"
+            | "shopt"
+            | "shift"
+            | "ulimit"
+            | "unset"
+    )
+}
+
 pub(in crate::executor) fn bash_command_text(cmd: &CommandNode) -> String {
     let mut parts = Vec::new();
     for (name, value) in &cmd.assignments {

@@ -512,9 +512,10 @@ fn test_stderr_fd_close_does_not_run_dash_command_or_create_file() {
 fn test_leading_redirects_apply_to_simple_command() {
     let output_path = "target/rubash-leading-redirect-output.txt";
     let error_path = "target/rubash-leading-redirect-error.txt";
+    let rubash = shell_test_path(std::path::Path::new(env!("CARGO_BIN_EXE_rubash")));
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_file(error_path);
-    let input = format!("> {output_path} echo out; 2> {error_path} sh -c 'printf err >&2'");
+    let input = format!("> {output_path} echo out; 2> {error_path} {rubash} -c 'printf err >&2'");
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
     let mut executor = Executor::new();
@@ -533,11 +534,12 @@ fn test_leading_redirects_apply_to_simple_command() {
 fn test_leading_combined_redirects_apply_to_simple_command() {
     let output_path = "target/rubash-leading-combined-redirect-output.txt";
     let append_path = "target/rubash-leading-combined-append-output.txt";
+    let rubash = shell_test_path(std::path::Path::new(env!("CARGO_BIN_EXE_rubash")));
     let _ = fs::remove_file(output_path);
     fs::write(append_path, "first\n").unwrap();
     let input = format!(
-        "&> {output_path} sh -c 'echo out; printf err >&2'; \
-         &>> {append_path} sh -c 'echo append-out; printf append-err >&2'"
+        "&> {output_path} {rubash} -c 'echo out; printf err >&2'; \
+         &>> {append_path} {rubash} -c 'echo append-out; printf append-err >&2'"
     );
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
@@ -560,11 +562,12 @@ fn test_leading_combined_redirects_apply_to_simple_command() {
 fn test_leading_process_substitution_redirects_apply_to_simple_command() {
     let output_path = "target/rubash-leading-process-substitution-output.txt";
     let combined_path = "target/rubash-leading-combined-process-substitution-output.txt";
+    let rubash = shell_test_path(std::path::Path::new(env!("CARGO_BIN_EXE_rubash")));
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_file(combined_path);
     let input = format!(
         "> >(cat > {output_path}) echo out; \
-         &> >(cat > {combined_path}) sh -c 'echo both-out; printf both-err >&2'"
+         &> >(cat > {combined_path}) {rubash} -c 'echo both-out; printf both-err >&2'"
     );
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
@@ -1295,10 +1298,11 @@ fn test_exec_dynamic_fd_process_substitution_persists_for_external_command() {
 fn test_embedded_input_process_substitution_rewrites_external_argument() {
     let output_path = "target/rubash-embedded-process-substitution-output.txt";
     let side_path = "target/rubash-embedded-process-substitution-side.txt";
+    let rubash = shell_test_path(std::path::Path::new(env!("CARGO_BIN_EXE_rubash")));
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_file(side_path);
     let input = format!(
-        "sh -c 'printf \"%s\\n\" \"$1\"' _ x<(printf alpha > {side_path})y > {output_path}"
+        "{rubash} -c 'printf \"%s\\n\" \"$1\"' _ x<(printf alpha > {side_path})y > {output_path}"
     );
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
@@ -1321,11 +1325,12 @@ fn test_multiple_embedded_input_process_substitutions_rewrite_one_word() {
     let output_path = "target/rubash-multiple-embedded-process-substitution-output.txt";
     let first_side_path = "target/rubash-multiple-embedded-process-substitution-first.txt";
     let second_side_path = "target/rubash-multiple-embedded-process-substitution-second.txt";
+    let rubash = shell_test_path(std::path::Path::new(env!("CARGO_BIN_EXE_rubash")));
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_file(first_side_path);
     let _ = fs::remove_file(second_side_path);
     let input = format!(
-        "sh -c 'printf \"%s\\n\" \"$1\"' _ <(printf first > {first_side_path})middle<(printf second > {second_side_path}) > {output_path}"
+        "{rubash} -c 'printf \"%s\\n\" \"$1\"' _ <(printf first > {first_side_path})middle<(printf second > {second_side_path}) > {output_path}"
     );
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
@@ -2470,6 +2475,24 @@ fn test_function_subshell_body_keeps_case_pattern_parentheses() {
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(fs::read_to_string(output_path).unwrap(), "beta");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_function_assignment_arithmetic_expansion_accepts_base_hash() {
+    let output_path = "target/rubash-function-arithmetic-base-hash-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input =
+        format!("f() {{ value=$((16#de)); printf '%s\\n' \"$value\" > {output_path}; }}; f");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "222\n");
     let _ = fs::remove_file(output_path);
 }
 

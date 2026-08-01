@@ -87,6 +87,26 @@ fn test_ansi_c_numeric_escapes_keep_following_non_digits() {
 }
 
 #[test]
+fn test_variable_with_adjacent_empty_quotes_uses_word_quote_removal() {
+    let tokens = tokenize("recho $v''");
+
+    assert_eq!(tokens.len(), 2);
+    assert_eq!(tokens[1].kind, TokenKind::Word);
+    assert_eq!(tokens[1].value, "$v");
+    assert_eq!(tokens[1].raw, "$v''");
+}
+
+#[test]
+fn test_unquoted_trailing_backslash_at_eof_is_preserved() {
+    let tokens = tokenize("echo escape\\");
+
+    assert_eq!(tokens.len(), 2);
+    assert_eq!(tokens[1].kind, TokenKind::Word);
+    assert_eq!(tokens[1].value, "escape\\");
+    assert_eq!(tokens[1].raw, "escape\\");
+}
+
+#[test]
 fn test_command_substitution_preserves_inner_ansi_c_quotes() {
     let tokens = tokenize("echo \"$(printf $'foo\\'\nbar')\"");
     assert_eq!(tokens.len(), 2);

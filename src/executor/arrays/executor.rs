@@ -3,6 +3,15 @@ use crate::executor::assoc_keys;
 
 impl Executor {
     pub(in crate::executor) fn indexed_array_stack(&self, name: &str) -> Vec<String> {
+        match name {
+            "PIPESTATUS" => return self.pipestatus_values(),
+            "FUNCNAME" => return self.function_name_stack.clone(),
+            "BASH_ARGC" => return self.bash_argc_stack.clone(),
+            "BASH_ARGV" => return self.bash_argv_stack.clone(),
+            "BASH_LINENO" => return self.bash_lineno_stack.clone(),
+            "BASH_SOURCE" => return self.bash_source_stack.clone(),
+            _ => {}
+        }
         self.env_vars
             .get(name)
             .map(|value| array_values(value))
@@ -10,6 +19,17 @@ impl Executor {
     }
 
     pub(in crate::executor) fn array_assignment_transform(&self, name: &str) -> String {
+        if name == "PIPESTATUS" {
+            let rendered = self
+                .pipestatus_values()
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| format!("[{index}]={}", quote_array_value(&value)))
+                .collect::<Vec<_>>()
+                .join(" ");
+            return format!("declare -a {name}=({rendered})");
+        }
+
         let Some(value) = self.env_vars.get(name) else {
             return String::new();
         };

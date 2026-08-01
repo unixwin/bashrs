@@ -59,12 +59,17 @@ fn test_pipeline_feeds_external_stage_stdin() {
 #[test]
 fn test_external_command_appends_stdout() {
     let bin_dir = "target/rubash-external-append-bin";
-    let script_path = format!("{bin_dir}/emit");
+    let script_path = test_command_path(bin_dir, "emit");
     let output_path = "target/rubash-external-append-output.txt";
     let _ = fs::remove_dir_all(bin_dir);
     let _ = fs::remove_file(output_path);
     fs::create_dir_all(bin_dir).unwrap();
-    write_executable(&script_path, "echo external-append\n").unwrap();
+    write_test_command(
+        &script_path,
+        "echo external-append\n",
+        "@echo off\r\necho external-append\r\n",
+    )
+    .unwrap();
     let input = format!("emit > {output_path}; emit >> {output_path}");
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
@@ -81,7 +86,7 @@ fn test_external_command_appends_stdout() {
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(
-        fs::read_to_string(output_path).unwrap(),
+        read_normalized(output_path),
         "external-append\nexternal-append\n"
     );
     let _ = fs::remove_file(output_path);
@@ -91,12 +96,17 @@ fn test_external_command_appends_stdout() {
 #[test]
 fn test_external_command_appends_stderr() {
     let bin_dir = "target/rubash-external-stderr-append-bin";
-    let script_path = format!("{bin_dir}/emiterr");
+    let script_path = test_command_path(bin_dir, "emiterr");
     let output_path = "target/rubash-external-stderr-append-output.txt";
     let _ = fs::remove_dir_all(bin_dir);
     let _ = fs::remove_file(output_path);
     fs::create_dir_all(bin_dir).unwrap();
-    write_executable(&script_path, "echo external-error >&2\n").unwrap();
+    write_test_command(
+        &script_path,
+        "echo external-error >&2\n",
+        "@echo off\r\necho external-error>&2\r\n",
+    )
+    .unwrap();
     let input = format!("emiterr 2> {output_path}; emiterr 2>> {output_path}");
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
@@ -113,7 +123,7 @@ fn test_external_command_appends_stderr() {
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(
-        fs::read_to_string(output_path).unwrap(),
+        read_normalized(output_path),
         "external-error\nexternal-error\n"
     );
     let _ = fs::remove_file(output_path);

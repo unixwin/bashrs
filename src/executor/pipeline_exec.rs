@@ -6,10 +6,31 @@ impl Executor {
         &mut self,
         and_or_list: &AndOrListCommand,
     ) -> Result<(), ExecuteError> {
-        let ast = Ast {
-            commands: and_or_list.commands.clone(),
-        };
-        self.execute_ast(&ast)
+        for (index, command) in and_or_list.commands.iter().enumerate() {
+            if index > 0 {
+                let connector = and_or_list.connectors.get(index - 1).copied();
+                let should_execute = match connector {
+                    Some(true) => self.exit_code == 0,
+                    Some(false) => self.exit_code != 0,
+                    None => true,
+                };
+                if !should_execute {
+                    continue;
+                }
+            }
+
+            let mut command = command.clone();
+            command.and_or = None;
+            let ast = Ast {
+                commands: vec![command],
+            };
+            if index < and_or_list.connectors.len() {
+                self.with_errexit_suppressed(|executor| executor.execute_ast(&ast))?;
+            } else {
+                self.execute_ast(&ast)?;
+            }
+        }
+        Ok(())
     }
 
     pub(in crate::executor) fn execute_pipeline_command(
@@ -213,6 +234,9 @@ impl Executor {
                 .filter(|_| stage_index == 0)
                 .map(|prefix| &prefix.command)
                 .unwrap_or(command);
+            if stage_index == 0 {
+                input = self.initial_pipeline_input(stage);
+            }
             self.set_current_command(stage);
             let last_stage = stage_index + 1 == commands.len();
             let Some((mut next_input, next_stderr, next_status)) =
@@ -415,6 +439,16 @@ impl Executor {
     fn lastpipe_enabled(&self) -> bool {
         crate::builtins::shopt::option_enabled(&self.env_vars, "lastpipe")
     }
+
+    fn initial_pipeline_input(&self, command: &CommandNode) -> String {
+        self.stdin_string_for_command(command)
+            .or_else(|| {
+                pipeline_stage_reads_stdin_by_default(command)
+                    .then(|| self.read_inherited_process_stdin_to_string())
+                    .flatten()
+            })
+            .unwrap_or_default()
+    }
 }
 
 fn command_is_compound_pipeline_stage(command: &CommandNode) -> bool {
@@ -431,6 +465,20 @@ fn command_is_compound_pipeline_stage(command: &CommandNode) -> bool {
         || command.conditional_command.is_some()
         || command.inverted_command.is_some()
         || command.background_command.is_some()
+}
+
+fn pipeline_stage_reads_stdin_by_default(command: &CommandNode) -> bool {
+    let Some(command_name) = command.words.first().map(String::as_str) else {
+        return false;
+    };
+    let command_name = command_name
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(command_name);
+    matches!(
+        command_name,
+        "awk" | "cat" | "grep" | "head" | "sed" | "sort" | "tail" | "tr" | "uniq" | "wc"
+    )
 }
 
 struct TimePipelinePrefix {

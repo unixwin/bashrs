@@ -10,9 +10,9 @@ mod storage;
 pub(super) use mapfile::split_mapfile_input;
 pub(super) use storage::{
     array_indices, array_value_at, array_values, format_indexed_array_storage,
-    indexed_array_entries, is_array_storage, is_marked_array_var, normalize_array_expanded_value,
-    parse_array_integer_subscript, parse_array_numeric_subscript, parse_array_subscript,
-    quote_array_value, resolve_indexed_array_subscript, store_indexed_array,
+    format_indexed_array_values, indexed_array_entries, is_array_storage, is_marked_array_var,
+    normalize_array_expanded_value, parse_array_integer_subscript, parse_array_numeric_subscript,
+    parse_array_subscript, quote_array_value, resolve_indexed_array_subscript, store_indexed_array,
 };
 
 use std::collections::{BTreeMap, HashMap};
@@ -314,6 +314,6 @@ pub(super) fn slice_array_values(
 pub(super) fn is_noassign_bash_array(name: &str) -> bool {
     matches!(
         name,
-        "BASH_ARGC" | "BASH_ARGV" | "BASH_LINENO" | "BASH_SOURCE" | "FUNCNAME"
+        "BASH_ARGC" | "BASH_ARGV" | "BASH_LINENO" | "BASH_SOURCE" | "FUNCNAME" | "PIPESTATUS"
     )
 }

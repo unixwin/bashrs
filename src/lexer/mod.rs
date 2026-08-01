@@ -66,9 +66,10 @@ fn tokenize_with_heredocs(input: &str) -> Vec<Token> {
         continued_line = false;
         logical_line.push_str(line);
         position += line.len() + 1;
+        let line_had_terminator = position <= input.len();
         line_number += 1;
 
-        if ends_with_unquoted_backslash(&logical_line) {
+        if line_had_terminator && ends_with_unquoted_backslash(&logical_line) {
             logical_line.pop();
             continued_line = true;
             continue;

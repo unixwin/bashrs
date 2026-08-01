@@ -52,7 +52,7 @@ impl Executor {
                         writeln!(stdout, "declare -f {name}")?;
                     }
                 } else {
-                    self.write_function_definition(name, body, exported_only, stdout)?;
+                    self.write_function_definition(name, &body.commands, exported_only, stdout)?;
                 }
             }
             return Ok(0);
@@ -98,7 +98,12 @@ impl Executor {
                     writeln!(stdout, "{name}")?;
                 }
             } else {
-                self.write_function_definition(name, body, exported_only && is_exported, stdout)?;
+                self.write_function_definition(
+                    name,
+                    &body.commands,
+                    exported_only && is_exported,
+                    stdout,
+                )?;
             }
         }
         Ok(status)

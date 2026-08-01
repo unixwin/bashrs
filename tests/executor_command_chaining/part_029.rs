@@ -209,17 +209,23 @@ fn test_enable_can_disable_extended_builtin_set() {
 #[test]
 fn test_builtin_enable_updates_disabled_builtin_state() {
     let bin_dir = target_test_path("rubash-builtin-enable-bin");
-    #[cfg(windows)]
-    let script_path = bin_dir.join("test.cmd");
-    #[cfg(not(windows))]
-    let script_path = bin_dir.join("test");
+    let script_path = if cfg!(windows) {
+        bin_dir.join("test.cmd")
+    } else {
+        bin_dir.join("test")
+    };
     let output_path = target_test_path("rubash-builtin-enable-output.txt");
     let shell_bin_dir = shell_test_path(&bin_dir);
     let shell_output_path = shell_test_path(&output_path);
     let _ = fs::remove_dir_all(&bin_dir);
     let _ = fs::remove_file(&output_path);
     fs::create_dir_all(&bin_dir).unwrap();
-    write_executable(&script_path, "echo external-test\n").unwrap();
+    write_test_command(
+        &script_path,
+        "echo external-test\n",
+        "@echo off\r\necho external-test\r\n",
+    )
+    .unwrap();
     let input = format!("builtin enable -n test; type -t test > {shell_output_path}");
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
@@ -238,12 +244,17 @@ fn test_builtin_enable_updates_disabled_builtin_state() {
 #[test]
 fn test_disabled_test_builtin_uses_external_command() {
     let bin_dir = "target/rubash-disabled-test-bin";
-    let script_path = format!("{bin_dir}/test");
+    let script_path = test_command_path(bin_dir, "test");
     let output_path = "target/rubash-disabled-test-output.txt";
     let _ = fs::remove_file(&script_path);
     let _ = fs::remove_file(output_path);
     fs::create_dir_all(bin_dir).unwrap();
-    write_executable(&script_path, "echo external-test\n").unwrap();
+    write_test_command(
+        &script_path,
+        "echo external-test\n",
+        "@echo off\r\necho external-test\r\n",
+    )
+    .unwrap();
     let input = format!(
         "enable -n test; test > {output_path}; enable test; test 1 -eq 1; echo $? >> {output_path}"
     );
@@ -261,10 +272,7 @@ fn test_disabled_test_builtin_uses_external_command() {
 
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
-    assert_eq!(
-        fs::read_to_string(output_path).unwrap(),
-        "external-test\n0\n"
-    );
+    assert_eq!(read_normalized(output_path), "external-test\n0\n");
     let _ = fs::remove_file(script_path);
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_dir(bin_dir);

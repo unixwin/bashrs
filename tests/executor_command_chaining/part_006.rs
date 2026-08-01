@@ -192,15 +192,45 @@ fn test_read_file_command_substitution_missing_file_sets_status() {
 
 #[test]
 fn test_external_command_substitution_captures_stdout() {
-    let bin_dir = "target/rubash-command-substitution-bin";
-    let helper_path = format!("{bin_dir}/rubash-comsub-helper");
     let output_path = "target/rubash-external-command-substitution-output.txt";
+    let rubash = shell_test_path(std::path::Path::new(env!("CARGO_BIN_EXE_rubash")));
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "v=$({rubash} -c 'printf \"a\\nb\\n\\n\"'); printf 'v=<%s> len:%s\\n' \"$v\" \"${{#v}}\" > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "v=<a\nb> len:3\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_external_command_substitution_captures_stdin_redirect() {
+    let bin_dir = "target/rubash-command-substitution-stdin-bin";
+    let helper_path = test_command_path(bin_dir, "rubash-comsub-stdin-helper");
+    let input_path = target_test_path("rubash-external-command-substitution-stdin-input.txt");
+    let output_path = target_test_path("rubash-external-command-substitution-stdin-output.txt");
+    let shell_input_path = shell_test_path(&input_path);
+    let shell_output_path = shell_test_path(&output_path);
     let _ = fs::create_dir_all(bin_dir);
     let _ = fs::remove_file(&helper_path);
-    let _ = fs::remove_file(output_path);
-    write_executable(&helper_path, "#!/bin/sh\nprintf 'a\\nb\\n\\n'\n").unwrap();
+    let _ = fs::remove_file(&input_path);
+    let _ = fs::remove_file(&output_path);
+    write_test_command(
+        &helper_path,
+        "#!/bin/sh\ncount=0\nwhile IFS= read -r _line; do count=$((count + 1)); done\nprintf '%s\\n' \"$count\"\n",
+        "@echo off\r\n\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -Command \"$count=0; $input | ForEach-Object { $count++ }; [Console]::Out.Write($count)\"\r\n",
+    )
+    .unwrap();
+    fs::write(&input_path, "a\nb\n").unwrap();
     let input = format!(
-        "v=$(rubash-comsub-helper); printf 'v=<%s> len:%s\\n' \"$v\" \"${{#v}}\" > {output_path}"
+        "n=$(rubash-comsub-stdin-helper < {shell_input_path}); printf 'n=<%s>\\n' \"$n\" > {shell_output_path}"
     );
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
@@ -211,9 +241,49 @@ fn test_external_command_substitution_captures_stdout() {
 
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
-    assert_eq!(fs::read_to_string(output_path).unwrap(), "v=<a\nb> len:3\n");
+    assert_eq!(fs::read_to_string(&output_path).unwrap(), "n=<2>\n");
+    let _ = fs::remove_file(helper_path);
+    let _ = fs::remove_file(input_path);
+    let _ = fs::remove_file(output_path);
+}
+#[test]
+fn test_mktemp_command_substitution_prefers_external_with_stderr_redirect() {
+    let bin_dir = "target/rubash-command-substitution-mktemp-bin";
+    let helper_path = test_command_path(bin_dir, "mktemp");
+    let output_path = target_test_path("rubash-mktemp-command-substitution-external-output.txt");
+    let error_path = target_test_path("rubash-mktemp-command-substitution-external-error.txt");
+    let shell_output_path = shell_test_path(&output_path);
+    let shell_error_path = shell_test_path(&error_path);
+    let _ = fs::create_dir_all(bin_dir);
+    let _ = fs::remove_file(&helper_path);
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&error_path);
+    write_test_command(
+        &helper_path,
+        "#!/bin/sh\nprintf 'native-temp\\n'\nprintf 'warn\\n' >&2\n",
+        "@echo off\r\necho native-temp\r\necho warn>&2\r\n",
+    )
+    .unwrap();
+    let input = format!(
+        "tmp=$(mktemp 2> {shell_error_path}); printf '<%s>\\n' \"$tmp\" > {shell_output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+    executor.set_env("PATH", bin_dir);
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(&output_path).unwrap().replace('\r', ""),
+        "<native-temp>\n"
+    );
+    assert_eq!(read_normalized(&error_path), "warn\n");
     let _ = fs::remove_file(helper_path);
     let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(error_path);
 }
 
 #[test]
@@ -266,6 +336,9 @@ fn test_mktemp_t_command_substitution_succeeds() {
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
     let mut executor = Executor::new();
+    let temp_dir = shell_output_path_to_host(&std::env::temp_dir().to_string_lossy());
+    executor.set_env("TMPDIR", &temp_dir.to_string_lossy());
+    executor.set_env("PATH", "");
 
     let result = executor.execute_ast(&ast);
 
@@ -275,6 +348,16 @@ fn test_mktemp_t_command_substitution_succeeds() {
     assert!(output.starts_with("status:0:"));
     assert!(output.contains("cb."));
     let temp_path = output.trim_end().trim_start_matches("status:0:");
+    #[cfg(windows)]
+    {
+        assert!(
+            temp_path.len() >= 3
+                && temp_path.as_bytes()[1] == b':'
+                && temp_path.as_bytes()[2] == b'/'
+        );
+        assert!(!temp_path.starts_with("/"));
+        assert!(!temp_path.contains('~'));
+    }
     let _ = fs::remove_file(shell_output_path_to_host(temp_path));
     let _ = fs::remove_file(output_path);
 }
@@ -292,6 +375,9 @@ fn test_mktemp_d_command_substitution_creates_directory() {
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
     let mut executor = Executor::new();
+    let temp_dir = shell_output_path_to_host(&std::env::temp_dir().to_string_lossy());
+    executor.set_env("TMPDIR", &temp_dir.to_string_lossy());
+    executor.set_env("PATH", "");
 
     let result = executor.execute_ast(&ast);
 
@@ -301,6 +387,16 @@ fn test_mktemp_d_command_substitution_creates_directory() {
     assert!(output.starts_with("status:0:"));
     assert!(output.contains("rubash-mktemp."));
     let temp_path = output.trim_end().trim_start_matches("status:0:");
+    #[cfg(windows)]
+    {
+        assert!(
+            temp_path.len() >= 3
+                && temp_path.as_bytes()[1] == b':'
+                && temp_path.as_bytes()[2] == b'/'
+        );
+        assert!(!temp_path.starts_with("/"));
+        assert!(!temp_path.contains('~'));
+    }
     let _ = fs::remove_dir_all(shell_output_path_to_host(temp_path));
     let _ = fs::remove_file(output_path);
 }
@@ -331,6 +427,16 @@ fn test_cp_copies_file_to_mktemp_directory() {
     let output = fs::read_to_string(&output_path).unwrap();
     assert!(output.starts_with("status:0:"));
     let temp_path = output.trim_end().trim_start_matches("status:0:");
+    #[cfg(windows)]
+    {
+        assert!(
+            temp_path.len() >= 3
+                && temp_path.as_bytes()[1] == b':'
+                && temp_path.as_bytes()[2] == b'/'
+        );
+        assert!(!temp_path.starts_with("/"));
+        assert!(!temp_path.contains('~'));
+    }
     let _ = fs::remove_dir_all(shell_output_path_to_host(temp_path));
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(output_path);
@@ -356,5 +462,100 @@ fn test_multiline_brace_group_continues_until_closing_brace() {
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(fs::read_to_string(&output_path).unwrap(), "alpha/beta\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_command_substitution_quote_newline_regressions() {
+    let output_path = target_test_path("rubash-run-quote-command-substitution-output.txt");
+    let shell_output_path = shell_test_path(&output_path);
+    let _ = fs::remove_file(&output_path);
+    let input = format!(
+        "echo `echo 'foo\\\n\
+         bar'` > {shell_output_path}\n\
+         echo \"`echo 'foo\n\
+         bar'`\" >> {shell_output_path}\n\
+         echo \"$(echo 'foo\n\
+         bar')\" >> {shell_output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(&output_path).unwrap(),
+        "foobar\nfoo\nbar\nfoo\nbar\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_old_style_backtick_escape_regressions() {
+    let output_path = target_test_path("rubash-run-quote-backtick-escape-output.txt");
+    let shell_output_path = shell_test_path(&output_path);
+    let _ = fs::remove_file(&output_path);
+    let input = format!(
+        "recho `echo '\\$' bab` > {shell_output_path}\n\
+         recho `echo '\\$foo' bab` >> {shell_output_path}\n\
+         recho `echo '$foo' bab` >> {shell_output_path}\n\
+         recho `echo '\\\\' ab` >> {shell_output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(&output_path).unwrap(),
+        "argv[1] = <$>\n\
+         argv[2] = <bab>\n\
+         argv[1] = <$foo>\n\
+         argv[2] = <bab>\n\
+         argv[1] = <$foo>\n\
+         argv[2] = <bab>\n\
+         argv[1] = <\\>\n\
+         argv[2] = <ab>\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_quoted_positional_at_with_empty_adjacent_words() {
+    let output_path = "target/rubash-quoted-positional-at-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "n() {{ echo $# >> {output_path}; }}\n\
+         set --\n\
+         n \"$@\"\n\
+         n \"$@\"''\n\
+         n ''\"$@\"\n\
+         n ''\"$@\"''\n\
+         x=x\n\
+         n ${{x+\"$@\"}}\n\
+         n ${{x+\"$@\"''}}\n\
+         n ${{x+''\"$@\"}}\n\
+         n ${{x+''\"$@\"''}}\n\
+         set -- '' ''\n\
+         n \"$@\"\"$@\""
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "0\n1\n1\n1\n0\n1\n1\n1\n3\n"
+    );
     let _ = fs::remove_file(output_path);
 }

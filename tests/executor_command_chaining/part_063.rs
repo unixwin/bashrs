@@ -130,6 +130,25 @@ fn test_parameter_pattern_removal_decodes_quoted_pattern_words() {
 }
 
 #[test]
+fn test_parameter_pattern_removal_decodes_escaped_double_quote_globs() {
+    let output_path = "target/rubash-param-pattern-escaped-double-quote-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        r##"line='<rect x="0" fill="#fe0000"/>'; rest=${{line#*fill=\"}}; printf '%s\n' "${{rest%%\"*}}" > {output_path}"##
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "#fe0000\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_parameter_replacement_decodes_quoted_pattern_words() {
     let output_path = "target/rubash-param-replacement-quoted-word-output.txt";
     let _ = fs::remove_file(output_path);
@@ -179,6 +198,28 @@ fn test_parameter_replacement_preserves_double_quoted_single_quote_pattern() {
     assert_eq!(
         fs::read_to_string(output_path).unwrap(),
         "<'weferfdsdsfsdf'>\n<weferfds'\\''dsfsdf>\n<'weferfds'\\''dsfsdf'>\n<'weferfds'\\''dsfsdf' >\n<'>\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_parameter_replacement_restores_protected_backslash_in_replacement() {
+    let output_path = "target/rubash-param-replacement-protected-backslash-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        r#"test="weferfds'dsfsdf"; printf "%s\n" "'${{test//"'"/\'\\'\'}}'" > {output_path}"#
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "'weferfds'\\\\dsfsdf'\n"
     );
     let _ = fs::remove_file(output_path);
 }

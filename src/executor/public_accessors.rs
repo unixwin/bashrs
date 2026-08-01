@@ -9,6 +9,18 @@ impl Executor {
         self.exit_code = exit_code;
     }
 
+    pub fn set_external_file_builtins_enabled(&mut self, enabled: bool) {
+        self.external_file_builtins_enabled = enabled;
+    }
+
+    pub fn set_host_external_command_handler<F>(&mut self, handler: F)
+    where
+        F: FnMut(&[String], &HashMap<String, String>) -> Option<HostExternalCommandOutput>
+            + 'static,
+    {
+        self.host_external_command_handler = Some(HostExternalCommandHandler(Box::new(handler)));
+    }
+
     pub fn set_env(&mut self, name: &str, value: &str) {
         let value = if name == "TMPDIR" && value.contains('\0') {
             safe_temp_dir_string()
@@ -20,6 +32,7 @@ impl Executor {
             set_process_env(name, &value);
         }
         if name == "__RUBASH_SCRIPT_NAME" {
+            self.bash_source_stack = vec![value.clone()];
             store_indexed_array(&mut self.env_vars, "BASH_SOURCE", vec![value]);
         }
     }
@@ -90,26 +103,35 @@ impl Executor {
             let line = line.to_string();
             self.env_vars
                 .insert("__RUBASH_CURRENT_LINE".to_string(), line.clone());
-            set_process_env("__RUBASH_CURRENT_LINE", line);
+            if command_needs_process_line_env(cmd) {
+                set_process_env("__RUBASH_CURRENT_LINE", line);
+            }
         }
     }
 
     pub(in crate::executor) fn set_current_command(&mut self, cmd: &CommandNode) {
+        if !command_references_bash_command(cmd) {
+            self.env_vars.remove("__RUBASH_CURRENT_COMMAND");
+            return;
+        }
         let command = bash_command_text(cmd);
         self.env_vars
-            .insert("__RUBASH_CURRENT_COMMAND".to_string(), command.clone());
-        set_process_env("__RUBASH_CURRENT_COMMAND", command);
+            .insert("__RUBASH_CURRENT_COMMAND".to_string(), command);
     }
 
     pub(in crate::executor) fn set_pipestatus<I>(&mut self, statuses: I)
     where
         I: IntoIterator<Item = i32>,
     {
-        let values = statuses
-            .into_iter()
-            .map(|status| status.to_string())
-            .collect();
-        store_indexed_array(&mut self.env_vars, "PIPESTATUS", values);
+        self.pipestatus.clear();
+        self.pipestatus.extend(statuses);
+        if self.pipestatus.is_empty() {
+            self.pipestatus.push(0);
+        }
+    }
+
+    pub(in crate::executor) fn pipestatus_values(&self) -> Vec<String> {
+        self.pipestatus.iter().map(i32::to_string).collect()
     }
 
     pub(crate) fn diagnostic_prefix(&self) -> String {

@@ -43,11 +43,7 @@ impl Executor {
                     Ok(())
                 }
             }
-            "recho" => {
-                self.execute_recho(&cmd.words[1..]);
-                self.exit_code = 0;
-                Ok(())
-            }
+            "recho" => self.execute_recho_command(cmd),
             "shift" => self.execute_shift_command(cmd),
             "times" => {
                 self.exit_code = self.execute_times(cmd)?;

@@ -235,6 +235,11 @@ pub(in crate::executor) fn decode_parameter_pattern_quotes(pattern: &str) -> Str
                 }
             }
             '"' => {
+                if !chars[index + 1..].iter().any(|ch| *ch == '"') {
+                    output.push('"');
+                    index += 1;
+                    continue;
+                }
                 index += 1;
                 while index < chars.len() {
                     let ch = chars[index];
@@ -258,7 +263,11 @@ pub(in crate::executor) fn decode_parameter_pattern_quotes(pattern: &str) -> Str
             }
             '\\' => {
                 if let Some(ch) = chars.get(index + 1) {
-                    output.push(*ch);
+                    if *ch == '\\' {
+                        output.push('\x18');
+                    } else {
+                        output.push(*ch);
+                    }
                     index += 2;
                 } else {
                     index += 1;

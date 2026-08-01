@@ -25,13 +25,18 @@ impl Executor {
                 continue;
             }
 
+            if ch == '\x18' {
+                output.push('"');
+                continue;
+            }
+
             if ch == '`' {
                 let mut source = String::new();
                 let mut escaped = false;
                 let mut closed = false;
-                for source_ch in chars.by_ref() {
+                while let Some(source_ch) = chars.next() {
                     if escaped {
-                        source.push(source_ch);
+                        push_backtick_escaped_source_char(&mut source, source_ch, &mut chars);
                         escaped = false;
                         continue;
                     }
@@ -267,21 +272,25 @@ impl Executor {
 }
 
 fn decode_backtick_substitution_source(source: &str) -> String {
-    let mut decoded = String::new();
-    let mut chars = source.chars().peekable();
+    source.replace('\x1a', "`")
+}
 
-    while let Some(ch) = chars.next() {
-        match ch {
-            '\x1a' => decoded.push('`'),
-            '\\' if chars.peek().copied() == Some('`') => {
-                chars.next();
-                decoded.push('`');
-            }
-            _ => decoded.push(ch),
+fn push_backtick_escaped_source_char(
+    source: &mut String,
+    ch: char,
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) {
+    match ch {
+        '$' | '`' | '\\' => source.push(ch),
+        '\n' => {}
+        '\r' if chars.peek().copied() == Some('\n') => {
+            chars.next();
+        }
+        _ => {
+            source.push('\\');
+            source.push(ch);
         }
     }
-
-    decoded
 }
 
 fn update_command_substitution_case_depth(

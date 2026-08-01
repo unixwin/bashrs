@@ -114,6 +114,9 @@ fn test_command_verbose_missing_redirects_stderr() {
 fn test_command_p_uses_standard_path_for_external_command() {
     let output_path = "target/rubash-command-p-output.txt";
     let _ = fs::remove_file(output_path);
+    #[cfg(windows)]
+    let input = format!("PATH=target/rubash-no-such-bin command -p cmd /c echo ok > {output_path}");
+    #[cfg(not(windows))]
     let input =
         format!("PATH=target/rubash-no-such-bin command -p sh -c 'echo ok' > {output_path}");
     let tokens = tokenize(&input);
@@ -124,7 +127,12 @@ fn test_command_p_uses_standard_path_for_external_command() {
 
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
-    assert_eq!(fs::read_to_string(output_path).unwrap(), "ok\n");
+    assert_eq!(
+        fs::read_to_string(output_path)
+            .unwrap()
+            .replace("\r\n", "\n"),
+        "ok\n"
+    );
     let _ = fs::remove_file(output_path);
 }
 
@@ -132,6 +140,9 @@ fn test_command_p_uses_standard_path_for_external_command() {
 fn test_command_p_v_uses_standard_path_for_external_command() {
     let output_path = "target/rubash-command-p-v-output.txt";
     let _ = fs::remove_file(output_path);
+    #[cfg(windows)]
+    let input = format!("PATH=target/rubash-no-such-bin command -p -v cmd > {output_path}");
+    #[cfg(not(windows))]
     let input = format!("PATH=target/rubash-no-such-bin command -p -v sh > {output_path}");
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
@@ -142,6 +153,9 @@ fn test_command_p_v_uses_standard_path_for_external_command() {
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
     let output = fs::read_to_string(output_path).unwrap();
+    #[cfg(windows)]
+    assert!(output.trim_end().to_ascii_lowercase().ends_with("cmd.exe"));
+    #[cfg(not(windows))]
     assert!(output.trim_end().ends_with("sh") || output.trim_end().ends_with("sh.exe"));
     let _ = fs::remove_file(output_path);
 }

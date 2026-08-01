@@ -4,6 +4,12 @@ pub(in crate::executor) fn collect_braced_parameter_name(
     let mut name = String::new();
     let mut nested = 0usize;
     while let Some(ch) = chars.next() {
+        if ch == '\\' && chars.peek().copied() == Some('}') {
+            chars.next();
+            name.push(ch);
+            name.push('}');
+            continue;
+        }
         if ch == '$' && chars.peek().copied() == Some('{') {
             chars.next();
             nested += 1;
@@ -22,6 +28,71 @@ pub(in crate::executor) fn collect_braced_parameter_name(
         name.push(ch);
     }
     name
+}
+
+pub(in crate::executor) fn decode_old_style_backtick_source(source: &str) -> String {
+    let mut output = String::new();
+    let mut chars = source.chars().peekable();
+    let mut single = false;
+    let mut double = false;
+    while let Some(ch) = chars.next() {
+        if ch == '\'' && !double {
+            single = !single;
+            output.push(ch);
+            continue;
+        }
+
+        if ch == '"' && !single {
+            double = !double;
+            output.push(ch);
+            continue;
+        }
+
+        if ch != '\\' {
+            push_backtick_source_char(&mut output, ch, single);
+            continue;
+        }
+
+        if double {
+            let mut lookahead = chars.clone();
+            if lookahead.next() == Some('\\') && lookahead.next() == Some('"') {
+                chars.next();
+                chars.next();
+                output.push('\x18');
+                continue;
+            }
+        }
+
+        if double && chars.peek().copied() == Some('"') {
+            chars.next();
+            output.push('\x18');
+            continue;
+        }
+
+        match chars.next() {
+            Some(next @ ('$' | '`' | '\\')) => {
+                push_backtick_source_char(&mut output, next, single);
+            }
+            Some('\n') => {}
+            Some('\r') if chars.peek().copied() == Some('\n') => {
+                chars.next();
+            }
+            Some(next) => {
+                output.push('\\');
+                push_backtick_source_char(&mut output, next, single);
+            }
+            None => output.push('\\'),
+        }
+    }
+    output
+}
+
+fn push_backtick_source_char(output: &mut String, ch: char, single: bool) {
+    if single && ch == '$' {
+        output.push('\x1f');
+    } else {
+        output.push(ch);
+    }
 }
 
 pub(super) fn unescape_remaining_shell_escapes(value: &str) -> String {
@@ -52,58 +123,20 @@ pub(super) fn unescape_remaining_shell_escapes(value: &str) -> String {
 }
 
 pub(in crate::executor) fn echo_command_substitution_output(args: &[String]) -> String {
-    let mut newline = true;
-    let mut escapes = false;
-    let mut index = 0;
-
-    while let Some(option) = args.get(index).map(String::as_str) {
-        if !option.starts_with('-') || option == "-" {
-            break;
-        }
-        if option[1..].chars().all(|ch| matches!(ch, 'n' | 'e' | 'E')) {
-            for ch in option[1..].chars() {
-                match ch {
-                    'n' => newline = false,
-                    'e' => escapes = true,
-                    'E' => escapes = false,
-                    _ => {}
-                }
-            }
-            index += 1;
-        } else {
-            break;
-        }
-    }
-
-    let mut output = args[index..].join(" ");
-    if escapes {
-        output = expand_echo_command_substitution_escapes(&output);
-    }
-    if newline {
-        output.push('\n');
-    }
-    output.trim_end_matches('\n').to_string()
+    let mut bytes = echo_raw_output_bytes(args);
+    bytes.retain(|byte| *byte != 0);
+    String::from_utf8_lossy(&bytes)
+        .trim_end_matches('\n')
+        .to_string()
 }
 
-pub(in crate::executor) fn expand_echo_command_substitution_escapes(value: &str) -> String {
-    let mut output = String::new();
-    let mut chars = value.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch != '\\' {
-            output.push(ch);
-            continue;
-        }
-        match chars.next() {
-            Some('n') => output.push('\n'),
-            Some('t') => output.push('\t'),
-            Some('\\') => output.push('\\'),
-            Some(other) => {
-                output.push('\\');
-                output.push(other);
-            }
-            None => output.push('\\'),
-        }
-    }
+pub(in crate::executor) fn echo_raw_output(args: &[String]) -> String {
+    String::from_utf8_lossy(&echo_raw_output_bytes(args)).into_owned()
+}
+
+fn echo_raw_output_bytes(args: &[String]) -> Vec<u8> {
+    let mut output = Vec::new();
+    let _ = crate::builtins::echo::write_echo(args.iter().map(String::as_str), &mut output);
     output
 }
 
@@ -124,4 +157,43 @@ pub(in crate::executor) fn split_pipeline_words(words: &[String]) -> Option<Vec<
     }
     stages.push(&words[start..]);
     (stages.len() > 1).then_some(stages)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[test]
+    fn echo_command_substitution_uses_builtin_escape_rules() {
+        assert_eq!(
+            echo_command_substitution_output(&args(&["-e", "a\\nb"])),
+            "a\nb"
+        );
+        assert_eq!(
+            echo_command_substitution_output(&args(&["-e", "\\xz"])),
+            "\\xz"
+        );
+        assert_eq!(
+            echo_command_substitution_output(&args(&["--help"])),
+            "--help"
+        );
+    }
+
+    #[test]
+    fn echo_command_substitution_removes_nul_bytes() {
+        assert_eq!(
+            echo_command_substitution_output(&args(&["-e", "a\\0b"])),
+            "ab"
+        );
+    }
+
+    #[test]
+    fn echo_raw_output_keeps_builtin_stdout_shape() {
+        assert_eq!(echo_raw_output(&args(&["-n", "hello"])), "hello");
+        assert_eq!(echo_raw_output(&args(&["hello"])), "hello\n");
+    }
 }

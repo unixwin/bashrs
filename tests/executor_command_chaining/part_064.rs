@@ -147,6 +147,28 @@ fn test_quoted_positional_at_expands_to_separate_arguments() {
 }
 
 #[test]
+fn test_set_positional_operands_split_unquoted_variable_with_custom_ifs() {
+    let output_path = "target/rubash-set-positional-custom-ifs-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        r#"line='a"b"c'; old=$IFS; IFS='"'; set -- $line; IFS=$old; printf 'n=%s one=%s two=%s three=%s\n' "$#" "$1" "$2" "$3" > {output_path}"#
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "n=3 one=a two=b three=c\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_positional_parameter_substring_supports_negative_offset() {
     let output_path = "target/rubash-positional-substring-negative-output.txt";
     let _ = fs::remove_file(output_path);

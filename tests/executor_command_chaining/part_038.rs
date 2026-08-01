@@ -430,26 +430,13 @@ fn test_exec_stops_after_successful_command() {
 #[test]
 fn test_exec_c_clears_external_command_environment() {
     let output_path = target_test_path("rubash-exec-clean-env-output.txt");
-    let script_path = target_test_path("rubash-exec-clean-env.sh");
-    #[cfg(windows)]
-    let shell_path = std::path::PathBuf::from(
-        std::env::var("CLAUDE_CODE_GIT_BASH_PATH")
-            .unwrap_or_else(|_| r"D:\Git\bin\bash.exe".to_string()),
-    );
-    #[cfg(not(windows))]
-    let shell_path = std::path::PathBuf::from("/bin/sh");
     let shell_output_path = shell_test_path(&output_path);
-    let shell_script_path = shell_test_path(&script_path);
-    let shell_command_path = shell_test_path(&shell_path);
+    let rubash = shell_test_path(std::path::Path::new(env!("CARGO_BIN_EXE_rubash")));
     let _ = fs::remove_file(&output_path);
-    let _ = fs::remove_file(&script_path);
-    fs::write(
-        &script_path,
-        "if [ -n \"$FOO\" ]; then printf 'FOO=%s\\n' \"$FOO\"; else printf 'FOO=\\n'; fi\n",
-    )
-    .unwrap();
 
-    let input = format!("exec -c {shell_command_path} {shell_script_path} > {shell_output_path}");
+    let input = format!(
+        "exec -c {rubash} -c 'if [ -n \"$FOO\" ]; then printf \"FOO=%s\\n\" \"$FOO\"; else printf \"FOO=\\n\"; fi' > {shell_output_path}"
+    );
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
     let mut executor = Executor::new();
@@ -461,7 +448,6 @@ fn test_exec_c_clears_external_command_environment() {
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(fs::read_to_string(&output_path).unwrap(), "FOO=\n");
     let _ = fs::remove_file(output_path);
-    let _ = fs::remove_file(script_path);
 }
 
 #[test]

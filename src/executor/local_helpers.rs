@@ -168,6 +168,23 @@ pub(in crate::executor) fn set_process_env(name: &str, value: impl AsRef<str>) {
     }
 }
 
+pub(in crate::executor) fn sync_shell_assignment_process_env(
+    env_vars: &HashMap<String, String>,
+    name: &str,
+    value: impl AsRef<str>,
+) {
+    if is_marked_var(env_vars, EXPORTED_VARS, name) || shell_assignment_needs_process_env(name) {
+        set_process_env(name, value);
+    }
+}
+
+fn shell_assignment_needs_process_env(name: &str) -> bool {
+    matches!(
+        name,
+        "HOME" | "OLDPWD" | "PATH" | "PATHEXT" | "PWD" | "TEMP" | "TMP" | "TMPDIR" | "USERPROFILE"
+    ) || name.starts_with("__RUBASH_")
+}
+
 pub(in crate::executor) fn safe_temp_dir_string() -> String {
     for name in ["TMPDIR", "TEMP", "TMP"] {
         if let Ok(value) = env::var(name) {

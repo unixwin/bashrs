@@ -5,7 +5,16 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<bool, ExecuteError> {
+        if !self.external_file_builtins_enabled {
+            return Ok(false);
+        }
         match cmd.words[0].as_str() {
+            "/bin/pwd" | "/usr/bin/pwd" => {
+                let mut pwd_cmd = cmd.clone();
+                pwd_cmd.words[0] = "pwd".to_string();
+                self.exit_code = self.execute_pwd(&pwd_cmd)?;
+                Ok(true)
+            }
             "mkdir" => self.external_mkdir(cmd),
             "touch" => self.external_touch(cmd),
             "chmod" => {

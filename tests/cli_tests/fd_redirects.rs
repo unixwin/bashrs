@@ -1,16 +1,18 @@
 use std::process::Command;
-use std::{env, fs, path::Path};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 #[test]
 fn c_external_command_redirects_stdout_to_stderr_fd() {
     let bin_dir = external_fd_copy_bin_dir();
-    let script_path = bin_dir.join("emitout");
+    let script_path = helper_path(&bin_dir, "emitout");
     let literal_fd_path = Path::new("&2");
     let _ = fs::remove_dir_all(&bin_dir);
     let _ = fs::remove_file(literal_fd_path);
     fs::create_dir_all(&bin_dir).unwrap();
-    fs::write(&script_path, "echo external-fd-copy\n").unwrap();
-    make_executable(&script_path);
+    write_helper_script(&script_path, "echo external-fd-copy\n");
     let path = path_with_bin_first(&bin_dir);
 
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
@@ -21,11 +23,8 @@ fn c_external_command_redirects_stdout_to_stderr_fd() {
         .expect("run rubash");
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
-    assert_eq!(
-        String::from_utf8_lossy(&output.stderr),
-        "external-fd-copy\n"
-    );
+    assert_eq!(stream_text(&output.stdout), "");
+    assert_eq!(stream_text(&output.stderr), "external-fd-copy\n");
     assert!(!literal_fd_path.exists());
     let _ = fs::remove_dir_all(bin_dir);
 }
@@ -33,13 +32,12 @@ fn c_external_command_redirects_stdout_to_stderr_fd() {
 #[test]
 fn c_external_command_redirects_stderr_to_stdout_fd() {
     let bin_dir = external_fd_copy_bin_dir();
-    let script_path = bin_dir.join("emiterr");
+    let script_path = helper_path(&bin_dir, "emiterr");
     let literal_fd_path = Path::new("&1");
     let _ = fs::remove_dir_all(&bin_dir);
     let _ = fs::remove_file(literal_fd_path);
     fs::create_dir_all(&bin_dir).unwrap();
-    fs::write(&script_path, "echo external-error >&2\n").unwrap();
-    make_executable(&script_path);
+    write_helper_script(&script_path, "echo external-error >&2\n");
     let path = path_with_bin_first(&bin_dir);
 
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
@@ -50,8 +48,8 @@ fn c_external_command_redirects_stderr_to_stdout_fd() {
         .expect("run rubash");
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "external-error\n");
-    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert_eq!(stream_text(&output.stdout), "external-error\n");
+    assert_eq!(stream_text(&output.stderr), "");
     assert!(!literal_fd_path.exists());
     let _ = fs::remove_dir_all(bin_dir);
 }
@@ -59,13 +57,12 @@ fn c_external_command_redirects_stderr_to_stdout_fd() {
 #[test]
 fn c_external_stderr_fd_copy_keeps_original_stdout_before_redirect() {
     let bin_dir = external_fd_copy_bin_dir();
-    let script_path = bin_dir.join("emiterr");
+    let script_path = helper_path(&bin_dir, "emiterr");
     let output_path = Path::new("target").join("rubash-cli-external-fd-copy-output.txt");
     let _ = fs::remove_dir_all(&bin_dir);
     let _ = fs::remove_file(&output_path);
     fs::create_dir_all(&bin_dir).unwrap();
-    fs::write(&script_path, "echo external-error >&2\n").unwrap();
-    make_executable(&script_path);
+    write_helper_script(&script_path, "echo external-error >&2\n");
     let path = path_with_bin_first(&bin_dir);
 
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
@@ -79,9 +76,9 @@ fn c_external_stderr_fd_copy_keeps_original_stdout_before_redirect() {
         .expect("run rubash");
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "external-error\n");
-    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
-    assert_eq!(fs::read_to_string(&output_path).unwrap_or_default(), "");
+    assert_eq!(stream_text(&output.stdout), "external-error\n");
+    assert_eq!(stream_text(&output.stderr), "");
+    assert_eq!(read_text_or_default(&output_path), "");
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_dir_all(bin_dir);
 }
@@ -89,13 +86,12 @@ fn c_external_stderr_fd_copy_keeps_original_stdout_before_redirect() {
 #[test]
 fn c_external_command_uses_persistent_fd_copied_from_stdout() {
     let bin_dir = external_fd_copy_bin_dir();
-    let script_path = bin_dir.join("emitout");
+    let script_path = helper_path(&bin_dir, "emitout");
     let literal_fd_path = Path::new("&3");
     let _ = fs::remove_dir_all(&bin_dir);
     let _ = fs::remove_file(literal_fd_path);
     fs::create_dir_all(&bin_dir).unwrap();
-    fs::write(&script_path, "echo external-via-fd\n").unwrap();
-    make_executable(&script_path);
+    write_helper_script(&script_path, "echo external-via-fd\n");
     let path = path_with_bin_first(&bin_dir);
 
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
@@ -106,8 +102,8 @@ fn c_external_command_uses_persistent_fd_copied_from_stdout() {
         .expect("run rubash");
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "external-via-fd\n");
-    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert_eq!(stream_text(&output.stdout), "external-via-fd\n");
+    assert_eq!(stream_text(&output.stderr), "");
     assert!(!literal_fd_path.exists());
     let _ = fs::remove_dir_all(bin_dir);
 }
@@ -115,13 +111,12 @@ fn c_external_command_uses_persistent_fd_copied_from_stdout() {
 #[test]
 fn c_external_command_uses_persistent_fd_copied_from_stderr() {
     let bin_dir = external_fd_copy_bin_dir();
-    let script_path = bin_dir.join("emitout");
+    let script_path = helper_path(&bin_dir, "emitout");
     let literal_fd_path = Path::new("&3");
     let _ = fs::remove_dir_all(&bin_dir);
     let _ = fs::remove_file(literal_fd_path);
     fs::create_dir_all(&bin_dir).unwrap();
-    fs::write(&script_path, "echo external-via-fd\n").unwrap();
-    make_executable(&script_path);
+    write_helper_script(&script_path, "echo external-via-fd\n");
     let path = path_with_bin_first(&bin_dir);
 
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
@@ -132,8 +127,8 @@ fn c_external_command_uses_persistent_fd_copied_from_stderr() {
         .expect("run rubash");
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
-    assert_eq!(String::from_utf8_lossy(&output.stderr), "external-via-fd\n");
+    assert_eq!(stream_text(&output.stdout), "");
+    assert_eq!(stream_text(&output.stderr), "external-via-fd\n");
     assert!(!literal_fd_path.exists());
     let _ = fs::remove_dir_all(bin_dir);
 }
@@ -141,13 +136,12 @@ fn c_external_command_uses_persistent_fd_copied_from_stderr() {
 #[test]
 fn c_external_stderr_uses_persistent_fd_copied_from_stdout() {
     let bin_dir = external_fd_copy_bin_dir();
-    let script_path = bin_dir.join("emiterr");
+    let script_path = helper_path(&bin_dir, "emiterr");
     let literal_fd_path = Path::new("&3");
     let _ = fs::remove_dir_all(&bin_dir);
     let _ = fs::remove_file(literal_fd_path);
     fs::create_dir_all(&bin_dir).unwrap();
-    fs::write(&script_path, "echo external-error-via-fd >&2\n").unwrap();
-    make_executable(&script_path);
+    write_helper_script(&script_path, "echo external-error-via-fd >&2\n");
     let path = path_with_bin_first(&bin_dir);
 
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
@@ -158,11 +152,8 @@ fn c_external_stderr_uses_persistent_fd_copied_from_stdout() {
         .expect("run rubash");
 
     assert!(output.status.success());
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        "external-error-via-fd\n"
-    );
-    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert_eq!(stream_text(&output.stdout), "external-error-via-fd\n");
+    assert_eq!(stream_text(&output.stderr), "");
     assert!(!literal_fd_path.exists());
     let _ = fs::remove_dir_all(bin_dir);
 }
@@ -170,13 +161,12 @@ fn c_external_stderr_uses_persistent_fd_copied_from_stdout() {
 #[test]
 fn c_external_combined_redirect_preserves_stderr_first_output() {
     let bin_dir = external_fd_copy_bin_dir();
-    let script_path = bin_dir.join("emitboth");
+    let script_path = helper_path(&bin_dir, "emitboth");
     let output_path = Path::new("target").join("rubash-cli-external-combined-output.txt");
     let _ = fs::remove_dir_all(&bin_dir);
     let _ = fs::remove_file(&output_path);
     fs::create_dir_all(&bin_dir).unwrap();
-    fs::write(&script_path, "echo external-error >&2\necho external-out\n").unwrap();
-    make_executable(&script_path);
+    write_helper_script(&script_path, "echo external-error >&2\necho external-out\n");
     let path = path_with_bin_first(&bin_dir);
 
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
@@ -190,12 +180,9 @@ fn c_external_combined_redirect_preserves_stderr_first_output() {
         .expect("run rubash");
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
-    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
-    assert_eq!(
-        fs::read_to_string(&output_path).unwrap(),
-        "external-error\nexternal-out\n"
-    );
+    assert_eq!(stream_text(&output.stdout), "");
+    assert_eq!(stream_text(&output.stderr), "");
+    assert_eq!(read_text(&output_path), "external-error\nexternal-out\n");
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_dir_all(bin_dir);
 }
@@ -203,13 +190,12 @@ fn c_external_combined_redirect_preserves_stderr_first_output() {
 #[test]
 fn c_external_combined_append_preserves_existing_and_both_streams() {
     let bin_dir = external_fd_copy_bin_dir();
-    let script_path = bin_dir.join("emitboth");
+    let script_path = helper_path(&bin_dir, "emitboth");
     let output_path = Path::new("target").join("rubash-cli-external-combined-append.txt");
     let _ = fs::remove_dir_all(&bin_dir);
     fs::write(&output_path, "first\n").unwrap();
     fs::create_dir_all(&bin_dir).unwrap();
-    fs::write(&script_path, "echo external-error >&2\necho external-out\n").unwrap();
-    make_executable(&script_path);
+    write_helper_script(&script_path, "echo external-error >&2\necho external-out\n");
     let path = path_with_bin_first(&bin_dir);
 
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
@@ -223,10 +209,10 @@ fn c_external_combined_append_preserves_existing_and_both_streams() {
         .expect("run rubash");
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
-    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert_eq!(stream_text(&output.stdout), "");
+    assert_eq!(stream_text(&output.stderr), "");
     assert_eq!(
-        fs::read_to_string(&output_path).unwrap(),
+        read_text(&output_path),
         "first\nexternal-error\nexternal-out\n"
     );
     let _ = fs::remove_file(output_path);
@@ -235,6 +221,46 @@ fn c_external_combined_append_preserves_existing_and_both_streams() {
 
 fn external_fd_copy_bin_dir() -> std::path::PathBuf {
     Path::new("target").join("rubash-cli-external-fd-copy-bin")
+}
+
+fn helper_path(bin_dir: &Path, name: &str) -> PathBuf {
+    #[cfg(windows)]
+    {
+        bin_dir.join(format!("{name}.cmd"))
+    }
+
+    #[cfg(not(windows))]
+    {
+        bin_dir.join(name)
+    }
+}
+
+fn write_helper_script(path: &Path, content: &str) {
+    #[cfg(windows)]
+    {
+        let body = content.replace(" >&2", ">&2").replace('\n', "\r\n");
+        fs::write(path, format!("@echo off\r\n{body}")).unwrap();
+    }
+
+    #[cfg(not(windows))]
+    {
+        fs::write(path, content).unwrap();
+        make_executable(path);
+    }
+}
+
+fn stream_text(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).replace("\r\n", "\n")
+}
+
+fn read_text(path: &Path) -> String {
+    fs::read_to_string(path).unwrap().replace("\r\n", "\n")
+}
+
+fn read_text_or_default(path: &Path) -> String {
+    fs::read_to_string(path)
+        .unwrap_or_default()
+        .replace("\r\n", "\n")
 }
 
 fn path_with_bin_first(bin_dir: &Path) -> std::ffi::OsString {
@@ -246,16 +272,11 @@ fn path_with_bin_first(bin_dir: &Path) -> std::ffi::OsString {
     .unwrap()
 }
 
+#[cfg(not(windows))]
 fn make_executable(path: &Path) {
-    #[cfg(not(unix))]
-    let _ = path;
+    use std::os::unix::fs::PermissionsExt;
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        let mut permissions = fs::metadata(path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(path, permissions).unwrap();
-    }
+    let mut permissions = fs::metadata(path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(path, permissions).unwrap();
 }

@@ -49,7 +49,7 @@ impl Executor {
             if is_exportable_function_name(name) {
                 source.push_str(name);
                 source.push_str("() { ");
-                source.push_str(&bash_command_sequence_text(body));
+                source.push_str(&bash_command_sequence_text(&body.commands));
                 source.push_str("; }; ");
             }
         }
@@ -197,6 +197,9 @@ impl Executor {
         }
 
         let mut ran_body = false;
+        let body_ast = Ast {
+            commands: body.to_vec(),
+        };
         loop {
             if !arithmetic.test.trim().is_empty() {
                 match self.eval_arithmetic_command_value(&arithmetic.test) {
@@ -210,11 +213,8 @@ impl Executor {
             }
 
             ran_body = true;
-            let ast = Ast {
-                commands: body.to_vec(),
-            };
             self.loop_depth += 1;
-            let result = self.execute_ast(&ast);
+            let result = self.execute_ast(&body_ast);
             self.loop_depth -= 1;
             match result {
                 Ok(()) => {}
@@ -309,6 +309,7 @@ impl Executor {
         subshell_command: &SubshellCommand,
     ) -> Result<(), ExecuteError> {
         let saved_env = self.env_vars.clone();
+        let saved_pipestatus = self.pipestatus.clone();
         let saved_depth = self.subshell_depth.get();
         self.subshell_depth.set(saved_depth + 1);
 
@@ -326,6 +327,7 @@ impl Executor {
         let status = self.exit_code;
 
         self.restore_shell_env(saved_env);
+        self.pipestatus = saved_pipestatus;
         self.subshell_depth.set(saved_depth);
         let finish_result = self.finish_compound_output_process_substitutions(group_outputs);
         self.exit_code = status;
@@ -338,11 +340,16 @@ impl Executor {
     fn execute_loop_command(&mut self, loop_command: &LoopCommand) -> Result<(), ExecuteError> {
         let mut ran_body = false;
         let mut last_body_status = 0;
+        let condition = Ast {
+            commands: loop_command.condition.clone(),
+        };
+        let body = Ast {
+            commands: crate::builtins::source::normalize_inline_compound_commands(
+                loop_command.body.clone(),
+            ),
+        };
 
         loop {
-            let condition = Ast {
-                commands: loop_command.condition.clone(),
-            };
             self.with_errexit_suppressed(|executor| executor.execute_ast(&condition))?;
             let condition_matched = self.exit_code == 0;
             if condition_matched == loop_command.until {
@@ -350,11 +357,6 @@ impl Executor {
             }
 
             ran_body = true;
-            let body = Ast {
-                commands: crate::builtins::source::normalize_inline_compound_commands(
-                    loop_command.body.clone(),
-                ),
-            };
             self.loop_depth += 1;
             let result = self.execute_ast(&body);
             self.loop_depth -= 1;
@@ -667,6 +669,7 @@ impl Executor {
         // compound-list control flow. This handles the common shell glob
         // operators used by simple `case` clauses.
         let word = self.expand_case_word(&case_command.word);
+        let word = tilde_expand::strip_assignment_quote_marker(&word);
         // Strip surrounding quotes from word (bash behavior: quotes are literal in case patterns)
         let word = strip_surrounding_quotes(&word);
         let nocasematch = crate::builtins::shopt::option_enabled(&self.env_vars, "nocasematch");

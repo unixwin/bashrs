@@ -78,11 +78,7 @@ impl Executor {
             "return" => self.execute_return(cmd),
             "break" => self.execute_loop_control(cmd, LoopControlKind::Break),
             "continue" => self.execute_loop_control(cmd, LoopControlKind::Continue),
-            "recho" => {
-                self.execute_recho(&cmd.words[1..]);
-                self.exit_code = 0;
-                Ok(())
-            }
+            "recho" => self.execute_recho_command(cmd),
             "command" => self.execute_command_builtin_without_aliases(cmd),
             "builtin" => self.execute_builtin_direct_command(cmd),
             "printf" => {

@@ -56,7 +56,7 @@ pub(in crate::executor) fn decode_parameter_replacement_quotes(replacement: &str
         protected.push(chars[index]);
         index += 1;
     }
-    decode_parameter_pattern_quotes(&protected)
+    decode_parameter_pattern_quotes(&protected).replace('\x18', "\\")
 }
 
 pub(in crate::executor) fn restore_protected_replacement_quotes(value: &str) -> String {
@@ -106,22 +106,29 @@ pub(in crate::executor) fn parse_parameter_assignment_operator(
 }
 
 pub(in crate::executor) fn matching_parameter_brace(input: &str) -> Option<usize> {
-    let bytes = input.as_bytes();
+    let mut chars = input.char_indices().peekable();
     let mut depth = 0usize;
-    let mut index = 0usize;
-    while index < bytes.len() {
-        if bytes[index] == b'$' && bytes.get(index + 1) == Some(&b'{') {
-            depth += 1;
-            index += 2;
+    let mut escaped = false;
+    while let Some((index, ch)) = chars.next() {
+        if escaped {
+            escaped = false;
             continue;
         }
-        if bytes[index] == b'}' {
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == '$' && chars.peek().is_some_and(|(_, ch)| *ch == '{') {
+            chars.next();
+            depth += 1;
+            continue;
+        }
+        if ch == '}' {
             if depth == 0 {
                 return Some(index);
             }
             depth -= 1;
         }
-        index += 1;
     }
     None
 }
@@ -267,4 +274,24 @@ pub(in crate::executor) fn parse_parameter_replacement(
     let (var_name, rest) = name.split_once('/')?;
     let (pattern, replacement) = rest.split_once('/').unwrap_or((rest, ""));
     Some((var_name, pattern, replacement, false))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn matching_parameter_brace_skips_escaped_closing_brace() {
+        let input = "foo:-string \\\\\\}}";
+
+        assert_eq!(matching_parameter_brace(input), Some(input.len() - 1));
+        assert!(braced_parameter_spans_whole_word("${foo:-string \\\\\\}}"));
+    }
+
+    #[test]
+    fn matching_parameter_brace_closes_after_even_backslashes() {
+        let input = "foo:-string \\\\}}";
+
+        assert_eq!(matching_parameter_brace(input), Some(input.len() - 2));
+    }
 }
