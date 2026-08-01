@@ -215,6 +215,14 @@ impl Executor {
             return crate::builtins::trap::list_first_signal_for_sed().to_string();
         }
 
+        if words.first().map(String::as_str) == Some("mktemp")
+            && !command_substitution_words_have_redirects(&words)
+        {
+            if let Some(path) = self.mktemp_command_substitution(&words) {
+                return path;
+            }
+        }
+
         if let Some(output) = self.run_external_command_substitution(&words) {
             return output;
         }
@@ -364,6 +372,15 @@ impl Executor {
         matches.sort();
         matches.into_iter().next()
     }
+}
+
+fn command_substitution_words_have_redirects(words: &[String]) -> bool {
+    words.iter().any(|word| {
+        matches!(
+            word.as_str(),
+            "<" | ">" | ">>" | ">|" | "1>" | "1>>" | "1>|" | "2>" | "2>>" | "2>|"
+        )
+    })
 }
 
 fn readfile_path_is_quoted(path: &str) -> bool {

@@ -20,6 +20,10 @@ impl Executor {
                 }
                 Some(output)
             }
+            "sed" => {
+                let script = sed_script_arg(&words[1..])?;
+                apply_simple_sed_substitution(input, script)
+            }
             _ => {
                 let cmd_name = self.expand_word(&words[0]);
                 let expanded_args: Vec<String> =

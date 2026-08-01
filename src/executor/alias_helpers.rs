@@ -137,6 +137,82 @@ pub(in crate::executor) fn split_first_shell_word(source: &str) -> Option<(Strin
     }
 }
 
+pub(in crate::executor) fn sed_script_arg(args: &[String]) -> Option<&str> {
+    match args {
+        [option, script, ..] if option == "-e" => Some(script.as_str()),
+        [script, ..] => Some(script.as_str()),
+        _ => None,
+    }
+}
+
+pub(in crate::executor) fn apply_simple_sed_substitution(
+    input: &str,
+    script: &str,
+) -> Option<String> {
+    let (pattern, replacement) = parse_sed_substitution(script)?;
+    let mut output = input
+        .lines()
+        .map(|line| apply_simple_sed_line(line, pattern, replacement))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if input.ends_with('\n') {
+        output.push('\n');
+    }
+    Some(output)
+}
+
+fn parse_sed_substitution(script: &str) -> Option<(&str, &str)> {
+    let rest = script.strip_prefix('s')?;
+    let separator = rest.chars().next()?;
+    let rest = &rest[separator.len_utf8()..];
+    let (pattern, rest) = split_escaped_separator(rest, separator)?;
+    let (replacement, _) = split_escaped_separator(rest, separator)?;
+    Some((pattern, replacement))
+}
+
+fn split_escaped_separator(value: &str, separator: char) -> Option<(&str, &str)> {
+    let mut escaped = false;
+    for (index, ch) in value.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == separator {
+            return Some((&value[..index], &value[index + ch.len_utf8()..]));
+        }
+    }
+    None
+}
+
+fn apply_simple_sed_line(line: &str, pattern: &str, replacement: &str) -> String {
+    match pattern {
+        "\\" | r"\\" => line.replace('\\', &unescape_sed_replacement(replacement)),
+        r"\!\*" => line.replace("!*", &unescape_sed_replacement(replacement)),
+        _ => line.to_string(),
+    }
+}
+
+fn unescape_sed_replacement(replacement: &str) -> String {
+    let mut output = String::new();
+    let mut chars = replacement.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(next) = chars.next() {
+                output.push(next);
+            } else {
+                output.push(ch);
+            }
+        } else {
+            output.push(ch);
+        }
+    }
+    output
+}
+
 pub(in crate::executor) fn split_unquoted_and_and(source: &str) -> Option<(&str, &str)> {
     split_unquoted_token(source, "&&")
 }

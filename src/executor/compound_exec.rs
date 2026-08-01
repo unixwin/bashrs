@@ -726,8 +726,15 @@ impl Executor {
     }
 
     fn expand_case_pattern(&self, pattern: &crate::parser::CasePattern) -> String {
+        const PROTECTED_CASE_PATTERN_BACKSLASH: char = '\x15';
+
         if !case_pattern_raw_has_quotes(&pattern.raw_text) {
-            let expanded = self.expand_word(&pattern.text);
+            let protected = pattern
+                .text
+                .replace('\x18', &PROTECTED_CASE_PATTERN_BACKSLASH.to_string());
+            let expanded = self
+                .expand_word(&protected)
+                .replace(PROTECTED_CASE_PATTERN_BACKSLASH, "\x18");
             let decoded = decode_parameter_pattern_quotes(&expanded);
             return strip_surrounding_quotes(&decoded);
         }
