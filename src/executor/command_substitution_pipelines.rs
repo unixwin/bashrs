@@ -6,11 +6,16 @@ use std::ffi::OsString;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 
 fn mktemp_command_substitution_display_path(path: &std::path::Path) -> String {
-    if cfg!(windows) {
+    #[cfg(windows)]
+    {
         return windows_mktemp_display_path(path);
     }
-    let display = path.to_string_lossy().replace('\\', "/");
-    shell_display_path(&display)
+
+    #[cfg(not(windows))]
+    {
+        let display = path.to_string_lossy().replace('\\', "/");
+        shell_display_path(&display)
+    }
 }
 
 #[cfg(windows)]
