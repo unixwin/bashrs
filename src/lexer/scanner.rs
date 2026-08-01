@@ -338,6 +338,10 @@ fn is_simple_parameter_tail(value: &str) -> bool {
         return chars.next().is_none();
     }
 
+    if first.is_ascii_digit() {
+        return chars.next().is_none();
+    }
+
     (first == '_' || first.is_ascii_alphabetic())
         && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
