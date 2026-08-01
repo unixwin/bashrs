@@ -11,13 +11,6 @@ impl Executor {
         Ok(())
     }
 
-    pub(in crate::executor) fn execute_recho(&self, args: &[String]) {
-        // TODO(tests/support): GNU Bash's test harness supplies `recho` as an
-        // external helper. Keep this compatible print helper until PATH
-        // resolution reliably runs the upstream helper scripts on Windows.
-        print!("{}", self.recho_output(args));
-    }
-
     pub(in crate::executor) fn recho_output(&self, args: &[String]) -> String {
         let mut output = String::new();
         for (index, arg) in args.iter().enumerate() {
