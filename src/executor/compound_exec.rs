@@ -664,7 +664,10 @@ impl Executor {
         // full pattern matcher, fall-through operators, expansion flags, and
         // compound-list control flow. This handles the common shell glob
         // operators used by simple `case` clauses.
+        const PROTECTED_CASE_PATTERN_BACKSLASH: char = '\x15';
+
         let word = self.expand_case_word(&case_command.word);
+        let word = tilde_expand::strip_assignment_quote_marker(&word);
         // Strip surrounding quotes from word (bash behavior: quotes are literal in case patterns)
         let word = strip_surrounding_quotes(&word);
         let nocasematch = crate::builtins::shopt::option_enabled(&self.env_vars, "nocasematch");
@@ -674,7 +677,11 @@ impl Executor {
         while let Some(clause) = case_command.clauses.get(index) {
             let matched = fall_through
                 || clause.patterns.iter().any(|pattern| {
-                    let expanded = self.expand_word(pattern);
+                    let protected =
+                        pattern.replace('\x18', &PROTECTED_CASE_PATTERN_BACKSLASH.to_string());
+                    let expanded = self
+                        .expand_word(&protected)
+                        .replace(PROTECTED_CASE_PATTERN_BACKSLASH, "\x18");
                     let decoded = decode_parameter_pattern_quotes(&expanded);
                     let stripped = strip_surrounding_quotes(&decoded);
                     if stripped.contains("@(")
