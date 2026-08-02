@@ -21,8 +21,11 @@ impl Executor {
                 Some(output)
             }
             "sed" => {
-                let script = sed_script_arg(&words[1..])?;
-                apply_simple_sed_substitution(input, script)
+                let args = words[1..]
+                    .iter()
+                    .map(|word| self.expand_word(word))
+                    .collect::<Vec<_>>();
+                apply_simple_sed_args(input, &args)
             }
             _ => {
                 let cmd_name = self.expand_word(&words[0]);

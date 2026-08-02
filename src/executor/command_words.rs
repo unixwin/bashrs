@@ -60,7 +60,11 @@ impl Executor {
         &mut self,
         word: &str,
         raw: Option<&str>,
+        metadata: Option<&WordMetadata>,
     ) -> Result<Vec<String>, String> {
+        let suppress_glob = word.starts_with('\x1b')
+            || word.starts_with('\x1d')
+            || super::command_prepare::raw_word_suppresses_pathname_expansion(raw, metadata);
         if let Some(values) = self.array_at_word_values(word) {
             if word_is_unquoted_array_list_expansion(word) {
                 return Ok(field_split_array_values_with_ifs(
@@ -75,7 +79,7 @@ impl Executor {
             if braced.len() > 1 {
                 let values = braced
                     .into_iter()
-                    .map(|word| self.expand_for_brace_word_values(&word))
+                    .map(|word| self.expand_for_brace_word_values(&word, raw, suppress_glob))
                     .collect::<Result<Vec<_>, _>>()?
                     .into_iter()
                     .flatten()
@@ -84,18 +88,26 @@ impl Executor {
             }
         }
 
-        self.expand_for_brace_word_values(word)
+        self.expand_for_brace_word_values(word, raw, suppress_glob)
     }
 
-    fn expand_for_brace_word_values(&mut self, word: &str) -> Result<Vec<String>, String> {
+    fn expand_for_brace_word_values(
+        &mut self,
+        word: &str,
+        raw: Option<&str>,
+        suppress_glob: bool,
+    ) -> Result<Vec<String>, String> {
         let mut expanded = self.expand_word(word);
         if expanded.contains("<(") || expanded.contains(">(") {
             expanded = self
                 .materialize_assignment_process_substitutions(&expanded)
                 .unwrap_or(expanded);
         }
-        if for_word_has_unquoted_expansion(word) {
+        if for_word_has_unquoted_expansion(word, raw) {
             return Ok(expanded.split_whitespace().map(str::to_string).collect());
+        }
+        if suppress_glob {
+            return Ok(vec![expanded]);
         }
         // Apply glob expansion for for-loop words
         match glob::pathname_expand_word(&expanded, &self.env_vars) {

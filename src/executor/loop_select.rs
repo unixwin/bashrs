@@ -21,7 +21,8 @@ impl Executor {
                     .word_metadata
                     .get(index)
                     .map(|metadata| metadata.raw.as_str());
-                match self.expand_for_word_values_result(word, raw) {
+                let metadata = for_command.word_metadata.get(index);
+                match self.expand_for_word_values_result(word, raw, metadata) {
                     Ok(expanded) => values.extend(expanded),
                     Err(pattern) => {
                         self.report_failglob(&pattern);

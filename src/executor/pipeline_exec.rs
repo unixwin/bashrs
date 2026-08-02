@@ -371,6 +371,17 @@ impl Executor {
                     Ok(Some((input.to_string(), String::new(), 0)))
                 }
             }
+            "sed" => {
+                let args = command.words[1..]
+                    .iter()
+                    .map(|word| self.expand_word(word))
+                    .collect::<Vec<_>>();
+                if let Some(output) = apply_simple_sed_args(input, &args) {
+                    Ok(Some((output, String::new(), 0)))
+                } else {
+                    self.execute_external_pipeline_stage(command, input)
+                }
+            }
             "grep" => {
                 let Some(pattern) = command.words.get(1).map(|word| self.expand_word(word)) else {
                     return Ok(Some((String::new(), String::new(), 2)));
