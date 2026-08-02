@@ -41,12 +41,13 @@ pub(super) fn logical_destination_display(old_pwd: &Path, target: &Path) -> Stri
     }
 
     let target_display = path_display_text(target);
-    if target_display.starts_with('/') {
-        return normalize_logical_display(&target_display);
-    }
-
-    let old_display = path_display_text(old_pwd);
-    normalize_logical_display(&format!("{old_display}/{target_display}"))
+    let normalized = if target_display.starts_with('/') {
+        normalize_logical_display(&target_display)
+    } else {
+        let old_display = path_display_text(old_pwd);
+        normalize_logical_display(&format!("{old_display}/{target_display}"))
+    };
+    windows_slash_drive_display_to_native(&normalized).unwrap_or(normalized)
 }
 
 pub(super) fn shell_var(env_vars: &HashMap<String, String>, name: &str) -> Option<String> {
@@ -95,20 +96,30 @@ pub(super) fn set_shell_env(env_vars: &mut HashMap<String, String>, name: &str, 
 }
 
 pub(super) fn shell_display_path(path: &Path) -> String {
-    let mut value = path.to_string_lossy().replace('\\', "/");
-    if cfg!(windows)
-        && value.len() >= 3
-        && value.as_bytes()[1] == b':'
-        && value.as_bytes()[2] == b'/'
-    {
-        let drive = value.as_bytes()[0] as char;
-        value = format!("/{}{}", drive.to_ascii_lowercase(), &value[2..]);
-    }
+    let value = path.to_string_lossy().replace('\\', "/");
     if value.is_empty() {
         "/".to_string()
     } else {
-        value
+        windows_slash_drive_display_to_native(&value).unwrap_or(value)
     }
+}
+
+fn windows_slash_drive_display_to_native(path: &str) -> Option<String> {
+    if !cfg!(windows) {
+        return None;
+    }
+
+    let bytes = path.as_bytes();
+    if bytes.len() == 2 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() {
+        let drive = (bytes[1] as char).to_ascii_uppercase();
+        return Some(format!("{drive}:/"));
+    }
+    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[2] == b'/' && bytes[1].is_ascii_alphabetic() {
+        let drive = (bytes[1] as char).to_ascii_uppercase();
+        return Some(format!("{drive}:{}", &path[2..]));
+    }
+
+    None
 }
 
 fn normalize_logical_path(path: &Path) -> PathBuf {
@@ -159,4 +170,36 @@ fn normalize_logical_display(path: &str) -> String {
 
 fn path_display_text(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn logical_destination_display_converts_slash_drive_to_native() {
+        assert_eq!(
+            logical_destination_display(Path::new("/c/Users/example"), Path::new("repo")),
+            "C:/Users/example/repo"
+        );
+        assert_eq!(
+            logical_destination_display(Path::new("/c/Users/example/repo"), Path::new("..")),
+            "C:/Users/example"
+        );
+        assert_eq!(
+            logical_destination_display(Path::new("C:/Users/example"), Path::new("repo")),
+            "C:/Users/example/repo"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn shell_display_path_preserves_posix_bridge_but_not_slash_drive() {
+        assert_eq!(
+            shell_display_path(Path::new("/c/Users/example")),
+            "C:/Users/example"
+        );
+        assert_eq!(shell_display_path(Path::new("/usr")), "/usr");
+    }
 }

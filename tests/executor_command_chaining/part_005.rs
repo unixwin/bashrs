@@ -2,13 +2,7 @@ use super::super::*;
 use std::{env, fs, path::Path};
 
 fn shell_display_test_path(path: &Path) -> String {
-    let path = path.to_string_lossy().replace('\\', "/");
-    let bytes = path.as_bytes();
-    if bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' {
-        let drive = (bytes[0] as char).to_ascii_lowercase();
-        return format!("/{drive}/{}", &path[3..]);
-    }
-    path
+    path.to_string_lossy().replace('\\', "/")
 }
 
 #[test]

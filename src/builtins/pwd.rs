@@ -104,7 +104,8 @@ fn logical_pwd_if_current(physical: &Path) -> Option<String> {
     let current_physical = physical.canonicalize().ok()?;
 
     if logical_physical == current_physical {
-        Some(logical.replace('\\', "/"))
+        let logical = logical.replace('\\', "/");
+        Some(windows_slash_drive_display_to_native(&logical).unwrap_or(logical))
     } else {
         None
     }
@@ -141,16 +142,25 @@ fn logical_to_physical(path: &str) -> PathBuf {
 }
 
 fn shell_display_path(path: &Path) -> String {
-    let value = path.to_string_lossy().replace('\\', "/");
-    if cfg!(windows)
-        && value.len() >= 3
-        && value.as_bytes()[1] == b':'
-        && value.as_bytes()[2] == b'/'
-    {
-        let drive = value.as_bytes()[0] as char;
-        return format!("/{}{}", drive.to_ascii_lowercase(), &value[2..]);
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn windows_slash_drive_display_to_native(path: &str) -> Option<String> {
+    if !cfg!(windows) {
+        return None;
     }
-    value
+
+    let bytes = path.as_bytes();
+    if bytes.len() == 2 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() {
+        let drive = (bytes[1] as char).to_ascii_uppercase();
+        return Some(format!("{drive}:/"));
+    }
+    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[2] == b'/' && bytes[1].is_ascii_alphabetic() {
+        let drive = (bytes[1] as char).to_ascii_uppercase();
+        return Some(format!("{drive}:{}", &path[2..]));
+    }
+
+    None
 }
 
 #[cfg(test)]
@@ -197,6 +207,33 @@ mod tests {
         match old_pwd {
             Some(value) => env::set_var("PWD", value),
             None => env::remove_var("PWD"),
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn logical_mode_reports_native_path_for_slash_drive_pwd() {
+        let old_pwd = env::var_os("PWD");
+        let current = env::current_dir().unwrap();
+        env::set_var("PWD", host_path_to_slash_drive(&current));
+
+        let (_, stdout, _) = run(&[]);
+
+        assert_eq!(stdout, format!("{}\n", shell_display_path(&current)));
+        match old_pwd {
+            Some(value) => env::set_var("PWD", value),
+            None => env::remove_var("PWD"),
+        }
+    }
+
+    #[cfg(windows)]
+    fn host_path_to_slash_drive(path: &Path) -> String {
+        let display = shell_display_path(path);
+        if display.len() >= 3 && display.as_bytes()[1] == b':' {
+            let drive = (display.as_bytes()[0] as char).to_ascii_lowercase();
+            format!("/{drive}/{}", &display[3..])
+        } else {
+            display
         }
     }
 }

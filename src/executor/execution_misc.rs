@@ -267,12 +267,27 @@ pub(in crate::executor) fn valid_alias_assignment_name(name: &str) -> bool {
 pub(in crate::executor) fn shell_display_path(path: &str) -> String {
     if cfg!(windows) {
         let path = path.strip_prefix("//?/").unwrap_or(path);
-        if path.len() >= 3 && path.as_bytes()[1] == b':' && path.as_bytes()[2] == b'/' {
-            let drive = path.as_bytes()[0] as char;
-            return format!("/{}{}", drive.to_ascii_lowercase(), &path[2..]);
-        }
+        return windows_slash_drive_display_to_native(path).unwrap_or_else(|| path.to_string());
     }
     path.to_string()
+}
+
+fn windows_slash_drive_display_to_native(path: &str) -> Option<String> {
+    if !cfg!(windows) {
+        return None;
+    }
+
+    let bytes = path.as_bytes();
+    if bytes.len() == 2 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() {
+        let drive = (bytes[1] as char).to_ascii_uppercase();
+        return Some(format!("{drive}:/"));
+    }
+    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[2] == b'/' && bytes[1].is_ascii_alphabetic() {
+        let drive = (bytes[1] as char).to_ascii_uppercase();
+        return Some(format!("{drive}:{}", &path[2..]));
+    }
+
+    None
 }
 
 pub(in crate::executor) fn current_epoch_seconds() -> i64 {

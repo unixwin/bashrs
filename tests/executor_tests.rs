@@ -7,13 +7,7 @@ use rubash::lexer::tokenize;
 use rubash::parser::parse;
 
 fn shell_test_path(path: &std::path::Path) -> String {
-    let value = path.to_string_lossy().replace('\\', "/");
-    if cfg!(windows) && value.len() >= 3 && value.as_bytes()[1] == b':' {
-        let drive = value.as_bytes()[0] as char;
-        format!("/{}{}", drive.to_ascii_lowercase(), &value[2..])
-    } else {
-        value
-    }
+    path.to_string_lossy().replace('\\', "/")
 }
 
 fn shell_output_path_to_host(path: &str) -> std::path::PathBuf {

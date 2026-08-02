@@ -37,6 +37,10 @@ impl Executor {
         }
     }
 
+    pub fn unset_env(&mut self, name: &str) {
+        self.remove_env(name);
+    }
+
     pub(crate) fn remove_env(&mut self, name: &str) {
         self.env_vars.remove(name);
         env::remove_var(name);
