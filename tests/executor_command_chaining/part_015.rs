@@ -100,6 +100,47 @@ fn test_quoted_expansions_suppress_pathname_expansion() {
 }
 
 #[test]
+fn test_for_word_globs_after_quoted_prefix() {
+    let dir_path = target_test_path("rubash-for-quoted-prefix-glob");
+    let output_path = target_test_path("rubash-for-quoted-prefix-glob-output.txt");
+    let shell_dir_path = shell_test_path(&dir_path);
+    let shell_output_path = shell_test_path(&output_path);
+    let prefix_dir = dir_path.join("prefix dir").join("lib");
+    let _ = fs::remove_dir_all(&dir_path);
+    let _ = fs::remove_file(&output_path);
+    fs::create_dir_all(&prefix_dir).unwrap();
+    fs::write(prefix_dir.join("alpha.winux"), "").unwrap();
+    fs::write(prefix_dir.join("beta.winux"), "").unwrap();
+    fs::write(prefix_dir.join("skip.txt"), "").unwrap();
+    let old_cwd = std::env::current_dir().unwrap();
+    let input = format!(
+        "cd {shell_dir_path}; prefix='prefix dir'; \
+         printf 'cmd<%s>\\n' \"$prefix\"/lib/*.winux > {shell_output_path}; \
+         for path in \"$prefix\"/lib/*.winux; do printf 'mixed<%s>\\n' \"$path\"; done >> {shell_output_path}; \
+         for path in \"$prefix/lib/*.winux\"; do printf 'quoted<%s>\\n' \"$path\"; done >> {shell_output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    std::env::set_current_dir(old_cwd).unwrap();
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(&output_path).unwrap(),
+        "cmd<prefix dir/lib/alpha.winux>\n\
+         cmd<prefix dir/lib/beta.winux>\n\
+         mixed<prefix dir/lib/alpha.winux>\n\
+         mixed<prefix dir/lib/beta.winux>\n\
+         quoted<prefix dir/lib/*.winux>\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_dir_all(dir_path);
+}
+
+#[test]
 fn test_indexed_array_quoted_variable_subscript_evaluates_arithmetic() {
     let output_path = target_test_path("rubash-array-quoted-var-subscript-output.txt");
     let shell_output_path = shell_test_path(&output_path);

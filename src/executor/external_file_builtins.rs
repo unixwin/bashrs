@@ -25,6 +25,7 @@ impl Executor {
             "rm" => self.external_rm(cmd),
             "rmdir" => self.external_rmdir(cmd),
             "cat" => self.external_cat(cmd),
+            "sed" => self.external_sed(cmd),
             "mkfifo" => self.external_mkfifo(cmd),
             _ => Ok(false),
         }
@@ -193,6 +194,29 @@ impl Executor {
             }
         }
         self.write_cat_output(cmd, &output)?;
+        self.exit_code = 0;
+        Ok(true)
+    }
+
+    fn external_sed(&mut self, cmd: &CommandNode) -> Result<bool, ExecuteError> {
+        let args = cmd.words[1..]
+            .iter()
+            .map(|word| self.expand_word(word))
+            .collect::<Vec<_>>();
+        if apply_simple_sed_args("", &args).is_none() {
+            return Ok(false);
+        }
+        let Some(input) = self
+            .stdin_string_for_command(cmd)
+            .or_else(|| self.read_function_stdin('\0', None, false))
+            .or_else(|| self.read_inherited_process_stdin_to_string())
+        else {
+            return Ok(false);
+        };
+        let Some(output) = apply_simple_sed_args(&input, &args) else {
+            return Ok(false);
+        };
+        self.write_cat_output(cmd, output.as_bytes())?;
         self.exit_code = 0;
         Ok(true)
     }

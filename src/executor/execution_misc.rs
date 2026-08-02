@@ -190,11 +190,58 @@ pub(in crate::executor) fn word_has_unquoted_command_substitution(word: &str) ->
     false
 }
 
-pub(in crate::executor) fn for_word_has_unquoted_expansion(word: &str) -> bool {
+pub(in crate::executor) fn for_word_has_unquoted_expansion(word: &str, raw: Option<&str>) -> bool {
     if word.starts_with('\x1b') || word.starts_with('\x1d') {
         return false;
     }
-    word.starts_with('$') || word_has_unquoted_command_substitution(word)
+    let source = raw.unwrap_or(word);
+    word_has_unquoted_parameter_expansion(source) || word_has_unquoted_command_substitution(source)
+}
+
+fn word_has_unquoted_parameter_expansion(word: &str) -> bool {
+    let mut single = false;
+    let mut double = false;
+    let mut escaped = false;
+    let chars = word.chars().collect::<Vec<_>>();
+    let mut index = 0;
+    while index < chars.len() {
+        let ch = chars[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+        if ch == '\\' && !single {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+        if ch == '\'' && !double {
+            single = !single;
+            index += 1;
+            continue;
+        }
+        if ch == '"' && !single {
+            double = !double;
+            index += 1;
+            continue;
+        }
+        if !single && !double && ch == '$' {
+            match chars.get(index + 1).copied() {
+                Some('{') => return true,
+                Some(next) if is_shell_name_start(next) => return true,
+                Some(next)
+                    if next.is_ascii_digit()
+                        || matches!(next, '@' | '*' | '#' | '?' | '$' | '!' | '-') =>
+                {
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        index += 1;
+    }
+    false
 }
 
 pub(in crate::executor) fn bash_aliases_assignment_name(word: &str) -> Option<String> {

@@ -166,12 +166,11 @@ impl Executor {
             .iter()
             .enumerate()
             .flat_map(|(index, word)| {
-                let raw = cmd
-                    .word_metadata
-                    .get(index)
-                    .map(|metadata| metadata.raw.as_str());
-                let suppress_glob =
-                    word.starts_with('\x1b') || word.starts_with('\x1d') || raw_word_is_quoted(raw);
+                let metadata = cmd.word_metadata.get(index);
+                let raw = metadata.map(|metadata| metadata.raw.as_str());
+                let suppress_glob = word.starts_with('\x1b')
+                    || word.starts_with('\x1d')
+                    || raw_word_suppresses_pathname_expansion(raw, metadata);
                 self.expand_command_word(cmd, index, word, raw)
                     .into_iter()
                     .map(move |word| (word, suppress_glob))
@@ -428,6 +427,16 @@ pub(in crate::executor) fn expand_braces_with_optional_raw(
     }
 
     crate::expand::braces::expand_braces(word)
+}
+
+pub(in crate::executor) fn raw_word_suppresses_pathname_expansion(
+    raw: Option<&str>,
+    metadata: Option<&WordMetadata>,
+) -> bool {
+    raw_word_is_quoted(raw)
+        && metadata
+            .map(|metadata| metadata.pathname_patterns.is_empty())
+            .unwrap_or(true)
 }
 
 fn raw_word_is_quoted(raw: Option<&str>) -> bool {

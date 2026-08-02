@@ -137,24 +137,49 @@ pub(in crate::executor) fn split_first_shell_word(source: &str) -> Option<(Strin
     }
 }
 
-pub(in crate::executor) fn sed_script_arg(args: &[String]) -> Option<&str> {
-    match args {
-        [option, script, ..] if option == "-e" => Some(script.as_str()),
-        [script, ..] => Some(script.as_str()),
-        _ => None,
-    }
+pub(in crate::executor) fn apply_simple_sed_args(input: &str, args: &[String]) -> Option<String> {
+    let scripts = sed_script_args(args)?;
+    apply_simple_sed_substitutions(input, &scripts)
 }
 
-pub(in crate::executor) fn apply_simple_sed_substitution(
-    input: &str,
-    script: &str,
-) -> Option<String> {
-    let substitutions = parse_sed_substitutions(script)?;
+fn sed_script_args(args: &[String]) -> Option<Vec<&str>> {
+    let mut scripts = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
+        if arg == "-e" {
+            scripts.push(args.get(index + 1)?.as_str());
+            index += 2;
+            continue;
+        }
+        if let Some(script) = arg.strip_prefix("-e").filter(|script| !script.is_empty()) {
+            scripts.push(script);
+            index += 1;
+            continue;
+        }
+        if arg.starts_with('-') {
+            return None;
+        }
+        if !scripts.is_empty() || index + 1 != args.len() {
+            return None;
+        }
+        scripts.push(arg.as_str());
+        index += 1;
+    }
+    (!scripts.is_empty()).then_some(scripts)
+}
+
+fn apply_simple_sed_substitutions(input: &str, scripts: &[&str]) -> Option<String> {
+    let substitutions = scripts
+        .iter()
+        .map(|script| parse_sed_substitutions(script))
+        .collect::<Option<Vec<_>>>()?;
     let mut output = input
         .lines()
         .map(|line| {
             substitutions
                 .iter()
+                .flatten()
                 .fold(line.to_string(), |line, (pattern, replacement)| {
                     apply_simple_sed_line(&line, pattern, replacement)
                 })
@@ -216,6 +241,8 @@ fn split_escaped_separator(value: &str, separator: char) -> Option<(&str, &str)>
 fn apply_simple_sed_line(line: &str, pattern: &str, replacement: &str) -> String {
     let pattern = pattern.replace('\x1f', "$");
     match pattern.as_str() {
+        "'" => line.replace('\'', &unescape_sed_replacement(replacement)),
+        "#" => line.replace('#', &unescape_sed_replacement(replacement)),
         "\\" | r"\\" => line.replace('\\', &unescape_sed_replacement(replacement)),
         r"\!\*" => line.replace("!*", &unescape_sed_replacement(replacement)),
         r"\!:\([1-9]\)" => replace_aliasconv_positional_markers(line),
@@ -227,8 +254,34 @@ fn apply_simple_sed_line(line: &str, pattern: &str, replacement: &str) -> String
             .rsplit_once('.')
             .map(|(_, suffix)| format!("{replacement}{suffix}"))
             .unwrap_or_else(|| line.to_string()),
+        _ if is_aliasconv_line_pattern(&pattern) => {
+            apply_aliasconv_line_substitution(line, replacement).unwrap_or_else(|| line.to_string())
+        }
+        _ if pattern.starts_with(r"\$") => {
+            let needle = pattern.replacen(r"\$", "$", 1);
+            line.replace(&needle, &unescape_sed_replacement(replacement))
+        }
         _ => line.to_string(),
     }
+}
+
+fn is_aliasconv_line_pattern(pattern: &str) -> bool {
+    pattern.contains("[a-zA-Z0-9_-]*") && pattern.contains('\t') && pattern.contains(r"\(.*\)")
+}
+
+fn apply_aliasconv_line_substitution(line: &str, replacement: &str) -> Option<String> {
+    if replacement != r"mkalias \1 '\2'" {
+        return None;
+    }
+    let (name, value) = line.split_once('\t')?;
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
+        return None;
+    }
+    Some(format!("mkalias {name} '{value}'"))
 }
 
 fn replace_aliasconv_positional_markers(line: &str) -> String {

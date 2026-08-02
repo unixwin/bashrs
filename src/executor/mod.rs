@@ -254,6 +254,9 @@ impl LoopControlKind {
 #[derive(Debug)]
 pub enum ExecuteError {
     CommandNotFound(String),
+    /// A direct host-side function dispatch requested a function that is not
+    /// defined in the executor.
+    FunctionNotFound(String),
     IoError(std::io::Error),
     ExitCode(i32),
     Break(usize),
@@ -266,6 +269,9 @@ impl std::fmt::Display for ExecuteError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ExecuteError::CommandNotFound(cmd) => write!(f, "rubash: {}: command not found", cmd),
+            ExecuteError::FunctionNotFound(name) => {
+                write!(f, "rubash: {}: function not found", name)
+            }
             ExecuteError::IoError(e) => write!(f, "rubash: {}", e),
             ExecuteError::ExitCode(code) => write!(f, "exit code: {}", code),
             ExecuteError::Break(level) => write!(f, "break {}", level),

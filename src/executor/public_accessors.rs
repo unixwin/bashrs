@@ -46,6 +46,105 @@ impl Executor {
         self.env_vars.get(name).map(|s| s.as_str())
     }
 
+    /// Returns whether a shell function is currently defined in this executor.
+    pub fn has_function(&self, name: &str) -> bool {
+        self.function_name_for_command_word(name).is_some()
+    }
+
+    /// Invokes a defined shell function directly, bypassing builtin and PATH lookup.
+    ///
+    /// Returns the function body's final shell status. If the function is not
+    /// defined, returns `ExecuteError::FunctionNotFound`.
+    pub fn call_function<I, S>(&mut self, name: &str, args: I) -> Result<i32, ExecuteError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.call_function_with_env(name, args, std::iter::empty::<(&str, &str)>())
+    }
+
+    /// Invokes a shell function with temporary environment variables.
+    ///
+    /// Each provided temporary variable is restored to its previous value after
+    /// the call, while unrelated function side effects remain in the executor.
+    pub fn call_function_with_env<I, S, E, K, V>(
+        &mut self,
+        name: &str,
+        args: I,
+        temporary_env: E,
+    ) -> Result<i32, ExecuteError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+        E: IntoIterator<Item = (K, V)>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        let args = args
+            .into_iter()
+            .map(|arg| arg.as_ref().to_string())
+            .collect::<Vec<_>>();
+        let temporary_env = temporary_env
+            .into_iter()
+            .map(|(name, value)| (name.as_ref().to_string(), value.as_ref().to_string()))
+            .collect::<Vec<_>>();
+        self.call_function_owned(name, &args, &temporary_env)
+    }
+
+    fn call_function_owned(
+        &mut self,
+        name: &str,
+        args: &[String],
+        temporary_env: &[(String, String)],
+    ) -> Result<i32, ExecuteError> {
+        if EXECUTION_LOCK_DEPTH.with(|depth| depth.get() > 0) {
+            return self.call_function_inner(name, args, temporary_env);
+        }
+
+        let _guard = EXECUTION_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let original_dir = env::current_dir().ok();
+        EXECUTION_LOCK_DEPTH.with(|depth| depth.set(1));
+        let result = self.call_function_inner(name, args, temporary_env);
+        EXECUTION_LOCK_DEPTH.with(|depth| depth.set(0));
+        if let Some(original_dir) = original_dir {
+            let _ = env::set_current_dir(original_dir);
+        }
+        result
+    }
+
+    fn call_function_inner(
+        &mut self,
+        name: &str,
+        args: &[String],
+        temporary_env: &[(String, String)],
+    ) -> Result<i32, ExecuteError> {
+        let Some(function_name) = self.function_name_for_command_word(name) else {
+            return Err(ExecuteError::FunctionNotFound(name.to_string()));
+        };
+        let saved_env = temporary_env
+            .iter()
+            .map(|(name, _)| (name.clone(), self.env_vars.get(name).cloned()))
+            .collect::<Vec<_>>();
+        for (name, value) in temporary_env {
+            self.set_env(name, value);
+        }
+
+        let call_cmd = CommandNode::new();
+        let result = self.execute_function(&function_name, args, &call_cmd);
+        let status = self.exit_code;
+
+        for (name, value) in saved_env.into_iter().rev() {
+            match value {
+                Some(value) => self.set_env(&name, &value),
+                None => self.remove_env(&name),
+            }
+        }
+
+        result.map(|_| status)
+    }
+
     pub fn set_shell_option(&mut self, name: &str, enabled: bool) {
         crate::builtins::set::set_shell_option(&mut self.env_vars, name, enabled);
     }
