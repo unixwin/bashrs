@@ -287,6 +287,52 @@ mod function_api_tests {
     }
 }
 
+mod function_api_tests {
+    use super::*;
+
+    #[test]
+    fn public_call_function_invokes_defined_function_with_temporary_env() {
+        let output_path = target_test_path("rubash-public-function-call-output.txt");
+        let shell_output_path = shell_test_path(&output_path);
+        let _ = std::fs::remove_file(&output_path);
+        let input = format!(
+            "hook() {{ printf '%s:%s:%s\\n' \"$HOOK_CTX\" \"$1\" \"$#\" > {shell_output_path}; HOOK_CTX=changed; HOOK_SIDE=kept; return 7; }}"
+        );
+        let tokens = tokenize(&input);
+        let ast = parse(&tokens);
+        let mut executor = Executor::new();
+        executor.set_env("HOOK_CTX", "base");
+        executor.execute_ast(&ast).unwrap();
+
+        assert!(executor.has_function("hook"));
+        let status = executor
+            .call_function_with_env("hook", ["alpha"], [("HOOK_CTX", "temp")])
+            .unwrap();
+
+        assert_eq!(status, 7);
+        assert_eq!(executor.last_exit_code(), 7);
+        assert_eq!(executor.get_env("HOOK_CTX"), Some("base"));
+        assert_eq!(executor.get_env("HOOK_SIDE"), Some("kept"));
+        assert_eq!(read_normalized(&output_path), "temp:alpha:1\n");
+        let _ = std::fs::remove_file(output_path);
+    }
+
+    #[test]
+    fn public_call_function_reports_missing_function_without_path_lookup() {
+        let mut executor = Executor::new();
+
+        let error = executor
+            .call_function("missing_hook", std::iter::empty::<&str>())
+            .unwrap_err();
+
+        assert!(!executor.has_function("missing_hook"));
+        assert!(matches!(
+            error,
+            ExecuteError::FunctionNotFound(name) if name == "missing_hook"
+        ));
+    }
+}
+
 #[cfg(windows)]
 mod windows_script_commands {
     use super::*;
