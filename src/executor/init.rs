@@ -30,6 +30,9 @@ impl Executor {
         env_vars
             .entry("TMPDIR".to_string())
             .or_insert_with(safe_temp_dir_string);
+        env_vars
+            .entry("SHELL".to_string())
+            .or_insert_with(shell_path_value);
         env_vars.remove("OLDPWD");
         initialize_shell_level(&mut env_vars);
         mark_initial_exported_vars(&mut env_vars);

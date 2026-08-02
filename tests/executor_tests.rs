@@ -5,6 +5,10 @@
 use rubash::executor::{ExecuteError, Executor};
 use rubash::lexer::tokenize;
 use rubash::parser::parse;
+use std::ffi::OsString;
+use std::sync::Mutex;
+
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn shell_test_path(path: &std::path::Path) -> String {
     path.to_string_lossy().replace('\\', "/")
@@ -174,6 +178,30 @@ mod environment_tests {
     }
 
     #[test]
+    fn default_shell_is_current_executable_when_missing() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let _shell = EnvGuard::unset("SHELL");
+        let _bash = EnvGuard::unset("BASH");
+
+        let executor = Executor::new();
+
+        assert_eq!(executor.get_env("SHELL"), executor.get_env("BASH"));
+        assert!(executor
+            .get_env("SHELL")
+            .is_some_and(|value| !value.is_empty()));
+    }
+
+    #[test]
+    fn inherited_shell_is_preserved() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let _shell = EnvGuard::set("SHELL", "C:/custom/shell.exe");
+
+        let executor = Executor::new();
+
+        assert_eq!(executor.get_env("SHELL"), Some("C:/custom/shell.exe"));
+    }
+
+    #[test]
     fn test_unset_command() {
         let input = "unset HOME";
         let tokens = tokenize(input);
@@ -181,6 +209,35 @@ mod environment_tests {
         let mut executor = Executor::new();
         let result = executor.execute_ast(&ast);
         assert!(result.is_ok());
+    }
+
+    struct EnvGuard {
+        name: &'static str,
+        previous: Option<OsString>,
+    }
+
+    impl EnvGuard {
+        fn set(name: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(name);
+            std::env::set_var(name, value);
+            Self { name, previous }
+        }
+
+        fn unset(name: &'static str) -> Self {
+            let previous = std::env::var_os(name);
+            std::env::remove_var(name);
+            Self { name, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = &self.previous {
+                std::env::set_var(self.name, previous);
+            } else {
+                std::env::remove_var(self.name);
+            }
+        }
     }
 }
 

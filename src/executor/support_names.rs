@@ -31,6 +31,10 @@ pub(in crate::executor) fn bash_path_value() -> String {
         .unwrap_or_else(|_| "rubash".to_string())
 }
 
+pub(in crate::executor) fn shell_path_value() -> String {
+    bash_path_value()
+}
+
 pub(in crate::executor) fn bash_versinfo_values() -> Vec<String> {
     let mut parts = env!("CARGO_PKG_VERSION").split('.');
     vec![
