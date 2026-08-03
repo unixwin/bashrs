@@ -96,6 +96,21 @@ impl Executor {
             return output;
         }
 
+        if words
+            .iter()
+            .any(|word| matches!(word.as_str(), ";" | "&&" | "||"))
+        {
+            // subst.c command_substitute: the whole source is parsed and
+            // executed as a command list (`echo "" ; echo ""` is two echo
+            // commands, not one echo with `; echo ""` in its arguments).
+            // The single-command shortcuts below assume a lone command word,
+            // so route multi-command sources through the real executor.
+            if let Some(output) = self.command_list_substitution_output(source) {
+                return output;
+            }
+            return String::new();
+        }
+
         if words.first().map(String::as_str) == Some("echo") {
             let expanded_args = words[1..]
                 .iter()

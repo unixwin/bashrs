@@ -232,14 +232,18 @@ impl Executor {
         // assignment-word RHS expansion before the builtin applies attributes.
         // General word expansion has already handled parameters and unquoted
         // tilde prefixes, so this bridge only removes Rubash's temporary quote
-        // marker before declare.rs mirrors declare.def's bookkeeping.
+        // marker before declare.rs mirrors declare.def's bookkeeping. It must
+        // not re-expand the RHS: by the time the builtin runs, the value is
+        // fully expanded and a quoted literal `~` (from `PPATH="$XPATH:~/bin"`)
+        // would wrongly undergo tilde expansion on the second pass.
         let mut expanded_args = Vec::new();
         for arg in args {
             let Some((name, value)) = split_assignment_word(arg) else {
                 expanded_args.push(arg.clone());
                 continue;
             };
-            expanded_args.push(format!("{name}={}", self.expand_assignment_value(value)));
+            let value = crate::expand::tilde::tilde::strip_assignment_quote_marker(value);
+            expanded_args.push(format!("{name}={value}"));
         }
         expanded_args
     }
