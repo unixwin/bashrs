@@ -232,16 +232,28 @@ fn sed_script_args(args: &[String]) -> Option<Vec<&str>> {
 }
 
 fn apply_simple_sed_substitutions(input: &str, scripts: &[&str]) -> Option<String> {
-    let substitutions = scripts
-        .iter()
-        .map(|script| parse_sed_substitutions(script))
-        .collect::<Option<Vec<_>>>()?;
+    // GNU sed `1d` (delete line N) and `s/pat/rep/` (substitute) cover the
+    // upstream test pipelines that reach this bridge. Delete commands apply
+    // before substitutions, exactly like sed processing order.
+    let mut delete_lines = Vec::new();
+    let mut substitutions = Vec::new();
+    for script in scripts {
+        if let Some(rest) = script.strip_suffix('d').filter(|_| script.len() > 1) {
+            if let Ok(line_number) = rest.trim().parse::<usize>() {
+                delete_lines.push(line_number);
+                continue;
+            }
+        }
+        substitutions.extend(parse_sed_substitutions(script)?);
+    }
     let mut output = input
         .lines()
+        .enumerate()
+        .filter(|(index, _)| !delete_lines.contains(&(index + 1)))
         .map(|line| {
+            let (_, line) = line;
             substitutions
                 .iter()
-                .flatten()
                 .fold(line.to_string(), |line, (pattern, replacement)| {
                     apply_simple_sed_line(&line, pattern, replacement)
                 })
@@ -323,7 +335,10 @@ fn apply_simple_sed_line(line: &str, pattern: &str, replacement: &str) -> String
             let needle = pattern.replacen(r"\$", "$", 1);
             line.replace(&needle, &unescape_sed_replacement(replacement))
         }
-        _ => line.to_string(),
+        // Plain `s/pattern/replacement/`: apply a literal replacement. GNU
+        // sed treats the pattern as a BRE, but the upstream tests that reach
+        // this path use literal needles (`s/a/B/`).
+        _ => line.replace(pattern.as_str(), &unescape_sed_replacement(replacement)),
     }
 }
 

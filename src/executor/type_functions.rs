@@ -35,37 +35,34 @@ impl Executor {
     }
 
     pub(in crate::executor) fn print_function_description(&self, name: &str, body: &[CommandNode]) {
-        if self.print_upstream_type_function(name, body) {
-            return;
-        }
-        if self.print_upstream_posixpipe_function(name) {
-            return;
-        }
-        if self.print_upstream_cprint_function(name) {
-            return;
-        }
-        println!("{name} is a function");
-        println!("{name} () ");
-        println!("{{ ");
+        // Output must go through the capture-aware global stdout so command
+        // substitution and pipeline stages see `type foo` output. Plain
+        // println! bypasses the thread-local capture and leaks into the
+        // surrounding stdout (type2.sub: eval "$(type foo | sed 1d)").
+        use crate::executor::shell_options::GlobalStdout;
+        use std::io::Write;
+        let mut stdout = GlobalStdout;
+        let _ = writeln!(stdout, "{name} is a function");
+        let _ = writeln!(stdout, "{name} () ");
+        let _ = writeln!(stdout, "{{ ");
         let terminates_plain_commands = function_body_needs_command_terminators(body);
         for command in body {
             if command.assignments.contains_key("v") {
-                println!("    v='^A'");
+                let _ = writeln!(stdout, "    v='^A'");
                 continue;
             }
             if command.words.is_empty() && !command.assignments.is_empty() {
-                println!("    {}", function_assignment_text(command));
+                let _ = writeln!(stdout, "    {}", function_assignment_text(command));
                 continue;
             }
             if let Some(line) =
                 self.function_command_description_line(command, terminates_plain_commands)
             {
-                println!("    {line}");
-                let mut stdout = std::io::stdout();
+                let _ = writeln!(stdout, "    {line}");
                 let _ = self.write_function_heredoc_body(command, &mut stdout);
             }
         }
-        println!("}}");
+        let _ = writeln!(stdout, "}}");
     }
 
     pub(in crate::executor) fn function_command_description_line(

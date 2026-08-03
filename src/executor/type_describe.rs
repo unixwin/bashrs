@@ -37,13 +37,6 @@ impl Executor {
                 }
             }
 
-            if !skip_functions
-                && mode == TypeDescribeMode::Verbose
-                && self.print_upstream_type_function(name, &[])
-            {
-                return true;
-            }
-
             if is_shell_keyword(name) {
                 match mode {
                     TypeDescribeMode::Verbose => println!("{name} is a shell keyword"),
