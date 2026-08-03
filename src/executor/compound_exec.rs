@@ -674,8 +674,6 @@ impl Executor {
         // operators used by simple `case` clauses.
         let word = self.expand_case_word(&case_command.word);
         let word = tilde_expand::strip_assignment_quote_marker(&word);
-        // Strip surrounding quotes from word (bash behavior: quotes are literal in case patterns)
-        let word = strip_surrounding_quotes(&word);
         let nocasematch = crate::builtins::shopt::option_enabled(&self.env_vars, "nocasematch");
         let mut fall_through = false;
         let mut matched_any = false;

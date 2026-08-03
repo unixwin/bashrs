@@ -215,7 +215,12 @@ impl Executor {
             {
                 let left = self.expand_word(left);
                 let right = self.expand_word(right);
-                let matched = left == right;
+                // Bash treats the RHS as a glob pattern even when quoted
+                // parts are present (`*" "*` matches a literal space); only
+                // the quoted segments are literal.
+                let right_pattern = Self::strip_rhs_pattern_quotes(&right);
+                let matched =
+                    crate::executor::conditional::case_pattern_matches(&right_pattern, &left);
                 Some(match op.as_str() {
                     "!=" => i32::from(matched),
                     _ => i32::from(!matched),
@@ -229,7 +234,9 @@ impl Executor {
             {
                 let left = self.expand_word(left);
                 let right = self.expand_word(right);
-                let matched = left == right;
+                let right_pattern = Self::strip_rhs_pattern_quotes(&right);
+                let matched =
+                    crate::executor::conditional::case_pattern_matches(&right_pattern, &left);
                 Some(match op.as_str() {
                     "!=" => i32::from(matched),
                     _ => i32::from(!matched),
@@ -259,18 +266,25 @@ impl Executor {
     pub(super) fn conditional_string_binary(&mut self, left: &str, op: &str, right: &str) -> bool {
         let left = self.expand_word(left);
         let right = self.expand_word(right);
+        let right_pattern = Self::strip_rhs_pattern_quotes(&right);
         let extglob = crate::builtins::shopt::option_enabled(&self.env_vars, "extglob")
             || contains_extglob_pattern(&right);
         let nocasematch = crate::builtins::shopt::option_enabled(&self.env_vars, "nocasematch");
         match op {
             "=" | "==" if extglob && nocasematch => {
-                extglob_case_pattern_matches_nocase(&right, &left)
+                extglob_case_pattern_matches_nocase(&right_pattern, &left)
             }
-            "=" | "==" if extglob => extglob_case_pattern_matches(&right, &left),
-            "=" | "==" => conditional_pattern_or_string_matches(&left, &right, nocasematch),
-            "!=" if extglob && nocasematch => !extglob_case_pattern_matches_nocase(&right, &left),
-            "!=" if extglob => !extglob_case_pattern_matches(&right, &left),
-            "!=" => !conditional_pattern_or_string_matches(&left, &right, nocasematch),
+            "=" | "==" if extglob => extglob_case_pattern_matches(&right_pattern, &left),
+            "=" | "==" => {
+                conditional_pattern_or_string_matches(&left, &right_pattern, nocasematch)
+            }
+            "!=" if extglob && nocasematch => {
+                !extglob_case_pattern_matches_nocase(&right_pattern, &left)
+            }
+            "!=" if extglob => !extglob_case_pattern_matches(&right_pattern, &left),
+            "!=" => {
+                !conditional_pattern_or_string_matches(&left, &right_pattern, nocasematch)
+            }
             "=~" => self.conditional_regex_match(&left, &right),
             "<" => left < right,
             ">" => left > right,
@@ -278,6 +292,35 @@ impl Executor {
         }
     }
 
+    /// Removes syntactic quotes from a `[[ ]]` right-hand pattern: `*" "*`
+    /// matches a literal space, `"x"` matches the literal string `x`, while
+    fn strip_rhs_pattern_quotes(pattern: &str) -> String {
+        let mut output = String::new();
+        let mut chars = pattern.chars().peekable();
+        while let Some(ch) = chars.next() {
+            match ch {
+                '\'' | '"' => {
+                    let quote = ch;
+                    let mut body = String::new();
+                    while let Some(next) = chars.next() {
+                        if next == quote {
+                            break;
+                        }
+                        if next == '\\' {
+                            if let Some(escaped) = chars.next() {
+                                body.push(escaped);
+                            }
+                            continue;
+                        }
+                        body.push(next);
+                    }
+                    output.push_str(&body);
+                }
+                _ => output.push(ch),
+            }
+        }
+        output
+    }
     pub(super) fn conditional_string_unary(&self, op: &str, operand: &str) -> bool {
         let value = self.expand_word(operand);
         match op {
