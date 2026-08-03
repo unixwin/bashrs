@@ -183,6 +183,19 @@ fn case_bracket_expression_matches_with_case(
             return Some((if negated { !matched } else { matched }, index + 1));
         }
 
+        // lib/glob/glob.c parse_bracket: a backslash-escaped `]` is a literal
+        // bracket member, not the closing bracket. `[[:alpha:]\]` therefore
+        // has an unterminated bracket (the `]` after `\` is a member), so the
+        // pattern never closes and cannot match (posixpat.tests ok 21).
+        if pattern[index] == '\\' && index + 1 < pattern.len() {
+            if chars_match(pattern[index + 1], candidate, nocase) {
+                matched = true;
+            }
+            saw_member = true;
+            index += 2;
+            continue;
+        }
+
         let current = pattern[index];
         if let Some((class_matched, next_index)) =
             bracket_posix_class_matches(pattern, index, candidate)
