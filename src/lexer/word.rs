@@ -13,11 +13,16 @@ impl<'a> Lexer<'a> {
         }
         self.skip_word();
         let raw = self.slice(start);
-        let value = if raw.contains('=') && raw.contains("$(") {
+        // Only real assignment words (`a=$(cmd)`) preserve quotes verbatim so
+        // the RHS quote state survives to assignment expansion. Ordinary words
+        // that merely contain `=` and `$(` (e.g. `echo "B: $(printf 'v=[%s]'
+        // "$(printf 'mid')")"`) must still go through quote removal, otherwise
+        // the trailing `"` leaks into the expanded argument.
+        let value = if is_assignment(&raw) && raw.contains("$(") {
             // TODO(parse.y/subst.c): Preserve quotes inside `$()` while
             // assignment-word quote removal is still token-local.
             raw.to_string()
-        } else if raw.contains('=') && raw.contains('`') {
+        } else if is_assignment(&raw) && raw.contains('`') {
             // TODO(parse.y/subst.c): Assignment-word quote removal must not
             // consume quotes inside command substitutions. Preserve the
             // backquote body for the substitution stage.
