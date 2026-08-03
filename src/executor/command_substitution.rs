@@ -124,6 +124,17 @@ impl Executor {
             let mut output = String::new();
             let mut status = 0;
             for word in &words[1..] {
+                // Process substitution `<(...)`: Bash materializes it to a
+                // temporary file holding the command's output, so `cat` reads
+                // that output. Run the inner command directly instead of
+                // treating the literal `<(...)` text as a file path.
+                if let Some(source) = word
+                    .strip_prefix("<(")
+                    .and_then(|rest| rest.strip_suffix(')'))
+                {
+                    output.push_str(&self.expand_command_substitution(source));
+                    continue;
+                }
                 let path = self.expand_word(word);
                 match fs::read_to_string(shell_path_to_windows(&path, &self.env_vars)) {
                     Ok(value) => output.push_str(&value),

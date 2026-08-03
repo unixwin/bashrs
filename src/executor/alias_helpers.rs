@@ -21,6 +21,9 @@ pub(in crate::executor) fn split_shell_words(source: &str) -> Vec<String> {
             ('$', None) if chars.peek().copied() == Some('(') => {
                 copy_dollar_paren_word(&mut current, &mut chars);
             }
+            ('<', None) if chars.peek().copied() == Some('(') => {
+                copy_process_substitution_word(&mut current, &mut chars);
+            }
             ('`', None) => {
                 backtick = true;
                 current.push(ch);
@@ -46,6 +49,49 @@ fn copy_dollar_paren_word(
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
 ) {
     current.push('$');
+    if chars.next() != Some('(') {
+        return;
+    }
+    current.push('(');
+
+    let mut depth = 1usize;
+    while let Some(ch) = chars.next() {
+        current.push(ch);
+        match ch {
+            '\\' => {
+                if let Some(escaped) = chars.next() {
+                    current.push(escaped);
+                }
+            }
+            '\'' => copy_quoted_word_part(current, chars, '\''),
+            '"' => copy_quoted_word_part(current, chars, '"'),
+            '`' => copy_backtick_word_part(current, chars),
+            '$' if chars.peek().copied() == Some('(') => {
+                chars.next();
+                current.push('(');
+                depth += 1;
+            }
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Copies a process substitution word `<(...)` (or `>(...)`) as a single
+/// token, honouring nested quotes/backticks and nested parens. Word splitting
+/// must not break `<printf 'x'` apart; the substitution is materialized to a
+/// file path later, exactly like `$(...)`.
+fn copy_process_substitution_word(
+    current: &mut String,
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) {
+    current.push('<');
     if chars.next() != Some('(') {
         return;
     }
