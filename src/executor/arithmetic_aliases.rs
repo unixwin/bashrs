@@ -71,6 +71,38 @@ impl Executor {
         expanded
     }
 
+    /// Alias expansion that honours quote state: Bash never expands an alias
+    /// whose word is quoted (`'hi'`, `"hi"` stay literal). `raws` carries the
+    /// per-word raw text from word metadata so the caller can distinguish
+    /// `hi` from `'hi'` after quote removal.
+    pub(in crate::executor) fn expand_aliases_with_raw(
+        &self,
+        words: &[String],
+        raws: &[Option<&str>],
+    ) -> Vec<String> {
+        let mut expanded = Vec::new();
+        let mut expand_next = true;
+
+        for (index, word) in words.iter().enumerate() {
+            let raw = raws.get(index).copied().flatten();
+            if expand_next && !crate::executor::command_prepare::raw_word_is_quoted(raw) {
+                let mut seen = Vec::new();
+                let (mut alias_words, alias_expand_next) = self.expand_alias_word(word, &mut seen);
+                if alias_words.is_empty() && !self.aliases.contains_key(word) {
+                    expanded.push(word.clone());
+                } else {
+                    expanded.append(&mut alias_words);
+                }
+                expand_next = alias_expand_next;
+            } else {
+                expanded.push(word.clone());
+                expand_next = false;
+            }
+        }
+
+        expanded
+    }
+
     pub(in crate::executor) fn expand_aliases_preserving_reserved(
         &self,
         words: &[String],
@@ -109,6 +141,18 @@ impl Executor {
         };
 
         if self.expanding_aliases.iter().any(|alias| alias == word) {
+            return Ok(false);
+        }
+
+        // Bash never expands a quoted word as an alias (`'hi'` / `"hi"`).
+        let word_is_quoted = cmd
+            .word_metadata
+            .first()
+            .map(|metadata| {
+                crate::executor::command_prepare::raw_word_is_quoted(Some(&metadata.raw))
+            })
+            .unwrap_or(false);
+        if word_is_quoted {
             return Ok(false);
         }
 

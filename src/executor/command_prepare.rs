@@ -342,12 +342,18 @@ impl Executor {
     pub(in crate::executor) fn apply_alias_expansion_after_word_expansion(
         &mut self,
         mut variable_expanded: CommandNode,
+        original_raws: &[Option<&str>],
     ) -> CommandNode {
         if self.aliases.is_empty() {
             return variable_expanded;
         }
 
-        variable_expanded.words = self.expand_aliases(&variable_expanded.words);
+        // Honour quote state: `'hi'` / `"hi"` never expand as aliases.
+        // expand_command_words drops word metadata, so quote state must come
+        // from the original command's raw words (they line up 1:1 because
+        // expansion does not reorder leading words).
+        variable_expanded.words =
+            self.expand_aliases_with_raw(&variable_expanded.words, original_raws);
         variable_expanded
     }
 

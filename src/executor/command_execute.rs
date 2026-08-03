@@ -22,7 +22,13 @@ impl Executor {
         }
 
         let expanded = self.expand_command_words(cmd)?;
-        let cmd = self.apply_alias_expansion_after_word_expansion(expanded);
+        let original_raws: Vec<Option<&str>> = cmd
+            .word_metadata
+            .iter()
+            .map(|metadata| Some(metadata.raw.as_str()))
+            .collect();
+        let cmd =
+            self.apply_alias_expansion_after_word_expansion(expanded, &original_raws);
 
         if self.execute_alias_expanded_syntax(&cmd)? {
             return Ok(());
