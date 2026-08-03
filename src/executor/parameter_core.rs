@@ -165,7 +165,10 @@ impl Executor {
             return None;
         }
 
-        let (offset, length) = rest.split_once(':').unwrap_or((rest, ""));
+        // Split offset/length on a *top-level* `:` only: `${v:${w:-4}}` has
+        // offset `${w:-4}` whose inner `:` is default-value syntax, not the
+        // slice separator (Bash extracts nested `${...}` as one unit).
+        let (offset, length) = split_top_level_colon(rest);
         let offset = offset.trim_start();
         if offset.is_empty() && length.is_empty() {
             return None;
@@ -200,9 +203,40 @@ impl Executor {
             .unwrap_or(value)
             .trim();
         let expression = self.expand_arithmetic_special_parameters(expression);
+        // Expand nested parameter expansions in the offset/length expression
+        // first: `${v:${w:-4}}` has offset `${w:-4}` which must become `4`
+        // before arithmetic evaluation (Bash evaluates the slice offset as
+        // an arithmetic expression after parameter expansion).
+        let expression = self.expand_embedded_parameters(&expression);
         let evaluated = eval_conditional_arith_value(&expression, &self.env_vars)?;
         isize::try_from(evaluated).ok()
     }
+}
+
+/// Splits a slice rest (`offset[:length]`) on the first *top-level* colon,
+/// skipping `:` inside nested `${...}` groups: `${v:${w:-4}}` must split on
+/// the colon after `v`, not on the `:` inside `${w:-4}`.
+fn split_top_level_colon(input: &str) -> (&str, &str) {
+    let mut depth = 0usize;
+    let bytes = input.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'$' && bytes.get(index + 1) == Some(&b'{') {
+            depth += 1;
+            index += 2;
+            continue;
+        }
+        if bytes[index] == b'}' && depth > 0 {
+            depth -= 1;
+            index += 1;
+            continue;
+        }
+        if bytes[index] == b':' && depth == 0 {
+            return (&input[..index], &input[index + 1..]);
+        }
+        index += 1;
+    }
+    (input, "")
 }
 
 pub(in crate::executor) fn word_contains_current_shell_command_substitution(word: &str) -> bool {
