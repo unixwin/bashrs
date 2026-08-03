@@ -42,6 +42,59 @@ pub(crate) fn eval_conditional_arith_value(
     eval_mutable_arith_value(value, &mut env_vars)
 }
 
+/// Produces a Bash-style error message for an arithmetic expansion that
+/// failed to evaluate (`$(( 1.5 ))`, `$(( 2 ** -1 ))`, division by zero, ...).
+/// Rubash used to silently drop these; Bash reports them on stderr with rc=1.
+pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<String> {
+    if let Some(token) = arithmetic_division_by_zero_token(expression) {
+        return Some(format!(
+            "{expression}: division by 0 (error token is \"{token}\")"
+        ));
+    }
+
+    let bytes = expression.as_bytes();
+    for index in 0..bytes.len() {
+        // Floating point like `1.5`: digit followed by `.digit`.
+        if bytes[index].is_ascii_digit()
+            && bytes.get(index + 1) == Some(&b'.')
+            && bytes
+                .get(index + 2)
+                .is_some_and(|byte| byte.is_ascii_digit())
+        {
+            let mut end = index + 1;
+            while bytes
+                .get(end)
+                .is_some_and(|byte| byte.is_ascii_digit() || *byte == b'.')
+            {
+                end += 1;
+            }
+            let token = &expression[index + 1..end];
+            return Some(format!(
+                "{expression}: syntax error: invalid arithmetic operator (error token is \"{token} \")"
+            ));
+        }
+    }
+
+    if let Some(index) = expression.find("**") {
+        let after = expression[index + 2..].trim_start();
+        if let Some(digits) = after
+            .strip_prefix('-')
+            .map(|rest| {
+                rest.chars()
+                    .take_while(|ch| ch.is_ascii_digit())
+                    .collect::<String>()
+            })
+            .filter(|digits| !digits.is_empty())
+        {
+            return Some(format!(
+                "{expression}: exponent less than 0 (error token is \"{digits} \")"
+            ));
+        }
+    }
+
+    None
+}
+
 pub(super) fn arithmetic_division_by_zero_token(expression: &str) -> Option<&'static str> {
     let bytes = expression.as_bytes();
     let mut index = 0;

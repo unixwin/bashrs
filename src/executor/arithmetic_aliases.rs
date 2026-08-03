@@ -12,6 +12,10 @@ impl Executor {
                         "{}((: {expression} : division by 0 (error token is \"{token}\")",
                         self.diagnostic_prefix()
                     );
+                } else if let Some(message) =
+                    crate::executor::arithmetic::arithmetic_error_message(expression)
+                {
+                    eprintln!("{}: {message}", self.diagnostic_prefix());
                 }
                 1
             }

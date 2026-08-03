@@ -194,6 +194,14 @@ impl Executor {
             if let Some(value) = eval_conditional_arith_value(&expression, &self.env_vars) {
                 return Some(value.to_string());
             }
+            // Bash reports arithmetic expansion errors (floating point,
+            // negative exponent, division by zero, ...) on stderr instead of
+            // silently producing nothing.
+            if let Some(message) =
+                crate::executor::arithmetic::arithmetic_error_message(&expression)
+            {
+                eprintln!("{}: {message}", self.diagnostic_prefix());
+            }
         }
 
         if let Some(source) = word

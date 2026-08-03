@@ -128,6 +128,16 @@ impl Executor {
                             eval_conditional_arith_value(&expression, &self.env_vars)
                         {
                             output.push_str(&value.to_string());
+                        } else {
+                            // Bash reports arithmetic expansion errors
+                            // (floating point, negative exponent, division
+                            // by zero, ...) on stderr and sets rc=1; Rubash
+                            // was silently dropping them.
+                            if let Some(message) =
+                                crate::executor::arithmetic::arithmetic_error_message(&expression)
+                            {
+                                eprintln!("{}: {message}", self.diagnostic_prefix());
+                            }
                         }
                         continue;
                     }
