@@ -183,3 +183,13 @@
 - **根因：词法层含 `$(` 的双引号**（#6 已定位）：开头 `"` 被词法处理、`$(` 复制后尾 `"` 保留（copy_dollar_paren_substitution 的引号状态丢失）——expand_embedded_parameters_mut 对字面尾 `"` 原样输出
 - **修复方向（下一轮）**：词法层 copy_dollar_paren 后恢复引号状态（尾 `"` 正确剥除）；或展开层对残留尾引号对称处理（echo 的 remove_residual_shell_quotes 处理尾引号——需谨慎不误剥字面 `"`）
 - 阶段 1b 当前：A/D/E（简单/无嵌套引号）已 PASS（printf 特例优先），B/C（嵌套双引号）待词法层修复
+
+## 阶段 1 完成里程碑：差分 26/26 全 PASS
+- 阶段 1d（40688bb）：BASH_VERSION/BASH_VERSINFO 报 bash 5.2.37 兼容版本（脚本特性检测工作）——case-10 PASS
+- **差分 26/26 全 PASS**（case-01/03/05/10 全部修复；阶段 1 完成）
+
+## 阶段 2/3：bash 官方 83 tests 的挂起族（rc=124）
+- bash-tests-diffs.txt 显示 6 个 rc=124 挂起（ifs-posix/jobs/printf/procsub/read/redir）——**与 heredoc_huge 同源**（外部命令管道串行模型挂起，如 `yes | head`）
+- 并发管道实验（std::io::pipe → 崩溃；os_pipe → 句柄继承问题挂起；线程 io::copy 转发 → Windows 竞态不稳定）——**均已回退**
+- **结论**：Windows 上 std::process 管道无法可靠并发连接（句柄继承/竞态）——需 **CreateProcess 手动句柄管理**（只继承需要的句柄，dup2 语义）或 winuxcmd 集成（Windows 原生管道）
+- 阶段 2 其余可先修：rc=127（命令找不到）、rc=2（语法错误族 D）、stdout 差异（rc=0 各类语义）——不依赖并发管道
