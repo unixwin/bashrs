@@ -170,3 +170,16 @@
 - **问题**：`yes | head -3` 崩溃（0xC0000409）/挂起不稳定——`Stdio::from(ChildStdout)` 传读端给 stdin 错误（head 读不到）；改 std::io::pipe 后仍崩溃（Windows 句柄/spawn 交互不稳定）
 - **回退**：git checkout pipeline_exec.rs pipeline_stages.rs（恢复 HEAD，构建正常）
 - **后续方向**：os_pipe crate（成熟 Windows 管道）或父进程流式转发（读段 i 输出写段 i+1 输入）；或对"含限行命令（head/tail）的管道"专门处理
+
+## 全量达标计划（docs/bash-mastery-plan.md，阶段 0-7）
+
+### 阶段 1a 完成（025e638）：case-05 命令替换内 tilde
+- `split_shell_words_with_quote_info`（alias_helpers.rs，返回 (word, was_quoted)）+ `expand_protected_tilde`（command_substitution.rs，引号词 `~` 开头加 `\x1b` 保护）
+- printf/echo/recho 特例用引号信息——`$(printf '%s' "~/repo")` 的 `~` 不展开 ✓（case-05 PASS，差分 23 PASS）
+
+### 阶段 1b 部分（case-03 嵌套命令替换引号残留，根因定位）
+- printf-dbg.log 证实：外层 printf 被调**两次**（第一次截断 source `printf 'v`、第二次完整），第二次 expanded_args 正确（["v=[%s]", "mid"]）——printf 输出应正确
+- **尾引号 `"` 残留（`v=[mid]"`）来自 echo 参数层**：`"B: $(...)"` 的展开——开头 `"` 被剥、尾 `"` 残留（不对称）
+- **根因：词法层含 `$(` 的双引号**（#6 已定位）：开头 `"` 被词法处理、`$(` 复制后尾 `"` 保留（copy_dollar_paren_substitution 的引号状态丢失）——expand_embedded_parameters_mut 对字面尾 `"` 原样输出
+- **修复方向（下一轮）**：词法层 copy_dollar_paren 后恢复引号状态（尾 `"` 正确剥除）；或展开层对残留尾引号对称处理（echo 的 remove_residual_shell_quotes 处理尾引号——需谨慎不误剥字面 `"`）
+- 阶段 1b 当前：A/D/E（简单/无嵌套引号）已 PASS（printf 特例优先），B/C（嵌套双引号）待词法层修复
