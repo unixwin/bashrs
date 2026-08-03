@@ -44,6 +44,11 @@ impl Executor {
                 continue;
             }
 
+            if ch == '\x18' {
+                output.push('"');
+                continue;
+            }
+
             if ch == '`' {
                 let mut source = String::new();
                 let mut escaped = false;

@@ -444,7 +444,7 @@ pub(in crate::executor) fn raw_word_suppresses_pathname_expansion(
             .unwrap_or(true)
 }
 
-fn raw_word_is_quoted(raw: Option<&str>) -> bool {
+pub(in crate::executor) fn raw_word_is_quoted(raw: Option<&str>) -> bool {
     let Some(raw) = raw else {
         return false;
     };

@@ -27,10 +27,21 @@ impl Executor {
         index: usize,
         expanded: &str,
     ) -> bool {
+        // A word wrapped in quotes (e.g. `"$(cmd) extra"`) keeps its spaces
+        // together: quote removal happens after field splitting in Bash, so
+        // quoted words must not be split even when they expand to whitespace.
+        let word_is_quoted = cmd
+            .word_metadata
+            .get(index)
+            .map(|metadata| {
+                crate::executor::command_prepare::raw_word_is_quoted(Some(&metadata.raw))
+            })
+            .unwrap_or(false);
         let unquoted_variable = cmd
             .word_kinds
             .get(index)
-            .is_some_and(|kind| *kind == TokenKind::Variable);
+            .is_some_and(|kind| *kind == TokenKind::Variable)
+            && !word_is_quoted;
         let unquoted_dynamic_parameter = unquoted_variable
             && cmd
                 .words
