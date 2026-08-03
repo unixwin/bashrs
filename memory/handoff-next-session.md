@@ -41,6 +41,7 @@
    - type2.sub 的 `eval "$(type foo | sed 1d)"` 泄漏 heredoc 内容（bar/qux 多输出一次）——eval 重解析时 heredoc 处理问题（对照 parse.y/subst.c）。
    - func.tests：函数定义格式（`function f3 ()` vs `f3 ()`）、declare -f 非法函数名输出、返回值（201 vs 116 行）。
    - casemod.tests：${x^^}/${x,,} 多参数输出错位。
+   - posixpat.tests：brackpat 的 dangling backslash——词法层剥掉 case 模式里转义反斜杠导致 bracket 误闭合（pattern.rs 的转义成员语义已修 dc0b9c4，但词法层剥反斜杠使修复不触发，需词法层保留）。
    - 挂起族 rc=124（6 个）：ifs-posix/jobs/printf/procsub/read/redir——bash 侧也 124（Git Bash 环境问题），需并发管道（CreateProcess 手动句柄）。
 
 ## 四、验证命令
