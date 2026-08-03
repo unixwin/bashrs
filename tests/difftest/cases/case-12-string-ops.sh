@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# case-12-string-ops — 字符串操作全集 (对照, 应 PASS)
+s="Hello World"
+echo "A: ${#s}"
+echo "B: ${s:0:5}"
+echo "C: ${s:6}"
+echo "D: ${s: -5}"
+echo "E: ${s#He}"
+echo "F: ${s##*o}"
+echo "G: ${s%ld}"
+echo "H: ${s%%l*}"
+echo "I: ${s^^}"
+echo "J: ${s,,}"
+echo "K: ${s^}"
+echo "L: ${s,}"

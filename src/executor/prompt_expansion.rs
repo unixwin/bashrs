@@ -323,6 +323,28 @@ impl Executor {
         self.env_vars.get("__RUBASH_XTRACE").map(String::as_str) == Some("1")
             || crate::builtins::set::shell_option_enabled(&self.env_vars, "xtrace")
     }
+
+    /// Expanded PS4 prefix for `set -x` tracing (Bash prints the expanded
+    /// value of PS4 before each traced command). Defaults to `+ ` like Bash.
+    pub(in crate::executor) fn xtrace_prefix(&self) -> String {
+        let ps4 = self
+            .env_vars
+            .get("PS4")
+            .cloned()
+            .unwrap_or_else(|| "+ ".to_string());
+        self.expand_embedded_parameters(&ps4)
+    }
+
+    /// Rendered command text for xtrace: prefix assignments followed by words.
+    /// Bash traces both `VAR=x cmd args` and bare `VAR=x` assignments.
+    pub(in crate::executor) fn xtrace_command_text(&mut self, cmd: &CommandNode) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        for (name, value) in &cmd.assignments {
+            parts.push(format!("{name}={}", self.expand_assignment_value(value)));
+        }
+        parts.extend(cmd.words.iter().cloned());
+        parts.join(" ")
+    }
 }
 
 fn prompt_release_version(env_vars: &HashMap<String, String>) -> String {

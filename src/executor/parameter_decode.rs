@@ -270,6 +270,9 @@ pub(in crate::executor) fn decode_parameter_pattern_quotes(pattern: &str) -> Str
                     }
                     index += 2;
                 } else {
+                    // Trailing backslash is a literal backslash in a pattern
+                    // (`${P#\}` matches a single `\`), not a dropped char.
+                    output.push('\x18');
                     index += 1;
                 }
             }

@@ -48,6 +48,26 @@ impl Executor {
                 continue;
             }
 
+            // Execute DEBUG trap before each command, mirroring Bash:
+            //   - not before function definition commands
+            //   - not before if/while/until commands themselves (Bash fires
+            //     it for the conditional command inside, via execute_simple)
+            //   - not before `for` commands (Bash fires it per iteration,
+            //     handled inside execute_for_command)
+            //   - not inside function bodies (Bash fires it once at the
+            //     function entry, see execute_function_internal)
+            //   - suppressed while a trap action is already running
+            let skips_debug_trap = command.function_command.is_some()
+                || command.if_command.is_some()
+                || command.loop_command.is_some()
+                || command.for_command.is_some();
+            let debug_trap_active = crate::builtins::trap::get_trap_action(&self.env_vars, "DEBUG")
+                .is_some_and(|action| !action.is_empty());
+            if !skips_debug_trap && self.function_depth == 0 && debug_trap_active {
+                let command_text = self.xtrace_command_text(command);
+                self.run_debug_trap(&command_text)?;
+            }
+
             if let Some(next_index) = self.execute_time_prefixed_command_sequence(ast, index)? {
                 index = next_index;
                 continue;

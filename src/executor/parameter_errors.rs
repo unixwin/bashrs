@@ -69,6 +69,21 @@ impl Executor {
         if let Some(value) = self.indirect_parameter_operator_value(name) {
             return value;
         }
+        // `${arr[*]:-word}` / `${arr[@]:-word}`: operator tests and values
+        // apply to the whole array joined with spaces (Bash semantics).
+        if let Some(array_name) = name
+            .strip_suffix("[*]")
+            .or_else(|| name.strip_suffix("[@]"))
+        {
+            let values = self
+                .parameter_array_storage(array_name)
+                .map(|storage| array_values(&storage))
+                .unwrap_or_default();
+            if values.is_empty() {
+                return None;
+            }
+            return Some(values.join(" "));
+        }
         if is_shell_name(name) {
             return self
                 .dynamic_parameter_value(name)

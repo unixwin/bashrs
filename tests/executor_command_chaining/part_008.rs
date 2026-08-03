@@ -323,7 +323,7 @@ fn test_funcname_tracks_nested_function_stack() {
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(
         fs::read_to_string(output_path).unwrap(),
-        "scalar:inner first:inner second:outer len:2\n<inner>\n<outer>\n"
+        "scalar:inner first:inner second:outer len:3\n<inner>\n<outer>\n<main>\n"
     );
     let _ = fs::remove_file(output_path);
 }

@@ -125,6 +125,7 @@ impl Executor {
         self.local_attr_scopes.push(HashMap::new());
         self.function_depth += 1;
         let result = self.execute_ast_inner(body_ast);
+        self.run_return_trap()?;
         {
             self.function_depth -= 1;
             self.restore_function_locals();

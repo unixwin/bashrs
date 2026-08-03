@@ -2,7 +2,14 @@ mod unit_tests {
     use crate::executor::Executor;
     use crate::lexer::tokenize;
     use crate::parser::parse;
+    use crate::executor::parameter_decode::strip_matching_quotes;
+    use crate::executor::alias_helpers::split_shell_words;
 
+    #[test]
+    #[test]
+    #[test]
+    #[test]
+    #[test]
     #[test]
     fn test_execute_echo() {
         let tokens = tokenize("echo hello");
@@ -125,3 +132,4 @@ mod unit_tests {
         assert_eq!(executor.decode_prompt_string("\\$"), "$");
     }
 }
+

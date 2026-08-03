@@ -108,14 +108,12 @@ pub(in crate::executor) fn parse_parameter_assignment_operator(
 pub(in crate::executor) fn matching_parameter_brace(input: &str) -> Option<usize> {
     let mut chars = input.char_indices().peekable();
     let mut depth = 0usize;
-    let mut escaped = false;
     while let Some((index, ch)) = chars.next() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
+        // GNU Bash treats `\` plus the next character as one unit while
+        // scanning `${...}` (extract_dollar_brace_string advances by two).
+        // `\\` is a literal backslash, so the following `}` still closes.
         if ch == '\\' {
-            escaped = true;
+            chars.next();
             continue;
         }
         if ch == '$' && chars.peek().is_some_and(|(_, ch)| *ch == '{') {

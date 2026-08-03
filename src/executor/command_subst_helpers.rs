@@ -4,10 +4,16 @@ pub(in crate::executor) fn collect_braced_parameter_name(
     let mut name = String::new();
     let mut nested = 0usize;
     while let Some(ch) = chars.next() {
-        if ch == '\\' && chars.peek().copied() == Some('}') {
-            chars.next();
-            name.push(ch);
-            name.push('}');
+        // GNU Bash scans `\` plus the following character as one unit
+        // (extract_dollar_brace_string advances by two). `\\` is a literal
+        // backslash, `\}` a literal closing brace; neither closes the name.
+        if ch == '\\' {
+            if let Some(escaped) = chars.next() {
+                name.push('\\');
+                name.push(escaped);
+            } else {
+                name.push('\\');
+            }
             continue;
         }
         if ch == '$' && chars.peek().copied() == Some('{') {

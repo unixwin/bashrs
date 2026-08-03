@@ -81,6 +81,11 @@ impl Executor {
             self.exit_code = status;
             return Err(ExecuteError::ExitCode(status));
         }
+        if self.xtrace_enabled() {
+            let prefix = self.xtrace_prefix();
+            let text = self.xtrace_command_text(cmd);
+            eprintln!("{prefix}{text}");
+        }
         let mut status = 0;
         for (name, value) in &cmd.assignments {
             let (expanded_value, substitution_status) =

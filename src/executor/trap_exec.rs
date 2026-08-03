@@ -63,6 +63,51 @@ impl Executor {
         }
     }
 
+    /// Runs the DEBUG trap action before a command, mirroring Bash's
+    /// per-command debug hook. Nested executions of the trap action are
+    /// suppressed (Bash does not re-enter the DEBUG trap while an action
+    /// is running). `command_text` is the text of the command about to run,
+    /// exposed to the trap action through BASH_COMMAND like Bash does.
+    pub(crate) fn run_debug_trap(&mut self, command_text: &str) -> Result<(), ExecuteError> {
+        if self.debug_trap_running {
+            return Ok(());
+        }
+        let Some(action) = crate::builtins::trap::get_trap_action(&self.env_vars, "DEBUG") else {
+            return Ok(());
+        };
+        if action.is_empty() {
+            return Ok(());
+        }
+        self.debug_trap_running = true;
+        self.debug_trap_command = Some(command_text.to_string());
+        let tokens = crate::lexer::tokenize(&action);
+        let ast = crate::parser::parse(&tokens);
+        let result = self.execute_ast(&ast);
+        self.debug_trap_command = None;
+        self.debug_trap_running = false;
+        result
+    }
+
+    /// Runs the RETURN trap action when a function (or sourced script)
+    /// returns. Mirrors Bash's `trap ... RETURN` hook used by debuggers.
+    pub(crate) fn run_return_trap(&mut self) -> Result<(), ExecuteError> {
+        if self.return_trap_running {
+            return Ok(());
+        }
+        let Some(action) = crate::builtins::trap::get_trap_action(&self.env_vars, "RETURN") else {
+            return Ok(());
+        };
+        if action.is_empty() {
+            return Ok(());
+        }
+        self.return_trap_running = true;
+        let tokens = crate::lexer::tokenize(&action);
+        let ast = crate::parser::parse(&tokens);
+        let result = self.execute_ast(&ast);
+        self.return_trap_running = false;
+        result
+    }
+
     pub(crate) fn apply_command_output_redirects(
         &mut self,
         cmd: &CommandNode,

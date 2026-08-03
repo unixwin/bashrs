@@ -12,7 +12,9 @@ impl Executor {
         }
         let temporary_assignments = self.apply_temporary_assignments(&cmd.assignments);
         if self.xtrace_enabled() {
-            println!("+ {}", cmd.words.join(" "));
+            let prefix = self.xtrace_prefix();
+            let text = self.xtrace_command_text(cmd);
+            eprintln!("{prefix}{text}");
         }
 
         let result = self.execute_prepared_command(cmd);

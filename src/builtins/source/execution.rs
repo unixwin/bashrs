@@ -47,6 +47,9 @@ fn execute_ast_with_args(
     }
 
     let result = executor.execute_ast(&ast);
+    // GNU Bash runs the RETURN trap when a sourced script finishes
+    // (builtins/evalfile.c run_return_trap after source_file).
+    executor.run_return_trap()?;
 
     match old_source_marker {
         Some(value) => executor.set_env("__RUBASH_IN_SOURCE", &value),

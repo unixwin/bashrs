@@ -54,9 +54,6 @@ impl Executor {
         if let Some(output) = self.command_substitution_heredoc_output(source) {
             return output;
         }
-        if let Some(output) = self.command_list_substitution_output(source) {
-            return output;
-        }
         if source.contains("128") && source.contains('+') && source.contains('1') {
             return "129".to_string();
         }
@@ -233,6 +230,13 @@ impl Executor {
             }
         }
 
+        // Fallback: run the source through the real parser/executor in a
+        // subshell and capture stdout (function calls, pipelines, compound
+        // commands that the special-case dispatch above does not cover).
+        if let Some(output) = self.command_list_substitution_output(source) {
+            return output;
+        }
+
         String::new()
     }
 
@@ -284,9 +288,6 @@ impl Executor {
 
         let tokens = crate::lexer::tokenize(source);
         let ast = crate::parser::parse(&tokens);
-        if ast.commands.len() <= 1 {
-            return None;
-        }
 
         let saved_dir = env::current_dir().ok();
         let mut subshell = self.command_substitution_executor();
@@ -337,6 +338,9 @@ impl Executor {
             coproc_stdout_readers: HashMap::new(),
             assignment_output_process_substitutions: HashMap::new(),
             suppress_errexit: self.suppress_errexit,
+            debug_trap_running: false,
+            return_trap_running: false,
+            debug_trap_command: None,
             last_command_substitution_status: Cell::new(None),
             stdout_capture: None,
             stderr_capture: None,

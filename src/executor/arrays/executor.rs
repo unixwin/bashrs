@@ -5,7 +5,13 @@ impl Executor {
     pub(in crate::executor) fn indexed_array_stack(&self, name: &str) -> Vec<String> {
         match name {
             "PIPESTATUS" => return self.pipestatus_values(),
-            "FUNCNAME" => return self.function_name_stack.clone(),
+            "FUNCNAME" => {
+                let mut stack = self.function_name_stack.clone();
+                if !stack.is_empty() && stack.last().map(String::as_str) != Some("main") {
+                    stack.push("main".to_string());
+                }
+                return stack;
+            }
             "BASH_ARGC" => return self.bash_argc_stack.clone(),
             "BASH_ARGV" => return self.bash_argv_stack.clone(),
             "BASH_LINENO" => return self.bash_lineno_stack.clone(),

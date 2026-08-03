@@ -349,8 +349,9 @@ impl Executor {
             if stdio.expanded_words.first().map(String::as_str) == Some("mktemp") {
                 return None;
             }
-            self.last_command_substitution_status.set(Some(127));
-            return Some(String::new());
+            // Not an external command: let the full-execution fallback run
+            // the source (functions, builtins, compound commands).
+            return None;
         };
         let (mut process, _) =
             external_command_for_program(&program, &stdio.expanded_words[1..], &self.env_vars);

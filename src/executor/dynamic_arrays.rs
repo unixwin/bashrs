@@ -39,9 +39,13 @@ impl Executor {
                     .unwrap_or_else(|| "1".to_string()),
             ),
             "BASH_COMMAND" => Some(
-                self.env_vars
-                    .get("__RUBASH_CURRENT_COMMAND")
-                    .cloned()
+                self.debug_trap_command
+                    .clone()
+                    .or_else(|| {
+                        self.env_vars
+                            .get("__RUBASH_CURRENT_COMMAND")
+                            .cloned()
+                    })
                     .unwrap_or_default(),
             ),
             "SHELLOPTS" => Some(crate::builtins::set::shellopts_value(&self.env_vars)),
@@ -84,8 +88,12 @@ impl Executor {
         match name {
             "PIPESTATUS" => return Some(format_indexed_array_values(self.pipestatus_values())),
             "FUNCNAME" => {
+                let mut stack = self.function_name_stack.clone();
+                if !stack.is_empty() && stack.last().map(String::as_str) != Some("main") {
+                    stack.push("main".to_string());
+                }
                 return Some(format_indexed_array_values(
-                    self.function_name_stack.clone(),
+                    stack,
                 ))
             }
             "BASH_ARGC" => return Some(format_indexed_array_values(self.bash_argc_stack.clone())),

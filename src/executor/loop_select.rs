@@ -32,8 +32,20 @@ impl Executor {
             }
             values
         };
+        let for_text = if for_command.default_positional {
+            format!("for {}", for_command.variable)
+        } else {
+            format!(
+                "for {} in {}",
+                for_command.variable,
+                for_command.words.join(" ")
+            )
+        };
         let mut ran_body = false;
         for value in values {
+            // Bash fires the DEBUG trap for the `for` command once per
+            // iteration (execute_cmd.c execute_for_command).
+            self.run_debug_trap(&for_text)?;
             ran_body = true;
             self.env_vars
                 .insert(for_command.variable.clone(), value.clone());
