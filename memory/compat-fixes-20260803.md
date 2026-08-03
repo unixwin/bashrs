@@ -83,3 +83,24 @@
 ### 大型脚本验证方式
 - examples 脚本含无限循环/交互（spin.bash 等），不适合直接跑；自建综合脚本（.codex-tmp/complex-test.sh）可控
 - 综合脚本覆盖数组/递归/嵌套命令替换/管道/case/[[ ]]/算术/heredoc/参数展开/循环/IFS/字符串操作——第 1-7、9-12 段全部正确，第 8 段（heredoc 组合）挂起
+
+## 维修计划落地（按 docs/bash-compat-issues.md 根因族）
+
+### bd96cab 族 A heredoc 部分
+- `heredoc_operator_context` 的 `find("<<")` 改为**锚定分隔符词**（rfind delimiter value 再 rfind `<<`）——算术左移 `$((x << 2))`、here-string `<<<` 不再被误认为 heredoc 操作符（修复 position 越界崩溃 + 元数据错乱）
+- 注意：heredoc body 收集/跨行收集挂起（综合脚本第 8 段）仍是已知 P0——逻辑行合并（has_unclosed_command_substitution/brace_group）与 body 收集交互错乱，碎片逻辑行证据（`$(fact $((n-1)))` 拆成 fact/$((n-1))/))），需词法层重构
+
+### 5ef9fcb 族 D 语法宽松度（代表用例 a= (1 2)）
+- 词法层（word.rs finish_word_token）：Assignment token 且**紧邻 `(`**（peek() == '('）时 raw 加 `(` 标记（`a=(` 数组赋值形式）
+- 解析层（token_actions.rs）：collect_compound_assignment 只在 raw 以 `=(` 结尾时组合——`a= (1 2)`（带空格）不再被当数组赋值（bash 语法错误）
+- 验证：`a=(1 2)` 仍数组 [1] 1 2 ✓；`a= (1 2)` 变 a 空 + 子 shell 报错（比静默数组正确）
+- 剩余族 D 用例：extglob 错误（`echo @(` 不完整，bash rc=2）、echo typed args——rubash parse 无错误机制，需解析器报错机制（大改动）
+
+### a312e5a 族 D 语法宽松度（[[ ) ]] / [[ ]]）
+- parser 层（conditional_command.rs conditional_expression）：args[0] == ")" 返回 Empty（防御性）
+- executor 层（conditional.rs conditional_status_with_metadata）：args 空 / args[0] == ")" / args 只含 "]]" 返回 Some(1)（假）——**executor 路径不走 parser 的 expression**，必须 executor 层修
+- 验证：`[[ ) ]]` fail ✓、`[[ ]]` fail ✓、`[[ a ]]` ok ✓、`[[ (a) ]]` ok ✓、case-14/16 差分 PASS 无回归
+
+## 待办族（每族独立中等任务）
+- 族 D 剩余：extglob 错误（`@(` 不完整）、echo typed args——需解析器错误机制（parse 返回错误），系统性问题
+- 族 K coproc/进程替换挂起（P0）、族 C IFS 分词、族 E 内置族（umask/trap/kill/set 等 120 项）、族 H alias、族 F 数组、族 G 算术错误码、族 I 参数替换、族 J glob 路径、族 B 状态污染（P3 最难）
