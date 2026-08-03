@@ -28,10 +28,14 @@ pub(in crate::executor) fn replace_parameter_pattern(
     }
 
     if !pattern_contains_glob(pattern) {
+        // `\x18` is the internal marker for a literal backslash decoded by
+        // decode_parameter_pattern_quotes; plain string replacement must
+        // match the real `\` character in the value.
+        let literal = pattern.replace('\x18', "\\");
         return if global {
-            value.replace(pattern, replacement)
+            value.replace(&literal, replacement)
         } else {
-            value.replacen(pattern, replacement, 1)
+            value.replacen(&literal, replacement, 1)
         };
     }
 

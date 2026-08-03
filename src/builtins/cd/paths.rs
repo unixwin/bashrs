@@ -41,7 +41,9 @@ pub(super) fn logical_destination_display(old_pwd: &Path, target: &Path) -> Stri
     }
 
     let target_display = path_display_text(target);
-    let normalized = if target_display.starts_with('/') {
+    // Windows absolute paths start with a drive letter (`C:/...`), not `/`;
+    // `Path::is_absolute` covers both native and slash-drive forms.
+    let normalized = if target.is_absolute() || target_display.starts_with('/') {
         normalize_logical_display(&target_display)
     } else {
         let old_display = path_display_text(old_pwd);
