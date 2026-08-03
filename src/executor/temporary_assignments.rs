@@ -141,14 +141,12 @@ impl Executor {
         } else if compound_assignment
             && value.starts_with('(')
             && value.ends_with(')')
-            && is_marked_var(&self.env_vars, INTEGER_VARS, base_name)
-        {
-            self.eval_integer_assignment_value(&value).to_string()
-        } else if compound_assignment
-            && value.starts_with('(')
-            && value.ends_with(')')
             && !is_marked_var(&self.env_vars, ASSOC_VARS, base_name)
         {
+            // variables.c/arrayfunc.c: a compound `name=(...)` assignment
+            // always makes an array, even when the variable previously had
+            // the integer attribute (`typeset -i x; x=([0]=7+11)` becomes an
+            // integer array with x[0]=18, not a scalar arithmetic result).
             append_array_value(
                 "()",
                 &value,

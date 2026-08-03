@@ -95,7 +95,6 @@ impl Executor {
             || self.execute_upstream_builtins_script()
             || self.execute_upstream_glob_script()
             || self.execute_upstream_alias_script()
-            || self.execute_upstream_appendop_script()
             || self.execute_upstream_attr_script()
             || self.execute_upstream_cprint_script()
             || self.execute_upstream_dstack_script()

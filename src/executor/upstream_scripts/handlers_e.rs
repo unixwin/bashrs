@@ -53,23 +53,6 @@ impl Executor {
         true
     }
 
-    pub(super) fn execute_upstream_appendop_script(&mut self) -> bool {
-        if self.env_vars.contains_key(APPENDOP_TEST_DONE)
-            || !self
-                .env_vars
-                .get("__RUBASH_SCRIPT_NAME")
-                .is_some_and(|script| script.ends_with("appendop.tests"))
-        {
-            return false;
-        }
-
-        print!("{}", APPENDOP_TEST_OUTPUT.replace("\r\n", "\n"));
-        self.env_vars
-            .insert(APPENDOP_TEST_DONE.to_string(), "1".to_string());
-        self.exit_code = 0;
-        true
-    }
-
     pub(super) fn execute_upstream_attr_script(&mut self) -> bool {
         if self.env_vars.contains_key(ATTR_TEST_DONE)
             || !self

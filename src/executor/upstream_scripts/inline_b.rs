@@ -113,10 +113,6 @@ ok1ok2ok3ok4ok5
 pub(in crate::executor::upstream_scripts) const ALIAS_TEST_DONE: &str = "__RUBASH_ALIAS_TEST_DONE";
 pub(in crate::executor::upstream_scripts) const ALIAS_TEST_OUTPUT: &str =
     include_str!("../../../third_party/bash/tests/alias.right");
-pub(in crate::executor::upstream_scripts) const APPENDOP_TEST_DONE: &str =
-    "__RUBASH_APPENDOP_TEST_DONE";
-pub(in crate::executor::upstream_scripts) const APPENDOP_TEST_OUTPUT: &str =
-    include_str!("../../../third_party/bash/tests/appendop.right");
 pub(in crate::executor::upstream_scripts) const ATTR_TEST_DONE: &str = "__RUBASH_ATTR_TEST_DONE";
 pub(in crate::executor::upstream_scripts) const ATTR_TEST_OUTPUT: &str =
     include_str!("../../../third_party/bash/tests/attr.right");

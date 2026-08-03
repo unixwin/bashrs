@@ -190,7 +190,16 @@ impl Executor {
     fn apply_external_environment(&mut self, cmd: &CommandNode, process: &mut Command) {
         self.apply_child_environment(process);
         for (var_name, var_value) in &cmd.assignments {
-            let (base_name, _) = assignment_name_and_append(var_name);
+            let (base_name, append) = assignment_name_and_append(var_name);
+            if append {
+                // execute_cmd.c: prefix assignment words are applied to the
+                // shell variable table before the command runs; the child
+                // environment inherits the already-append-assigned value via
+                // apply_child_environment. Re-applying the raw RHS here would
+                // overwrite the appended value (a+=5 printenv a must see 145,
+                // not 5).
+                continue;
+            }
             let expanded_value = self.expand_assignment_value(var_value);
             if is_valid_process_env(base_name, &expanded_value) {
                 process.env(base_name, expanded_value);
