@@ -131,6 +131,52 @@ impl Executor {
         )))
     }
 
+    /// Runs a builtin command inside a subshell for a pipeline stage and
+    /// captures its stdout/stderr/status. Bash runs every pipeline element in
+    /// a subshell, so special builtins like `set`, `export`, `type`, `trap`
+    /// work as pipeline stages without leaking state to the parent.
+    pub(in crate::executor) fn execute_builtin_pipeline_stage(
+        &mut self,
+        command: &CommandNode,
+        input: &str,
+    ) -> Result<Option<(String, String, i32)>, ExecuteError> {
+        let Some(name) = command.words.first() else {
+            return Ok(None);
+        };
+        let expanded_name = self.expand_word(name);
+        if !crate::executor::builtin_names::is_shell_builtin_name(&expanded_name) {
+            return Ok(None);
+        }
+
+        let mut call = command.clone();
+        call.redirect_out = None;
+        call.append = None;
+
+        let saved_capture =
+            crate::executor::shell_options::begin_stdout_capture();
+        let mut subshell = self.command_substitution_executor();
+        subshell
+            .env_vars
+            .insert(FUNCTION_STDIN.to_string(), input.to_string());
+        subshell
+            .env_vars
+            .insert(FUNCTION_STDIN_OFFSET.to_string(), "0".to_string());
+
+        subshell.stderr_capture = Some(Vec::new());
+        let result = subshell.execute_command(&call);
+        let output = crate::executor::shell_options::take_stdout_capture();
+        let stderr = subshell.stderr_capture.take().unwrap_or_default();
+        let status = subshell.last_exit_code();
+
+        crate::executor::shell_options::restore_stdout_capture(saved_capture);
+        result?;
+        Ok(Some((
+            String::from_utf8_lossy(&output).into_owned(),
+            String::from_utf8_lossy(&stderr).into_owned(),
+            status,
+        )))
+    }
+
     pub(in crate::executor) fn execute_external_pipeline_stage(
         &mut self,
         command: &CommandNode,

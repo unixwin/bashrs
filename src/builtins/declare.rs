@@ -36,7 +36,7 @@ const COMPOUND_ASSIGNMENT_MARKER: char = '\x1e';
 const EX_USAGE: i32 = 2;
 
 pub fn execute(args: &[String], variables: &mut HashMap<String, String>) -> io::Result<i32> {
-    let mut stdout = io::stdout();
+    let mut stdout = crate::executor::GlobalStdout;
     let mut stderr = io::stderr();
     execute_with_io(args, variables, &mut stdout, &mut stderr)
 }

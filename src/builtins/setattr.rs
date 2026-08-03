@@ -34,7 +34,7 @@ pub(super) enum ExportMode {
 }
 
 pub fn export(args: &[String], env_vars: &mut HashMap<String, String>) -> io::Result<i32> {
-    let mut stdout = io::stdout().lock();
+    let mut stdout = crate::executor::GlobalStdout;
     let mut stderr = io::stderr().lock();
     export_with_io(
         args.iter().map(String::as_str),
@@ -46,7 +46,7 @@ pub fn export(args: &[String], env_vars: &mut HashMap<String, String>) -> io::Re
 
 /// Execute `readonly` with arguments after the command name.
 pub fn readonly(args: &[String], env_vars: &mut HashMap<String, String>) -> io::Result<i32> {
-    let mut stdout = io::stdout().lock();
+    let mut stdout = crate::executor::GlobalStdout;
     let mut stderr = io::stderr().lock();
     readonly_with_io(
         args.iter().map(String::as_str),

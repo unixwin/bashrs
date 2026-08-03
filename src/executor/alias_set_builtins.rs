@@ -148,7 +148,7 @@ impl Executor {
                 return Ok(crate::builtins::set::set_with_io(
                     cmd.words[1..].iter().map(String::as_str),
                     &mut self.env_vars,
-                    &mut std::io::stdout().lock(),
+                    &mut crate::executor::shell_options::GlobalStdout,
                     &mut std::io::sink(),
                 )?);
             }
@@ -156,7 +156,7 @@ impl Executor {
             return Ok(crate::builtins::set::set_with_io(
                 cmd.words[1..].iter().map(String::as_str),
                 &mut self.env_vars,
-                &mut std::io::stdout().lock(),
+                &mut crate::executor::shell_options::GlobalStdout,
                 &mut file,
             )?);
         }
@@ -170,7 +170,7 @@ impl Executor {
             return Ok(crate::builtins::set::set_with_io(
                 cmd.words[1..].iter().map(String::as_str),
                 &mut self.env_vars,
-                &mut std::io::stdout().lock(),
+                &mut crate::executor::shell_options::GlobalStdout,
                 &mut file,
             )?);
         }

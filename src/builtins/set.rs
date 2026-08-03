@@ -33,7 +33,7 @@ pub(super) const DECLARED_UNSET_VARS: &str = "__RUBASH_DECLARED_UNSET_VARS";
 
 /// Execute `set` with arguments after the command name.
 pub fn set(args: &[String], env_vars: &mut HashMap<String, String>) -> io::Result<i32> {
-    let mut stdout = io::stdout().lock();
+    let mut stdout = crate::executor::GlobalStdout;
     let mut stderr = io::stderr().lock();
     set_with_io(
         args.iter().map(String::as_str),

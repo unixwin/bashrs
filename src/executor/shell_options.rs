@@ -82,6 +82,12 @@ impl Executor {
         &mut self,
         output: &[u8],
     ) -> Result<(), ExecuteError> {
+        // Thread-local capture (pipeline stages for builtins that write to
+        // the process stdout) wins over the Executor field capture.
+        if stdout_capture_active() {
+            stdout_capture_write(output)?;
+            return Ok(());
+        }
         if let Some(capture) = &mut self.stdout_capture {
             capture.write_all(output)?;
             return Ok(());
@@ -407,6 +413,14 @@ impl Executor {
 }
 
 fn write_stdout_bytes(output: &[u8]) -> io::Result<()> {
+    // Builtins that write directly to the process stdout (set -o, declare,
+    // alias, ...) must still be captured by command substitution and
+    // pipeline stage capture. Thread-local capture makes that visible to
+    // every writer, not just the Executor-aware write_default_stdout path.
+    if stdout_capture_active() {
+        return stdout_capture_write(output);
+    }
+
     #[cfg(windows)]
     {
         return trace_stdio_write("stdout", output.len(), || {
@@ -420,6 +434,71 @@ fn write_stdout_bytes(output: &[u8]) -> io::Result<()> {
             std::io::stdout().lock().write_all(output)
         })
     }
+}
+
+/// Global stdout write honoring the thread-local capture used by command
+/// substitution and pipeline stages. Builtins that write through a plain
+/// `std::io::Stdout` handle (set -o, declare -p, shopt) must route through
+/// here so their output is captured too.
+pub(crate) fn write_global_stdout(output: &[u8]) -> io::Result<()> {
+    if stdout_capture_active() {
+        return stdout_capture_write(output);
+    }
+    write_stdout_bytes(output)
+}
+
+/// A `std::io::Write` adapter over the global capture-aware stdout.
+pub(crate) struct GlobalStdout;
+
+impl std::io::Write for GlobalStdout {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        write_global_stdout(buf)?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+thread_local! {
+    static STDOUT_CAPTURE: std::cell::RefCell<Option<Vec<u8>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+pub(in crate::executor) fn stdout_capture_active() -> bool {
+    STDOUT_CAPTURE.with(|capture| capture.borrow().is_some())
+}
+
+fn stdout_capture_write(output: &[u8]) -> io::Result<()> {
+    STDOUT_CAPTURE.with(|capture| {
+        if let Some(buffer) = capture.borrow_mut().as_mut() {
+            buffer.write_all(output)?;
+        }
+        Ok(())
+    })
+}
+
+/// Begins thread-local stdout capture, returning the previous capture buffer
+/// (if any) so callers can nest captures and restore afterwards.
+pub(in crate::executor) fn begin_stdout_capture() -> Option<Vec<u8>> {
+    STDOUT_CAPTURE.with(|capture| {
+        let previous = capture.borrow_mut().take();
+        *capture.borrow_mut() = Some(Vec::new());
+        previous
+    })
+}
+
+/// Ends thread-local stdout capture and returns the captured bytes.
+pub(in crate::executor) fn take_stdout_capture() -> Vec<u8> {
+    STDOUT_CAPTURE.with(|capture| capture.borrow_mut().take().unwrap_or_default())
+}
+
+/// Restores a previously saved capture buffer (used after nested captures).
+pub(in crate::executor) fn restore_stdout_capture(previous: Option<Vec<u8>>) {
+    STDOUT_CAPTURE.with(|capture| {
+        *capture.borrow_mut() = previous;
+    });
 }
 
 fn write_stderr_bytes(output: &[u8]) -> io::Result<()> {

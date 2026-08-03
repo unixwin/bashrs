@@ -424,7 +424,13 @@ impl Executor {
                 if let Some(output) = self.execute_function_pipeline_stage(command, input)? {
                     Ok(Some(output))
                 } else {
-                    self.execute_external_pipeline_stage(command, input)
+                    if let Some(output) =
+                        self.execute_builtin_pipeline_stage(command, input)?
+                    {
+                        Ok(Some(output))
+                    } else {
+                        self.execute_external_pipeline_stage(command, input)
+                    }
                 }
             }
         }
