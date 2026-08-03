@@ -87,6 +87,11 @@ impl Executor {
             if let Some(value) = self.eval_arithmetic_command_value(expression) {
                 return value.to_string();
             }
+            if let Some(message) =
+                crate::executor::arithmetic::arithmetic_error_message(expression)
+            {
+                eprintln!("{}: {message}", self.diagnostic_prefix());
+            }
         }
 
         if word.contains("$((") || word.contains("$[") {
