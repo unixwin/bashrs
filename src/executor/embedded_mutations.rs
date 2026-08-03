@@ -341,6 +341,13 @@ impl Executor {
         if command_substitution_uses_specialized_path(self, source, &words) {
             return self.expand_command_substitution(source);
         }
+        // Simple builtins that the non-mut special-case dispatch handles with
+        // proper quote stripping (echo/printf/cat/...). Prefer that path so
+        // nested `"$(...)"` arguments do not leak quote characters through
+        // the full-AST execution path.
+        if is_specialized_command_substitution_word(&words) {
+            return self.expand_command_substitution(source);
+        }
         if let Some(output) = self.run_ast_command_substitution(source) {
             return output;
         }
@@ -712,6 +719,20 @@ fn command_substitution_words_contain_here_string(words: &[String]) -> bool {
     words
         .iter()
         .any(|word| word == "<<<" || word.ends_with("<<<"))
+}
+
+/// Builtin commands whose command-substitution output is produced by the
+/// non-mut special-case dispatch in `expand_command_substitution` (echo,
+/// printf, cat, basename, ...). Routing these through that path keeps nested
+/// `"$(...)"` argument quote handling consistent with Bash.
+fn is_specialized_command_substitution_word(words: &[String]) -> bool {
+    matches!(
+        words.first().map(String::as_str),
+        Some(
+            "echo" | "recho" | "printf" | "cat" | "basename" | "umask" | "ulimit" | "pwd"
+                | "type" | "kill" | "trap" | "mktemp" | "set" | "export" | "true" | ":"
+        )
+    )
 }
 
 fn command_substitution_contains_here_string(source: &str) -> bool {

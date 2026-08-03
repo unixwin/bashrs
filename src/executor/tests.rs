@@ -6,11 +6,6 @@ mod unit_tests {
     use crate::executor::alias_helpers::split_shell_words;
 
     #[test]
-    #[test]
-    #[test]
-    #[test]
-    #[test]
-    #[test]
     fn test_execute_echo() {
         let tokens = tokenize("echo hello");
         let ast = parse(&tokens);
@@ -132,4 +127,6 @@ mod unit_tests {
         assert_eq!(executor.decode_prompt_string("\\$"), "$");
     }
 }
+
+
 
