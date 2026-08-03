@@ -54,11 +54,26 @@ pub(super) fn field_split_values_with_ifs(value: &str, ifs: Option<&str>) -> Vec
         return vec![value.to_string()];
     }
 
-    value
+    // Default IFS (or an IFS containing only whitespace) collapses runs of
+    // whitespace and drops empty fields, like split_whitespace.
+    if ifs.chars().all(|ch| ch.is_whitespace()) {
+        return value.split_whitespace().map(str::to_string).collect();
+    }
+
+    // Non-whitespace IFS: every separator produces a field. Bash keeps empty
+    // fields between separators (`IFS=:; set -- a:b::c` => 4 fields) and
+    // drops only leading/trailing empty fields (POSIX word splitting).
+    let mut fields: Vec<String> = value
         .split(|ch| ifs.contains(ch))
-        .filter(|part| !part.is_empty())
         .map(str::to_string)
-        .collect()
+        .collect();
+    while fields.first().is_some_and(|field| field.is_empty()) {
+        fields.remove(0);
+    }
+    while fields.last().is_some_and(|field| field.is_empty()) {
+        fields.pop();
+    }
+    fields
 }
 
 pub(super) fn field_split_array_values_with_ifs(

@@ -61,6 +61,21 @@ impl Executor {
             .unwrap_or_default()
     }
 
+    /// Joins positional parameters with the first character of IFS, matching
+    /// Bash's `$*` / `"$*"` semantics: default IFS => space, empty IFS =>
+    /// no separator.
+    pub(in crate::executor) fn positional_params_star_joined(&self) -> String {
+        let ifs = self
+            .env_vars
+            .get("IFS")
+            .cloned()
+            .unwrap_or_else(|| " \t\n".to_string());
+        match ifs.chars().next() {
+            Some(separator) => self.positional_params.join(&separator.to_string()),
+            None => self.positional_params.concat(),
+        }
+    }
+
     pub(in crate::executor) fn dynamic_parameter_is_set(&self, name: &str) -> bool {
         matches!(
             name,

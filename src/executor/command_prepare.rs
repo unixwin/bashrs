@@ -246,7 +246,10 @@ impl Executor {
             }
             return values;
         }
-        if self.is_brace_expand_enabled() && !word.contains("${") {
+        if self.is_brace_expand_enabled()
+            && !word.contains("${")
+            && !raw_word_is_quoted(raw)
+        {
             let braced = expand_braces_with_optional_raw(word, raw);
             if braced.len() > 1 {
                 return braced;

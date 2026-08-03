@@ -85,7 +85,7 @@ impl Executor {
                 }
                 Some('*') => {
                     chars.next();
-                    output.push_str(&self.positional_params.join(" "));
+                    output.push_str(&self.positional_params_star_joined());
                 }
                 Some('#') => {
                     chars.next();
