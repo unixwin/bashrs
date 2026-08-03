@@ -1,6 +1,18 @@
 use super::*;
 
 impl Executor {
+    /// Expands a command-substitution argument word. When the word was
+    /// quoted in the source and starts with `~`, prefix the quote-protection
+    /// marker so tilde expansion is skipped (Bash: `$(printf '%s' "~/repo")`
+    /// prints `~/repo`, not the home directory).
+    fn expand_protected_tilde(&self, word: &str, was_quoted: Option<bool>) -> String {
+        if was_quoted == Some(true) && word.starts_with('~') {
+            self.expand_word(&format!("\x1b{word}"))
+        } else {
+            self.expand_word(word)
+        }
+    }
+
     pub(in crate::executor) fn expand_command_substitution(&self, source: &str) -> String {
         self.last_command_substitution_status.set(Some(0));
         let old_depth = self.subshell_depth.get();
@@ -69,7 +81,11 @@ impl Executor {
         if source == "type -p e" {
             return "./e".to_string();
         }
-        let words = split_shell_words(source);
+        let word_parts = split_shell_words_with_quote_info(source);
+        let words: Vec<String> = word_parts
+            .iter()
+            .map(|(word, _)| word.clone())
+            .collect();
         let words = self.expand_aliases(&words);
 
         if let Some(output) = self.timed_command_substitution_output(&words) {
@@ -83,7 +99,10 @@ impl Executor {
         if words.first().map(String::as_str) == Some("echo") {
             let expanded_args = words[1..]
                 .iter()
-                .map(|word| self.expand_word(word))
+                .enumerate()
+                .map(|(index, word)| {
+                    self.expand_protected_tilde(word, word_parts.get(index + 1).map(|(_, q)| *q))
+                })
                 .collect::<Vec<_>>();
             return echo_command_substitution_output(&expanded_args);
         }
@@ -91,7 +110,10 @@ impl Executor {
         if words.first().map(String::as_str) == Some("recho") {
             let expanded_args = words[1..]
                 .iter()
-                .map(|word| self.expand_word(word))
+                .enumerate()
+                .map(|(index, word)| {
+                    self.expand_protected_tilde(word, word_parts.get(index + 1).map(|(_, q)| *q))
+                })
                 .collect::<Vec<_>>();
             return self
                 .recho_output(&expanded_args)
@@ -102,7 +124,14 @@ impl Executor {
         if words.first().map(String::as_str) == Some("printf") {
             let expanded_args: Vec<String> = words[1..]
                 .iter()
-                .map(|word| strip_matching_quotes(&self.expand_word(word)).to_string())
+                .enumerate()
+                .map(|(index, word)| {
+                    strip_matching_quotes(&self.expand_protected_tilde(
+                        word,
+                        word_parts.get(index + 1).map(|(_, q)| *q),
+                    ))
+                    .to_string()
+                })
                 .collect();
             let mut env_vars = self.env_vars.clone();
             let mut stdout = Vec::new();

@@ -1,7 +1,19 @@
 pub(in crate::executor) fn split_shell_words(source: &str) -> Vec<String> {
+    split_shell_words_with_quote_info(source)
+        .into_iter()
+        .map(|(word, _)| word)
+        .collect()
+}
+
+/// Word-splits a command-substitution source, additionally reporting whether
+/// each word was wrapped in quotes. Quote state is needed to protect tilde
+/// expansion inside quoted command-substitution arguments: `$(printf '%s'
+/// "~/repo")` must not expand `~` (Bash keeps quoted `~` literal).
+pub(in crate::executor) fn split_shell_words_with_quote_info(source: &str) -> Vec<(String, bool)> {
     let mut words = Vec::new();
     let mut current = String::new();
     let mut quote = None;
+    let mut word_quoted = false;
     let mut backtick = false;
     let mut chars = source.chars().peekable();
     while let Some(ch) = chars.next() {
@@ -28,18 +40,22 @@ pub(in crate::executor) fn split_shell_words(source: &str) -> Vec<String> {
                 backtick = true;
                 current.push(ch);
             }
-            ('\'' | '"', None) => quote = Some(ch),
+            ('\'' | '"', None) => {
+                quote = Some(ch);
+                word_quoted = true;
+            }
             (q, Some(active)) if q == active => quote = None,
             (' ' | '\t', None) => {
                 if !current.is_empty() {
-                    words.push(std::mem::take(&mut current));
+                    words.push((std::mem::take(&mut current), word_quoted));
+                    word_quoted = false;
                 }
             }
             _ => current.push(ch),
         }
     }
     if !current.is_empty() {
-        words.push(current);
+        words.push((current, word_quoted));
     }
     words
 }
