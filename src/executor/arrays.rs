@@ -142,7 +142,9 @@ pub(super) fn append_array_value(
         .next_back()
         .map(|index| index + 1)
         .unwrap_or(0);
-    let scalar_append = integer && !value.starts_with('(');
+    // Bash appends `arr+=str` (no parens) to arr[0] for any array, not just
+    // integer arrays; `arr+=(x y)` appends new elements.
+    let scalar_append = !value.starts_with('(');
     let brace_expand = crate::builtins::set::shell_option_enabled(env_vars, "braceexpand");
     let tokens = array_assignment_tokens(value)
         .into_iter()
@@ -231,10 +233,12 @@ pub(super) fn append_array_value(
         }
         if scalar_append && !entries.is_empty() {
             let current = entries.get(&0).cloned().unwrap_or_default();
-            entries.insert(
-                0,
-                (eval_arith_value(&current) + eval_arith_value(&token)).to_string(),
-            );
+            let appended = if integer {
+                (eval_arith_value(&current) + eval_arith_value(&token)).to_string()
+            } else {
+                append_scalar_value(&current, &token)
+            };
+            entries.insert(0, appended);
         } else {
             entries.insert(next_index, token);
             next_index += 1;
