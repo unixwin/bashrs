@@ -159,6 +159,17 @@ impl Executor {
             return None;
         }
 
+        // Bash rejects an empty conditional (`[[ ]]`) and a conditional that
+        // starts with `)` (`[[ ) ]]`) as syntax errors. Rubash has no parser
+        // error channel yet, so evaluate them as false instead of letting
+        // the fallback treat them as a truthy word.
+        if args.is_empty()
+            || args[0] == ")"
+            || (args.len() == 1 && args[0] == "]]")
+        {
+            return Some(1);
+        }
+
         if conditional_outer_parentheses(args).is_some() {
             let end = conditional_effective_len(args);
             return self.conditional_status_with_metadata(&args[1..end - 1], &metadata[1..end - 1]);

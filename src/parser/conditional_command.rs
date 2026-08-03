@@ -81,6 +81,13 @@ fn conditional_expression(args: &[(String, String)]) -> ConditionalExpression {
     if args.is_empty() {
         return conditional_leaf(ConditionalExpressionKind::Empty, None, args);
     }
+    if args[0].0 == ")" {
+        // `[[ ) ]]` is a syntax error in Bash (a `)` cannot start a
+        // conditional expression unless it closes a `(` group). Rubash has
+        // no parser error channel yet, so treat it as an empty (false)
+        // condition instead of evaluating `)` as a truthy word.
+        return conditional_leaf(ConditionalExpressionKind::Empty, None, &[]);
+    }
 
     if let Some(inner) = conditional_outer_group(args) {
         return ConditionalExpression {
