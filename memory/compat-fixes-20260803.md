@@ -157,3 +157,16 @@
 - 算术展开错误 fatal 语义：错误跳过当前命令列表（echo 不执行）但脚本继续（bash 语义）——arithmetic_expansion_error Cell 标志 + ast_exec 跳过（index+=1）
 - 4 个 FAIL：case-01（for+heredoc）、case-03（嵌套引号残留）、case-05（命令替换内 tilde）、case-10（版本身份预期）
 - 算术错误 stderr 诊断格式（`'1': syntax` vs bash `'1' : syntax`）是已知微差（case-25 已排除 stderr 敏感行）
+
+## heredoc_huge（#26）根因精确定位（P0，跨轮待修）
+
+### 根因：外部命令管道串行模型挂起
+- heredoc_huge.tests 的挂起**不是 heredoc 本身**：内联大 heredoc（huge2：3000 行 wc -c 正常）与 source 大 heredoc（huge3：md5sum 正常）都通过
+- **真正的挂起**：`yes "..." | head -3000 | md5sum`（外部命令管道）——bash 秒完成（head 截断后 SIGPIPE 终止 yes），rubash 挂起
+- 机制：`execute_simple_pipeline`（pipeline_exec.rs:246）**串行**执行每段（execute_pipeline_stage 完整捕获 stdout 再传下一段）——`yes`（无限输出）完整捕获永远读不完 → 挂起
+
+### 并发管道实验（已回退，不稳定）
+- 尝试：execute_external_pipeline_concurrent（std::io::pipe 读/写端分别给相邻段）+ is_external_pipeline_stage 检测——已实施并构建通过
+- **问题**：`yes | head -3` 崩溃（0xC0000409）/挂起不稳定——`Stdio::from(ChildStdout)` 传读端给 stdin 错误（head 读不到）；改 std::io::pipe 后仍崩溃（Windows 句柄/spawn 交互不稳定）
+- **回退**：git checkout pipeline_exec.rs pipeline_stages.rs（恢复 HEAD，构建正常）
+- **后续方向**：os_pipe crate（成熟 Windows 管道）或父进程流式转发（读段 i 输出写段 i+1 输入）；或对"含限行命令（head/tail）的管道"专门处理
