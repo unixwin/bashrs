@@ -105,7 +105,7 @@ pub(super) fn mark_quoted_assignment_value(value: &str) -> String {
 }
 
 pub(super) fn quoted_literal_tilde(raw: &str, value: &str) -> bool {
-    value == "~"
+    value.starts_with('~')
         && ((raw.starts_with('\'') && raw.ends_with('\''))
             || (raw.starts_with('"') && raw.ends_with('"')))
 }
