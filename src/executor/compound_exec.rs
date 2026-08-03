@@ -328,14 +328,25 @@ impl Executor {
             .and_then(|()| {
                 self.with_command_input_redirects(cmd, |executor| executor.execute_ast(&body))
             });
-        let status = self.exit_code;
+        // Bash runs a subshell with errexit active; a failing command exits
+        // the subshell with that status but the parent script continues.
+        // Catch ExitCode errors at the subshell boundary.
+        let status = match result {
+            Ok(()) => self.exit_code,
+            Err(ExecuteError::ExitCode(code)) => code,
+            Err(error) => {
+                self.restore_shell_env(saved_env);
+                self.pipestatus = saved_pipestatus;
+                self.subshell_depth.set(saved_depth);
+                return Err(error);
+            }
+        };
 
         self.restore_shell_env(saved_env);
         self.pipestatus = saved_pipestatus;
         self.subshell_depth.set(saved_depth);
         let finish_result = self.finish_compound_output_process_substitutions(group_outputs);
         self.exit_code = status;
-        result?;
         finish_result?;
         self.exit_code = status;
         Ok(())

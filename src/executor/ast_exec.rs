@@ -278,6 +278,41 @@ impl Executor {
                 Err(ExecuteError::Break(_) | ExecuteError::Continue(_)) if self.loop_depth == 0 => {
                     self.exit_code = 0;
                 }
+                // Bash runs a subshell with errexit active; when a command
+                // fails inside the subshell the subshell exits with that
+                // status but the parent script continues. Catch the error at
+                // the subshell boundary instead of propagating it.
+                Err(ExecuteError::ExitCode(code)) if subshell_env.is_some() => {
+                    self.exit_code = code;
+                    while index + 1 < ast.commands.len()
+                        && !ast.commands[index + 1].subshell_end
+                    {
+                        index += 1;
+                    }
+                    if index + 1 < ast.commands.len() {
+                        index += 1;
+                    }
+                    if let Some((old_stdin, old_offset)) = subshell_stdin.take() {
+                        if old_stdin.is_empty() {
+                            self.env_vars.remove(FUNCTION_STDIN);
+                            self.env_vars.remove(FUNCTION_STDIN_OFFSET);
+                        } else {
+                            self.env_vars.insert(FUNCTION_STDIN.to_string(), old_stdin);
+                            self.env_vars
+                                .insert(FUNCTION_STDIN_OFFSET.to_string(), old_offset);
+                        }
+                    }
+                    if let Some(saved_env) = subshell_env.take() {
+                        self.restore_shell_env(saved_env);
+                    }
+                    if let Some(saved_pipestatus) = subshell_pipestatus.take() {
+                        self.pipestatus = saved_pipestatus;
+                    }
+                    if let Some(saved_depth) = subshell_depth.take() {
+                        self.subshell_depth.set(saved_depth);
+                    }
+                    continue;
+                }
                 Err(error) => return Err(error),
             }
             if command.inverted {
