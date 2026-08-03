@@ -235,6 +235,11 @@ impl Executor {
             }
             return values;
         }
+        // Unquoted `$@` expands to one word per positional parameter
+        // (quoted `"$@"` is handled by quoted_positional_at_word_values_with_raw).
+        if word == "$@" && !raw_word_is_quoted(raw) {
+            return self.positional_params.clone();
+        }
         if let Some(values) =
             self.quoted_positional_at_word_values_with_raw(word, raw, cmd.word_kinds.get(index))
         {
