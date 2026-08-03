@@ -32,11 +32,7 @@ pub(in crate::executor) fn replace_parameter_pattern(
         // decode_parameter_pattern_quotes; plain string replacement must
         // match the real `\` character in the value.
         let literal = pattern.replace('\x18', "\\");
-        return if global {
-            value.replace(&literal, replacement)
-        } else {
-            value.replacen(&literal, replacement, 1)
-        };
+        return replace_with_amp(value, &literal, replacement, global);
     }
 
     let indices: Vec<usize> = value
@@ -259,4 +255,40 @@ pub(in crate::executor) fn format_key_value_transform_part(
 
 pub(in crate::executor) fn shell_single_quote_assignment_value(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+/// Expands `&` in a patsub replacement string to the matched text, like Bash
+/// (subst.c replace_pattern): `&` copies the match, `\&` is a literal `&`.
+fn expand_replacement_amp(matched: &str, replacement: &str) -> String {
+    let mut output = String::new();
+    let mut chars = replacement.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '&' => output.push_str(matched),
+            '\\' if chars.peek() == Some(&'&') => {
+                chars.next();
+                output.push('&');
+            }
+            _ => output.push(ch),
+        }
+    }
+    output
+}
+
+/// Plain-string pattern replacement honoring `&` expansion.
+fn replace_with_amp(value: &str, pattern: &str, replacement: &str, global: bool) -> String {
+    let mut output = String::new();
+    let mut last = 0;
+    let mut replaced = false;
+    for (index, matched) in value.match_indices(pattern) {
+        if replaced && !global {
+            break;
+        }
+        output.push_str(&value[last..index]);
+        output.push_str(&expand_replacement_amp(matched, replacement));
+        last = index + matched.len();
+        replaced = true;
+    }
+    output.push_str(&value[last..]);
+    output
 }
