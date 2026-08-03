@@ -84,7 +84,7 @@ impl Executor {
             .strip_prefix("$((")
             .and_then(|rest| rest.strip_suffix("))"))
         {
-            if let Some(value) = self.eval_arithmetic_command_value(expression) {
+            if let Some(value) = self.eval_arithmetic_expansion_value(expression) {
                 return value.to_string();
             }
             if let Some(message) =

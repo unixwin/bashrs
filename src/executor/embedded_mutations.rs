@@ -135,7 +135,9 @@ impl Executor {
                         let (expression, matched) =
                             collect_dollar_paren_arithmetic_expansion(&mut chars);
                         if matched {
-                            if let Some(value) = self.eval_arithmetic_command_value(&expression) {
+                            if let Some(value) =
+                                self.eval_arithmetic_expansion_value(&expression)
+                            {
                                 output.push_str(&value.to_string());
                             } else if let Some(message) =
                                 crate::executor::arithmetic::arithmetic_error_message(&expression)
@@ -160,7 +162,7 @@ impl Executor {
                     let (expression, matched) =
                         collect_dollar_bracket_arithmetic_expansion(&mut chars);
                     if matched {
-                        if let Some(value) = self.eval_arithmetic_command_value(&expression) {
+                        if let Some(value) = self.eval_arithmetic_expansion_value(&expression) {
                             output.push_str(&value.to_string());
                         }
                     } else {

@@ -21,6 +21,19 @@ impl Executor {
         )
     }
 
+    /// Evaluate a `$(( ... ))` expansion embedded in a word. This is the
+    /// expansion context: Bash strips double quotes from the expression
+    /// before evaluation (`$(( "1" + 1 ))` is `2`), while the command
+    /// context (`for (( ... ))` headers) keeps them and rejects them.
+    pub(crate) fn eval_arithmetic_expansion_value(&mut self, expression: &str) -> Option<i128> {
+        let expression = self.expand_arithmetic_special_parameters(expression);
+        eval_mutable_arith_value_with_random(
+            &strip_arith_double_quotes(&expression),
+            &mut self.env_vars,
+            Some(&self.random_state),
+        )
+    }
+
     pub(super) fn expand_arithmetic_special_parameters(&self, expression: &str) -> String {
         let expression = expression.replace("$#", &self.positional_params.len().to_string());
         self.expand_embedded_parameters(&expression)
@@ -39,7 +52,49 @@ pub(crate) fn eval_conditional_arith_value(
     env_vars: &HashMap<String, String>,
 ) -> Option<i128> {
     let mut env_vars = env_vars.clone();
-    eval_mutable_arith_value(value, &mut env_vars)
+    eval_mutable_arith_value(&strip_arith_double_quotes(value), &mut env_vars)
+}
+
+/// Strip double quotes from an arithmetic expression before evaluation.
+///
+/// Bash's expansion context (`$(( ... ))`, `(( ... ))` command, array
+/// subscripts, ...) removes double quotes from the expression before the
+/// arithmetic evaluator runs: `$(( "1" + 1 ))` is `2` and `$(( "i < 3" ))`
+/// evaluates `i < 3`. Single quotes are preserved so the error path can
+/// report `operand expected` for `$(( '1' ))` exactly like Bash.
+pub(super) fn strip_arith_double_quotes(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let bytes = input.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        let ch = bytes[index];
+        if ch != b'"' {
+            output.push(ch as char);
+            index += 1;
+            continue;
+        }
+        index += 1;
+        while index < bytes.len() {
+            let next = bytes[index];
+            if next == b'"' {
+                index += 1;
+                break;
+            }
+            if next == b'\\' {
+                index += 1;
+                if index < bytes.len() {
+                    output.push(bytes[index] as char);
+                    index += 1;
+                } else {
+                    output.push('\\');
+                }
+            } else {
+                output.push(next as char);
+                index += 1;
+            }
+        }
+    }
+    output
 }
 
 /// Produces a Bash-style error message for an arithmetic expansion that
