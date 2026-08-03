@@ -2,7 +2,8 @@
 
 > 目标：通过全部测试套件（差分 26 + bash 官方 83 + 上游 87 + oil 684 + mksh 436 + ksh93 46 + busybox 143），解决远程全部 7 个 issue（#20-#26）。
 > 原则：P0 挂起/DoS 优先 → 最短路径消除 FAIL → 大套件按根因族推进 → 每阶段跑全套回归（差分 + winuxsh suites + 上游 + Rust）。
-> 当前基线（2026-08-03）：差分 26 case 22 PASS / 4 FAIL；bash 官方 83 tests 14 PASS；上游 87（环境问题待修）；Rust 69/70。
+> 当前基线（2026-08-03 会话结束）：**差分 26/26 全 PASS**（阶段 1 完成）；bash 官方 83 tests 14/83（阶段 2 进行中）；上游 86/87（run-minimal 归入路径转换家族）；Rust 69/70。
+> 会话交接：`memory/handoff-next-session.md`（新会话先读这个 + 本文件 + `memory/compat-fixes-20260803.md`）。
 
 ## 阶段 0：回归测试环境修复（阻塞所有验证）
 - 上游测试 `tests/bash` 缺失（cp 失败、`usr/bin/bash.exe` 缺失）：修复 runner 复制逻辑/环境（scripts/run-bash-upstream-tests.sh），恢复 87/87 基线
