@@ -59,7 +59,16 @@ impl<'a> Lexer<'a> {
         } else {
             value
         };
-        Token::new_with_raw(kind, &value, raw, start)
+        let raw = if kind == TokenKind::Assignment && self.peek() == Some('(') {
+            // `name=(...)` is a compound array assignment word in Bash: the
+            // opening paren must be adjacent to the `=` with no space.
+            // Mark the raw so the parser only treats an adjacent `(` as the
+            // array-assignment form (`a= (1 2)` is a syntax error in Bash).
+            format!("{raw}(")
+        } else {
+            raw.to_string()
+        };
+        Token::new_with_raw(kind, &value, &raw, start)
     }
 
     pub(super) fn skip_word(&mut self) {

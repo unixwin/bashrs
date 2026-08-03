@@ -39,7 +39,11 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                         .split_once('=')
                         .map(|(_, raw)| raw.to_string())
                         .unwrap_or_else(|| var_value.clone());
-                    if var_value.is_empty() {
+                    // Bash only treats `name=(...)` as a compound array
+                    // assignment when the `(` is adjacent to `=`. The lexer
+                    // marks that with a trailing `(` on the raw; `a= (1 2)`
+                    // (space) stays a plain assignment and is a syntax error.
+                    if var_value.is_empty() && token.raw.ends_with("=(") {
                         if let Some((compound_value, next_i)) =
                             collect_compound_assignment(tokens, *i)
                         {
