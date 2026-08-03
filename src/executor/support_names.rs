@@ -101,7 +101,80 @@ pub(in crate::executor) fn ppid_value() -> String {
     std::env::var("PPID")
         .ok()
         .filter(|value| value.chars().all(|ch| ch.is_ascii_digit()))
+        .or_else(|| parent_process_id().map(|pid| pid.to_string()))
         .unwrap_or_else(|| std::process::id().to_string())
+}
+
+/// Real parent process id. Windows does not export a PPID environment
+/// variable, so walk the process table; Unix uses getppid(2).
+fn parent_process_id() -> Option<u32> {
+    #[cfg(windows)]
+    {
+        windows_parent_process_id()
+    }
+
+    #[cfg(unix)]
+    {
+        unsafe { Some(libc::getppid()) }
+    }
+
+    #[cfg(not(any(windows, unix)))]
+    {
+        None
+    }
+}
+
+#[cfg(windows)]
+fn windows_parent_process_id() -> Option<u32> {
+    use std::ffi::c_void;
+
+    const TH32CS_SNAPPROCESS: u32 = 0x0000_0002;
+    const INVALID_HANDLE_VALUE: *mut c_void = -1isize as *mut c_void;
+
+    #[repr(C)]
+    struct PROCESSENTRY32W {
+        dw_size: u32,
+        cnt_usage: u32,
+        th32_process_id: u32,
+        th32_default_heap_id: usize,
+        th32_module_id: u32,
+        cnt_threads: u32,
+        th32_parent_process_id: u32,
+        pc_pri_class_base: i32,
+        dw_flags: u32,
+        sz_exe_file: [u16; 260],
+    }
+
+    extern "system" {
+        fn CreateToolhelp32Snapshot(dw_flags: u32, th32_process_id: u32) -> *mut c_void;
+        fn Process32FirstW(snapshot: *mut c_void, entry: *mut PROCESSENTRY32W) -> i32;
+        fn Process32NextW(snapshot: *mut c_void, entry: *mut PROCESSENTRY32W) -> i32;
+        fn CloseHandle(object: *mut c_void) -> i32;
+    }
+
+    let current = std::process::id();
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot == INVALID_HANDLE_VALUE {
+            return None;
+        }
+        let mut entry: PROCESSENTRY32W = std::mem::zeroed();
+        entry.dw_size = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        let mut parent = None;
+        if Process32FirstW(snapshot, &mut entry) != 0 {
+            loop {
+                if entry.th32_process_id == current {
+                    parent = Some(entry.th32_parent_process_id);
+                    break;
+                }
+                if Process32NextW(snapshot, &mut entry) == 0 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(snapshot);
+        parent
+    }
 }
 
 pub(in crate::executor) fn declare_args_request_integer(args: &[String]) -> bool {
