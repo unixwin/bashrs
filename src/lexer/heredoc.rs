@@ -8,12 +8,15 @@ pub(super) struct HereDocDelimiter {
 }
 
 pub(super) fn heredoc_delimiters(tokens: &[Token], source: &str) -> Vec<HereDocDelimiter> {
-    let mut source_offset = 0;
     tokens
         .windows(2)
         .filter(|pair| pair[0].kind == TokenKind::HereDoc)
         .map(|pair| {
-            let context = heredoc_operator_context(source, &mut source_offset);
+            // Anchor the scan on the delimiter word inside this logical line
+            // instead of searching for the first `<<` in the source:
+            // arithmetic shifts like `$((x << 2))` or here-strings (`<<<`)
+            // would otherwise be mistaken for heredoc operators.
+            let context = heredoc_operator_context(source, &pair[1].value);
             let strip_tabs = pair[0].value == "<<-";
             let value = if strip_tabs {
                 pair[1].value.trim_start_matches('\t').to_string()
@@ -35,19 +38,24 @@ struct HereDocOperatorContext {
     in_command_substitution: bool,
 }
 
-fn heredoc_operator_context(source: &str, source_offset: &mut usize) -> HereDocOperatorContext {
-    let Some(relative_index) = source[*source_offset..].find("<<") else {
+fn heredoc_operator_context(source: &str, delimiter_value: &str) -> HereDocOperatorContext {
+    // Find the delimiter word, then the `<<` operator immediately before it.
+    let Some(delimiter_index) = source.rfind(delimiter_value) else {
         return HereDocOperatorContext {
             quoted: false,
             in_command_substitution: false,
         };
     };
-    let index = *source_offset + relative_index;
-    *source_offset = index + 2;
+    let Some(operator_index) = source[..delimiter_index].rfind("<<") else {
+        return HereDocOperatorContext {
+            quoted: false,
+            in_command_substitution: false,
+        };
+    };
+    let index = operator_index;
     let mut chars = source[index + 2..].chars().peekable();
     if chars.peek() == Some(&'-') {
         chars.next();
-        *source_offset += 1;
     }
     while chars.peek().is_some_and(|ch| ch.is_ascii_whitespace()) {
         chars.next();
