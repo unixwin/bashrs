@@ -109,7 +109,7 @@
 
 - 上游 run-* 套件（.right 对比）：87/87 —— **但 .right 是旧期望，掩盖实际差距**
 - bash 官方 83 tests 实际输出对比：14/83（#25；另 32 项 bash 侧 rc 非零，**待用 run-bash-upstream 完整环境复核归因**）
-- 差分测试 23 case：19/23（真 bug 3 个 + 版本身份 1 个）
+- 差分测试 26 case：22/26（真 bug 3 个：case-01/03/05 + 版本身份 1 个：case-10；新增 case-24 var-op / case-25 arith / case-26 alias 全 PASS，2026-08-03）
 - oil spec：228 文件 684 项差异（#23/#24）——**系统性差距仍在词法/解析/执行边界**
 - mksh：436 项；ksh93：46 项（**其中 ksh 特有语法部分为非目标**，bash 支持子集需逐个筛选）；busybox ash：143 项（含 vars/signals 新领域）
 - **验收量化门槛（引用 winuxsh#48）**：bash 官方 83/83、oil 684→0、mksh 436→0、ksh93 错误数→0、手动 31 项复测、cloc rubash/src ≥80%（当前 60,708 / bash 132,879 ≈ 45.7%）

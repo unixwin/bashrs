@@ -114,3 +114,46 @@
 - `execute_coproc_command`（compound_exec.rs:504）用 `std::process::Command` 启动 rubash 子进程 + `std::io::pipe()` 管道
 - **根因**：COPROC 数组存**伪造 fd `(0 1)`**（`format!("({} {})", 0, 1)`）——bash 中 `${C[0]}` 是 coproc 管道读端**真实 fd**；rubash 的 `read <&"${C[0]}"` 展开为 `<&0`（stdin）→ 从 stdin 阻塞等待 → 挂起
 - 修复方向（后续）：coproc 数组存可映射的 fd 标记 + rubash 的 `<&N` 重定向从 `coproc_stdout_readers` 读；Windows 无真实 fd 暴露，需内部 fd 映射机制（中等-大复杂度）
+
+## 第三段会话成果（继续按计划实现）
+
+### 61e28e0 族 C 补完（$@ 无引号多词）
+- `expand_command_word`：无引号 `$@` 返回每参数一个词（positional_params.clone()）；引号 `"$@"` 已走 quoted_positional_at_word_values_with_raw
+- 验证：`IFS=; printf "<%s>" $@` → `<a><b><c>` ✓（bash 一致）
+
+### 06ec642 族 H 管道中 alias
+- `execute_pipeline_command` 入口对每个 stage 展开 alias（expand_aliases_with_raw）——`pipehi | cat` 生效
+- 族 H 全部通过：单引号防御（a99ceda）+ 管道中 alias（06ec642）+ unalias
+
+### c62709e 族 F 数组 +=
+- `append_array_value` 的 scalar_append 改为 `!value.starts_with('(')`（普通数组 `arr+=str` 追加到 arr[0] 字符串追加；`arr+=(x y)` 数组追加）——`myarray+=world` → helloworld ✓
+
+### bd6000d/030353d 族 G 算术错误码传播（部分）
+- `arithmetic_error_message`（arithmetic/mod.rs）：检测浮点（数字含 `.`）、负指数（`**` 后负）、除零 → bash 风格 stderr 消息
+- `(( 1.5 ))` / `(( 2 ** -1 ))` 算术命令：rc=1 + stderr 报错 ✓（bash 一致）
+- `$(( ... ))` 展开路径（expand_word.rs:190 + parameter_core.rs:83 + embedded_parameters.rs:126）：None 时报 stderr
+- **剩余**：`x=$(( 1.5 ))` 赋值 RHS 展开仍静默（x=空 rc=0）——路径在 embedded_mutations.rs 的 `$((` 分支（未加报错）；`$(( '1' ))` 引号常量 rc=0（bash rc=1）；nounset 未展开
+
+## 差分状态（持续）
+- 差分测试: 19 PASS / 4 FAIL（case-01 heredoc for+heredoc、case-03 嵌套引号残留、case-05 命令替换内 tilde、case-10 版本身份预期）
+- 族 K §1.5 进程替换嵌套、族 C/H/F/G 修复均无回归
+
+## 第四段会话成果（#10-#15，按文档新增待办）
+
+### #10 族 I 参数替换边界（var-op）
+- `&` 特殊替换（0a559ec）：patsub 替换串 `&` = 匹配文本（`\&` 字面），对照 subst.c replace_pattern
+- 嵌套 slice（2ac337b）：`${v:${w:-4}}` offset 用顶层冒号分割（split_top_level_colon）+ offset 表达式先 expand_embedded_parameters
+- 验证：i1/i2 24 个 var-op 用例 bash 一致
+
+### #12/#13 新增待办验证（无需修复）
+- 进制字面量 `$((16#ff))`=255 等：rubash 已支持 ✓；`$LINENO` 在 `[[ ]]` 内展开 ✓
+
+### #14 族 B 验证
+- stdin 消费泄漏：b1/b2 与 bash 一致——未复现（已解决或特定场景）
+- /tmp 路径映射：winuxcmd 的 ls.exe /tmp 映射与 Git Bash 不一致——**winuxcmd 工具侧问题**（跨仓库待修）
+
+### #15 回归固化（a10fd79）
+- 差分 26 case：**22 PASS / 4 FAIL**（新增 case-24 var-op、case-25 arith、case-26 alias 全 PASS）
+- 算术展开错误 fatal 语义：错误跳过当前命令列表（echo 不执行）但脚本继续（bash 语义）——arithmetic_expansion_error Cell 标志 + ast_exec 跳过（index+=1）
+- 4 个 FAIL：case-01（for+heredoc）、case-03（嵌套引号残留）、case-05（命令替换内 tilde）、case-10（版本身份预期）
+- 算术错误 stderr 诊断格式（`'1': syntax` vs bash `'1' : syntax`）是已知微差（case-25 已排除 stderr 敏感行）
