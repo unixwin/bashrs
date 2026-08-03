@@ -92,6 +92,21 @@ pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<
         }
     }
 
+    // Quoted operand like `$(( '1' ))`: Bash treats `'1'` as a variable
+    // reference (which does not exist) and reports `operand expected`.
+    // Double quotes are fine (`$(( "1" ))` is 1), so only single quotes count.
+    if let Some(start) = expression.find('\'') {
+        let rest = &expression[start + 1..];
+        let end = rest
+            .find('\'')
+            .map(|index| start + 1 + index)
+            .unwrap_or(expression.len());
+        let token = &expression[start..end];
+        return Some(format!(
+            "{expression}: syntax error: operand expected (error token is \"{token} \")"
+        ));
+    }
+
     None
 }
 

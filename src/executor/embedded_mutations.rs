@@ -137,6 +137,10 @@ impl Executor {
                         if matched {
                             if let Some(value) = self.eval_arithmetic_command_value(&expression) {
                                 output.push_str(&value.to_string());
+                            } else if let Some(message) =
+                                crate::executor::arithmetic::arithmetic_error_message(&expression)
+                            {
+                                eprintln!("{}: {message}", self.diagnostic_prefix());
                             }
                         } else {
                             output.push_str("$((");
