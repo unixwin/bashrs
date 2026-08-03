@@ -39,7 +39,7 @@ impl Executor {
         }
 
         if let Some(heredoc) = &cmd.heredoc {
-            return Some(strip_heredoc_body(heredoc));
+            return Some(self.expand_heredoc_body(heredoc));
         }
 
         cmd.heredoc_redirects
@@ -47,7 +47,19 @@ impl Executor {
             .rev()
             .find(|redirect| redirect.fd.is_none())
             .and_then(|redirect| redirect.body.as_deref())
-            .map(strip_heredoc_body)
+            .map(|body| self.expand_heredoc_body(body))
+    }
+
+    /// Expands an unquoted heredoc body like Bash: parameter, command and
+    /// arithmetic expansions run in the context of the receiving command.
+    /// A `\x1e` prefix marks a quoted heredoc whose body stays literal.
+    pub(in crate::executor) fn expand_heredoc_body(&self, body: &str) -> String {
+        let quoted = body.starts_with('\x1e');
+        let body = strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(body));
+        if quoted {
+            return body.to_string();
+        }
+        self.expand_embedded_parameters(body)
     }
 }
 
