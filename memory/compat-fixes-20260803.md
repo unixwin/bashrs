@@ -104,3 +104,13 @@
 ## 待办族（每族独立中等任务）
 - 族 D 剩余：extglob 错误（`@(` 不完整）、echo typed args——需解析器错误机制（parse 返回错误），系统性问题
 - 族 K coproc/进程替换挂起（P0）、族 C IFS 分词、族 E 内置族（umask/trap/kill/set 等 120 项）、族 H alias、族 F 数组、族 G 算术错误码、族 I 参数替换、族 J glob 路径、族 B 状态污染（P3 最难）
+
+### 21d73d3 族 K 进程替换嵌套命令替换（#21 §1.5）
+- 根因：`split_shell_words` 不处理 `<(...)`——`<(printf 'psub')` 被拆成多个词，命令替换的 cat 特例当文件路径读失败 → 空
+- 修复：① split_shell_words 新增 `copy_process_substitution_word`（`<(...)` 复制到匹配 `)`，仿照 copy_dollar_paren_word）；② cat 特例对 `<(` 前缀参数执行 `expand_command_substitution(source)` 拿输出
+- 验证：`echo "$(cat <(printf 'psub'))"` → psub ✓（bash 一致）；差分 19 PASS 无回归
+
+### coproc 挂起根因定位（#21 §2.1，P0 已知）
+- `execute_coproc_command`（compound_exec.rs:504）用 `std::process::Command` 启动 rubash 子进程 + `std::io::pipe()` 管道
+- **根因**：COPROC 数组存**伪造 fd `(0 1)`**（`format!("({} {})", 0, 1)`）——bash 中 `${C[0]}` 是 coproc 管道读端**真实 fd**；rubash 的 `read <&"${C[0]}"` 展开为 `<&0`（stdin）→ 从 stdin 阻塞等待 → 挂起
+- 修复方向（后续）：coproc 数组存可映射的 fd 标记 + rubash 的 `<&N` 重定向从 `coproc_stdout_readers` 读；Windows 无真实 fd 暴露，需内部 fd 映射机制（中等-大复杂度）
