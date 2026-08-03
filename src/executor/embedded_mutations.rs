@@ -98,9 +98,14 @@ impl Executor {
                     chars.next();
                     output.push_str(&self.last_background_pid_value());
                 }
-                Some('@') | Some('*') => {
+                Some('@') => {
                     chars.next();
                     output.push_str(&self.positional_params.join(" "));
+                }
+                Some('*') => {
+                    chars.next();
+                    // Bash joins `$*` with the first IFS character (not a space).
+                    output.push_str(&self.positional_params_star_joined());
                 }
                 Some('#') => {
                     chars.next();
