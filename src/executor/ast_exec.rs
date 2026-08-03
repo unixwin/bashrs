@@ -30,6 +30,18 @@ impl Executor {
         let mut subshell_depth: Option<usize> = None;
         let mut subshell_stdin: Option<(String, String)> = None;
         while index < ast.commands.len() {
+            // Bash reports an arithmetic expansion error (`$(( '1' ))`,
+            // floating point, ...) and skips the rest of the current command
+            // list, but the script continues with the next line. Rubash
+            // reports the error during expansion; skip the next command here
+            // (Bash: `x=$(( '1' )); echo hi` runs neither assignment nor echo,
+            // but `echo ok` on the next line still runs).
+            if self.arithmetic_expansion_error.get() {
+                self.arithmetic_expansion_error.set(false);
+                self.exit_code = 1;
+                index += 1;
+                continue;
+            }
             let command = &ast.commands[index];
             if self.noexec_enabled() {
                 self.exit_code = 0;

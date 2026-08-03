@@ -342,6 +342,7 @@ impl Executor {
             random_state: Cell::new(self.random_state.get()),
             subshell_depth: Cell::new(self.subshell_depth.get() + 1),
             last_background_pid: self.last_background_pid,
+            arithmetic_expansion_error: Cell::new(false),
             background_children: HashMap::new(),
             background_jobs: HashMap::new(),
             background_job_order: Vec::new(),

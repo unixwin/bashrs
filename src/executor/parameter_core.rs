@@ -90,7 +90,8 @@ impl Executor {
             if let Some(message) =
                 crate::executor::arithmetic::arithmetic_error_message(expression)
             {
-                eprintln!("{}: {message}", self.diagnostic_prefix());
+                eprintln!("{}{}", self.diagnostic_prefix(), message);
+                self.arithmetic_expansion_error.set(true);
             }
         }
 

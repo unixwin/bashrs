@@ -349,6 +349,7 @@ pub struct Executor {
     debug_trap_running: bool,
     return_trap_running: bool,
     debug_trap_command: Option<String>,
+    arithmetic_expansion_error: Cell<bool>,
     last_command_substitution_status: Cell<Option<i32>>,
     stdout_capture: Option<Vec<u8>>,
     stderr_capture: Option<Vec<u8>>,
