@@ -21,8 +21,13 @@ pub(in crate::executor) fn is_special_parameter_name(name: &str) -> bool {
     matches!(name, "#" | "?" | "$" | "!" | "-" | "0")
 }
 
+/// Bash compatibility version advertised through BASH_VERSION / BASH_VERSINFO.
+/// Rubash targets GNU Bash 5.2 semantics; scripts that feature-detect on the
+/// version must see a compatible value, like other Bash-compatible shells do.
+const BASH_COMPAT_VERSION: &str = "5.2.37";
+
 pub(in crate::executor) fn bash_version_value() -> String {
-    format!("{}(1)-release", env!("CARGO_PKG_VERSION"))
+    format!("{}(1)-release", BASH_COMPAT_VERSION)
 }
 
 pub(in crate::executor) fn bash_path_value() -> String {
@@ -36,7 +41,7 @@ pub(in crate::executor) fn shell_path_value() -> String {
 }
 
 pub(in crate::executor) fn bash_versinfo_values() -> Vec<String> {
-    let mut parts = env!("CARGO_PKG_VERSION").split('.');
+    let mut parts = BASH_COMPAT_VERSION.split('.');
     vec![
         parts.next().unwrap_or("0").to_string(),
         parts.next().unwrap_or("0").to_string(),
