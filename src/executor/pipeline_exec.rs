@@ -37,8 +37,23 @@ impl Executor {
         &mut self,
         pipeline_command: &PipelineCommand,
     ) -> Result<(), ExecuteError> {
+        // Expand aliases in pipeline stages before running them, like Bash
+        // does during parsing. Without this, `alias pipehi='echo pipehi';
+        // pipehi | cat` fails with "pipeline command could not execute".
+        let mut stages = pipeline_command.stages.clone();
+        for stage in &mut stages {
+            if self.aliases.is_empty() {
+                break;
+            }
+            let raws: Vec<Option<&str>> = stage
+                .word_metadata
+                .iter()
+                .map(|metadata| Some(metadata.raw.as_str()))
+                .collect();
+            stage.words = self.expand_aliases_with_raw(&stage.words, &raws);
+        }
         let ast = Ast {
-            commands: pipeline_command.stages.clone(),
+            commands: stages,
         };
         self.execute_simple_pipeline(&ast, 0)?.ok_or_else(|| {
             ExecuteError::UnknownBuiltin("pipeline command could not execute".to_string())
