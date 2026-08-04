@@ -273,6 +273,9 @@ EOF
   (
     cd "$test_workdir"
     refuse_unsafe_dir "$PWD"
+    # Some upstream .tests invoke `./bash` directly (e.g. dbg-support); provide
+    # the rubash binary under that name like the Bash build would.
+    cp "$SHELL_BIN" ./bash
     env \
       HOME="$test_home" \
       THIS_SH="$shell_wrapper" \

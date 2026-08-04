@@ -192,4 +192,37 @@
 - bash-tests-diffs.txt 显示 6 个 rc=124 挂起（ifs-posix/jobs/printf/procsub/read/redir）——**与 heredoc_huge 同源**（外部命令管道串行模型挂起，如 `yes | head`）
 - 并发管道实验（std::io::pipe → 崩溃；os_pipe → 句柄继承问题挂起；线程 io::copy 转发 → Windows 竞态不稳定）——**均已回退**
 - **结论**：Windows 上 std::process 管道无法可靠并发连接（句柄继承/竞态）——需 **CreateProcess 手动句柄管理**（只继承需要的句柄，dup2 语义）或 winuxcmd 集成（Windows 原生管道）
+
+### ✅ 已验证解决方案（2026-08-04，winuxsh 侧实测，附代码）
+
+> 三个方案实测（临时 Rust 项目，Windows 11，winuxcmd yes/head）——**不需要手写 CreateProcess**：
+
+**方案 1：heredoc 内存方案（修 heredoc_huge，零管道攻坚）**
+实测：`Stdio::piped()` + `write_all` 10MB + `drop` 关闭写端 → **rc=0、97ms、不挂起**（内容有限 → 写线程/直接写完后 EOF，无无界生产者问题）。
+```rust
+let mut child = Command::new("cmd").args(["/c", "more"])
+    .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
+    .spawn()?;
+child.stdin.take().unwrap().write_all(&heredoc_bytes)?; // 内容已在内存
+drop(child.stdin); // 关键: 关闭写端 → 子进程读 EOF 正常退出
+let rc = child.wait()?;
+```
+
+**方案 2：os_pipe + `Stdio::from_raw_handle`（修 coproc/真管道）**
+实测：cmd 循环 20 万行 `|` findstr → **两侧 rc=0、4.4s、不挂起**。**关键：句柄完全移交给子进程（`from_raw_handle`），父进程不持有任何管道端**——之前 os_pipe「挂起」大概率是父进程还持有写端/句柄未移交干净，不是原理问题。
+```rust
+use std::os::windows::io::{IntoRawHandle, FromRawHandle};
+let (r, w) = os_pipe::pipe()?;
+let producer = Command::new("cmd").args(["/c", "for /L %i in (1,1,200000) do @echo line %i"])
+    .stdout(unsafe { Stdio::from_raw_handle(w.into_raw_handle()) })  // 移交写端
+    .spawn()?;
+let consumer = Command::new("findstr").args(["/c:line"])
+    .stdin(unsafe { Stdio::from_raw_handle(r.into_raw_handle()) })   // 移交读端
+    .spawn()?;
+// 父进程不持有任何管道端 → 不挂起
+```
+
+**方案 3：duct 实测失败，不建议引入**：`duct::cmd("yes").pipe(cmd("head", ["-n","3"])).read()` → head 崩溃（0xC0000109）+ 147s。但可**抄 duct 源码的 execute 实现**（CreateProcess + 句柄继承精髓）。
+
+**winuxcmd 验证结论**：Git Bash（MSYS 管道）下 `yes | head -n 3` 完全正常（RC=0）——**winuxcmd 命令本身没问题**；head 崩溃只出现在 duct 的 Windows 原生管道环境（duct 实现问题，非 winuxcmd）。
 - 阶段 2 其余可先修：rc=127（命令找不到）、rc=2（语法错误族 D）、stdout 差异（rc=0 各类语义）——不依赖并发管道
