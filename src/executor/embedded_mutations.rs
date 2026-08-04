@@ -411,7 +411,18 @@ impl Executor {
         // does not abort the substitution (set-e.tests "command subst should
         // not inherit -e"); only the substitution's final status (echo's 0)
         // propagates to the outer assignment, which then checks -e.
-        let result = self.with_errexit_suppressed(|executor| executor.execute_ast(&ast));
+        // POSIX mode is the exception: `set -o posix; z=$(false;echo posix)`
+        // exits (set-e1.sub), so keep errexit active there.
+        let posix_mode = self
+            .env_vars
+            .get("__RUBASH_POSIX_MODE")
+            .map(String::as_str)
+            == Some("1");
+        let result = if posix_mode {
+            self.execute_ast(&ast)
+        } else {
+            self.with_errexit_suppressed(|executor| executor.execute_ast(&ast))
+        };
         let output = self.stdout_capture.take().unwrap_or_default();
         self.stdout_capture = saved_capture;
 

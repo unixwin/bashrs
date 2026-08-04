@@ -258,8 +258,16 @@ impl Executor {
             let Some((mut next_input, next_stderr, next_status)) =
                 (if last_stage && self.lastpipe_enabled() {
                     Some(self.execute_lastpipe_stage(stage, &input)?)
-                } else {
+                } else if last_stage {
                     self.execute_pipeline_stage(stage, &input)?
+                } else {
+                    // Non-final pipeline stages never trigger errexit (bash
+                    // manual: "any command in a pipeline but the last");
+                    // `{ false; echo foo; } | cat` still prints foo
+                    // (set-e1.sub "after brace pipeline").
+                    self.with_errexit_suppressed(|executor| {
+                        executor.execute_pipeline_stage(stage, &input)
+                    })?
                 })
             else {
                 return Ok(None);

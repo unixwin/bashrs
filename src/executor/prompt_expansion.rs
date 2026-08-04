@@ -255,43 +255,30 @@ impl Executor {
 
     pub(in crate::executor) fn shell_option_flags(&self) -> String {
         let mut flags = String::new();
-        if crate::builtins::set::shell_option_enabled(&self.env_vars, "hashall") {
-            flags.push('h');
-        }
+        // Order matches GNU Bash flags.c shell_flags[] so `$-` output agrees
+        // (`set -e -h -B` prints `ehB`, set-e3.sub `echo $-`).
         for (flag, option) in [
             ('a', "allexport"),
             ('b', "notify"),
-            ('B', "braceexpand"),
-            ('E', "errtrace"),
-            ('H', "histexpand"),
+            ('e', "errexit"),
+            ('f', "noglob"),
+            ('h', "hashall"),
             ('k', "keyword"),
-            ('P', "physical"),
             ('p', "privileged"),
             ('t', "onecmd"),
-            ('T', "functrace"),
+            ('u', "nounset"),
             ('v', "verbose"),
+            ('x', "xtrace"),
+            ('B', "braceexpand"),
+            ('C', "noclobber"),
+            ('E', "errtrace"),
+            ('H', "histexpand"),
+            ('P', "physical"),
+            ('T', "functrace"),
         ] {
             if crate::builtins::set::shell_option_enabled(&self.env_vars, option) {
                 flags.push(flag);
             }
-        }
-        if self.errexit_enabled() {
-            flags.push('e');
-        }
-        if self.xtrace_enabled() {
-            flags.push('x');
-        }
-        if crate::builtins::set::shell_option_enabled(&self.env_vars, "nounset") {
-            flags.push('u');
-        }
-        if self.noexec_enabled() {
-            flags.push('n');
-        }
-        if crate::builtins::set::shell_option_enabled(&self.env_vars, "noclobber") {
-            flags.push('C');
-        }
-        if crate::builtins::set::shell_option_enabled(&self.env_vars, "noglob") {
-            flags.push('f');
         }
         flags
     }

@@ -13,6 +13,19 @@ impl Executor {
         self.report_command_heredoc_errors(cmd)?;
 
         if let Some(result) = self.execute_initial_command_node(cmd) {
+            // Compound commands run through execute_initial_command_node and
+            // bypass the errexit check in execute_materialized_command. A
+            // failing subshell must still honor `set -e`: `(exit 17)` exits
+            // the script (set-e1.sub). &&/||/! contexts already suppressed
+            // errexit at the ast_exec call site.
+            if cmd.subshell_command.is_some()
+                && result.is_ok()
+                && self.errexit_enabled()
+                && self.errexit_is_active()
+                && self.exit_code != 0
+            {
+                return Err(ExecuteError::ExitCode(self.exit_code));
+            }
             return result;
         }
 

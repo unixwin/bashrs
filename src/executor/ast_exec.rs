@@ -335,6 +335,18 @@ impl Executor {
                     if let Some(saved_depth) = subshell_depth.take() {
                         self.subshell_depth.set(saved_depth);
                     }
+                    // A failing subshell command triggers errexit like any
+                    // other failing command: `(exit 17)` under `set -e` exits
+                    // the script (set-e1.sub), while `true && (exit 1)` and
+                    // `! (exit 1)` contexts keep running.
+                    if self.exit_code != 0
+                        && crate::builtins::set::shell_option_enabled(&self.env_vars, "errexit")
+                        && self.suppress_errexit == 0
+                        && !command.inverted
+                        && command.and_or().is_none()
+                    {
+                        return Err(ExecuteError::ExitCode(self.exit_code));
+                    }
                     continue;
                 }
                 Err(error) => return Err(error),
