@@ -22,8 +22,31 @@ pub(super) fn decode_ansi_c_quoted(value: &str) -> String {
             Some('"') => output.push('"'),
             Some('?') => output.push('?'),
             Some('x') => {
-                if let Some(value) = read_ansi_c_digits(&mut chars, 16, 2) {
-                    push_ansi_c_codepoint(&mut output, value);
+                if chars.peek().copied() == Some('{') {
+                    // ksh93/bash `\x{hex}` form (lib/sh/strtrans.c): consume
+                    // hex digits until a non-xdigit or `}`, cap at 0xFF.
+                    // `\x{}` yields NUL (bash outputs it verbatim; recho shows
+                    // `<ab>` because the NUL terminates the C string).
+                    chars.next();
+                    let mut value = String::new();
+                    while let Some(next) = chars.peek().copied() {
+                        if next == '}' || next.to_digit(16).is_none() {
+                            break;
+                        }
+                        value.push(next);
+                        chars.next();
+                    }
+                    if chars.peek().copied() == Some('}') {
+                        chars.next();
+                    }
+                    if value.is_empty() {
+                        output.push('\0');
+                    } else {
+                        let parsed = u32::from_str_radix(&value, 16).unwrap_or(0) & 0xFF;
+                        push_ansi_c_codepoint(&mut output, parsed);
+                    }
+                } else if let Some(value) = read_ansi_c_digits(&mut chars, 16, 2) {
+                    push_ansi_c_codepoint(&mut output, value & 0xFF);
                 } else {
                     output.push('\\');
                     output.push('x');
