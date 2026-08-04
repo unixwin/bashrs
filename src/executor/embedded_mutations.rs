@@ -353,6 +353,20 @@ impl Executor {
         if command_substitution_uses_specialized_path(self, source, &words) {
             return self.expand_command_substitution(source);
         }
+        // A command list (`echo a; echo b`, `a && b`) must run as an AST, not
+        // through the single-command specialized dispatch below: routing
+        // `echo mn; echo op` to the echo shortcut treats `;` as an argument
+        // and yields `mn; echo op` instead of `mn\nop` (comsub.tests
+        // `ab$(echo mn; echo op)yz`). A quoted `a;b` argument is harmless to
+        // route here too: the AST still prints it correctly.
+        if words
+            .iter()
+            .any(|word| word.contains(';') || matches!(word.as_str(), "&&" | "||"))
+        {
+            if let Some(output) = self.run_ast_command_substitution(source) {
+                return output;
+            }
+        }
         // Simple builtins that the non-mut special-case dispatch handles with
         // proper quote stripping (echo/printf/cat/...). Prefer that path so
         // nested `"$(...)"` arguments do not leak quote characters through
