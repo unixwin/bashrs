@@ -103,6 +103,23 @@ impl Executor {
             return self.expand_embedded_parameters_mut(word);
         }
 
+        // A whole-word `${...}` must go to the braced parameter expander.
+        // Routing it through expand_embedded_parameters_mut re-collects the
+        // same `${...}` and calls expand_word_mut again, recursing forever
+        // (`echo ${foo:-$(echo x)}` overflowed the stack in comsub.tests).
+        // The immutable expander still executes `$(...)` inside the braced
+        // word; only `:=`/`=` assignment side effects would be lost, and
+        // those already routed through apply_parameter_assignment_expansion
+        // above.
+        if let Some(name) = word
+            .strip_prefix("${")
+            .and_then(|rest| rest.strip_suffix('}'))
+        {
+            if braced_parameter_spans_whole_word(word) {
+                return self.expand_braced_parameter_word(word, name);
+            }
+        }
+
         if let Some(source) = word
             .strip_prefix("$(")
             .and_then(|rest| rest.strip_suffix(')'))
