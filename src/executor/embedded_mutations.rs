@@ -406,7 +406,12 @@ impl Executor {
 
         let saved_capture = self.stdout_capture.take();
         self.stdout_capture = Some(Vec::new());
-        let result = self.execute_ast(&ast);
+        // Bash runs command substitution in a subshell where errexit is
+        // suppressed: `$(false; echo ok)` prints ok because the inner `false`
+        // does not abort the substitution (set-e.tests "command subst should
+        // not inherit -e"); only the substitution's final status (echo's 0)
+        // propagates to the outer assignment, which then checks -e.
+        let result = self.with_errexit_suppressed(|executor| executor.execute_ast(&ast));
         let output = self.stdout_capture.take().unwrap_or_default();
         self.stdout_capture = saved_capture;
 
