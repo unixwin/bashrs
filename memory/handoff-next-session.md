@@ -92,3 +92,15 @@ scripts/run-bash-upstream-tests.sh
 - 差分 26/26 ✅；lib 145；lexer 69；executor case 66
 - bash 官方 83 已修测试净效果：posixpat(ok 21)、case(剩 readonly 算术)、comsub(rc 0/0，剩 4 处细节)、nquote4(核心)、set-e(剩 errexit 细节)、dbg-support2($1 对)
 - 挂起族（rc=124×6）：timeout 在 Windows 不杀 rubash 进程——difftest 全量会卡，需先修管道并发（os_pipe + from_raw_handle 已验证方案）或用 taskkill 包装
+
+### 第四段提交（errexit 系列）
+- **3a8de7d 命令替换 errexit**：`run_ast_command_substitution` 用 `with_errexit_suppressed` 执行（bash：`$(false; echo ok)` 内 false 不 abort）；POSIX 模式例外（`set -o posix; z=$(false;echo posix foo)` 退出，set-e1.sub）
+- **bfc89ce 子 shell + 管道 + `$-`**：
+  - `execute_command` 对 subshell 命令加 errexit 检查（`(exit 17)` 在 set -e 下退出；&&/||/! 上下文已在 ast_exec 抑制）
+  - 管道非最后段 `with_errexit_suppressed`（`{ false; echo foo; } | cat` 输出 foo）
+  - `shell_option_flags` 按 bash flags.c shell_flags[] 顺序（`$-` 输出 ehB）
+- **剩余（set-e.tests 4 行 diff）**：① `&&`/`||` 列表**最后执行命令**失败要触发 errexit（`true && true|false`、`false | echo foo | false` 的管道最后段）——当前整个 and_or 被 with_errexit_suppressed 粗粒度抑制，需按 execute_cmd.c 粒度重构；② `{ false; echo foo; } | cat` 的 foo 与 after brace pipeline 输出顺序；③ A/B/C 一组错位
+- **set-x.tests 待修**：`for ((...))` 算术头 xtrace 缺失（execute_arithmetic_for_command 需加 trace_arith_expression）；`(( ))` 内 `i>0`/`i<=5` 被词法层加空格（`(( i>0 ))` → words `["((", "i > 0", "))"]`，parse_arithmetic_command 用 tokens join）——bash 保持原样，需词法层 `((` 命令按算术上下文收集；bash 5.2 实测 `((  expr  ))` 双空格 vs 5.3 .right 单空格（difftest 基准 Git Bash 5.2）
+
+### 本会话累计（提交 c0d2f5b → bfc89ce 共 12 项）
+case 模式 raw 反斜杠 / fallthrough 算术副作用 / comsub 栈溢出 P0 / comsub 多命令 / ANSI-C `\x{hex}` / DEBUG trap LINENO / CLI `-ce` / errexit 命令替换 / errexit 子 shell+管道 / `$-` 顺序 / posix 模式 errexit / 差分 26 全 PASS 稳定
