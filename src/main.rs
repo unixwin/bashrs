@@ -34,6 +34,41 @@ fn run_args(executor: &mut Executor, args: &[String]) -> i32 {
     // TODO(shell.c): GNU Bash has a full option parser and shell-name handling.
     // This narrow parser supports the `-c` and `-o posix -c` forms used by
     // upstream alias tests.
+    // Bash merges short options: `-ce 'script'` is `-c -e 'script'` (used by
+    // upstream set-e2.sub with THIS_SH=rubash). Expand any combined `-Xc`
+    // form into separate `-X` / `-c` arguments first so the `-c` branch can
+    // consume the command string that follows.
+    let mut expanded_args: Vec<String> = Vec::with_capacity(args.len());
+    for arg in args {
+        if let Some(flags) = arg.strip_prefix('-') {
+            let flags = flags.strip_prefix('-').unwrap_or(flags);
+            if flags.len() > 1
+                && flags.contains('c')
+                && flags.chars().all(|flag| {
+                    flag == 'c' || cli_shell_flag_name(flag).is_some() || flag == 's' || flag == 'o'
+                })
+            {
+                // Bash's getopt consumes the next argv for `-c`, so emit the
+                // boolean flags first and `-c` last (`-ce 'x'` == `-e -c 'x'`).
+                let mut c_count = 0usize;
+                for flag in flags.chars() {
+                    if flag == 'c' {
+                        c_count += 1;
+                    } else if flag == 's' {
+                        expanded_args.push("-s".to_string());
+                    } else {
+                        expanded_args.push(format!("-{flag}"));
+                    }
+                }
+                for _ in 0..c_count {
+                    expanded_args.push("-c".to_string());
+                }
+                continue;
+            }
+        }
+        expanded_args.push(arg.clone());
+    }
+    let args = &expanded_args;
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {

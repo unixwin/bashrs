@@ -3,7 +3,12 @@ use super::*;
 impl Executor {
     /// Execute an AST
     pub fn execute_command(&mut self, cmd: &CommandNode) -> Result<(), ExecuteError> {
-        self.set_current_line(cmd);
+        // While a DEBUG trap action runs, LINENO must keep pointing at the
+        // about-to-run command that triggered the trap (dbg-support2.tests
+        // `print_trap $LINENO`); the action's own commands must not move it.
+        if !self.debug_trap_running {
+            self.set_current_line(cmd);
+        }
         self.set_current_command(cmd);
         self.report_command_heredoc_errors(cmd)?;
 

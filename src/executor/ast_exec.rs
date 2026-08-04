@@ -75,7 +75,19 @@ impl Executor {
                 || command.for_command.is_some();
             let debug_trap_active = crate::builtins::trap::get_trap_action(&self.env_vars, "DEBUG")
                 .is_some_and(|action| !action.is_empty());
-            if !skips_debug_trap && self.function_depth == 0 && debug_trap_active {
+            // Do not fire for commands inside the trap action itself: Bash
+            // does not re-enter the DEBUG trap while an action runs, and
+            // firing would let the action's commands overwrite LINENO with
+            // their own (synthetic) line before run_debug_trap's guard sees
+            // the flag (dbg-support2.tests `print_trap $LINENO`).
+            if !skips_debug_trap
+                && self.function_depth == 0
+                && debug_trap_active
+                && !self.debug_trap_running
+            {
+                // Bash exposes the about-to-run command's line via LINENO
+                // inside the DEBUG trap action (dbg-support2.tests).
+                self.set_current_line(command);
                 let command_text = self.xtrace_command_text(command);
                 self.run_debug_trap(&command_text)?;
             }
