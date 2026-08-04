@@ -65,3 +65,30 @@ scripts/run-bash-upstream-tests.sh
 - 本会话提交：9ac696b（$(( ))）、73ae556（appendop）、7e8523c（strip/tilde）、177d31f（sed/type）
 - **未提交**：upstream_scripts.rs 临时 `return false`（hack 禁用，待决策）、Cargo.lock、run-bash-upstream-tests.sh（会话前已有）
 - 领先 origin/master 11 commit，未 push；发布协调（阶段 7）：rubash 合并主分支 → winuxsh 用最新 rubash 打 tag
+
+## 六、下一会话（2026-08-04 第二段）新增成果
+
+### 本段提交（对照 C 源码）
+- **c0d2f5b case 模式 raw 反斜杠**：`case_command.rs` 用 raw token 文本构建模式（bash execute_cmd.c：模式不剥引号），`\]`/`\"`/`\\` 保留；删除 `mark_case_pattern_literal_backslashes`（错误设计：`\x18` 被当字面反斜杠）；`pattern.rs` bracket 内 `\`/`\x18` 后 `]` 是字面成员不闭合（glob.c parse_bracket）；`expand_case_pattern` 保护 `\` 过 decode 并还原 → posixpat ok 21 + case-06 C-MATCH
+- **c0d2f5b 同批**：`expand_case_pattern` 改用 `expand_word_mut`（&mut）→ case 模式 `$((x=1))` 赋值副作用保留（case.tests `;&` fallthrough 输出 1.0，之前 0.1）
+- **e85248d comsub 栈溢出 P0**：`expand_word_mut` 把含 `$(` 的完整 `${...}`（如 `${foo:-$(echo x)}`）路由到 `expand_embedded_parameters_mut` → `${` 内嵌分支 collect 同串再 `expand_word_mut` 无限递归。修复：完整 braced word 先走 `expand_braced_parameter_word`（对齐 &self 版本）。comsub.tests rc 0/127 → 0/0
+- **b478b08 comsub 多命令**：`$(echo mn; echo op)` 首词 echo 被 specialized 快捷路径吞（`;` 当参数输出 `mn; echo op`）。修复：words 含 `;`/`&&`/`||` 先走 `run_ast_command_substitution`。comsub.tests diff 40→20 行
+- **c43cfae ANSI-C `\x{hex}`**：decode_ansi_c_quoted 支持 `\x{...}`（strtrans.c：消费 hex 到非 xdigit/`}`，&0xFF，空 `\x{}`→NUL）。nquote4 核心展开修复；剩余是 recho 字节/UTF-8 显示差异（winuxsh 工具侧）
+
+### bash 官方 83 当前状态（本段快照）
+- difftest 全量卡在挂起族（timeout 未生效，rubash 进程 8 分钟不结束）→ 已取消，未拿到新汇总
+- 已修测试净效果：posixpat brackpat ok 21、case.tests 剩 readonly 算术错误（xx++ 报错缺失）、comsub.tests rc 0/0
+- 下一批候选（rc=0/0 行数接近）：dbg-support2（lineno 全 1，BASH_LINENO 行号跟踪）；nquote/nquote1/iquote/set-e（printf %q 等）
+
+### 未提交
+- memory 本文件、Cargo.lock、run-bash-upstream-tests.sh（会话前）
+- upstream_scripts.rs `return false` hack 禁用（待决策：保留修真实语义或还原）
+
+### 本段追加提交（第三段）
+- **37122bf DEBUG trap LINENO**：ast_exec 触发 DEBUG trap 前 `set_current_line(command)`；触发条件加 `!debug_trap_running`（trap action 内命令不再重入触发，避免用合成行号覆盖 LINENO）；`execute_command` 在 trap action 期间跳过 set_current_line。dbg-support2 `$1` 参数 29/30/31... 对齐 bash；剩余 `($LINENO)` 函数内 LINENO（bash=函数定义行 18，rubash=外层值）待修（函数调用 LINENO 基准）
+- **37122bf CLI `-ce` 合并**：main.rs 分解 `-Xc` 短选项为 `-X` + `-c`（c 放最后消费 argv；bash getopt 语义）。set-e2.sub 的 `${THIS_SH} -ce '...'` 不再命令找不到；set-e.tests rc 0/0（剩余 errexit 语义：`(exit 17)`、函数/管道内 set -e 行为、`ok` 缺失）
+
+### 第三段已验证基线
+- 差分 26/26 ✅；lib 145；lexer 69；executor case 66
+- bash 官方 83 已修测试净效果：posixpat(ok 21)、case(剩 readonly 算术)、comsub(rc 0/0，剩 4 处细节)、nquote4(核心)、set-e(剩 errexit 细节)、dbg-support2($1 对)
+- 挂起族（rc=124×6）：timeout 在 Windows 不杀 rubash 进程——difftest 全量会卡，需先修管道并发（os_pipe + from_raw_handle 已验证方案）或用 taskkill 包装
