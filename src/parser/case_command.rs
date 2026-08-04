@@ -46,7 +46,9 @@ pub(super) fn parse_case_command(tokens: &[Token], start: usize) -> Option<(Comm
         while i < tokens.len() {
             // Check if this is a ) that ends the case pattern (not inside extglob)
             if is_keyword(tokens, i, ")") && in_extglob == 0 {
-                patterns.push(mark_case_pattern_literal_backslashes(&current_pattern));
+                // Bash does not perform quote removal on case patterns
+                // (execute_cmd.c), so raw `\]` / `\"` / `\\` escapes survive.
+                patterns.push(current_pattern.clone());
                 raw_patterns.push(current_raw_pattern.clone());
                 current_pattern.clear();
                 current_raw_pattern.clear();
@@ -68,7 +70,14 @@ pub(super) fn parse_case_command(tokens: &[Token], start: usize) -> Option<(Comm
                         current_pattern.push_str(&extglob);
                         current_raw_pattern.push_str(&extglob);
                     } else {
-                        current_pattern.push_str(text);
+                        // Bash does not perform quote removal on case patterns
+                        // (execute_cmd.c: "the pattern does not undergo quote
+                        // removal"), so a backslash must survive here: in
+                        // `[[:alpha:]\]` the `\]` is a literal bracket member
+                        // and the bracket never closes (posixpat.tests ok 21).
+                        // Use the raw text so `\]` stays intact; expand_case_pattern
+                        // protects it through expansion and decode.
+                        current_pattern.push_str(&tokens[i].raw);
                         current_raw_pattern.push_str(&tokens[i].raw);
                     }
                 }
@@ -106,7 +115,7 @@ pub(super) fn parse_case_command(tokens: &[Token], start: usize) -> Option<(Comm
                 TokenKind::Pipe => {
                     // Pipe separates case patterns (not inside extglob)
                     if in_extglob == 0 {
-                        patterns.push(mark_case_pattern_literal_backslashes(&current_pattern));
+                        patterns.push(current_pattern.clone());
                         raw_patterns.push(current_raw_pattern.clone());
                         pattern_separator_metadata.push(build_word_metadata(
                             pattern_separators.len(),
@@ -199,10 +208,6 @@ fn collect_case_word(tokens: &[Token], index: usize) -> Option<(String, String, 
         .get(index)
         .filter(|token| token.kind == TokenKind::Keyword)
         .map(|token| (token.value.clone(), token.raw.clone(), index + 1))
-}
-
-pub(super) fn mark_case_pattern_literal_backslashes(pattern: &str) -> String {
-    pattern.replace('\\', "\x18")
 }
 
 fn case_pattern_nodes(

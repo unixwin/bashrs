@@ -187,7 +187,9 @@ fn case_bracket_expression_matches_with_case(
         // bracket member, not the closing bracket. `[[:alpha:]\]` therefore
         // has an unterminated bracket (the `]` after `\` is a member), so the
         // pattern never closes and cannot match (posixpat.tests ok 21).
-        if pattern[index] == '\\' && index + 1 < pattern.len() {
+        // `\x18` is a legacy protected-literal-backslash marker that may still
+        // reach this matcher; treat it exactly like a real backslash here.
+        if matches!(pattern[index], '\\' | '\x18') && index + 1 < pattern.len() {
             if chars_match(pattern[index + 1], candidate, nocase) {
                 matched = true;
             }

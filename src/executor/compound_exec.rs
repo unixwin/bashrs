@@ -738,21 +738,31 @@ impl Executor {
         Ok(())
     }
 
-    fn expand_case_pattern(&self, pattern: &crate::parser::CasePattern) -> String {
+    fn expand_case_pattern(&mut self, pattern: &crate::parser::CasePattern) -> String {
         const PROTECTED_CASE_PATTERN_BACKSLASH: char = '\x15';
 
         if !case_pattern_raw_has_quotes(&pattern.raw_text) {
-            let protected = pattern
-                .text
-                .replace('\x18', &PROTECTED_CASE_PATTERN_BACKSLASH.to_string());
-            let expanded = self
-                .expand_word(&protected)
-                .replace(PROTECTED_CASE_PATTERN_BACKSLASH, "\x18");
+            // Backslashes in a case pattern are escape characters, not quote
+            // removal subjects (bash execute_cmd.c: patterns do not undergo
+            // quote removal). Protect every `\` (and the legacy `\x18` marker)
+            // through expansion and decode_parameter_pattern_quotes, then
+            // restore the real backslash so case_pattern_matches can apply its
+            // escape semantics (`\]` is a bracket member, `\"` matches `"`).
+            let protected = pattern.text.replace(
+                |c| c == '\\' || c == '\x18',
+                &PROTECTED_CASE_PATTERN_BACKSLASH.to_string(),
+            );
+            // Use the mutable expander: case pattern expansion is not an
+            // isolated sub-expression — `$((x=1))` in a pattern must keep its
+            // assignment side effects (bash execute_cmd.c evaluates patterns
+            // with the current variable state; case.tests `;&` fall-through).
+            let expanded = self.expand_word_mut(&protected);
             let decoded = decode_parameter_pattern_quotes(&expanded);
-            return strip_surrounding_quotes(&decoded);
+            let restored = decoded.replace(PROTECTED_CASE_PATTERN_BACKSLASH, "\\");
+            return strip_surrounding_quotes(&restored);
         }
 
-        quote_aware_case_pattern(&pattern.raw_text, |word| self.expand_word(word))
+        quote_aware_case_pattern(&pattern.raw_text, |word| self.expand_word_mut(word))
     }
 
     pub(in crate::executor) fn execute_case_command_with_redirects(
@@ -1006,7 +1016,7 @@ fn case_pattern_raw_has_quotes(raw: &str) -> bool {
     false
 }
 
-fn quote_aware_case_pattern(raw: &str, expand_word: impl Fn(&str) -> String) -> String {
+fn quote_aware_case_pattern(raw: &str, mut expand_word: impl FnMut(&str) -> String) -> String {
     let chars = raw.chars().collect::<Vec<_>>();
     let mut output = String::new();
     let mut index = 0usize;
