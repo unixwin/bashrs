@@ -285,11 +285,17 @@ impl Executor {
             )?);
         }
 
-        Ok(crate::builtins::pushd::execute(
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let status = crate::builtins::pushd::execute_with_io(
             builtin,
-            &cmd.words[1..],
+            cmd.words[1..].iter().map(String::as_str),
             &mut self.env_vars,
             &diagnostic_prefix,
-        )?)
+            &mut stdout,
+            &mut stderr,
+        )?;
+        self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+        Ok(status)
     }
 }

@@ -62,7 +62,15 @@ impl Executor {
             )?);
         }
 
-        Ok(crate::builtins::kill::execute(&cmd.words[1..])?)
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let status = crate::builtins::kill::execute_with_io(
+            &cmd.words[1..],
+            &mut stdout,
+            &mut stderr,
+        )?;
+        self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+        Ok(status)
     }
 
     fn execute_tracked_background_kill(

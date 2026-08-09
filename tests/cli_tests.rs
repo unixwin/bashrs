@@ -82,6 +82,18 @@ fn shopt_print_pipeline_is_captured_before_external_stage() {
 }
 
 #[test]
+fn option_and_stack_builtin_pipelines_are_captured() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("umask -S | head -n 1; kill -l | head -n 1; dirs -p | head -n 1")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout).lines().count(), 3);
+}
+
+#[test]
 #[cfg(windows)]
 fn external_pipeline_does_not_buffer_an_unbounded_producer() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
