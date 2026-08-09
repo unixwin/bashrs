@@ -13,6 +13,26 @@ impl Executor {
             env_vars.entry("PATH".to_string()).or_insert(path_val);
         }
 
+        // MSYS Bash exposes HOME even when the native Windows environment
+        // only provides USERPROFILE.  Keep `$HOME` usable for scripts that
+        // pass it to cd and other builtins, while preserving an explicitly
+        // supplied (including empty) HOME value.
+        #[cfg(windows)]
+        if !env_vars.contains_key("HOME") {
+            let fallback_home = env_vars
+                .get("USERPROFILE")
+                .cloned()
+                .or_else(|| {
+                    env_vars
+                        .get("HOMEDRIVE")
+                        .zip(env_vars.get("HOMEPATH"))
+                        .map(|(drive, path)| format!("{drive}{path}"))
+                });
+            if let Some(home) = fallback_home {
+                env_vars.insert("HOME".to_string(), home);
+            }
+        }
+
         let imported_functions = import_exported_functions_from_env(&env_vars);
         env_vars.remove("__RUBASH_CURRENT_FUNCTION");
         env_vars.remove("__RUBASH_IN_SOURCE");

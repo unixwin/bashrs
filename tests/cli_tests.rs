@@ -37,6 +37,23 @@ fn c_command_reads_named_coproc_stdout_through_array_fd() {
     assert_eq!(String::from_utf8_lossy(&output.stdout), "coproc-ok\n");
 }
 
+#[test]
+fn windows_userprofile_supplies_home_when_home_is_absent() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .env_remove("HOME")
+        .env("USERPROFILE", r"C:\rubash-home-test")
+        .arg("-c")
+        .arg("printf '%s\\n' \"$HOME\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "C:\\rubash-home-test\n"
+    );
+}
+
 fn posix_real_seconds(stderr: &str) -> f64 {
     let real = stderr
         .lines()
