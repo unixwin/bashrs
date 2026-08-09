@@ -56,6 +56,31 @@ fn test_noninteractive_shell_option_defaults_match_bash() {
 }
 
 #[test]
+fn test_igncr_shell_option_is_listed_and_toggleable() {
+    let output_path = "target/rubash-set-igncr-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "set -o igncr; set -o > {output_path}; set +o igncr; set -o >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    let lines: Vec<_> = fs::read_to_string(output_path)
+        .unwrap()
+        .lines()
+        .filter(|line| line.starts_with("igncr"))
+        .collect();
+    assert_eq!(lines.len(), 2);
+    assert!(lines[0].ends_with("\ton"));
+    assert!(lines[1].ends_with("\toff"));
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_shellopts_assignment_reports_readonly() {
     let status_path = "target/rubash-shellopts-readonly-status.txt";
     let _ = fs::remove_file(status_path);
