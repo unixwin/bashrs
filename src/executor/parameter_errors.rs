@@ -168,7 +168,10 @@ impl Executor {
                     } else {
                         self.expand_parameter_word(message)
                     };
-                    return Some((name.to_string(), message, 1));
+                    // Bash reports parameter expansion failures as a
+                    // command-not-found-style expansion error (status 127),
+                    // including both `?` and `:?` operators.
+                    return Some((name.to_string(), message, 127));
                 }
             }
             if let Some((name, _, Some(length))) = self.parse_parameter_substring(inner) {

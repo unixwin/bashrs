@@ -151,8 +151,8 @@ fn test_parameter_colon_question_errors_for_unset_value() {
 
     let result = executor.execute_ast(&ast);
 
-    assert!(matches!(result, Err(ExecuteError::ExitCode(1))));
-    assert_eq!(executor.last_exit_code(), 1);
+    assert!(matches!(result, Err(ExecuteError::ExitCode(127))));
+    assert_eq!(executor.last_exit_code(), 127);
     assert!(!std::path::Path::new(output_path).exists());
 }
 
@@ -167,8 +167,8 @@ fn test_array_element_parameter_colon_question_errors_for_unset_value() {
 
     let result = executor.execute_ast(&ast);
 
-    assert!(matches!(result, Err(ExecuteError::ExitCode(1))));
-    assert_eq!(executor.last_exit_code(), 1);
+    assert!(matches!(result, Err(ExecuteError::ExitCode(127))));
+    assert_eq!(executor.last_exit_code(), 127);
     assert!(!std::path::Path::new(output_path).exists());
 }
 
