@@ -514,6 +514,15 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                 return TokenAction::Continue;
             }
 
+            if token.value == "(" && !command_is_empty(&state.current_cmd) {
+                state.current_cmd.assignments.insert(
+                    "__RUBASH_PARSE_ERROR__".to_string(),
+                    "unexpected token `('".to_string(),
+                );
+                *i += 1;
+                return TokenAction::Continue;
+            }
+
             if token.value == ")" && state.in_subshell {
                 if command_is_empty(&state.current_cmd) {
                     if let Some(command) = state.ast.commands.last_mut() {
@@ -533,6 +542,15 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                 } else {
                     collect_trailing_redirections(tokens, &mut *i, &mut state.current_cmd);
                 }
+                return TokenAction::Continue;
+            }
+
+            if token.value == ")" && !state.in_subshell {
+                state.current_cmd.assignments.insert(
+                    "__RUBASH_PARSE_ERROR__".to_string(),
+                    "unexpected token `)'".to_string(),
+                );
+                *i += 1;
                 return TokenAction::Continue;
             }
 

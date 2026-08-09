@@ -29,6 +29,12 @@ pub(super) fn parse_conditional_command(
 
     let mut command = CommandNode::new();
     command.line = tokens.get(start).map(|token| token.position);
+    if args.first().is_some_and(|arg| arg == ")") {
+        command.assignments.insert(
+            "__RUBASH_PARSE_ERROR__".to_string(),
+            "unexpected token `)'".to_string(),
+        );
+    }
     command.words.push("[[".to_string());
     command.words.extend(args.clone());
     command.conditional_command = Some(Box::new(ConditionalCommand {

@@ -43,6 +43,30 @@ fn test_extglob_syntax_requires_extglob_option_for_simple_commands() {
 }
 
 #[test]
+fn test_unquoted_parentheses_are_rejected_in_simple_commands() {
+    let tokens = tokenize("echo foo$x()");
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_err());
+    assert_eq!(executor.last_exit_code(), 2);
+}
+
+#[test]
+fn test_conditional_cannot_start_with_closing_parenthesis() {
+    let tokens = tokenize("[[ ) ]]");
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_err());
+    assert_eq!(executor.last_exit_code(), 2);
+}
+
+#[test]
 fn test_conditional_command_pipeline_stage_executes_and_feeds_next_stage() {
     let output_path = "target/rubash-conditional-command-pipeline-output.txt";
     let _ = fs::remove_file(output_path);
