@@ -38,6 +38,22 @@ fn c_command_reads_named_coproc_stdout_through_array_fd() {
 }
 
 #[test]
+fn c_command_keeps_named_coproc_output_fds_distinct() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "coproc FIRST { printf 'first\\n'; }; coproc SECOND { printf 'second\\n'; }; \
+             read -r first <&\"${FIRST[0]}\"; read -r second <&\"${SECOND[0]}\"; \
+             printf '%s:%s\\n' \"$first\" \"$second\"",
+        )
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "first:second\n");
+}
+
+#[test]
 #[cfg(windows)]
 fn external_pipeline_does_not_buffer_an_unbounded_producer() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))

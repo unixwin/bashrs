@@ -112,12 +112,17 @@ impl Executor {
 
     fn read_coproc_stdout(&mut self, fd: u32) -> Option<String> {
         // Bash exposes the coprocess output as COPROC[0] (and NAME[0]).
-        // Rubash stores that endpoint as a PipeReader keyed by the child PID;
-        // the shell-level descriptor is represented by the array value `0`.
-        if fd != 0 || self.coproc_stdout_readers.is_empty() {
+        // Rubash stores that endpoint as a PipeReader keyed by the child PID.
+        // A zero descriptor retains the legacy unnamed-coproc behavior; named
+        // coprocess arrays carry their PID as a virtual descriptor.
+        if self.coproc_stdout_readers.is_empty() {
             return None;
         }
-        let pid = *self.coproc_stdout_readers.keys().next()?;
+        let pid = if fd == 0 {
+            *self.coproc_stdout_readers.keys().next()?
+        } else {
+            self.coproc_stdout_readers.contains_key(&fd).then_some(fd)?
+        };
         let mut reader = self.coproc_stdout_readers.remove(&pid)?;
         let mut bytes = Vec::new();
         use std::io::Read;
