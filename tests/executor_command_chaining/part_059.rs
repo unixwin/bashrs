@@ -69,8 +69,8 @@ fn test_igncr_shell_option_is_listed_and_toggleable() {
     let result = executor.execute_ast(&ast);
 
     assert!(result.is_ok());
-    let lines: Vec<_> = fs::read_to_string(output_path)
-        .unwrap()
+    let output = fs::read_to_string(output_path).unwrap();
+    let lines: Vec<_> = output
         .lines()
         .filter(|line| line.starts_with("igncr"))
         .collect();
