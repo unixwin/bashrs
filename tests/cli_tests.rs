@@ -54,6 +54,22 @@ fn c_command_keeps_named_coproc_output_fds_distinct() {
 }
 
 #[test]
+fn c_command_writes_to_named_coproc_stdin_fd() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "coproc WORKER { read -r value; printf 'got:%s\\n' \"$value\"; }; \
+             printf 'hello\\n' >&\"${WORKER[1]}\"; \
+             read -r result <&\"${WORKER[0]}\"; echo \"$result\"",
+        )
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "got:hello\n");
+}
+
+#[test]
 #[cfg(windows)]
 fn external_pipeline_does_not_buffer_an_unbounded_producer() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))

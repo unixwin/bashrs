@@ -591,7 +591,7 @@ impl Executor {
                     // Use the child PID as a stable virtual descriptor so a
                     // named coprocess can be distinguished from other live
                     // coprocesses when `${NAME[0]}` is redirected to `read`.
-                    let array_value = format!("({} {})", pid, 1);
+                    let array_value = format!("({} {})", pid, pid);
                     self.env_vars.insert(array_name.clone(), array_value);
                     mark_env_name(&mut self.env_vars, "__RUBASH_ARRAY_VARS", &array_name);
                     self.env_vars

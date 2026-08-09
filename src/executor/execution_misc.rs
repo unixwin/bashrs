@@ -25,6 +25,7 @@ pub(in crate::executor) fn is_closed_redirect_target(path: &str) -> bool {
 
 pub(in crate::executor) fn redirect_target_fd(target: &str) -> Option<u32> {
     let fd = target.strip_prefix('&')?;
+    let fd = fd.trim_matches(|ch| ch == '"' || ch == '\x1d');
     (!fd.is_empty() && fd.chars().all(|ch| ch.is_ascii_digit()))
         .then(|| fd.parse::<u32>().ok())
         .flatten()

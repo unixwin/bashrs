@@ -43,6 +43,10 @@ impl Executor {
         let Some(fd) = redirect_target_fd(target) else {
             return Ok(false);
         };
+        if let Some(writer) = self.coproc_stdin_writers.get_mut(&fd) {
+            writer.write_all(output)?;
+            return Ok(true);
+        }
         let Some(fd_target) = self.env_vars.get(&fd_output_key(fd)).cloned() else {
             return Ok(false);
         };
@@ -157,7 +161,10 @@ impl Executor {
 
     pub(in crate::executor) fn has_output_fd_target(&self, target: &str) -> bool {
         redirect_target_fd(target)
-            .map(|fd| self.env_vars.contains_key(&fd_output_key(fd)))
+            .map(|fd| {
+                self.env_vars.contains_key(&fd_output_key(fd))
+                    || self.coproc_stdin_writers.contains_key(&fd)
+            })
             .unwrap_or(false)
     }
 
