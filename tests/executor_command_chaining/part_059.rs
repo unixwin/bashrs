@@ -81,6 +81,24 @@ fn test_igncr_shell_option_is_listed_and_toggleable() {
 }
 
 #[test]
+fn test_shopt_without_options_lists_readable_states() {
+    let output_path = "target/rubash-shopt-default-list-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!("shopt > {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    let output = fs::read_to_string(output_path).unwrap();
+    assert!(output.lines().any(|line| line.starts_with("checkwinsize") && line.ends_with("\ton")));
+    assert!(!output.contains("shopt -s "));
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_shellopts_assignment_reports_readonly() {
     let status_path = "target/rubash-shellopts-readonly-status.txt";
     let _ = fs::remove_file(status_path);

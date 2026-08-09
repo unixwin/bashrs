@@ -63,7 +63,9 @@ where
     W: Write,
     E: Write,
 {
-    let mut print = args.is_empty();
+    // `shopt` lists human-readable states by default; `-p` switches to
+    // reusable `shopt -s/-u` commands.  An empty argument list is not `-p`.
+    let mut print = false;
     let mut use_set_options = false;
     let mut mode = ShoptMode::List;
     let mut names = Vec::new();

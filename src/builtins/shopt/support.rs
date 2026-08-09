@@ -2,10 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
 
 pub(crate) const SHOPT_OPTIONS: &[&str] = &[
-    "array_expand_once",
-    "assoc_expand_once",
     "autocd",
-    "bash_source_fullpath",
+    "assoc_expand_once",
     "cdable_vars",
     "cdspell",
     "checkhash",
@@ -19,6 +17,7 @@ pub(crate) const SHOPT_OPTIONS: &[&str] = &[
     "compat42",
     "compat43",
     "compat44",
+    "completion_strip_exe",
     "complete_fullquote",
     "direxpand",
     "dirspell",
