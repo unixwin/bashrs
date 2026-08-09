@@ -118,6 +118,20 @@ fn declare_pipeline_output_is_captured() {
 }
 
 #[test]
+fn prefix_assignments_reach_env_builtin_pipeline() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("x=1 y=2 env | grep '^x='; x=1 y=2 env | grep '^y='")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("x=1"));
+    assert!(stdout.contains("y=2"));
+}
+
+#[test]
 fn umask_symbolic_mode_prints_after_setting_mode() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

@@ -247,10 +247,13 @@ impl Executor {
         (expanded, status)
     }
 
-    pub(in crate::executor) fn do_env(&mut self) {
+    pub(in crate::executor) fn do_env(&mut self) -> Result<(), ExecuteError> {
+        let mut output = Vec::new();
         for (key, value) in &self.env_vars {
-            println!("{}={}", key, value);
+            writeln!(&mut output, "{}={}", key, value)?;
         }
+        self.write_default_stdout(&output)?;
         self.exit_code = 0;
+        Ok(())
     }
 }

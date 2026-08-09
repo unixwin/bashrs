@@ -122,7 +122,7 @@ impl Executor {
                 }
             }
             "env" => {
-                self.do_env();
+                self.do_env()?;
                 Ok(())
             }
             "set" => self.execute_set_command(cmd),
