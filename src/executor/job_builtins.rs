@@ -59,7 +59,15 @@ impl Executor {
             )?);
         }
 
-        Ok(crate::builtins::times::execute(&cmd.words[1..])?)
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let status = crate::builtins::times::execute_with_io(
+            cmd.words[1..].iter().map(String::as_str),
+            &mut stdout,
+            &mut stderr,
+        )?;
+        self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+        Ok(status)
     }
 
     pub(in crate::executor) fn execute_caller(
