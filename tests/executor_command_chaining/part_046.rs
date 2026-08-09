@@ -39,6 +39,22 @@ fn test_trap_l_redirects_signal_list() {
 }
 
 #[test]
+fn test_trap_signal_list_can_be_piped() {
+    let output_path = "target/rubash-trap-l-pipeline-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!("trap -l | head -2 > {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(fs::read_to_string(output_path).unwrap().lines().count(), 2);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_trap_lp_lists_signals_and_returns_success() {
     let output_path = "target/rubash-trap-lp-status-output.txt";
     let list_path = "target/rubash-trap-lp-list-output.txt";

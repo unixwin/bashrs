@@ -138,12 +138,16 @@ impl Executor {
             )?);
         }
 
-        Ok(crate::builtins::trap::execute_with_io(
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let status = crate::builtins::trap::execute_with_io(
             &cmd.words[1..],
             &mut self.env_vars,
-            &mut std::io::stdout().lock(),
-            &mut std::io::stderr().lock(),
-        )?)
+            &mut stdout,
+            &mut stderr,
+        )?;
+        self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+        Ok(status)
     }
 
     pub(in crate::executor) fn execute_help(
