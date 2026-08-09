@@ -573,6 +573,20 @@ fn cli_shell_flags_apply_before_command_string() {
 }
 
 #[test]
+fn command_string_sets_c_shell_flag() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("printf '%s\\n' \"$-\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout)
+        .trim_end()
+        .contains('c'));
+}
+
+#[test]
 fn cli_plus_shell_flags_disable_previous_flags() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-u")

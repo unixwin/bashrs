@@ -280,6 +280,11 @@ impl Executor {
                 flags.push(flag);
             }
         }
+        // Bash exposes `c` in `$-` while executing a command string passed
+        // with `-c`; script-file and stdin execution do not set it.
+        if self.env_vars.contains_key("BASH_EXECUTION_STRING") {
+            flags.push('c');
+        }
         flags
     }
 
