@@ -152,7 +152,7 @@ pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<
         ));
     }
 
-    if let Some(token) = invalid_octal_literal(expression) {
+    if let Some(token) = invalid_based_literal(expression) {
         return Some(format!(
             "{expression}: value too great for base (error token is \"{token}\")"
         ));
@@ -237,6 +237,49 @@ fn invalid_octal_literal(expression: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn invalid_based_literal(expression: &str) -> Option<String> {
+    let bytes = expression.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if !bytes[index].is_ascii_digit()
+            || (index > 0
+                && (bytes[index - 1].is_ascii_alphanumeric() || bytes[index - 1] == b'_'))
+        {
+            index += 1;
+            continue;
+        }
+
+        let start = index;
+        while bytes.get(index).is_some_and(|byte| byte.is_ascii_digit()) {
+            index += 1;
+        }
+        if bytes.get(index) != Some(&b'#') {
+            continue;
+        }
+        index += 1;
+        let digits_start = index;
+        while bytes.get(index).is_some_and(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'@' | b'_')
+        }) {
+            index += 1;
+        }
+        let token = &expression[start..index];
+        let base = expression[start..digits_start - 1].parse::<u32>().ok();
+        let digits = &expression[digits_start..index];
+        let valid = base.is_some_and(|base| {
+            (2..=64).contains(&base)
+                && !digits.is_empty()
+                && digits
+                    .chars()
+                    .all(|digit| arithmetic_digit_value(digit, base).is_some_and(|value| value < base))
+        });
+        if !valid {
+            return Some(token.to_string());
+        }
+    }
+    invalid_octal_literal(expression)
 }
 
 pub(super) fn arithmetic_division_by_zero_token(expression: &str) -> Option<&'static str> {
