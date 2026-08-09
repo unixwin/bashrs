@@ -18,6 +18,7 @@ impl Executor {
         restore_protected_replacement_quotes(&expanded)
             .replace('\x1f', "$")
             .replace('\x1a', "`")
+            .replace('\x14', "\\")
     }
 
     fn expand_embedded_parameters_ordered_mut(

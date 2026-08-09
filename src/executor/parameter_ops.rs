@@ -45,10 +45,10 @@ pub(in crate::executor) fn decode_parameter_word_quotes(word: &str) -> String {
 pub(in crate::executor) fn decode_parameter_replacement_quotes(replacement: &str) -> String {
     const PROTECTED_BACKSLASH_QUOTE: char = '\x16';
     const PROTECTED_LITERAL_BACKSLASH: char = '\x19';
-    // The lexer preserves an escaped backslash as \x18 so replacement
+    // The lexer preserves an escaped backslash as \x14 so replacement
     // decoding can distinguish `\\n` (literal `\\n`) from `\n` (the
     // backslash is consumed by Bash's replacement parser).
-    let replacement = replacement.replace('\x18', &PROTECTED_LITERAL_BACKSLASH.to_string());
+    let replacement = replacement.replace('\x14', &PROTECTED_LITERAL_BACKSLASH.to_string());
     // In a parameter replacement, backslashes are data (and `\&` is
     // interpreted later by replace_with_amp).  The pattern decoder cannot be
     // reused here because it intentionally removes a backslash while

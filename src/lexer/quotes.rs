@@ -69,7 +69,9 @@ pub(crate) fn remove_shell_quotes(raw: &str) -> String {
                 } else if escaped == '\'' {
                     out.push('\x17');
                 } else if escaped == '\\' {
-                    out.push('\x18');
+                    // Keep a literal backslash distinct from the protected
+                    // double-quote marker used by expansion internals.
+                    out.push('\x14');
                 } else {
                     out.push(escaped);
                 }
@@ -164,7 +166,7 @@ fn remove_double_quoted_into(
                         match escaped {
                             '$' => out.push('\x1f'),
                             '`' => out.push('\x1a'),
-                            '\\' => out.push('\x18'),
+                            '\\' => out.push('\x14'),
                             _ => out.push(escaped),
                         }
                     }
