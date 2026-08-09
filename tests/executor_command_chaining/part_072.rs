@@ -31,6 +31,18 @@ fn test_conditional_string_order_operators_are_not_redirects() {
 }
 
 #[test]
+fn test_extglob_syntax_requires_extglob_option_for_simple_commands() {
+    let tokens = tokenize("echo @(x)");
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_err());
+    assert_eq!(executor.last_exit_code(), 2);
+}
+
+#[test]
 fn test_conditional_command_pipeline_stage_executes_and_feeds_next_stage() {
     let output_path = "target/rubash-conditional-command-pipeline-output.txt";
     let _ = fs::remove_file(output_path);

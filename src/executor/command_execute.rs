@@ -21,6 +21,25 @@ impl Executor {
             return Err(ExecuteError::ExitCode(2));
         }
 
+        // Bash must parse extglob syntax while the extglob option is
+        // enabled.  A pathname such as `@(name)` in a simple command is
+        // therefore a syntax error when the option is off; treating it as a
+        // literal silently accepts malformed scripts.  Conditional RHS
+        // patterns are handled separately and intentionally remain eligible
+        // for Bash's conditional-pattern semantics.
+        if !crate::builtins::shopt::option_enabled(&self.env_vars, "extglob")
+            && !cmd.extglob_patterns.is_empty()
+            && cmd.conditional_command.is_none()
+            && cmd.case_command.is_none()
+        {
+            eprintln!(
+                "{}syntax error near unexpected token `('",
+                self.diagnostic_prefix()
+            );
+            self.exit_code = 2;
+            return Err(ExecuteError::ExitCode(2));
+        }
+
         if let Some(result) = self.execute_initial_command_node(cmd) {
             // Compound commands run through execute_initial_command_node and
             // bypass the errexit check in execute_materialized_command. A
