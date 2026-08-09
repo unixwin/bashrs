@@ -38,6 +38,7 @@ fn c_command_reads_named_coproc_stdout_through_array_fd() {
 }
 
 #[test]
+#[cfg(windows)]
 fn windows_userprofile_supplies_home_when_home_is_absent() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .env_remove("HOME")
