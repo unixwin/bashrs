@@ -74,6 +74,11 @@ pub fn external_command_for_program(
     args: &[String],
     env_vars: &HashMap<String, String>,
 ) -> (Command, bool) {
+    let native_args = args
+        .iter()
+        .map(|arg| external_argument_path(arg, env_vars))
+        .collect::<Vec<_>>();
+
     if is_windows_powershell_script(program) {
         let program = cmd_compatible_windows_path(program);
         let mut command = Command::new(windows_powershell_processor(env_vars));
@@ -83,7 +88,7 @@ pub fn external_command_for_program(
             .arg("Bypass")
             .arg("-File")
             .arg(program);
-        command.args(args);
+        command.args(&native_args);
         return (command, false);
     }
 
@@ -91,7 +96,7 @@ pub fn external_command_for_program(
         let program = cmd_compatible_windows_path(program);
         let mut command = Command::new(windows_command_processor());
         command.arg("/D").arg("/C").arg(program);
-        command.args(args);
+        command.args(&native_args);
         return (command, false);
     }
 
@@ -99,20 +104,30 @@ pub fn external_command_for_program(
         if let Some(shell) = find_shell(env_vars) {
             let mut command = Command::new(shell);
             command.arg(program);
-            command.args(args);
+            command.args(&native_args);
             return (command, true);
         }
         if let Some(shell) = current_shell_processor() {
             let mut command = Command::new(shell);
             command.arg(program);
-            command.args(args);
+            command.args(&native_args);
             return (command, true);
         }
     }
 
     let mut command = Command::new(program);
-    command.args(args);
+    command.args(&native_args);
     (command, false)
+}
+
+fn external_argument_path(arg: &str, env_vars: &HashMap<String, String>) -> String {
+    if cfg!(windows) {
+        shell_path_to_windows(arg, env_vars)
+            .to_string_lossy()
+            .into_owned()
+    } else {
+        arg.to_string()
+    }
 }
 
 fn current_shell_processor() -> Option<PathBuf> {
@@ -554,6 +569,24 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(bin_dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_external_arguments_translate_shell_display_paths() {
+        let env_vars = HashMap::new();
+        let (command, used_shell) = external_command_for_program(
+            &PathBuf::from("head.exe"),
+            &["/c/Users/example/file.txt".to_string()],
+            &env_vars,
+        );
+        let args = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(!used_shell);
+        assert_eq!(args, vec![r"C:\Users\example\file.txt"]);
     }
 
     #[cfg(windows)]
