@@ -23,6 +23,20 @@ fn assert_stderr_matches(stderr: &str, pattern: &str) {
     );
 }
 
+#[test]
+fn c_command_reads_named_coproc_stdout_through_array_fd() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "coproc MY { printf 'coproc-ok\\n'; }; read -r out <&\"${MY[0]}\"; echo \"$out\"",
+        )
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "coproc-ok\n");
+}
+
 fn posix_real_seconds(stderr: &str) -> f64 {
     let real = stderr
         .lines()

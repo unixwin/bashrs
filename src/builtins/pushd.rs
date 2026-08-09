@@ -163,7 +163,7 @@ where
                     set_pwd_from_stack(env_vars, &stack, true);
                 }
                 PushdOperand::Dir { dir, no_cd } => {
-                    if !logical_dir_exists(&dir) {
+                    if !logical_dir_exists(&dir, env_vars) {
                         writeln!(
                             stderr,
                             "{diagnostic_prefix}pushd: {dir}: No such file or directory"

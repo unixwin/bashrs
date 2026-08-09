@@ -27,6 +27,14 @@ impl Executor {
     /// context (`for (( ... ))` headers) keeps them and rejects them.
     pub(crate) fn eval_arithmetic_expansion_value(&mut self, expression: &str) -> Option<i128> {
         let expression = self.expand_arithmetic_special_parameters(expression);
+        if crate::builtins::set::shell_option_enabled(&self.env_vars, "nounset") {
+            if let Some(name) = arithmetic_unbound_variable(&expression, &self.env_vars) {
+                if !self.arithmetic_expansion_error.replace(true) {
+                    eprintln!("{}{}: unbound variable", self.diagnostic_prefix(), name);
+                }
+                return None;
+            }
+        }
         eval_mutable_arith_value_with_random(
             &strip_arith_double_quotes(&expression),
             &mut self.env_vars,
@@ -53,6 +61,43 @@ pub(crate) fn eval_conditional_arith_value(
 ) -> Option<i128> {
     let mut env_vars = env_vars.clone();
     eval_mutable_arith_value(&strip_arith_double_quotes(value), &mut env_vars)
+}
+
+pub(super) fn arithmetic_unbound_variable(
+    expression: &str,
+    env_vars: &HashMap<String, String>,
+) -> Option<String> {
+    let mut chars = expression.chars().peekable();
+    let mut previous = None;
+    while let Some(ch) = chars.next() {
+        if !(ch == '_' || ch.is_ascii_alphabetic()) {
+            previous = Some(ch);
+            continue;
+        }
+        // Do not mistake digits in hexadecimal or `base#digits` literals for
+        // variable names while nounset validation scans the expression.
+        if previous.is_some_and(|prev| prev.is_ascii_digit() || prev == '#') {
+            while chars
+                .peek()
+                .is_some_and(|next| next.is_ascii_alphanumeric() || *next == '_')
+            {
+                previous = chars.next();
+            }
+            continue;
+        }
+        let mut name = String::from(ch);
+        while chars
+            .peek()
+            .is_some_and(|next| *next == '_' || next.is_ascii_alphanumeric())
+        {
+            name.push(chars.next().expect("peeked arithmetic identifier"));
+        }
+        if !env_vars.contains_key(&name) && !matches!(name.as_str(), "RANDOM" | "SRANDOM") {
+            return Some(name);
+        }
+        previous = name.chars().last();
+    }
+    None
 }
 
 /// Strip double quotes from an arithmetic expression before evaluation.

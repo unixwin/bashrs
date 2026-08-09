@@ -55,8 +55,18 @@ impl Executor {
                 }
             }
 
-            if let Some(fd) = redirect.target.strip_prefix('&') {
+            let expanded_target = self.expand_word(&redirect.target);
+            if let Some(fd) = expanded_target.strip_prefix('&') {
+                let fd = fd.trim_matches(|ch| ch == '"' || ch == '\x1d');
                 if let Ok(fd) = fd.parse::<u32>() {
+                    if let Some(output) = self.read_coproc_stdout(fd) {
+                        return Some(trim_read_input(
+                            output,
+                            delimiter,
+                            char_limit,
+                            exact_char_limit,
+                        ));
+                    }
                     if let Some(line) =
                         self.read_virtual_fd_stdin(fd, delimiter, char_limit, exact_char_limit)
                     {
@@ -98,6 +108,26 @@ impl Executor {
 
         self.read_function_stdin(delimiter, char_limit, exact_char_limit)
             .or_else(|| self.read_inherited_process_stdin(delimiter, char_limit, exact_char_limit))
+    }
+
+    fn read_coproc_stdout(&mut self, fd: u32) -> Option<String> {
+        // Bash exposes the coprocess output as COPROC[0] (and NAME[0]).
+        // Rubash stores that endpoint as a PipeReader keyed by the child PID;
+        // the shell-level descriptor is represented by the array value `0`.
+        if fd != 0 || self.coproc_stdout_readers.is_empty() {
+            return None;
+        }
+        let pid = *self.coproc_stdout_readers.keys().next()?;
+        let mut reader = self.coproc_stdout_readers.remove(&pid)?;
+        let mut bytes = Vec::new();
+        use std::io::Read;
+        // Windows may report ERROR_NO_DATA when the producer closes its pipe;
+        // bytes already read before that close are still valid shell input.
+        let _ = reader.read_to_end(&mut bytes);
+        if bytes.is_empty() {
+            return None;
+        }
+        Some(String::from_utf8_lossy(&bytes).to_string())
     }
 
     pub(crate) fn process_substitution_output(&mut self, source: &str) -> Option<String> {

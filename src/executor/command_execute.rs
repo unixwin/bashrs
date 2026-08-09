@@ -12,6 +12,15 @@ impl Executor {
         self.set_current_command(cmd);
         self.report_command_heredoc_errors(cmd)?;
 
+        if cmd.assignments.contains_key("__RUBASH_PARSE_ERROR__") {
+            eprintln!(
+                "{}syntax error near unexpected token `('",
+                self.diagnostic_prefix()
+            );
+            self.exit_code = 2;
+            return Err(ExecuteError::ExitCode(2));
+        }
+
         if let Some(result) = self.execute_initial_command_node(cmd) {
             // Compound commands run through execute_initial_command_node and
             // bypass the errexit check in execute_materialized_command. A
@@ -47,6 +56,15 @@ impl Executor {
             .collect();
         let cmd =
             self.apply_alias_expansion_after_word_expansion(expanded, &original_raws);
+
+        // Arithmetic expansion errors are reported during word expansion.
+        // The failing command itself must not be dispatched (Bash returns 1),
+        // while the AST-level marker remains set so the command-list walker
+        // can apply Bash's follow-up command suppression semantics.
+        if self.arithmetic_expansion_error.get() {
+            self.exit_code = 1;
+            return Ok(());
+        }
 
         if self.execute_alias_expanded_syntax(&cmd)? {
             return Ok(());

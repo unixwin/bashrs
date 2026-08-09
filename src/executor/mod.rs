@@ -7,7 +7,8 @@ pub(crate) mod glob;
 pub(crate) mod path;
 mod upstream_scripts;
 use arithmetic::{
-    arithmetic_division_by_zero_token, eval_arith_value, eval_conditional_arith_value,
+    arithmetic_division_by_zero_token, arithmetic_unbound_variable, eval_arith_value,
+    eval_conditional_arith_value,
 };
 
 mod arrays;

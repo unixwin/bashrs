@@ -1,4 +1,5 @@
 use super::{DIR_STACK, EXECUTION_FAILURE, EXECUTION_SUCCESS};
+use crate::executor::path::shell_path_to_windows;
 use std::collections::HashMap;
 use std::io::{self, Write};
 
@@ -109,8 +110,15 @@ pub(super) fn set_pwd_from_stack(
     env_vars.insert("PWD".to_string(), pwd);
 }
 
-pub(super) fn logical_dir_exists(dir: &str) -> bool {
+pub(super) fn logical_dir_exists(
+    dir: &str,
+    env_vars: &HashMap<String, String>,
+) -> bool {
+    // The shell keeps POSIX-looking paths in PWD even on Windows.  Resolve
+    // those paths before checking them, while allowing relative operands such
+    // as `pushd .` and `pushd ..` against the process working directory.
     matches!(dir, "/" | "/bin" | "/etc" | "/tmp" | "/usr")
+        || shell_path_to_windows(dir, env_vars).is_dir()
 }
 
 pub(super) fn stack_index(arg: &str, len: usize) -> Option<usize> {

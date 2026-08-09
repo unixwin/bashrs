@@ -54,9 +54,10 @@ pub(super) fn field_split_values_with_ifs(value: &str, ifs: Option<&str>) -> Vec
         return vec![value.to_string()];
     }
 
-    // Default IFS (or an IFS containing only whitespace) collapses runs of
-    // whitespace and drops empty fields, like split_whitespace.
-    if ifs.chars().all(|ch| ch.is_whitespace()) {
+    // Only the actual default IFS collapses all shell whitespace.  A custom
+    // whitespace-only IFS (for example `IFS=$'\n'`) is a delimiter set, so
+    // spaces must remain part of fields.
+    if ifs == " \t\n" {
         return value.split_whitespace().map(str::to_string).collect();
     }
 
@@ -84,6 +85,27 @@ pub(super) fn field_split_array_values_with_ifs(
         .into_iter()
         .flat_map(|value| field_split_values_with_ifs(&value, ifs))
         .collect()
+}
+
+#[cfg(test)]
+mod field_split_tests {
+    use super::field_split_values_with_ifs;
+
+    #[test]
+    fn custom_newline_ifs_preserves_spaces_inside_fields() {
+        assert_eq!(
+            field_split_values_with_ifs("a b\na c\nx z", Some("\n")),
+            vec!["a b", "a c", "x z"]
+        );
+    }
+
+    #[test]
+    fn default_ifs_still_splits_shell_whitespace() {
+        assert_eq!(
+            field_split_values_with_ifs("a b\na c", Some(" \t\n")),
+            vec!["a", "b", "a", "c"]
+        );
+    }
 }
 
 pub(super) fn word_is_unquoted_array_list_expansion(word: &str) -> bool {

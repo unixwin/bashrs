@@ -30,6 +30,20 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
         TokenKind::Assignment => {
             state.current_cmd.subshell |= state.in_subshell;
             note_command_line(&mut state.current_cmd, token);
+            if state.current_cmd.words.is_empty()
+                && tokens
+                    .get(*i + 1)
+                    .is_some_and(|next| next.kind == TokenKind::Keyword && next.value == "(")
+                && !token.raw.ends_with("=(")
+            {
+                // `name= ( ... )` is not a compound assignment. Bash rejects
+                // the separated `(` during parsing instead of executing the
+                // following words as a command.
+                state.current_cmd.assignments.insert(
+                    "__RUBASH_PARSE_ERROR__".to_string(),
+                    "unexpected token `('".to_string(),
+                );
+            }
             if let Some(pos) = token.value.find('=') {
                 if state.current_cmd.words.is_empty() {
                     let var_name = token.value[..pos].to_string();

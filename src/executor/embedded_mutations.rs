@@ -142,8 +142,9 @@ impl Executor {
                             } else if let Some(message) =
                                 crate::executor::arithmetic::arithmetic_error_message(&expression)
                             {
-                                eprintln!("{}{}", self.diagnostic_prefix(), message);
-                                self.arithmetic_expansion_error.set(true);
+                                if !self.arithmetic_expansion_error.replace(true) {
+                                    eprintln!("{}{}", self.diagnostic_prefix(), message);
+                                }
                             }
                         } else {
                             output.push_str("$((");

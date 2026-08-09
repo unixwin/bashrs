@@ -114,6 +114,31 @@ fn test_pushd_n_accepts_double_dash_before_directory() {
 }
 
 #[test]
+fn test_pushd_accepts_existing_relative_directory() {
+    let output_path = "target/rubash-pushd-relative-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!("pushd . > {output_path}; echo $? >> {output_path}; dirs -p >> {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    let output = fs::read_to_string(output_path).unwrap();
+    let lines: Vec<_> = output.lines().collect();
+    let cwd = std::env::current_dir()
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
+    assert_eq!(lines.first().copied(), Some(format!(". {cwd}").as_str()));
+    assert_eq!(lines.get(1), Some(&"0"));
+    assert_eq!(lines.get(2), Some(&"."));
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_popd_appends_stderr() {
     let error_path = "target/rubash-popd-stderr-append-output.txt";
     let _ = fs::remove_file(error_path);

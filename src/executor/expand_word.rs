@@ -191,6 +191,18 @@ impl Executor {
             .and_then(|rest| rest.strip_suffix("))"))
         {
             let expression = self.expand_arithmetic_special_parameters(expression);
+            if crate::builtins::set::shell_option_enabled(&self.env_vars, "nounset") {
+                if let Some(name) = arithmetic_unbound_variable(&expression, &self.env_vars) {
+                    if !self.arithmetic_expansion_error.replace(true) {
+                        eprintln!(
+                            "{}{}: unbound variable",
+                            self.diagnostic_prefix(),
+                            name
+                        );
+                    }
+                    return Some(String::new());
+                }
+            }
             if let Some(value) = eval_conditional_arith_value(&expression, &self.env_vars) {
                 return Some(value.to_string());
             }
@@ -200,8 +212,9 @@ impl Executor {
             if let Some(message) =
                 crate::executor::arithmetic::arithmetic_error_message(&expression)
             {
-                eprintln!("{}{}", self.diagnostic_prefix(), message);
-                self.arithmetic_expansion_error.set(true);
+                if !self.arithmetic_expansion_error.replace(true) {
+                    eprintln!("{}{}", self.diagnostic_prefix(), message);
+                }
             }
         }
 

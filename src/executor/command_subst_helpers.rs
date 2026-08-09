@@ -3,6 +3,7 @@ pub(in crate::executor) fn collect_braced_parameter_name(
 ) -> String {
     let mut name = String::new();
     let mut nested = 0usize;
+    let mut in_bracket_expression = false;
     while let Some(ch) = chars.next() {
         // GNU Bash scans `\` plus the following character as one unit
         // (extract_dollar_brace_string advances by two). `\\` is a literal
@@ -16,6 +17,16 @@ pub(in crate::executor) fn collect_braced_parameter_name(
             }
             continue;
         }
+        if ch == '[' {
+            in_bracket_expression = true;
+            name.push(ch);
+            continue;
+        }
+        if ch == ']' && in_bracket_expression {
+            in_bracket_expression = false;
+            name.push(ch);
+            continue;
+        }
         if ch == '$' && chars.peek().copied() == Some('{') {
             chars.next();
             nested += 1;
@@ -23,7 +34,7 @@ pub(in crate::executor) fn collect_braced_parameter_name(
             name.push('{');
             continue;
         }
-        if ch == '}' {
+        if ch == '}' && !in_bracket_expression {
             if nested == 0 {
                 break;
             }
@@ -201,5 +212,12 @@ mod tests {
     fn echo_raw_output_keeps_builtin_stdout_shape() {
         assert_eq!(echo_raw_output(&args(&["-n", "hello"])), "hello");
         assert_eq!(echo_raw_output(&args(&["hello"])), "hello\n");
+    }
+
+    #[test]
+    fn braced_parameter_collection_ignores_braces_in_pattern_classes() {
+        let mut chars = "o%[}]}]".chars().peekable();
+        assert_eq!(collect_braced_parameter_name(&mut chars), "o%[}]");
+        assert_eq!(chars.collect::<String>(), "]");
     }
 }

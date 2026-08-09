@@ -281,3 +281,11 @@ fn test_parse_compact_arithmetic_for_empty_test() {
     assert_eq!(for_command.end_keyword.as_deref(), Some("done"));
     assert_eq!(for_command.body[0].words, ["echo", "$i"]);
 }
+
+#[test]
+fn spaced_compound_assignment_is_marked_as_syntax_error() {
+    let ast = parse(&tokenize("a= (1 2)"));
+    assert!(ast.commands[0]
+        .assignments
+        .contains_key("__RUBASH_PARSE_ERROR__"));
+}

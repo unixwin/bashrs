@@ -44,6 +44,28 @@ pub(in crate::executor) fn decode_parameter_word_quotes(word: &str) -> String {
 
 pub(in crate::executor) fn decode_parameter_replacement_quotes(replacement: &str) -> String {
     const PROTECTED_BACKSLASH_QUOTE: char = '\x16';
+    // In a parameter replacement, backslashes are data (and `\&` is
+    // interpreted later by replace_with_amp).  The pattern decoder cannot be
+    // reused here because it intentionally removes a backslash while
+    // decoding a quoted pattern character such as `\}`.
+    if replacement.contains('\\') {
+        let mut output = String::new();
+        let chars = replacement.chars().collect::<Vec<_>>();
+        let mut index = 0;
+        while index < chars.len() {
+            if chars[index] == '\\' && chars.get(index + 1) == Some(&'\x17') {
+                output.push(PROTECTED_BACKSLASH_QUOTE);
+                index += 2;
+            } else if chars[index] == '\\' && chars.get(index + 1) == Some(&'\x18') {
+                output.push('\\');
+                index += 2;
+            } else {
+                output.push(chars[index]);
+                index += 1;
+            }
+        }
+        return output.replace('\x18', "\\");
+    }
     let mut protected = String::new();
     let chars = replacement.chars().collect::<Vec<_>>();
     let mut index = 0;
@@ -108,6 +130,7 @@ pub(in crate::executor) fn parse_parameter_assignment_operator(
 pub(in crate::executor) fn matching_parameter_brace(input: &str) -> Option<usize> {
     let mut chars = input.char_indices().peekable();
     let mut depth = 0usize;
+    let mut in_bracket_expression = false;
     while let Some((index, ch)) = chars.next() {
         // GNU Bash treats `\` plus the next character as one unit while
         // scanning `${...}` (extract_dollar_brace_string advances by two).
@@ -116,12 +139,20 @@ pub(in crate::executor) fn matching_parameter_brace(input: &str) -> Option<usize
             chars.next();
             continue;
         }
+        if ch == '[' {
+            in_bracket_expression = true;
+            continue;
+        }
+        if ch == ']' && in_bracket_expression {
+            in_bracket_expression = false;
+            continue;
+        }
         if ch == '$' && chars.peek().is_some_and(|(_, ch)| *ch == '{') {
             chars.next();
             depth += 1;
             continue;
         }
-        if ch == '}' {
+        if ch == '}' && !in_bracket_expression {
             if depth == 0 {
                 return Some(index);
             }
@@ -291,5 +322,16 @@ mod tests {
         let input = "foo:-string \\\\}}";
 
         assert_eq!(matching_parameter_brace(input), Some(input.len() - 2));
+    }
+
+    #[test]
+    fn matching_parameter_brace_ignores_closing_brace_in_bracket_pattern() {
+        assert_eq!(matching_parameter_brace("o%[}]}"), Some(5));
+    }
+
+    #[test]
+    fn replacement_decoder_preserves_backslashes() {
+        assert_eq!(decode_parameter_replacement_quotes(r"\n"), r"\n");
+        assert_eq!(decode_parameter_replacement_quotes(r"\\n"), r"\\n");
     }
 }
