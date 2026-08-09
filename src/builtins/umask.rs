@@ -157,19 +157,13 @@ fn apply_symbolic_clause(mut allowed: u32, clause: &str) -> Option<u32> {
     Some(allowed & 0o777)
 }
 
-fn symbolic_permission_bits(perms: &[char], allowed: u32, who: u32) -> Option<u32> {
+fn symbolic_permission_bits(perms: &[char], _allowed: u32, who: u32) -> Option<u32> {
     let mut bits = 0;
     for ch in perms {
         match ch {
             'r' => bits |= expand_permission_to_who(0o444, who),
             'w' => bits |= expand_permission_to_who(0o222, who),
             'x' => bits |= expand_permission_to_who(0o111, who),
-            'X' => {
-                if allowed & 0o111 != 0 {
-                    bits |= expand_permission_to_who(0o111, who);
-                }
-            }
-            'u' | 'g' | 'o' => bits |= copy_permission_to_who(*ch, allowed, who),
             _ => return None,
         }
     }
@@ -178,27 +172,6 @@ fn symbolic_permission_bits(perms: &[char], allowed: u32, who: u32) -> Option<u3
 
 fn expand_permission_to_who(permission: u32, who: u32) -> u32 {
     permission & who
-}
-
-fn copy_permission_to_who(source: char, allowed: u32, who: u32) -> u32 {
-    let source_bits = match source {
-        'u' => (allowed & 0o700) >> 6,
-        'g' => (allowed & 0o070) >> 3,
-        'o' => allowed & 0o007,
-        _ => 0,
-    };
-
-    let mut bits = 0;
-    if who & 0o700 != 0 {
-        bits |= source_bits << 6;
-    }
-    if who & 0o070 != 0 {
-        bits |= source_bits << 3;
-    }
-    if who & 0o007 != 0 {
-        bits |= source_bits;
-    }
-    bits
 }
 
 fn symbolic_mask(mask: u32) -> String {

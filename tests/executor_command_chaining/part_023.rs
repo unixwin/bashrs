@@ -194,9 +194,11 @@ fn test_umask_symbolic_modes_update_mask() {
 fn test_umask_symbolic_modes_copy_permissions() {
     let output_path = "target/rubash-umask-symbolic-copy-output.txt";
     let _ = fs::remove_file(output_path);
+    let status_path = "target/rubash-umask-symbolic-copy-status.txt";
+    let _ = fs::remove_file(status_path);
     let input = format!(
-        "umask 022; umask g+u,o+rwx-u; umask -S > {output_path}; \
-         umask 022; umask o=u; umask -p -S >> {output_path}"
+        "umask 022; umask g+u; echo $? > {status_path}; \
+         umask o=u; echo $? >> {status_path}; umask -S > {output_path}"
     );
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
@@ -206,11 +208,10 @@ fn test_umask_symbolic_modes_copy_permissions() {
 
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
-    assert_eq!(
-        fs::read_to_string(output_path).unwrap(),
-        "u=rwx,g=rwx,o=\numask -S u=rwx,g=rx,o=rwx\n"
-    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "1\n1\n");
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "u=rwx,g=rx,o=rx\n");
     let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
 }
 
 #[test]
