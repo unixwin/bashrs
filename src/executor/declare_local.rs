@@ -192,13 +192,17 @@ impl Executor {
                 )?);
             }
 
-            Ok(crate::builtins::declare::execute_with_io_named(
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            let status = crate::builtins::declare::execute_with_io_named(
                 command_name,
                 &args,
                 &mut self.env_vars,
-                &mut std::io::stdout().lock(),
-                &mut std::io::stderr().lock(),
-            )?)
+                &mut stdout,
+                &mut stderr,
+            )?;
+            self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+            Ok(status)
         })();
         if result.as_ref().is_ok_and(|status| *status == 0) {
             self.apply_posix_function_declare_unset_export(posix_function_export_unsets);

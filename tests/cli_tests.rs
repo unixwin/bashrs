@@ -106,6 +106,18 @@ fn times_limits_and_enable_pipeline_output_is_captured() {
 }
 
 #[test]
+fn declare_pipeline_output_is_captured() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("declare -p | head -n 1")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout).lines().count(), 1);
+}
+
+#[test]
 fn help_and_trap_pipeline_output_is_captured() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
