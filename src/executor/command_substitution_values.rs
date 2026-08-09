@@ -177,6 +177,22 @@ impl Executor {
             .is_some_and(|name| matches!(name, "@" | "*"))
     }
 
+    pub(in crate::executor) fn word_is_unquoted_positional_list_expansion(
+        &self,
+        word: &str,
+    ) -> bool {
+        if word.starts_with('"') || word.starts_with('\'') || word.starts_with('\x1d') {
+            return false;
+        }
+        let Some(inner) = word
+            .strip_prefix("${")
+            .and_then(|word| word.strip_suffix('}'))
+        else {
+            return false;
+        };
+        matches!(inner, "@" | "*")
+    }
+
     fn positional_transform_word_values(&self, name: &str, quoted: bool) -> Option<Vec<String>> {
         let (var_name, transform) = parse_parameter_transform(name)?;
         if !matches!(var_name, "@" | "*") {

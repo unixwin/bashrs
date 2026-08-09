@@ -2,6 +2,29 @@ use super::super::*;
 use std::fs;
 
 #[test]
+fn test_unquoted_positional_at_splits_each_parameter_and_empty_ifs_joins_star_without_separator() {
+    let output_path = "target/rubash-positional-ifs-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "set -- a 'b c'; printf '<%s>\\n' $@ > {output_path}; \
+         IFS=; set -- a b; printf '<%s>\\n' \"$*\" >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "<a>\n<b>\n<c>\n<ab>\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_array_parameter_pattern_removal_applies_to_each_value() {
     let output_path = "target/rubash-array-pattern-removal-output.txt";
     let _ = fs::remove_file(output_path);

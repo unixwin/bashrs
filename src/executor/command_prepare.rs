@@ -238,12 +238,17 @@ impl Executor {
         // Unquoted `$@` expands to one word per positional parameter
         // (quoted `"$@"` is handled by quoted_positional_at_word_values_with_raw).
         if word == "$@" && !raw_word_is_quoted(raw) {
-            return self.positional_params.clone();
+            return field_split_array_values_with_ifs(
+                self.positional_params.clone(),
+                self.env_vars.get("IFS").map(String::as_str),
+            );
         }
         if let Some(values) =
             self.quoted_positional_at_word_values_with_raw(word, raw, cmd.word_kinds.get(index))
         {
-            if self.word_is_unquoted_positional_modified_list_expansion(word) {
+            if self.word_is_unquoted_positional_modified_list_expansion(word)
+                || self.word_is_unquoted_positional_list_expansion(word)
+            {
                 return field_split_array_values_with_ifs(
                     values,
                     self.env_vars.get("IFS").map(String::as_str),
@@ -251,10 +256,7 @@ impl Executor {
             }
             return values;
         }
-        if self.is_brace_expand_enabled()
-            && !word.contains("${")
-            && !raw_word_is_quoted(raw)
-        {
+        if self.is_brace_expand_enabled() && !word.contains("${") && !raw_word_is_quoted(raw) {
             let braced = expand_braces_with_optional_raw(word, raw);
             if braced.len() > 1 {
                 return braced;

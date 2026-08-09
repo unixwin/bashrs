@@ -386,11 +386,14 @@ impl Executor {
     }
 
     pub(in crate::executor) fn ifs_first_char_separator(&self) -> String {
-        self.env_vars
-            .get("IFS")
-            .and_then(|ifs| ifs.chars().next())
-            .unwrap_or(' ')
-            .to_string()
+        match self.env_vars.get("IFS") {
+            Some(ifs) => ifs
+                .chars()
+                .next()
+                .map(|separator| separator.to_string())
+                .unwrap_or_default(),
+            None => " ".to_string(),
+        }
     }
 }
 
