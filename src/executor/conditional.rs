@@ -226,10 +226,7 @@ impl Executor {
             {
                 let left = self.expand_word(left);
                 let right = self.expand_word(right);
-                // Bash treats the RHS as a glob pattern even when quoted
-                // parts are present (`*" "*` matches a literal space); only
-                // the quoted segments are literal.
-                let right_pattern = Self::strip_rhs_pattern_quotes(&right);
+                let right_pattern = self.quote_aware_glob_rhs(&right, &metadata[2]);
                 let matched =
                     crate::executor::conditional::case_pattern_matches(&right_pattern, &left);
                 Some(match op.as_str() {
@@ -245,7 +242,7 @@ impl Executor {
             {
                 let left = self.expand_word(left);
                 let right = self.expand_word(right);
-                let right_pattern = Self::strip_rhs_pattern_quotes(&right);
+                let right_pattern = self.quote_aware_glob_rhs(&right, &metadata[2]);
                 let matched =
                     crate::executor::conditional::case_pattern_matches(&right_pattern, &left);
                 Some(match op.as_str() {
@@ -277,7 +274,7 @@ impl Executor {
     pub(super) fn conditional_string_binary(&mut self, left: &str, op: &str, right: &str) -> bool {
         let left = self.expand_word(left);
         let right = self.expand_word(right);
-        let right_pattern = Self::strip_rhs_pattern_quotes(&right);
+        let right_pattern = right.clone();
         let extglob = crate::builtins::shopt::option_enabled(&self.env_vars, "extglob")
             || contains_extglob_pattern(&right);
         let nocasematch = crate::builtins::shopt::option_enabled(&self.env_vars, "nocasematch");
@@ -303,32 +300,65 @@ impl Executor {
         }
     }
 
-    /// Removes syntactic quotes from a `[[ ]]` right-hand pattern: `*" "*`
-    /// matches a literal space, `"x"` matches the literal string `x`, while
-    fn strip_rhs_pattern_quotes(pattern: &str) -> String {
+    /// Build the `[[ ... == ... ]]` glob while retaining quote boundaries.
+    /// Unquoted segments keep glob operators; quoted segments contribute
+    /// literal text (including a quoted parameter's expanded value).
+    fn quote_aware_glob_rhs(
+        &mut self,
+        expanded_right: &str,
+        metadata: &crate::parser::WordMetadata,
+    ) -> String {
+        if metadata.raw.is_empty() {
+            return expanded_right.to_string();
+        }
+
+        let chars: Vec<char> = metadata.raw.chars().collect();
         let mut output = String::new();
-        let mut chars = pattern.chars().peekable();
-        while let Some(ch) = chars.next() {
-            match ch {
-                '\'' | '"' => {
-                    let quote = ch;
-                    let mut body = String::new();
-                    while let Some(next) = chars.next() {
-                        if next == quote {
-                            break;
-                        }
-                        if next == '\\' {
-                            if let Some(escaped) = chars.next() {
-                                body.push(escaped);
-                            }
-                            continue;
-                        }
-                        body.push(next);
-                    }
-                    output.push_str(&body);
+        let mut index = 0;
+        let mut unquoted_start = 0;
+
+        while index < chars.len() {
+            if chars[index] == '\\' {
+                if unquoted_start < index {
+                    output.push_str(&self.expand_word(
+                        &chars[unquoted_start..index].iter().collect::<String>(),
+                    ));
                 }
-                _ => output.push(ch),
+                if let Some(next) = chars.get(index + 1) {
+                    output.push('\\');
+                    output.push(*next);
+                    index += 2;
+                } else {
+                    index += 1;
+                }
+                unquoted_start = index;
+                continue;
             }
+
+            let Some((kind, opener_len, end)) = raw_quote_at(&chars, index) else {
+                index += 1;
+                continue;
+            };
+            if unquoted_start < index {
+                output.push_str(&self.expand_word(
+                    &chars[unquoted_start..index].iter().collect::<String>(),
+                ));
+            }
+            let body = chars[index + opener_len..end].iter().collect::<String>();
+            let value = match kind {
+                QuoteKind::Single => body,
+                QuoteKind::AnsiC => decode_ansi_c_escapes(&body),
+                QuoteKind::Double | QuoteKind::Locale => self.expand_word(&body),
+            };
+            append_literal_glob_text(&mut output, &value);
+            index = end + 1;
+            unquoted_start = index;
+        }
+
+        if unquoted_start < chars.len() {
+            output.push_str(&self.expand_word(
+                &chars[unquoted_start..].iter().collect::<String>(),
+            ));
         }
         output
     }
@@ -587,4 +617,13 @@ fn raw_quote_at(chars: &[char], start: usize) -> Option<(QuoteKind, usize, usize
     }
 
     None
+}
+
+fn append_literal_glob_text(output: &mut String, text: &str) {
+    for ch in text.chars() {
+        if matches!(ch, '*' | '?' | '[' | '\\') {
+            output.push('\\');
+        }
+        output.push(ch);
+    }
 }

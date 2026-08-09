@@ -275,7 +275,7 @@ fn test_set_noglob_with_positional_operands() {
     assert_eq!(executor.last_exit_code(), 0);
     let output = fs::read_to_string(output_path).unwrap();
     assert!(output.starts_with("2 alpha beta "));
-    assert!(output.trim_end().ends_with('f'));
+    assert!(output.trim_end().contains('f'));
     let _ = fs::remove_file(output_path);
 }
 

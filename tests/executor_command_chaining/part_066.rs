@@ -332,18 +332,11 @@ fn test_parameter_prompt_transform_expands_version_escapes() {
 
     let result = executor.execute_ast(&ast);
 
-    let release = env!("CARGO_PKG_VERSION");
-    let mut parts = release.split('.');
-    let short = format!(
-        "{}.{}",
-        parts.next().unwrap_or("0"),
-        parts.next().unwrap_or("0")
-    );
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(
         fs::read_to_string(output_path).unwrap(),
-        format!("v={short} V={release} s=bash\n")
+        "v=5.2 V=5.2.37 s=bash\n"
     );
     let _ = fs::remove_file(output_path);
 }

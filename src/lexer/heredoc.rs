@@ -16,7 +16,12 @@ pub(super) fn heredoc_delimiters(tokens: &[Token], source: &str) -> Vec<HereDocD
             // instead of searching for the first `<<` in the source:
             // arithmetic shifts like `$((x << 2))` or here-strings (`<<<`)
             // would otherwise be mistaken for heredoc operators.
-            let context = heredoc_operator_context(source, &pair[1].value);
+            // `value` has already undergone quote removal.  Use the token's
+            // raw spelling for the quoted-delimiter decision: with a
+            // partially quoted delimiter such as `E"OF"`, the normalized
+            // value is just `EOF`, so searching the source for that value can
+            // accidentally find the closing delimiter in the body instead.
+            let context = heredoc_operator_context(source, &pair[1].raw);
             let strip_tabs = pair[0].value == "<<-";
             let value = if strip_tabs {
                 pair[1].value.trim_start_matches('\t').to_string()
@@ -38,9 +43,9 @@ struct HereDocOperatorContext {
     in_command_substitution: bool,
 }
 
-fn heredoc_operator_context(source: &str, delimiter_value: &str) -> HereDocOperatorContext {
+fn heredoc_operator_context(source: &str, delimiter_raw: &str) -> HereDocOperatorContext {
     // Find the delimiter word, then the `<<` operator immediately before it.
-    let Some(delimiter_index) = source.rfind(delimiter_value) else {
+    let Some(delimiter_index) = source.rfind(delimiter_raw) else {
         return HereDocOperatorContext {
             quoted: false,
             in_command_substitution: false,
@@ -61,7 +66,10 @@ fn heredoc_operator_context(source: &str, delimiter_value: &str) -> HereDocOpera
         chars.next();
     }
     HereDocOperatorContext {
-        quoted: heredoc_delimiter_word_is_quoted(chars),
+        quoted: delimiter_raw
+            .chars()
+            .any(|ch| matches!(ch, '\'' | '"' | '\\'))
+            || heredoc_delimiter_word_is_quoted(chars),
         in_command_substitution: command_substitution_depth_before(source, index) > 0,
     }
 }

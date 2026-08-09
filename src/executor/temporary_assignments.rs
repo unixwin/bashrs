@@ -142,6 +142,19 @@ impl Executor {
             && value.starts_with('(')
             && value.ends_with(')')
             && !is_marked_var(&self.env_vars, ASSOC_VARS, base_name)
+            && is_marked_var(&self.env_vars, INTEGER_VARS, base_name)
+            && integer_compound_assignment_is_scalar(&value)
+        {
+            // Bash keeps `typeset -i x; x=(1+2)` scalar.  A compound
+            // assignment becomes an array only when it contains indexed or
+            // multiple elements; the single arithmetic expression is still
+            // assigned through the integer attribute.
+            self.eval_integer_assignment_value(&value[1..value.len() - 1])
+                .to_string()
+        } else if compound_assignment
+            && value.starts_with('(')
+            && value.ends_with(')')
+            && !is_marked_var(&self.env_vars, ASSOC_VARS, base_name)
         {
             // variables.c/arrayfunc.c: a compound `name=(...)` assignment
             // always makes an array, even when the variable previously had
@@ -168,4 +181,13 @@ impl Executor {
         sync_shell_assignment_process_env(&self.env_vars, base_name, value);
         true
     }
+}
+
+fn integer_compound_assignment_is_scalar(value: &str) -> bool {
+    let Some(inner) = value.strip_prefix('(').and_then(|v| v.strip_suffix(')')) else {
+        return false;
+    };
+    !inner.is_empty()
+        && !inner.chars().any(|ch| ch.is_whitespace())
+        && !inner.contains(['[', ']'])
 }

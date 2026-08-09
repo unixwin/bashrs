@@ -48,6 +48,65 @@ pub(in crate::executor) fn decode_parameter_replacement_quotes(replacement: &str
     // interpreted later by replace_with_amp).  The pattern decoder cannot be
     // reused here because it intentionally removes a backslash while
     // decoding a quoted pattern character such as `\}`.
+    if replacement.contains('"') {
+        // A replacement may contain a separately quoted pattern such as
+        // `"'\\''"`.  Those double quotes delimit shell syntax; they must
+        // not become part of the replacement while the backslashes inside
+        // remain literal replacement data.
+        let mut output = String::new();
+        let mut chars = replacement.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '"' {
+                continue;
+            }
+            if ch == '\\' && chars.peek() == Some(&'\x17') {
+                output.push('\\');
+                output.push('\'');
+                chars.next();
+                continue;
+            }
+            if ch == '\\' && chars.peek() == Some(&'\\') {
+                output.push('\\');
+                chars.next();
+                continue;
+            }
+            output.push(if ch == '\x17' { '\'' } else { ch });
+        }
+        return output;
+    }
+
+    if replacement.contains('\x17') || replacement.contains("\\'") {
+        // Quote removal has already encoded escaped single quotes as \x17 in
+        // some lexer paths.  In the remaining paths an escaped quote arrives
+        // as `\\'`; both forms denote a literal quote in the replacement.
+        let mut output = String::new();
+        let mut chars = replacement.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\x17' {
+                output.push('\'');
+            } else if ch == '\\' && chars.peek() == Some(&'\'') {
+                output.push('\'');
+                chars.next();
+            } else if ch == '\\' && chars.peek() == Some(&'\\') {
+                output.push('\\');
+                output.push('\\');
+                chars.next();
+                if chars.peek() == Some(&'\'') {
+                    chars.next();
+                }
+                if chars.peek() == Some(&'\\') {
+                    chars.next();
+                    if chars.peek() == Some(&'\'') {
+                        chars.next();
+                    }
+                }
+            } else {
+                output.push(ch);
+            }
+        }
+        return output;
+    }
+
     if replacement.contains('\\') {
         let mut output = String::new();
         let chars = replacement.chars().collect::<Vec<_>>();

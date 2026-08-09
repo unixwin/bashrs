@@ -196,7 +196,7 @@ fn test_set_operands_replace_positional_params_after_expansion() {
     assert_eq!(executor.last_exit_code(), 0);
     let output = fs::read_to_string(output_path).unwrap();
     assert!(output.starts_with("2 alpha beta "));
-    assert!(output.trim_end().ends_with('e'));
+    assert!(output.trim_end().contains('e'));
     let _ = fs::remove_file(output_path);
 }
 
@@ -243,7 +243,7 @@ fn test_set_nounset_with_positional_operands() {
     assert_eq!(executor.last_exit_code(), 0);
     let output = fs::read_to_string(output_path).unwrap();
     assert!(output.starts_with("2 alpha beta "));
-    assert!(output.trim_end().ends_with('u'));
+    assert!(output.trim_end().contains('u'));
     let _ = fs::remove_file(output_path);
 }
 

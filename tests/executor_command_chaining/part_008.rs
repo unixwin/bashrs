@@ -79,9 +79,9 @@ fn test_bash_version_and_versinfo_are_initialized() {
     let output = fs::read_to_string(output_path).unwrap();
     let lines: Vec<&str> = output.lines().collect();
     assert!(!lines[0].is_empty());
-    assert!(lines[1].starts_with(env!("CARGO_PKG_VERSION")));
+    assert!(lines[1].starts_with("5.2.37"));
     assert!(lines[1].ends_with("(1)-release"));
-    let version_words = env!("CARGO_PKG_VERSION").replace('.', " ");
+    let version_words = "5.2.37".replace('.', " ");
     assert!(lines[2].starts_with(&format!("{version_words} 1 release ")));
     assert_eq!(lines[2].split_whitespace().count(), 6);
     assert!(!lines[3].is_empty());
@@ -107,7 +107,7 @@ fn test_quoted_bash_versinfo_at_expands_to_words() {
     assert_eq!(executor.last_exit_code(), 0);
     let output = fs::read_to_string(output_path).unwrap();
     let lines: Vec<&str> = output.lines().collect();
-    let parts: Vec<&str> = env!("CARGO_PKG_VERSION").split('.').collect();
+    let parts: Vec<&str> = "5.2.37".split('.').collect();
     assert_eq!(lines.len(), 7);
     assert_eq!(
         lines[0],
@@ -150,7 +150,7 @@ fn test_bash_versinfo_assignment_reports_readonly() {
 
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
-    assert_eq!(fs::read_to_string(output_path).unwrap(), "1 0\n");
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "1 5\n");
     let _ = fs::remove_file(output_path);
 }
 
