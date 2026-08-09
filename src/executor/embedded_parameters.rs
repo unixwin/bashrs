@@ -277,9 +277,13 @@ impl Executor {
         word: &str,
     ) -> String {
         const PROTECTED_ESCAPED_SINGLE_QUOTE: char = '\x16';
-        let protected = word.replace('\x17', "\x16");
+        const PROTECTED_LITERAL_BACKSLASH: char = '\x19';
+        let protected = word
+            .replace('\x17', "\x16")
+            .replace('\x18', &PROTECTED_LITERAL_BACKSLASH.to_string());
         self.expand_embedded_parameters(&protected)
             .replace(PROTECTED_ESCAPED_SINGLE_QUOTE, "\x17")
+            .replace(PROTECTED_LITERAL_BACKSLASH, "\x18")
     }
 }
 

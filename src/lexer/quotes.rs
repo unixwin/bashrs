@@ -68,6 +68,8 @@ pub(crate) fn remove_shell_quotes(raw: &str) -> String {
                     out.push('\x1a');
                 } else if escaped == '\'' {
                     out.push('\x17');
+                } else if escaped == '\\' {
+                    out.push('\x18');
                 } else {
                     out.push(escaped);
                 }
@@ -162,6 +164,7 @@ fn remove_double_quoted_into(
                         match escaped {
                             '$' => out.push('\x1f'),
                             '`' => out.push('\x1a'),
+                            '\\' => out.push('\x18'),
                             _ => out.push(escaped),
                         }
                     }
