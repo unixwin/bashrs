@@ -335,6 +335,17 @@ impl Executor {
                     if let Some(saved_depth) = subshell_depth.take() {
                         self.subshell_depth.set(saved_depth);
                     }
+                    // A malformed subshell can leave the command list with
+                    // no closing marker.  In that case there is no boundary
+                    // to advance to; continuing would execute the same
+                    // failing command forever (and repeatedly print the
+                    // heredoc EOF diagnostic).
+                    let has_subshell_end = ast.commands[index + 1..]
+                        .iter()
+                        .any(|candidate| candidate.subshell_end);
+                    if !command.subshell_end && !has_subshell_end {
+                        return Err(ExecuteError::ExitCode(code));
+                    }
                     // A failing subshell command triggers errexit like any
                     // other failing command: `(exit 17)` under `set -e` exits
                     // the script (set-e1.sub), while `true && (exit 1)` and
