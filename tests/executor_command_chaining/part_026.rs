@@ -166,6 +166,33 @@ fn test_kill_zero_reports_missing_process() {
 }
 
 #[test]
+fn test_kill_validates_signal_options_and_pid_operands() {
+    let status_path = "target/rubash-kill-option-status-output.txt";
+    let error_path = "target/rubash-kill-option-error-output.txt";
+    let _ = fs::remove_file(status_path);
+    let _ = fs::remove_file(error_path);
+    let input = format!(
+        "kill -s NOPE 1 2> {error_path}; echo $? > {status_path}; \
+         kill -s TERM 2>> {error_path}; echo $? >> {status_path}; \
+         kill -- 4294967294 2>> {error_path}; echo $? >> {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "1\n2\n1\n");
+    let error = fs::read_to_string(error_path).unwrap();
+    assert!(error.contains("kill: NOPE: invalid signal specification"));
+    assert!(error.contains("kill: usage:"));
+    assert!(error.contains("kill: (4294967294) - No such process"));
+    let _ = fs::remove_file(status_path);
+    let _ = fs::remove_file(error_path);
+}
+
+#[test]
 fn test_kill_redirects_stderr() {
     let error_path = "target/rubash-kill-stderr-output.txt";
     let status_path = "target/rubash-kill-stderr-status.txt";

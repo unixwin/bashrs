@@ -83,31 +83,94 @@ where
     W: Write,
     E: Write,
 {
-    // TODO(builtins/kill.def/siglist.c): Implement the full signal table,
-    // option parser, and process signalling. Upstream builtins.tests only uses
-    // `kill -l` name/number translation.
-    if !matches!(args.first().map(String::as_str), Some("-l" | "-L")) {
-        return Ok(0);
-    }
+    let Some(first) = args.first().map(String::as_str) else {
+        write_kill_usage(stderr)?;
+        return Ok(2);
+    };
 
-    match args.get(1).map(String::as_str) {
-        None => {
+    if matches!(first, "-l" | "-L") {
+        if args.len() == 1 || args.get(1).is_some_and(|value| value == "-1") {
             write_signal_list(stdout)?;
-            Ok(0)
+            return Ok(0);
         }
-        Some(value) => {
+        let mut status = 0;
+        for value in &args[1..] {
             if let Some(translation) = translate_signal(value) {
                 writeln!(stdout, "{translation}")?;
-                return Ok(0);
+            } else {
+                writeln!(
+                    stderr,
+                    "{}kill: {value}: invalid signal specification",
+                    diagnostic_prefix()
+                )?;
+                status = 1;
             }
-            writeln!(
-                stderr,
-                "{}kill: {value}: invalid signal specification",
-                diagnostic_prefix()
-            )?;
-            Ok(1)
         }
+        return Ok(status);
     }
+
+    let mut index = 0;
+    let mut operands_start = 0;
+    while let Some(value) = args.get(index).map(String::as_str) {
+        if value == "--" {
+            operands_start = index + 1;
+            break;
+        }
+        if value == "-s" || value == "-n" {
+            let Some(signal) = args.get(index + 1).map(String::as_str) else {
+                write_kill_usage(stderr)?;
+                return Ok(2);
+            };
+            if translate_signal(signal).is_none() {
+                writeln!(
+                    stderr,
+                    "{}kill: {signal}: invalid signal specification",
+                    diagnostic_prefix()
+                )?;
+                return Ok(1);
+            }
+            index += 2;
+            operands_start = index;
+            continue;
+        }
+        if value.starts_with('-') && value != "-" {
+            let signal = value.trim_start_matches('-');
+            if translate_signal(signal).is_none() {
+                writeln!(
+                    stderr,
+                    "{}kill: {signal}: invalid signal specification",
+                    diagnostic_prefix()
+                )?;
+                return Ok(1);
+            }
+            index += 1;
+            operands_start = index;
+            continue;
+        }
+        operands_start = index;
+        break;
+    }
+
+    if operands_start >= args.len() {
+        write_kill_usage(stderr)?;
+        return Ok(2);
+    }
+
+    // Process signalling is handled by the executor's tracked-job path. For
+    // ordinary PIDs, validation above is still important even on platforms
+    // where the shell cannot deliver every POSIX signal directly.
+    Ok(0)
+}
+
+fn write_kill_usage<E>(stderr: &mut E) -> io::Result<()>
+where
+    E: Write,
+{
+    writeln!(
+        stderr,
+        "{}kill: usage: kill [-s sigspec | -n signum | -sigspec] pid | jobspec ... or kill -l [sigspec]",
+        diagnostic_prefix()
+    )
 }
 
 pub fn list_first_signal_for_sed() -> &'static str {

@@ -84,14 +84,16 @@ impl Executor {
                     .is_some_and(|pid| self.background_children.contains_key(&pid))
         });
         if !should_handle {
-            if !request.check_only {
-                return Ok(None);
-            }
-
             let mut stderr = Vec::new();
             let mut status = 0;
             for operand in request.operands {
                 let Some(pid) = operand.parse::<u32>().ok() else {
+                    writeln!(
+                        stderr,
+                        "{}kill: {operand}: arguments must be process or job IDs",
+                        self.diagnostic_prefix()
+                    )?;
+                    status = 1;
                     continue;
                 };
                 if !process_exists(pid) {
@@ -104,7 +106,10 @@ impl Executor {
                 }
             }
             self.write_buffered_builtin_output(cmd, &[], &stderr)?;
-            return Ok(Some(status));
+            if status != 0 || request.check_only {
+                return Ok(Some(status));
+            }
+            return Ok(None);
         }
 
         let mut stderr = Vec::new();
@@ -254,11 +259,22 @@ fn kill_request(words: &[String]) -> Option<KillRequest> {
             return None;
         }
         if word == "-s" || word == "-n" {
+            if words
+                .get(index + 1)
+                .is_none_or(|signal| crate::builtins::kill::translate_signal(signal).is_none())
+            {
+                return None;
+            }
             check_only |= words.get(index + 1).is_some_and(|signal| signal == "0");
             index += 2;
             continue;
         }
         if word.starts_with('-') && word != "-" {
+            if word != "-0"
+                && crate::builtins::kill::translate_signal(word.trim_start_matches('-')).is_none()
+            {
+                return None;
+            }
             check_only |= word == "-0";
             index += 1;
             continue;
