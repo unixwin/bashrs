@@ -465,6 +465,12 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
         TokenKind::And | TokenKind::Or => {
             if command_is_open_conditional(&state.current_cmd) {
                 push_command_word(&mut state.current_cmd, token);
+            } else if command_is_empty(&state.current_cmd) {
+                state.current_cmd.assignments.insert(
+                    "__RUBASH_PARSE_ERROR__".to_string(),
+                    format!("unexpected token `{}`", token.value),
+                );
+                state.ast.commands.push(std::mem::take(&mut state.current_cmd));
             } else {
                 // TODO(parse.y/execute_cmd.c): This preserves the AND-OR
                 // list connector on simple commands. Full Bash grammar needs

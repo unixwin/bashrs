@@ -134,6 +134,7 @@ fn malformed_pipeline_and_if_are_syntax_errors() {
     for command in [
         "echo hi |",
         "echo hi &&",
+        "echo hi & && echo x",
         "if then; fi; echo after",
         "while; do :; done",
     ] {
