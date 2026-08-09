@@ -70,6 +70,18 @@ fn c_command_writes_to_named_coproc_stdin_fd() {
 }
 
 #[test]
+fn shopt_print_pipeline_is_captured_before_external_stage() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("shopt -p -o | head -n 3")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout).lines().count(), 3);
+}
+
+#[test]
 #[cfg(windows)]
 fn external_pipeline_does_not_buffer_an_unbounded_producer() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
