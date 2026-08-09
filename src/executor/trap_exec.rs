@@ -108,6 +108,18 @@ impl Executor {
         result
     }
 
+    pub(crate) fn run_function_return_trap(&mut self) -> Result<(), ExecuteError> {
+        // Bash only fires a RETURN trap for function returns when tracing is
+        // enabled (`set -T`) or `extdebug` is active.  Sourced files use the
+        // unconditional run_return_trap path above.
+        let traced = crate::builtins::set::shell_option_enabled(&self.env_vars, "functrace")
+            || crate::builtins::shopt::option_enabled(&self.env_vars, "extdebug");
+        if !traced {
+            return Ok(());
+        }
+        self.run_return_trap()
+    }
+
     pub(crate) fn apply_command_output_redirects(
         &mut self,
         cmd: &CommandNode,

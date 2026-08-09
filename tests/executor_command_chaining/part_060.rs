@@ -47,6 +47,28 @@ fn test_remaining_stateful_set_short_flags_update_shell_options() {
 }
 
 #[test]
+fn test_return_trap_requires_function_tracing() {
+    let output_path = "target/rubash-return-trap-tracing-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "trap 'echo R >> {output_path}' RETURN; f() {{ :; }}; f; \
+         echo plain >> {output_path}; set -T; f; echo traced >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "plain\nR\ntraced\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_noclobber_prevents_output_overwrite() {
     let output_path = "target/rubash-noclobber-output.txt";
     let _ = fs::remove_file(output_path);
