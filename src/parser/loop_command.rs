@@ -12,6 +12,9 @@ pub(super) fn parse_loop_command(tokens: &[Token], start: usize) -> Option<(Comm
 
     let do_index = find_loop_do(tokens, start + 1)?;
     let condition = parse_loop_body_commands(&tokens[start + 1..do_index]);
+    if condition.is_empty() {
+        return None;
+    }
     let condition_terminator = condition_terminator_before(tokens, do_index);
     let condition_terminator_metadata = condition_terminator_metadata_before(tokens, do_index);
     let (body, done_index) = parse_loop_body(tokens, do_index + 1)?;

@@ -127,6 +127,18 @@ fn fold_and_or_list_commands(commands: Vec<CommandNode>) -> Vec<CommandNode> {
         }
 
         if connectors.is_empty() || list_commands.len() != connectors.len() + 1 {
+            if list_commands.len() == 1 && !connectors.is_empty() {
+                let mut command = list_commands
+                    .into_iter()
+                    .next()
+                    .expect("and-or list has a command");
+                command.assignments.insert(
+                    "__RUBASH_PARSE_ERROR__".to_string(),
+                    "unexpected end of file".to_string(),
+                );
+                folded.push(command);
+                continue;
+            }
             folded.extend(list_commands);
             continue;
         }
@@ -482,6 +494,21 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
             push_compound_command(state, loop_cmd);
             return Some(next_i);
         }
+
+        state.current_cmd.assignments.insert(
+            "__RUBASH_PARSE_ERROR__".to_string(),
+            "unexpected token `do'".to_string(),
+        );
+        let mut next_i = i + 1;
+        while tokens.get(next_i).is_some() {
+            let is_done = is_keyword(tokens, next_i, "done");
+            next_i += 1;
+            if is_done {
+                break;
+            }
+        }
+        state.ast.commands.push(std::mem::take(&mut state.current_cmd));
+        return Some(next_i);
     }
 
     if token.kind == TokenKind::Keyword

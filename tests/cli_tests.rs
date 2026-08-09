@@ -131,7 +131,12 @@ fn umask_symbolic_mode_prints_after_setting_mode() {
 
 #[test]
 fn malformed_pipeline_and_if_are_syntax_errors() {
-    for command in ["echo hi |", "if then; fi; echo after"] {
+    for command in [
+        "echo hi |",
+        "echo hi &&",
+        "if then; fi; echo after",
+        "while; do :; done",
+    ] {
         let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
             .arg("-c")
             .arg(command)
