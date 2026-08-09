@@ -43,12 +43,12 @@ const SHELL_OPTIONS: &[ShellOption] = &[
         default_enabled: false,
     },
     ShellOption {
-        name: "igncr",
+        name: "history",
+        // History is an interactive-shell feature and is off for scripts.
         default_enabled: false,
     },
     ShellOption {
-        name: "history",
-        // History is an interactive-shell feature and is off for scripts.
+        name: "igncr",
         default_enabled: false,
     },
     ShellOption {
