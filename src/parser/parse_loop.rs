@@ -468,6 +468,18 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
             return Some(next_i);
         }
 
+        // Alias expansion can introduce `then`/`elif`/`else`/`fi` after the
+        // first parse attempt. Leave those non-empty conditions available to
+        // the existing alias reparse path; only reject an actually empty
+        // condition here.
+        let condition_is_empty = tokens
+            .get(i + 1)
+            .map(|next| next.value == "then" || next.kind == TokenKind::Semicolon)
+            .unwrap_or(true);
+        if !condition_is_empty {
+            return None;
+        }
+
         // A malformed `if` must remain a syntax error instead of falling
         // through to the simple-command parser (`if then; fi` used to be
         // accepted and silently ran the following commands).
