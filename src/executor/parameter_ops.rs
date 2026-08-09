@@ -72,7 +72,7 @@ pub(in crate::executor) fn decode_parameter_replacement_quotes(replacement: &str
             }
             output.push(if ch == '\x17' { '\'' } else { ch });
         }
-        return normalize_parameter_replacement_escapes(&output);
+        return output;
     }
 
     if replacement.contains('\x17') || replacement.contains("\\'") {
@@ -104,7 +104,7 @@ pub(in crate::executor) fn decode_parameter_replacement_quotes(replacement: &str
                 output.push(ch);
             }
         }
-        return normalize_parameter_replacement_escapes(&output);
+        return output;
     }
 
     if replacement.contains('\\') {
@@ -157,6 +157,7 @@ fn normalize_parameter_replacement_escapes(value: &str) -> String {
 
         match chars.peek().copied() {
             Some('&') => output.push('\\'),
+            Some('\'') => output.push('\\'),
             Some('\\') => {
                 chars.next();
                 output.push('\\');

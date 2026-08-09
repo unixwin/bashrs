@@ -58,7 +58,7 @@ fn test_parameter_question_operator_distinguishes_null_from_unset() {
     let result = executor.execute_ast(&ast);
 
     assert!(result.is_err());
-    assert_eq!(executor.last_exit_code(), 1);
+    assert_eq!(executor.last_exit_code(), 127);
     assert_eq!(fs::read_to_string(output_path).unwrap(), "<>\n<value>\n");
     let _ = fs::remove_file(output_path);
 }

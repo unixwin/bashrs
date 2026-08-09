@@ -545,15 +545,6 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                 return TokenAction::Continue;
             }
 
-            if token.value == ")" && !state.in_subshell {
-                state.current_cmd.assignments.insert(
-                    "__RUBASH_PARSE_ERROR__".to_string(),
-                    "unexpected token `)'".to_string(),
-                );
-                *i += 1;
-                return TokenAction::Continue;
-            }
-
             // TODO(parse.y): Reserved words are only reserved in specific
             // parser states. If an ordinary command has already started,
             // keep the token text so alias expansion can reparse it later.
