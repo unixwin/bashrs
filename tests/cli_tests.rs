@@ -131,6 +131,20 @@ fn prefix_assignments_reach_env_builtin_pipeline() {
     assert!(stdout.contains("y=2"));
 }
 
+#[cfg(windows)]
+#[test]
+fn quoted_environment_paths_keep_native_windows_form() {
+    let expected = std::env::var("LOCALAPPDATA").expect("LOCALAPPDATA is set");
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("printf '%s\\n' \"${LOCALAPPDATA}\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), format!("{expected}\n"));
+}
+
 #[test]
 fn umask_symbolic_mode_prints_after_setting_mode() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
