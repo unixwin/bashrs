@@ -18,7 +18,9 @@ const SHELL_OPTIONS: &[ShellOption] = &[
     },
     ShellOption {
         name: "emacs",
-        default_enabled: true,
+        // Non-interactive Bash starts with both readline editing modes off.
+        // The executor uses this same state for `bash -c`/script execution.
+        default_enabled: false,
     },
     ShellOption {
         name: "errexit",
@@ -42,7 +44,8 @@ const SHELL_OPTIONS: &[ShellOption] = &[
     },
     ShellOption {
         name: "history",
-        default_enabled: true,
+        // History is an interactive-shell feature and is off for scripts.
+        default_enabled: false,
     },
     ShellOption {
         name: "ignoreeof",

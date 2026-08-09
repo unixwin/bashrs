@@ -36,6 +36,26 @@ fn test_set_posix_updates_visible_option_state() {
 }
 
 #[test]
+fn test_noninteractive_shell_option_defaults_match_bash() {
+    let output_path = "target/rubash-set-noninteractive-defaults-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!("set -o > {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    let output = fs::read_to_string(output_path).unwrap();
+    assert!(output.lines().any(|line| line.starts_with("emacs") && line.ends_with("\toff")));
+    assert!(output
+        .lines()
+        .any(|line| line.starts_with("history") && line.ends_with("\toff")));
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_shellopts_assignment_reports_readonly() {
     let status_path = "target/rubash-shellopts-readonly-status.txt";
     let _ = fs::remove_file(status_path);
