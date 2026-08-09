@@ -130,6 +130,19 @@ fn umask_symbolic_mode_prints_after_setting_mode() {
 }
 
 #[test]
+fn malformed_pipeline_and_if_are_syntax_errors() {
+    for command in ["echo hi |", "if then; fi; echo after"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+            .arg("-c")
+            .arg(command)
+            .output()
+            .expect("run rubash");
+        assert!(!output.status.success(), "command unexpectedly succeeded: {command}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("syntax error"));
+    }
+}
+
+#[test]
 fn help_and_trap_pipeline_output_is_captured() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

@@ -11,6 +11,9 @@ pub(super) fn parse_if_command(tokens: &[Token], start: usize) -> Option<(Comman
     let then_keyword = tokens[then_index].value.clone();
     let then_keyword_metadata = build_keyword_metadata(&tokens[then_index]);
     let condition = parse_if_body_commands(&tokens[start + 1..then_index]);
+    if condition.is_empty() {
+        return None;
+    }
     let condition_terminator = condition_terminator_before(tokens, then_index);
     let condition_terminator_metadata = condition_terminator_metadata_before(tokens, then_index);
     let mut index = then_index + 1;

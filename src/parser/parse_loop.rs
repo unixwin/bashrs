@@ -182,6 +182,20 @@ fn fold_pipeline_commands(commands: Vec<CommandNode>) -> Vec<CommandNode> {
             || stages.last().is_some_and(|command| command.pipe.is_some())
             || looks_like_case_pattern_alternate(&stages)
         {
+            if stages.len() == 1
+                || stages.last().is_some_and(|command| command.pipe.is_some())
+            {
+                let mut command = stages
+                    .into_iter()
+                    .next()
+                    .expect("pipeline has a first stage");
+                command.assignments.insert(
+                    "__RUBASH_PARSE_ERROR__".to_string(),
+                    "unexpected token `|'".to_string(),
+                );
+                folded.push(command);
+                continue;
+            }
             folded.extend(stages);
             continue;
         }
@@ -441,6 +455,23 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
             push_compound_command(state, if_cmd);
             return Some(next_i);
         }
+
+        // A malformed `if` must remain a syntax error instead of falling
+        // through to the simple-command parser (`if then; fi` used to be
+        // accepted and silently ran the following commands).
+        state.current_cmd.assignments.insert(
+            "__RUBASH_PARSE_ERROR__".to_string(),
+            "unexpected token `then'".to_string(),
+        );
+        let mut next_i = i + 1;
+        while tokens.get(next_i).is_some() {
+            next_i += 1;
+            if is_keyword(tokens, next_i - 1, "fi") {
+                break;
+            }
+        }
+        state.ast.commands.push(std::mem::take(&mut state.current_cmd));
+        return Some(next_i);
     }
 
     if token.kind == TokenKind::Keyword

@@ -13,9 +13,14 @@ impl Executor {
         self.report_command_heredoc_errors(cmd)?;
 
         if cmd.assignments.contains_key("__RUBASH_PARSE_ERROR__") {
+            let message = cmd
+                .assignments
+                .get("__RUBASH_PARSE_ERROR__")
+                .map(String::as_str)
+                .unwrap_or("unexpected token");
             eprintln!(
-                "{}syntax error near unexpected token `('",
-                self.diagnostic_prefix()
+                "{}syntax error near {message}",
+                self.diagnostic_prefix(),
             );
             self.exit_code = 2;
             return Err(ExecuteError::ExitCode(2));
