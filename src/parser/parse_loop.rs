@@ -539,6 +539,13 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
             push_compound_command(state, case_cmd);
             return Some(next_i);
         }
+        return Some(push_parse_error_until(
+            state,
+            tokens,
+            i,
+            "esac",
+            "unexpected token `esac'",
+        ));
     }
 
     if token.kind == TokenKind::Keyword
@@ -586,6 +593,13 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
             push_compound_command(state, subshell_cmd);
             return Some(next_i);
         }
+        return Some(push_parse_error_until(
+            state,
+            tokens,
+            i,
+            ")",
+            "unexpected end of file",
+        ));
     }
 
     if command_accepts_embedded_arithmetic_command(&state.current_cmd)
@@ -609,6 +623,19 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
             push_compound_command(state, brace_cmd);
             return Some(next_i);
         }
+        if token.value == "{"
+            || (token.value.starts_with('{')
+                && token.value.contains(';')
+                && !token.value.contains('}'))
+        {
+            return Some(push_parse_error_until(
+                state,
+                tokens,
+                i,
+                "}",
+                "unexpected end of file",
+            ));
+        }
     }
 
     None
@@ -616,6 +643,29 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
 
 fn command_allows_compound_start(command: &CommandNode) -> bool {
     command_is_empty(command) || command_is_pending_inversion(command)
+}
+
+fn push_parse_error_until(
+    state: &mut ParseState,
+    tokens: &[Token],
+    start: usize,
+    terminator: &str,
+    message: &str,
+) -> usize {
+    state.current_cmd.assignments.insert(
+        "__RUBASH_PARSE_ERROR__".to_string(),
+        message.to_string(),
+    );
+    let mut next_i = start + 1;
+    while tokens.get(next_i).is_some() {
+        let is_terminator = is_keyword(tokens, next_i, terminator);
+        next_i += 1;
+        if is_terminator {
+            break;
+        }
+    }
+    state.ast.commands.push(std::mem::take(&mut state.current_cmd));
+    next_i
 }
 
 fn command_is_pending_inversion(command: &CommandNode) -> bool {

@@ -137,6 +137,9 @@ fn malformed_pipeline_and_if_are_syntax_errors() {
         "echo hi & && echo x",
         "if then; fi; echo after",
         "while; do :; done",
+        "case x in x) ;;",
+        "( echo hi",
+        "{ echo hi;",
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
             .arg("-c")

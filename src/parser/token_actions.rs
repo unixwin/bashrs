@@ -18,6 +18,15 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
         | TokenKind::BraceExpand => {
             state.current_cmd.subshell |= state.in_subshell;
             note_command_line(&mut state.current_cmd, token);
+            if token.value.starts_with('{')
+                && token.value.contains(';')
+                && !token.value.contains('}')
+            {
+                state.current_cmd.assignments.insert(
+                    "__RUBASH_PARSE_ERROR__".to_string(),
+                    "unexpected end of file".to_string(),
+                );
+            }
             if let Some((value, raw, next_i)) =
                 collect_adjacent_process_substitution_word(tokens, *i)
             {
