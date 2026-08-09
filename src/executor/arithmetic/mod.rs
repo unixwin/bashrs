@@ -152,6 +152,12 @@ pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<
         ));
     }
 
+    if let Some(token) = invalid_octal_literal(expression) {
+        return Some(format!(
+            "{expression}: value too great for base (error token is \"{token}\")"
+        ));
+    }
+
     let bytes = expression.as_bytes();
     for index in 0..bytes.len() {
         // Floating point like `1.5`: digit followed by `.digit`.
@@ -207,6 +213,29 @@ pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<
         ));
     }
 
+    None
+}
+
+fn invalid_octal_literal(expression: &str) -> Option<String> {
+    let bytes = expression.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if !bytes[index].is_ascii_digit()
+            || (index > 0 && (bytes[index - 1].is_ascii_alphanumeric() || bytes[index - 1] == b'_'))
+        {
+            index += 1;
+            continue;
+        }
+
+        let start = index;
+        while bytes.get(index).is_some_and(|byte| byte.is_ascii_digit()) {
+            index += 1;
+        }
+        let token = &expression[start..index];
+        if token.len() > 1 && token.starts_with('0') && token.bytes().any(|byte| byte >= b'8') {
+            return Some(token.to_string());
+        }
+    }
     None
 }
 
