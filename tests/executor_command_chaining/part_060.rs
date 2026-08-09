@@ -69,6 +69,25 @@ fn test_return_trap_requires_function_tracing() {
 }
 
 #[test]
+fn test_return_trap_registered_inside_function_fires_without_tracing() {
+    let output_path = "target/rubash-return-trap-local-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "f() {{ trap 'echo local >> {output_path}' RETURN; echo body >> {output_path}; }}; f"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "body\nlocal\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_noclobber_prevents_output_overwrite() {
     let output_path = "target/rubash-noclobber-output.txt";
     let _ = fs::remove_file(output_path);

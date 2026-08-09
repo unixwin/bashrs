@@ -80,6 +80,7 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<i32, ExecuteError> {
+        self.note_return_trap_scope(&cmd.words[1..]);
         if let Some(redirect) = &cmd.redirect_out {
             let target = self.expand_word(&redirect.target);
             let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;

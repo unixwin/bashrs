@@ -114,10 +114,43 @@ impl Executor {
         // unconditional run_return_trap path above.
         let traced = crate::builtins::set::shell_option_enabled(&self.env_vars, "functrace")
             || crate::builtins::shopt::option_enabled(&self.env_vars, "extdebug");
-        if !traced {
+        let function_scoped = self
+            .env_vars
+            .get("__RUBASH_RETURN_TRAP_FUNCTION")
+            .zip(self.function_name_stack.first())
+            .is_some_and(|(registered, current)| registered == current);
+        if !traced && !function_scoped {
             return Ok(());
         }
         self.run_return_trap()
+    }
+
+    pub(in crate::executor) fn note_return_trap_scope(&mut self, args: &[String]) {
+        let mut index = usize::from(args.first().map(String::as_str) == Some("--"));
+        let Some(action) = args.get(index) else {
+            return;
+        };
+        if action != "-" && action.starts_with('-') {
+            return;
+        }
+        index += 1;
+        let has_return = args[index..].iter().any(|signal| {
+            signal
+                .strip_prefix("SIG")
+                .unwrap_or(signal)
+                .eq_ignore_ascii_case("RETURN")
+        });
+        if !has_return {
+            return;
+        }
+        if action == "-" {
+            self.env_vars.remove("__RUBASH_RETURN_TRAP_FUNCTION");
+        } else if let Some(function) = self.function_name_stack.first() {
+            self.env_vars.insert(
+                "__RUBASH_RETURN_TRAP_FUNCTION".to_string(),
+                function.clone(),
+            );
+        }
     }
 
     pub(crate) fn apply_command_output_redirects(
