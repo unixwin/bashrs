@@ -84,7 +84,27 @@ impl Executor {
                     .is_some_and(|pid| self.background_children.contains_key(&pid))
         });
         if !should_handle {
-            return Ok(None);
+            if !request.check_only {
+                return Ok(None);
+            }
+
+            let mut stderr = Vec::new();
+            let mut status = 0;
+            for operand in request.operands {
+                let Some(pid) = operand.parse::<u32>().ok() else {
+                    continue;
+                };
+                if !process_exists(pid) {
+                    writeln!(
+                        stderr,
+                        "{}kill: ({pid}) - No such process",
+                        self.diagnostic_prefix()
+                    )?;
+                    status = 1;
+                }
+            }
+            self.write_buffered_builtin_output(cmd, &[], &stderr)?;
+            return Ok(Some(status));
         }
 
         let mut stderr = Vec::new();
@@ -187,6 +207,34 @@ impl Executor {
             &mut self.env_vars,
         )?)
     }
+}
+
+#[cfg(unix)]
+fn process_exists(pid: u32) -> bool {
+    // Signal 0 performs the existence/permission check without delivering a
+    // signal.  A negative result with EPERM still means the process exists.
+    let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
+    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(windows)]
+fn process_exists(pid: u32) -> bool {
+    // `tasklist` is available on supported Windows versions and avoids
+    // depending on a third-party process enumeration crate.  CSV output is
+    // stable across localized system messages.
+    let Ok(output) = std::process::Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+        .output()
+    else {
+        return false;
+    };
+    let needle = format!(",\"{pid}\",");
+    String::from_utf8_lossy(&output.stdout).contains(&needle)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn process_exists(_pid: u32) -> bool {
+    false
 }
 
 struct KillRequest {
