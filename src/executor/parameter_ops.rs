@@ -72,7 +72,7 @@ pub(in crate::executor) fn decode_parameter_replacement_quotes(replacement: &str
             }
             output.push(if ch == '\x17' { '\'' } else { ch });
         }
-        return output;
+        return normalize_parameter_replacement_escapes(&output);
     }
 
     if replacement.contains('\x17') || replacement.contains("\\'") {
@@ -104,7 +104,7 @@ pub(in crate::executor) fn decode_parameter_replacement_quotes(replacement: &str
                 output.push(ch);
             }
         }
-        return output;
+        return normalize_parameter_replacement_escapes(&output);
     }
 
     if replacement.contains('\\') {
@@ -123,7 +123,7 @@ pub(in crate::executor) fn decode_parameter_replacement_quotes(replacement: &str
                 index += 1;
             }
         }
-        return output.replace('\x18', "\\");
+        return normalize_parameter_replacement_escapes(&output.replace('\x18', "\\"));
     }
     let mut protected = String::new();
     let chars = replacement.chars().collect::<Vec<_>>();
@@ -137,7 +137,38 @@ pub(in crate::executor) fn decode_parameter_replacement_quotes(replacement: &str
         protected.push(chars[index]);
         index += 1;
     }
-    decode_parameter_pattern_quotes(&protected).replace('\x18', "\\")
+    normalize_parameter_replacement_escapes(
+        &decode_parameter_pattern_quotes(&protected).replace('\x18', "\\"),
+    )
+}
+
+/// Remove the quoting backslash that Bash consumes while parsing a
+/// parameter-substitution replacement.  `\&` is retained for the later
+/// replacement pass, where it means a literal ampersand; a doubled
+/// backslash becomes one literal backslash.
+fn normalize_parameter_replacement_escapes(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            output.push(ch);
+            continue;
+        }
+
+        match chars.peek().copied() {
+            Some('&') => output.push('\\'),
+            Some('\\') => {
+                chars.next();
+                output.push('\\');
+            }
+            Some(next) => {
+                chars.next();
+                output.push(next);
+            }
+            None => output.push('\\'),
+        }
+    }
+    output
 }
 
 pub(in crate::executor) fn restore_protected_replacement_quotes(value: &str) -> String {
@@ -390,7 +421,8 @@ mod tests {
 
     #[test]
     fn replacement_decoder_preserves_backslashes() {
-        assert_eq!(decode_parameter_replacement_quotes(r"\n"), r"\n");
-        assert_eq!(decode_parameter_replacement_quotes(r"\\n"), r"\\n");
+        assert_eq!(decode_parameter_replacement_quotes(r"\n"), "n");
+        assert_eq!(decode_parameter_replacement_quotes(r"\\n"), r"\n");
+        assert_eq!(decode_parameter_replacement_quotes(r"\&"), r"\&");
     }
 }
