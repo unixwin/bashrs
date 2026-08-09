@@ -65,6 +65,13 @@ where
             return Ok(EXECUTION_FAILURE);
         };
         env_vars.insert("__RUBASH_UMASK".to_string(), format!("{mask:04o}"));
+        if symbolic {
+            if reusable {
+                writeln!(stdout, "umask -S {}", symbolic_mask(mask))?;
+            } else {
+                writeln!(stdout, "{}", symbolic_mask(mask))?;
+            }
+        }
         return Ok(EXECUTION_SUCCESS);
     }
 

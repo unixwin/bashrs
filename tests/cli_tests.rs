@@ -118,6 +118,18 @@ fn declare_pipeline_output_is_captured() {
 }
 
 #[test]
+fn umask_symbolic_mode_prints_after_setting_mode() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("umask -S 0002")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "u=rwx,g=rwx,o=rx\n");
+}
+
+#[test]
 fn help_and_trap_pipeline_output_is_captured() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
