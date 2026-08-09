@@ -195,7 +195,7 @@ where
     W: Write,
 {
     for (index, signal) in SIGNALS.iter().enumerate() {
-        write!(stdout, "{:>2}) {:<10}", index + 1, signal)?;
+        write!(stdout, "{:>2}) {signal}", index + 1)?;
         if (index + 1) % 5 == 0 || index + 1 == SIGNALS.len() {
             writeln!(stdout)?;
         } else {
