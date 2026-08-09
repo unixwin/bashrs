@@ -94,6 +94,18 @@ fn option_and_stack_builtin_pipelines_are_captured() {
 }
 
 #[test]
+fn help_and_trap_pipeline_output_is_captured() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("help | head -n 1; trap -l | head -n 1")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout).lines().count(), 2);
+}
+
+#[test]
 #[cfg(windows)]
 fn external_pipeline_does_not_buffer_an_unbounded_producer() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
