@@ -114,7 +114,6 @@ impl Executor {
             self.exit_code = 1;
             return Err(ExecuteError::ExitCode(1));
         }
-        self.apply_parameter_assignment_expansions(cmd);
         if let Some((name, message, status)) = self.parameter_expansion_error(cmd) {
             eprintln!("{}{}: {}", self.diagnostic_prefix(), name, message);
             self.exit_code = status;
@@ -216,6 +215,10 @@ impl Executor {
         word: &str,
         raw: Option<&str>,
     ) -> Vec<String> {
+        // Assignment operators inside parameter expansions take effect at
+        // the point where their word is expanded. Applying them to every
+        // command word up front changes Bash's left-to-right semantics.
+        self.apply_parameter_assignment_expansions_in_word(word);
         if cmd
             .process_substitutions
             .iter()

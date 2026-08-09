@@ -307,15 +307,6 @@ impl Executor {
         self.expand_word(word)
     }
 
-    pub(in crate::executor) fn apply_parameter_assignment_expansions(&mut self, cmd: &CommandNode) {
-        // TODO(subst.c): Assignment operators should be part of normal word
-        // expansion. Rubash's word expansion is still immutable, so apply the
-        // simple shell-name side effects before command dispatch.
-        for word in &cmd.words[1..] {
-            self.apply_parameter_assignment_expansions_in_word(word);
-        }
-    }
-
     pub(in crate::executor) fn apply_parameter_assignment_expansions_in_word(
         &mut self,
         word: &str,
