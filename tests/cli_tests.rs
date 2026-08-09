@@ -39,6 +39,22 @@ fn c_command_reads_named_coproc_stdout_through_array_fd() {
 
 #[test]
 #[cfg(windows)]
+fn external_pipeline_does_not_buffer_an_unbounded_producer() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("yes pipeline | head -n 3")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "pipeline\npipeline\npipeline\n"
+    );
+}
+
+#[test]
+#[cfg(windows)]
 fn windows_userprofile_supplies_home_when_home_is_absent() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .env_remove("HOME")
