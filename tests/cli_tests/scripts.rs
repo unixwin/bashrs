@@ -67,6 +67,26 @@ fn stdin_script_child_shell_inherits_unread_input() {
 }
 
 #[test]
+fn stdin_script_collects_heredoc_before_execution() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("run rubash");
+
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"cat <<EOF\nfirst\nsecond\nEOF\n")
+        .unwrap();
+
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "first\nsecond\n");
+}
+
+#[test]
 fn stdin_script_runs_multiline_case_command() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .stdin(Stdio::piped())
