@@ -47,7 +47,6 @@ jobs:
 
   bash-upstream-progress:
     name: Bash upstream test progress
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     continue-on-error: true
 
