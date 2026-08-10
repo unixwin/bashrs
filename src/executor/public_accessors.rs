@@ -190,11 +190,6 @@ impl Executor {
             .map(|(name, alias)| (name.clone(), alias.value.clone()))
             .collect()
     }
-
-    pub fn env_vars_snapshot(&self) -> HashMap<String, String> {
-        self.env_vars.clone()
-    }
-
     pub(crate) fn env_vars(&self) -> &HashMap<String, String> {
         &self.env_vars
     }

@@ -26,7 +26,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Run cargo tests
-        run: cargo test --lib --test cli_tests
+        run: cargo test
 
   shell-functionality:
     name: Shell functionality tests
@@ -47,9 +47,7 @@ jobs:
 
   bash-upstream-progress:
     name: Bash upstream test progress
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    continue-on-error: true
 
     steps:
       - uses: actions/checkout@v4

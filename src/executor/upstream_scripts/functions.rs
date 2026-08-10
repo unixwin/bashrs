@@ -4,7 +4,6 @@ use crate::parser::{Ast, CommandNode};
 use std::rc::Rc;
 
 impl Executor {
-    #[allow(dead_code)]
     pub(in crate::executor) fn print_upstream_posixpipe_function(&self, name: &str) -> bool {
         if name != "tfunc"
             || !self
