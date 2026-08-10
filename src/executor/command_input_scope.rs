@@ -63,6 +63,7 @@ impl Executor {
     }
 }
 
+#[allow(dead_code)]
 fn strip_heredoc_body(body: &str) -> String {
     strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(body)).to_string()
 }

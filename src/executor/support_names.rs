@@ -120,7 +120,7 @@ fn parent_process_id() -> Option<u32> {
 
     #[cfg(unix)]
     {
-        unsafe { Some(libc::getppid()) }
+        u32::try_from(unsafe { libc::getppid() }).ok()
     }
 
     #[cfg(not(any(windows, unix)))]
