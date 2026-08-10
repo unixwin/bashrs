@@ -264,6 +264,7 @@ fn run_stdin_script(executor: &mut Executor) -> i32 {
     executor.inherit_process_stdin();
     let mut input = String::new();
     let mut pending = String::new();
+    let mut pending_heredocs: Vec<(String, bool)> = Vec::new();
 
     loop {
         input.clear();
@@ -274,7 +275,21 @@ fn run_stdin_script(executor: &mut Executor) -> i32 {
         }
 
         pending.push_str(&input);
-        if stdin_source_needs_more(&pending) {
+        if let Some((delimiter, strip_tabs)) = pending_heredocs.first() {
+            let candidate = input.trim_end_matches(['\r', '\n']);
+            let candidate = if *strip_tabs {
+                candidate.trim_start_matches('\t')
+            } else {
+                candidate
+            };
+            if candidate == delimiter {
+                pending_heredocs.remove(0);
+            }
+        } else {
+            pending_heredocs.extend(stdin_heredoc_declarations(&input));
+        }
+
+        if !pending_heredocs.is_empty() || stdin_source_needs_more(&pending) {
             continue;
         }
 
@@ -291,9 +306,6 @@ fn run_stdin_script(executor: &mut Executor) -> i32 {
 }
 
 fn stdin_source_needs_more(source: &str) -> bool {
-    if stdin_source_has_unclosed_heredoc(source) {
-        return true;
-    }
     if stdin_source_is_function_signature(source) {
         return true;
     }
@@ -320,49 +332,35 @@ fn stdin_source_needs_more(source: &str) -> bool {
     !stack.is_empty()
 }
 
-fn stdin_source_has_unclosed_heredoc(source: &str) -> bool {
-    let mut pending = Vec::new();
-    for line in source.lines() {
-        if let Some((delimiter, strip_tabs)) = pending.first() {
-            let candidate = if *strip_tabs {
-                line.trim_start_matches('\t')
-            } else {
-                line
-            };
-            if candidate == delimiter {
-                pending.remove(0);
-            }
-            continue;
-        }
-
-        let words = line.split_whitespace().collect::<Vec<_>>();
-        let mut index = 0;
-        while index < words.len() {
-            let word = words[index];
-            let (delimiter, strip_tabs) = if word == "<<" || word == "<<-" {
-                (words.get(index + 1).copied(), word == "<<-")
-            } else if let Some(delimiter) = word.strip_prefix("<<-") {
-                (Some(delimiter), true)
-            } else if let Some(delimiter) = word.strip_prefix("<<") {
-                (Some(delimiter), false)
-            } else {
-                index += 1;
-                continue;
-            };
-            if let Some(delimiter) = delimiter {
-                let delimiter = delimiter
-                    .trim_matches('\'')
-                    .trim_matches('"')
-                    .trim_start_matches('\\')
-                    .to_string();
-                if !delimiter.is_empty() {
-                    pending.push((delimiter, strip_tabs));
-                }
-            }
+fn stdin_heredoc_declarations(line: &str) -> Vec<(String, bool)> {
+    let words = line.split_whitespace().collect::<Vec<_>>();
+    let mut declarations = Vec::new();
+    let mut index = 0;
+    while index < words.len() {
+        let word = words[index];
+        let (delimiter, strip_tabs) = if word == "<<" || word == "<<-" {
+            (words.get(index + 1).copied(), word == "<<-")
+        } else if let Some(delimiter) = word.strip_prefix("<<-") {
+            (Some(delimiter), true)
+        } else if let Some(delimiter) = word.strip_prefix("<<") {
+            (Some(delimiter), false)
+        } else {
             index += 1;
+            continue;
+        };
+        if let Some(delimiter) = delimiter {
+            let delimiter = delimiter
+                .trim_matches('\'')
+                .trim_matches('"')
+                .trim_start_matches('\\')
+                .to_string();
+            if !delimiter.is_empty() {
+                declarations.push((delimiter, strip_tabs));
+            }
         }
+        index += 1;
     }
-    !pending.is_empty()
+    declarations
 }
 
 fn stdin_source_is_function_signature(source: &str) -> bool {
