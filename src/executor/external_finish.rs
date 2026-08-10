@@ -61,7 +61,16 @@ impl Executor {
             self.execute_direct_shell_script(cmd, &expanded_command_name, &script_path)?;
             return Ok(true);
         }
-        if self.env_vars.contains_key("__RUBASH_SCRIPT_NAME") {
+        // A nested same-shell script still needs to run in-process when its
+        // parent is consuming virtual stdin (for example a script supplied
+        // through `< input-line.sh`).  Spawning the wrapper in that case
+        // loses the unread portion of the parent's input stream.  Keep the
+        // recursion guard for ordinary nested scripts, where no virtual
+        // input needs to be transferred.
+        if self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
+            && !self.env_vars.contains_key(FUNCTION_STDIN)
+            && !self.env_vars.contains_key(&fd_stdin_key(0))
+        {
             return Ok(false);
         }
         let command_uses_this_shell = command_name.contains("THIS_SH");
