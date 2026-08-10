@@ -82,7 +82,6 @@ mod readonly_functions;
 mod shell_options;
 
 pub(crate) use shell_options::GlobalStdout;
-pub(crate) use shell_options::write_global_stdout;
 
 mod shift_echo_builtins;
 mod source_type_state;
