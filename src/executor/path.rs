@@ -18,7 +18,10 @@ pub fn find_user_command(name: &str, env_vars: &HashMap<String, String>) -> Opti
 
     if has_path_separator(name) {
         let candidate = shell_path_to_windows(name, env_vars);
-        return executable_candidate(&candidate, env_vars);
+        if let Some(found) = executable_candidate(&candidate, env_vars) {
+            return Some(found);
+        }
+        return find_msys_absolute_command(name, env_vars);
     }
 
     for dir in split_shell_path(env_vars.get("PATH").map(String::as_str).unwrap_or_default()) {
@@ -118,6 +121,62 @@ pub fn external_command_for_program(
     let mut command = Command::new(program);
     command.args(&native_args);
     (command, false)
+}
+
+#[cfg(windows)]
+fn find_msys_absolute_command(
+    name: &str,
+    env_vars: &HashMap<String, String>,
+) -> Option<PathBuf> {
+    let suffix = name
+        .strip_prefix("/usr/bin/")
+        .or_else(|| name.strip_prefix("/bin/"))?;
+    if suffix.is_empty() || suffix.contains('/') || suffix.contains('\\') {
+        return None;
+    }
+
+    let mut roots = Vec::new();
+    for key in ["CLAUDE_CODE_GIT_BASH_PATH", "BASH", "SHELL"] {
+        if let Some(path) = env_vars.get(key) {
+            add_msys_root(&mut roots, Path::new(path));
+        }
+    }
+    for directory in split_shell_path(env_vars.get("PATH").map(String::as_str).unwrap_or_default())
+    {
+        let directory = shell_path_to_windows(&directory, env_vars);
+        add_msys_root(&mut roots, &directory.join("bash.exe"));
+    }
+
+    for root in roots {
+        let candidates = [root.join("usr").join("bin").join(suffix), root.join("bin").join(suffix)];
+        for candidate in candidates {
+            if let Some(found) = executable_candidate(&candidate, env_vars) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
+fn add_msys_root(roots: &mut Vec<PathBuf>, executable: &Path) {
+    let Some(bin_dir) = executable.parent() else {
+        return;
+    };
+    let Some(root) = bin_dir.parent() else {
+        return;
+    };
+    if !roots.iter().any(|existing| existing == root) {
+        roots.push(root.to_path_buf());
+    }
+}
+
+#[cfg(not(windows))]
+fn find_msys_absolute_command(
+    _name: &str,
+    _env_vars: &HashMap<String, String>,
+) -> Option<PathBuf> {
+    None
 }
 
 fn external_argument_path(arg: &str, env_vars: &HashMap<String, String>) -> String {
@@ -456,6 +515,29 @@ mod tests {
 
         let _ = fs::remove_dir_all(empty_dir);
         let _ = fs::remove_dir_all(bin_dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_find_user_command_maps_msys_usr_bin_absolute_paths() {
+        let root = std::env::temp_dir().join("rubash-msys-absolute-command");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("bin")).unwrap();
+        fs::create_dir_all(root.join("usr").join("bin")).unwrap();
+        let bash = root.join("bin").join("bash.exe");
+        let command = root.join("usr").join("bin").join("tool.exe");
+        fs::write(&bash, "").unwrap();
+        fs::write(&command, "").unwrap();
+
+        let mut env_vars = HashMap::new();
+        env_vars.insert(
+            "CLAUDE_CODE_GIT_BASH_PATH".to_string(),
+            bash.to_string_lossy().to_string(),
+        );
+        env_vars.insert("PATH".to_string(), root.join("bin").to_string_lossy().to_string());
+
+        assert_eq!(find_user_command("/usr/bin/tool", &env_vars), Some(command));
+        let _ = fs::remove_dir_all(root);
     }
 
     #[cfg(windows)]
