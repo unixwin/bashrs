@@ -561,7 +561,7 @@ impl Executor {
         Ok(path)
     }
 
-    fn virtual_fd_stdin_remaining(&self, fd: u32) -> Option<String> {
+    pub(in crate::executor) fn virtual_fd_stdin_remaining(&self, fd: u32) -> Option<String> {
         let input = self.env_vars.get(&fd_stdin_key(fd))?;
         let offset = self
             .env_vars

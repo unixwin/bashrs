@@ -245,7 +245,19 @@ impl Executor {
         }
 
         let Some(redirect) = &call_cmd.redirect_in else {
-            return Ok(None);
+            // A shell script read through `< file` still has the unread
+            // portion of that virtual stdin available to commands it invokes.
+            // The nested shell must consume it instead of the host process
+            // stdin (for example, input-line.sh/input-line.sub).
+            if let Some(input) = self.env_vars.get(FUNCTION_STDIN) {
+                let offset = self
+                    .env_vars
+                    .get(FUNCTION_STDIN_OFFSET)
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(0);
+                return Ok(Some(input.get(offset..).unwrap_or_default().to_string()));
+            }
+            return Ok(self.virtual_fd_stdin_remaining(0));
         };
         if redirect.fd.unwrap_or(0) != 0 {
             return Ok(None);
