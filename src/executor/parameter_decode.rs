@@ -55,7 +55,7 @@ pub(in crate::executor) enum MatchLength {
     Longest,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(in crate::executor) enum PatternRemoval {
     ShortestPrefix,
     LongestPrefix,

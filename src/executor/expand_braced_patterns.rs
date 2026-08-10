@@ -18,7 +18,8 @@ impl Executor {
     }
 
     fn expand_braced_pattern_parameter(&self, name: &str) -> Option<String> {
-        if let Some((var_name, _pattern)) = name.split_once("##*/") {
+        let (var_name, pattern, operation) = split_top_level_pattern_operator(name)?;
+        if operation == PatternRemoval::LongestPrefix && pattern == "*/" {
             return Some(
                 self.parameter_pattern_scalar_value(var_name)
                     .as_deref()
@@ -34,39 +35,33 @@ impl Executor {
                     .to_string(),
             );
         }
-        if let Some((var_name, pattern)) = name.split_once("##") {
-            return Some(self.expand_prefix_pattern_parameter(
+
+        Some(match operation {
+            PatternRemoval::LongestPrefix => self.expand_prefix_pattern_parameter(
                 var_name,
                 pattern,
-                PatternRemoval::LongestPrefix,
+                operation,
                 MatchLength::Longest,
-            ));
-        }
-        if let Some((var_name, pattern)) = name.split_once('#') {
-            return Some(self.expand_prefix_pattern_parameter(
+            ),
+            PatternRemoval::ShortestPrefix => self.expand_prefix_pattern_parameter(
                 var_name,
                 pattern,
-                PatternRemoval::ShortestPrefix,
+                operation,
                 MatchLength::Shortest,
-            ));
-        }
-        if let Some((var_name, pattern)) = name.split_once("%%") {
-            return Some(self.expand_suffix_pattern_parameter(
+            ),
+            PatternRemoval::LongestSuffix => self.expand_suffix_pattern_parameter(
                 var_name,
                 pattern,
-                PatternRemoval::LongestSuffix,
+                operation,
                 MatchLength::Longest,
-            ));
-        }
-        if let Some((var_name, pattern)) = name.split_once('%') {
-            return Some(self.expand_suffix_pattern_parameter(
+            ),
+            PatternRemoval::ShortestSuffix => self.expand_suffix_pattern_parameter(
                 var_name,
                 pattern,
-                PatternRemoval::ShortestSuffix,
+                operation,
                 MatchLength::Shortest,
-            ));
-        }
-        None
+            ),
+        })
     }
 
     fn expand_prefix_pattern_parameter(
@@ -299,4 +294,59 @@ impl Executor {
 
         Some(String::new())
     }
+}
+
+fn split_top_level_pattern_operator(
+    name: &str,
+) -> Option<(&str, &str, PatternRemoval)> {
+    let chars = name.char_indices().collect::<Vec<_>>();
+    let mut nested = 0usize;
+    let mut quote = None;
+    let mut index = 0usize;
+    while index < chars.len() {
+        let (byte_index, ch) = chars[index];
+        if ch == '\\' {
+            index += 2;
+            continue;
+        }
+        if let Some(active_quote) = quote {
+            if ch == active_quote {
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+        if matches!(ch, '\'' | '"') {
+            quote = Some(ch);
+            index += 1;
+            continue;
+        }
+        if ch == '$' && chars.get(index + 1).is_some_and(|(_, next)| *next == '{') {
+            nested += 1;
+            index += 2;
+            continue;
+        }
+        if ch == '}' && nested > 0 {
+            nested -= 1;
+            index += 1;
+            continue;
+        }
+        if nested == 0 && matches!(ch, '#' | '%') {
+            let repeated = chars.get(index + 1).is_some_and(|(_, next)| *next == ch);
+            let operator = match (ch, repeated) {
+                ('#', true) => PatternRemoval::LongestPrefix,
+                ('#', false) => PatternRemoval::ShortestPrefix,
+                ('%', true) => PatternRemoval::LongestSuffix,
+                ('%', false) => PatternRemoval::ShortestSuffix,
+                _ => unreachable!(),
+            };
+            let pattern_start = chars
+                .get(index + usize::from(repeated) + 1)
+                .map(|(byte_index, _)| *byte_index)
+                .unwrap_or(name.len());
+            return Some((&name[..byte_index], &name[pattern_start..], operator));
+        }
+        index += 1;
+    }
+    None
 }

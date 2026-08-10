@@ -146,6 +146,24 @@ fn quoted_environment_paths_keep_native_windows_form() {
 }
 
 #[test]
+fn nested_parameter_expansion_can_supply_pattern_removal() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "v=a\n echo \"hash=${v#?}\"\n echo \"pct=${v%\"${v#?}\"}\"\n \
+             v=ab\n echo \"hash2=${v#?}\"\n echo \"pct2=${v%\"${v#?}\"}\"",
+        )
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "hash=\npct=a\nhash2=b\npct2=a\n"
+    );
+}
+
+#[test]
 fn umask_symbolic_mode_prints_after_setting_mode() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
