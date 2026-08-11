@@ -178,6 +178,23 @@ mod environment_tests {
     }
 
     #[test]
+    fn public_export_env_marks_variable_for_child_environment() {
+        let mut executor = Executor::new();
+        executor.export_env("RUBASH_PUBLIC_EXPORT_ENV", "visible");
+        let snapshot = executor.env_vars_snapshot();
+
+        assert_eq!(
+            snapshot.get("RUBASH_PUBLIC_EXPORT_ENV"),
+            Some(&"visible".to_string())
+        );
+        assert!(snapshot
+            .get("__RUBASH_EXPORTED_VARS")
+            .is_some_and(|value| value
+                .split('\x1f')
+                .any(|name| name == "RUBASH_PUBLIC_EXPORT_ENV")));
+    }
+
+    #[test]
     fn default_shell_is_current_executable_when_missing() {
         let _guard = ENV_LOCK.lock().unwrap();
         let _shell = EnvGuard::unset("SHELL");
@@ -284,6 +301,19 @@ mod function_api_tests {
             error,
             ExecuteError::FunctionNotFound(name) if name == "missing_hook"
         ));
+    }
+
+    #[test]
+    fn functions_snapshot_returns_defined_function_names_sorted() {
+        let tokens = tokenize("zeta() { :; }; alpha() { :; }");
+        let ast = parse(&tokens);
+        let mut executor = Executor::new();
+        executor.execute_ast(&ast).unwrap();
+
+        assert_eq!(
+            executor.functions_snapshot(),
+            vec!["alpha".to_string(), "zeta".to_string()]
+        );
     }
 }
 

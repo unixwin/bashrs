@@ -37,6 +37,11 @@ impl Executor {
         }
     }
 
+    pub fn export_env(&mut self, name: &str, value: &str) {
+        self.set_env(name, value);
+        self.mark_exported(name);
+    }
+
     pub fn unset_env(&mut self, name: &str) {
         self.remove_env(name);
     }
@@ -189,6 +194,12 @@ impl Executor {
             .iter()
             .map(|(name, alias)| (name.clone(), alias.value.clone()))
             .collect()
+    }
+
+    pub fn functions_snapshot(&self) -> Vec<String> {
+        let mut names = self.functions.keys().cloned().collect::<Vec<_>>();
+        names.sort();
+        names
     }
 
     pub fn env_vars_snapshot(&self) -> HashMap<String, String> {
