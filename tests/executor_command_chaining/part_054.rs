@@ -44,6 +44,7 @@ fn test_export_f_missing_function_reports_error() {
 
 #[test]
 fn test_bash_func_environment_import_defines_function() {
+    let _env_guard = super::super::ENV_LOCK.lock().unwrap();
     let output_path = "target/rubash-imported-function-output.txt";
     let _ = fs::remove_file(output_path);
     let old_value = std::env::var("BASH_FUNC_rubash_imported%%").ok();

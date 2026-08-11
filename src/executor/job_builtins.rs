@@ -76,7 +76,21 @@ impl Executor {
     ) -> Result<i32, ExecuteError> {
         let funcname = self.funcname_stack();
         let lineno = self.indexed_array_stack("BASH_LINENO");
-        let source = self.indexed_array_stack("BASH_SOURCE");
+        // The executor uses `main` as the synthetic source name for function
+        // calls made from an inline command string.  Bash's `caller` builtin
+        // reports that frame as `environment`, while BASH_SOURCE itself keeps
+        // the internal synthetic name for compatibility with the shell API.
+        let source: Vec<String> = self
+            .indexed_array_stack("BASH_SOURCE")
+            .into_iter()
+            .map(|name| {
+                if name == "main" {
+                    "environment".to_string()
+                } else {
+                    name
+                }
+            })
+            .collect();
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let status = crate::builtins::caller::execute_with_io(

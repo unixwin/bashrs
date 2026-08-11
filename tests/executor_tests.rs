@@ -8,7 +8,7 @@ use rubash::parser::parse;
 use std::ffi::OsString;
 use std::sync::Mutex;
 
-static ENV_LOCK: Mutex<()> = Mutex::new(());
+pub(crate) static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn shell_test_path(path: &std::path::Path) -> String {
     path.to_string_lossy().replace('\\', "/")
@@ -305,9 +305,17 @@ mod function_api_tests {
 
     #[test]
     fn functions_snapshot_returns_defined_function_names_sorted() {
+        let _env_guard = ENV_LOCK.lock().unwrap();
+        let imported_function_var = "BASH_FUNC_rubash_imported%%";
+        let old_imported_function = std::env::var_os(imported_function_var);
+        std::env::remove_var(imported_function_var);
         let tokens = tokenize("zeta() { :; }; alpha() { :; }");
         let ast = parse(&tokens);
         let mut executor = Executor::new();
+        match old_imported_function {
+            Some(value) => std::env::set_var(imported_function_var, value),
+            None => std::env::remove_var(imported_function_var),
+        }
         executor.execute_ast(&ast).unwrap();
 
         assert_eq!(
