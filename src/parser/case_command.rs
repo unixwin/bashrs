@@ -70,14 +70,21 @@ pub(super) fn parse_case_command(tokens: &[Token], start: usize) -> Option<(Comm
                         current_pattern.push_str(&extglob);
                         current_raw_pattern.push_str(&extglob);
                     } else {
-                        // Bash does not perform quote removal on case patterns
-                        // (execute_cmd.c: "the pattern does not undergo quote
-                        // removal"), so a backslash must survive here: in
-                        // `[[:alpha:]\]` the `\]` is a literal bracket member
-                        // and the bracket never closes (posixpat.tests ok 21).
-                        // Use the raw text so `\]` stays intact; expand_case_pattern
-                        // protects it through expansion and decode.
-                        current_pattern.push_str(&tokens[i].raw);
+                        // Keep the quote-free value for the structured AST
+                        // metadata, but retain raw text for unquoted escaped
+                        // patterns.  The executor uses raw_text when quote
+                        // semantics matter, so this does not discard `\]`
+                        // or `\"` during matching.
+                        let pattern_text = if tokens[i]
+                            .raw
+                            .chars()
+                            .any(|ch| matches!(ch, '\'' | '"'))
+                        {
+                            text
+                        } else {
+                            &tokens[i].raw
+                        };
+                        current_pattern.push_str(pattern_text);
                         current_raw_pattern.push_str(&tokens[i].raw);
                     }
                 }
