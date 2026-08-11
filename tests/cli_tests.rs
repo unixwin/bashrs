@@ -222,6 +222,9 @@ fn malformed_pipeline_and_if_are_syntax_errors() {
         "case x in x) ;;",
         "( echo hi",
         "{ echo hi;",
+        "echo @(",
+        "echo !(",
+        "echo +(",
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
             .arg("-c")

@@ -26,6 +26,19 @@ impl Executor {
             return Err(ExecuteError::ExitCode(2));
         }
 
+        if cmd
+            .word_metadata
+            .iter()
+            .any(|metadata| unterminated_extglob(&metadata.raw))
+        {
+            eprintln!(
+                "{}syntax error near unexpected token `('",
+                self.diagnostic_prefix()
+            );
+            self.exit_code = 2;
+            return Err(ExecuteError::ExitCode(2));
+        }
+
         // Bash must parse extglob syntax while the extglob option is
         // enabled.  A pathname such as `@(name)` in a simple command is
         // therefore a syntax error when the option is off; treating it as a
@@ -110,4 +123,42 @@ impl Executor {
             self.command_with_process_substitution_files(&cmd)?;
         self.execute_materialized_command(&materialized_cmd, process_substitution_files)
     }
+}
+
+fn unterminated_extglob(raw: &str) -> bool {
+    let chars = raw.chars().collect::<Vec<_>>();
+    let mut extglob_depth = 0usize;
+    let mut quote = None;
+    let mut index = 0;
+    while index < chars.len() {
+        let ch = chars[index];
+        if let Some(active) = quote {
+            if ch == active {
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+        if ch == '\\' {
+            index += 2;
+            continue;
+        }
+        if ch == '\'' || ch == '"' {
+            quote = Some(ch);
+            index += 1;
+            continue;
+        }
+        if matches!(ch, '@' | '*' | '+' | '?' | '!')
+            && chars.get(index + 1) == Some(&'(')
+        {
+            extglob_depth += 1;
+            index += 2;
+            continue;
+        }
+        if ch == ')' && extglob_depth > 0 {
+            extglob_depth -= 1;
+        }
+        index += 1;
+    }
+    extglob_depth > 0
 }
