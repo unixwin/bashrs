@@ -90,6 +90,14 @@ impl Executor {
         for (name, value) in &cmd.assignments {
             let (expanded_value, substitution_status) =
                 self.expand_assignment_value_with_status(value);
+            if self.arithmetic_expansion_error.replace(false) {
+                // An arithmetic expansion error in an assignment word aborts
+                // the current command list in Bash. Do not install a partial
+                // assignment or let the AST walker skip only the next
+                // command as if this were an ordinary word expansion.
+                self.exit_code = 1;
+                return Err(ExecuteError::ExitCode(1));
+            }
             if let Some(substitution_status) = substitution_status {
                 status = substitution_status;
             }

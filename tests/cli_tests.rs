@@ -164,6 +164,21 @@ fn nested_parameter_expansion_can_supply_pattern_removal() {
 }
 
 #[test]
+fn arithmetic_errors_in_assignment_abort_the_script() {
+    for assignment in ["x=$((1.5))", "x=$(( '1' ))"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+            .arg("-c")
+            .arg(format!("{assignment}; echo should-not-run"))
+            .output()
+            .expect("run rubash");
+
+        assert_eq!(output.status.code(), Some(1), "assignment: {assignment}");
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+        assert!(!String::from_utf8_lossy(&output.stderr).is_empty());
+    }
+}
+
+#[test]
 fn umask_symbolic_mode_prints_after_setting_mode() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
