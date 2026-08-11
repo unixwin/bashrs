@@ -87,6 +87,25 @@ fn stdin_script_collects_heredoc_before_execution() {
 }
 
 #[test]
+fn stdin_script_handles_large_heredoc_incrementally() {
+    let line = "heredoc-line\n";
+    let body = line.repeat(100_000);
+    let input = format!("cat <<EOF\n{body}EOF\n");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("run rubash");
+
+    child.stdin.as_mut().unwrap().write_all(input.as_bytes()).unwrap();
+
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout.len(), line.len() * 100_000);
+    assert_eq!(output.stdout, body.as_bytes());
+}
+
+#[test]
 fn stdin_script_runs_multiline_case_command() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .stdin(Stdio::piped())
