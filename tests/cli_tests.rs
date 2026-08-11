@@ -165,14 +165,22 @@ fn nested_parameter_expansion_can_supply_pattern_removal() {
 
 #[test]
 fn arithmetic_errors_in_assignment_abort_the_script() {
-    for assignment in ["x=$((1.5))", "x=$(( '1' ))"] {
+    for (prefix, assignment) in [
+        ("", "x=$((1.5))"),
+        ("", "x=$(( '1' ))"),
+        ("set -u;", "x=$((missing))"),
+    ] {
         let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
             .arg("-c")
-            .arg(format!("{assignment}; echo should-not-run"))
+            .arg(format!("{prefix}{assignment}; echo should-not-run"))
             .output()
             .expect("run rubash");
 
-        assert_eq!(output.status.code(), Some(1), "assignment: {assignment}");
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "assignment: {prefix}{assignment}"
+        );
         assert_eq!(String::from_utf8_lossy(&output.stdout), "");
         assert!(!String::from_utf8_lossy(&output.stderr).is_empty());
     }

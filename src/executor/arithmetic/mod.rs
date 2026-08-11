@@ -14,6 +14,14 @@ use super::Executor;
 impl Executor {
     pub(crate) fn eval_arithmetic_command_value(&mut self, expression: &str) -> Option<i128> {
         let expression = self.expand_arithmetic_special_parameters(expression);
+        if crate::builtins::set::shell_option_enabled(&self.env_vars, "nounset") {
+            if let Some(name) = arithmetic_unbound_variable(&expression, &self.env_vars) {
+                if !self.arithmetic_expansion_error.replace(true) {
+                    eprintln!("{}{}: unbound variable", self.diagnostic_prefix(), name);
+                }
+                return None;
+            }
+        }
         eval_mutable_arith_value_with_random(
             &expression,
             &mut self.env_vars,
