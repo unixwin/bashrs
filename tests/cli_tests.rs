@@ -200,6 +200,23 @@ fn arithmetic_commands_reject_single_quoted_operands() {
 }
 
 #[test]
+fn function_call_stack_reports_multiline_source_and_line() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "t2() { printf '%s|%s|%s\\n' \"${FUNCNAME[*]}\" \"${BASH_SOURCE[*]}\" \"${BASH_LINENO[*]}\"; }\nt2\n",
+        )
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "t2 main|main|2 0\n"
+    );
+}
+
+#[test]
 fn umask_symbolic_mode_prints_after_setting_mode() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

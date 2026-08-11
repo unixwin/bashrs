@@ -106,9 +106,16 @@ impl Executor {
                     .insert(FUNCTION_STDIN_OFFSET.to_string(), "0".to_string());
             }
             self.function_name_stack.insert(0, name.to_string());
-            self.bash_lineno_stack
-                .insert(0, call_cmd.line.unwrap_or(0).to_string());
-            self.bash_source_stack.insert(0, self.current_bash_source());
+            let call_line = self
+                .env_vars
+                .get("__RUBASH_CURRENT_LINE")
+                .cloned()
+                .or_else(|| call_cmd.line.map(|line| line.to_string()))
+                .unwrap_or_else(|| "0".to_string());
+            self.bash_lineno_stack.insert(0, call_line);
+            let source = self.current_bash_source();
+            self.bash_source_stack
+                .insert(0, if source.is_empty() { "main".to_string() } else { source });
             self.bash_argc_stack.insert(0, args.len().to_string());
             for arg in args {
                 self.bash_argv_stack.insert(0, arg.clone());
