@@ -22,6 +22,12 @@ impl Executor {
                 return None;
             }
         }
+        // In arithmetic command context Bash removes double quotes, but a
+        // single-quoted operand is not a numeric literal. Preserve it as an
+        // evaluation error so `(( '1' ))` is not silently accepted as 1.
+        if expression.contains('\'') {
+            return None;
+        }
         eval_mutable_arith_value_with_random(
             &expression,
             &mut self.env_vars,

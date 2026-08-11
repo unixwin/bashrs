@@ -187,6 +187,19 @@ fn arithmetic_errors_in_assignment_abort_the_script() {
 }
 
 #[test]
+fn arithmetic_commands_reject_single_quoted_operands() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("(( '1' )); echo after")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "after\n");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("operand expected"));
+}
+
+#[test]
 fn umask_symbolic_mode_prints_after_setting_mode() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

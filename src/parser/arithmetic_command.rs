@@ -50,28 +50,28 @@ pub(super) fn parse_arithmetic_command(
 
         if tokens[i].value == "[" {
             bracket_depth += 1;
-            parts.push(tokens[i].value.clone());
+            parts.push(arithmetic_token_value(&tokens[i]));
             i += 1;
             continue;
         }
 
         if tokens[i].value == "]" && bracket_depth > 0 {
             bracket_depth -= 1;
-            parts.push(tokens[i].value.clone());
+            parts.push(arithmetic_token_value(&tokens[i]));
             i += 1;
             continue;
         }
 
         if bracket_depth == 0 && is_keyword(tokens, i, "(") {
             paren_depth += 1;
-            parts.push(tokens[i].value.clone());
+            parts.push(arithmetic_token_value(&tokens[i]));
             i += 1;
             continue;
         }
 
         if bracket_depth == 0 && is_keyword(tokens, i, ")") && paren_depth > 0 {
             paren_depth -= 1;
-            parts.push(tokens[i].value.clone());
+            parts.push(arithmetic_token_value(&tokens[i]));
             i += 1;
             continue;
         }
@@ -87,7 +87,7 @@ pub(super) fn parse_arithmetic_command(
             continue;
         }
 
-        parts.push(tokens[i].value.clone());
+        parts.push(arithmetic_token_value(&tokens[i]));
         i += 1;
     }
 
@@ -96,7 +96,7 @@ pub(super) fn parse_arithmetic_command(
     }
 
     while i < tokens.len() && tokens[i].kind != TokenKind::Semicolon {
-        parts.push(tokens[i].value.clone());
+        parts.push(arithmetic_token_value(&tokens[i]));
         i += 1;
     }
 
@@ -104,6 +104,17 @@ pub(super) fn parse_arithmetic_command(
     command.line = tokens.get(start).map(|token| token.position);
     set_arithmetic_command_words(&mut command, parts.join(" "));
     Some(finish_arithmetic_command(command, tokens, i))
+}
+
+fn arithmetic_token_value(token: &Token) -> String {
+    // Arithmetic parsing removes shell quotes from token values. Preserve
+    // single quotes in the command expression so the evaluator can reject
+    // `(( '1' ))` like Bash instead of silently treating it as 1.
+    if token.raw.contains('\'') {
+        token.raw.clone()
+    } else {
+        token.value.clone()
+    }
 }
 
 fn set_arithmetic_command_words(command: &mut CommandNode, expression: String) {
