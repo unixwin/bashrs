@@ -2,6 +2,9 @@
 
 > 汇总日期：2026-08-03（数据修正版：同步各 ISSUE 评论的最终数字）。数据来源：unixwin/rubash issue #20-#26 + 本地差分/上游测试。
 > 核心结论：**7 个 issue 的差异高度重叠**——同一批根因族在不同套件（oil spec / mksh / ksh93 / bash 官方 / busybox）中反复命中。按根因族维修，而非按 issue 逐个修。
+>
+> 2026-08-12 追加：最新本地套件运行、DIFF 形态、实现归因、rubash/winuxcmd/winuxsh 架构边界见
+> [`docs/issue-suite-diff-analysis.md`](issue-suite-diff-analysis.md)。
 
 ## 一、7 个 issue 概览（最终数字，与 ISSUE 评论一致）
 
