@@ -7,6 +7,11 @@ impl Executor {
         process: &mut Command,
     ) -> Result<(), ExecuteError> {
         self.apply_external_stdin_redirect(cmd, process)?;
+        if self.command_needs_ordered_output_capture(cmd) {
+            process.stdout(Stdio::piped());
+            process.stderr(Stdio::piped());
+            return Ok(());
+        }
         if self.apply_external_combined_output_redirect(cmd, process)? {
             return Ok(());
         }
@@ -201,6 +206,11 @@ impl Executor {
         stdout: &[u8],
         stderr: &[u8],
     ) -> Result<(), ExecuteError> {
+        if self.command_needs_ordered_output_capture(cmd)
+            && self.write_ordered_command_output(cmd, stdout, stderr)?
+        {
+            return Ok(());
+        }
         if self.stdout_capture.is_some() && !self.external_stdout_copies_to_stderr(cmd) {
             self.write_default_stdout(stdout)?;
         }
@@ -261,6 +271,7 @@ impl Executor {
 
     pub(in crate::executor) fn external_needs_fd_copy_capture(&self, cmd: &CommandNode) -> bool {
         self.stdout_capture.is_some()
+            || self.command_needs_ordered_output_capture(cmd)
             || self.external_stdout_copies_to_stderr(cmd)
             || self.external_stderr_copies_to_stdout(cmd)
     }

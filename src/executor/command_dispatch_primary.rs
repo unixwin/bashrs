@@ -13,7 +13,6 @@ impl Executor {
                     self.execute_external(cmd)
                 } else {
                     self.execute_echo(cmd)?;
-                    self.exit_code = 0;
                     Ok(())
                 }
             }

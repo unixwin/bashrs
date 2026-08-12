@@ -106,6 +106,19 @@ fn stdin_script_handles_large_heredoc_incrementally() {
 }
 
 #[test]
+fn script_brace_group_inner_command_keeps_trailing_heredoc() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("{ cat <<EOF; }; echo Ok2\nOk1\nEOF\n")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "Ok1\nOk2\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn stdin_script_runs_multiline_case_command() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .stdin(Stdio::piped())

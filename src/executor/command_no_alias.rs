@@ -41,7 +41,6 @@ impl Executor {
                     return self.execute_external(cmd);
                 }
                 self.execute_echo(cmd)?;
-                self.exit_code = 0;
                 Ok(())
             }
             "cd" => {

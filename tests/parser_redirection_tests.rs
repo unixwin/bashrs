@@ -1207,3 +1207,18 @@ fn test_stdout_fd_close_redirect_with_prefix() {
     );
     assert_eq!(command.words, ["echo", "hidden"]);
 }
+
+#[test]
+fn test_exec_closes_numbered_stdout_fd() {
+    let tokens = tokenize("exec 3>&-");
+    let ast = parse(&tokens);
+    let command = &ast.commands[0];
+
+    assert_eq!(command.words, ["exec"]);
+    assert_eq!(command.redirect_out.as_ref().unwrap().target, "&-");
+    assert_eq!(command.redirect_out.as_ref().unwrap().fd, Some(3));
+    assert_eq!(
+        command.redirect_out.as_ref().unwrap().kind,
+        RedirectKind::CloseOutput
+    );
+}

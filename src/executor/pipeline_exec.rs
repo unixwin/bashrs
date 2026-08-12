@@ -320,19 +320,23 @@ impl Executor {
     ) -> Result<Option<Vec<(String, String, i32)>>, ExecuteError> {
         if commands.len() < 2
             || self.stderr_capture.is_some()
-            || commands.iter().any(|command| {
+            || commands
+                .iter()
+                .enumerate()
+                .any(|(index, command)| {
                 command.time_command.is_some()
                     || command.brace_group.is_some()
                     || command.subshell
-                    || !command.redirects.is_empty()
+                    || command_has_non_concurrent_pipeline_redirects(command, index)
                     || command.redirect_in.is_some()
                     || command.redirect_out.is_some()
                     || command.redirect_err.is_some()
                     || command.redirect_err_append.is_some()
                     || command.append.is_some()
-                    || command.heredoc.is_some()
-                    || !command.heredoc_redirects.is_empty()
-                    || command.here_string.is_some()
+                    || ((command.heredoc.is_some()
+                        || !command.heredoc_redirects.is_empty()
+                        || command.here_string.is_some())
+                        && index != 0)
                     || !command.assignments.is_empty()
                     || !command.process_substitutions.is_empty()
                     || command.pipe == Some(2)
@@ -405,7 +409,13 @@ impl Executor {
             output.status.code().unwrap_or(1),
         ));
         for mut process in processes.into_iter().rev() {
-            let status = process.wait()?;
+            let status = match process.try_wait()? {
+                Some(status) => status,
+                None => {
+                    let _ = process.kill();
+                    process.wait()?
+                }
+            };
             results.push((String::new(), String::new(), status.code().unwrap_or(1)));
         }
         results.reverse();
@@ -647,6 +657,19 @@ fn pipeline_stage_reads_stdin_by_default(command: &CommandNode) -> bool {
         command_name,
         "awk" | "cat" | "grep" | "head" | "sed" | "sort" | "tail" | "tr" | "uniq" | "wc"
     )
+}
+
+fn command_has_non_concurrent_pipeline_redirects(command: &CommandNode, index: usize) -> bool {
+    if command.redirects.is_empty() {
+        return false;
+    }
+    index != 0
+        || command.redirects.iter().any(|redirect| {
+            !matches!(
+                redirect.kind,
+                crate::parser::RedirectKind::HereDoc | crate::parser::RedirectKind::HereString
+            )
+        })
 }
 
 struct TimePipelinePrefix {

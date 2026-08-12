@@ -4,3 +4,333 @@
 // - redir.c
 // - redir.h
 
+use super::*;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum OutputTarget {
+    Stdout,
+    Stderr,
+    Null,
+    CoprocStdin(u32),
+    Path(String),
+    Closed,
+}
+
+#[derive(Debug, Clone)]
+struct OutputFdState {
+    fds: HashMap<u32, OutputTarget>,
+    saw_output_redirect: bool,
+    redirect_failed: bool,
+}
+
+impl Executor {
+    pub(in crate::executor) fn command_output_redirect_fails(
+        &mut self,
+        cmd: &CommandNode,
+    ) -> Result<bool, ExecuteError> {
+        let mut state = self.command_output_fd_state();
+        if !self.apply_ordered_output_redirects(cmd, &mut state)? {
+            return Ok(false);
+        }
+        Ok(state.redirect_failed)
+    }
+
+    pub(in crate::executor) fn write_ordered_command_output(
+        &mut self,
+        cmd: &CommandNode,
+        stdout: &[u8],
+        stderr: &[u8],
+    ) -> Result<bool, ExecuteError> {
+        let mut state = self.command_output_fd_state();
+        if !self.apply_ordered_output_redirects(cmd, &mut state)? {
+            return Ok(false);
+        }
+        if state.redirect_failed {
+            return Ok(true);
+        }
+
+        if !stdout.is_empty()
+            && state
+                .fd_target(1)
+                .is_some_and(|target| *target == OutputTarget::Closed)
+        {
+            self.write_bad_output_fd_diagnostic(cmd, 1)?;
+            self.exit_code = 1;
+            return Ok(true);
+        }
+        if !stderr.is_empty()
+            && state
+                .fd_target(2)
+                .is_some_and(|target| *target == OutputTarget::Closed)
+        {
+            self.write_bad_output_fd_diagnostic(cmd, 2)?;
+            self.exit_code = 1;
+            return Ok(true);
+        }
+
+        state.write_to_fd(self, 1, stdout)?;
+        state.write_to_fd(self, 2, stderr)?;
+        self.exit_code = 0;
+        Ok(true)
+    }
+
+    pub(in crate::executor) fn command_needs_ordered_output_capture(
+        &self,
+        cmd: &CommandNode,
+    ) -> bool {
+        cmd.redirects.iter().any(|redirect| {
+            matches!(
+                redirect.kind,
+                crate::parser::RedirectKind::DuplicateOutput
+                    | crate::parser::RedirectKind::CloseOutput
+            )
+        })
+    }
+
+    fn command_output_fd_state(&self) -> OutputFdState {
+        let mut state = OutputFdState {
+            fds: HashMap::new(),
+            saw_output_redirect: false,
+            redirect_failed: false,
+        };
+        state.fds.insert(1, OutputTarget::Stdout);
+        state.fds.insert(2, OutputTarget::Stderr);
+
+        for fd in [1, 2] {
+            if self.env_vars.contains_key(&fd_closed_key(fd)) {
+                state.fds.insert(fd, OutputTarget::Closed);
+            } else if let Some(target) = self.env_vars.get(&fd_output_key(fd)) {
+                state.fds.insert(fd, output_target_from_persistent(target));
+            }
+        }
+
+        for (key, value) in &self.env_vars {
+            let Some(fd) = key
+                .strip_prefix(FD_OUTPUT_PREFIX)
+                .and_then(|fd| fd.parse::<u32>().ok())
+            else {
+                continue;
+            };
+            state.fds.insert(fd, output_target_from_persistent(value));
+        }
+
+        for key in self.env_vars.keys() {
+            let Some(fd) = key
+                .strip_prefix(FD_CLOSED_PREFIX)
+                .and_then(|fd| fd.parse::<u32>().ok())
+            else {
+                continue;
+            };
+            state.fds.insert(fd, OutputTarget::Closed);
+        }
+
+        state
+    }
+
+    fn apply_ordered_output_redirects(
+        &mut self,
+        cmd: &CommandNode,
+        state: &mut OutputFdState,
+    ) -> Result<bool, ExecuteError> {
+        for redirect in &cmd.redirects {
+            match redirect.kind {
+                crate::parser::RedirectKind::Output
+                | crate::parser::RedirectKind::Append
+                | crate::parser::RedirectKind::ClobberOutput => {
+                    let fd = redirect.fd.unwrap_or(1);
+                    let target = self.expand_word(&redirect.target);
+                    self.open_command_output_target(state, fd, &target, redirect)?;
+                }
+                crate::parser::RedirectKind::CombinedOutput
+                | crate::parser::RedirectKind::CombinedAppend => {
+                    let target = self.expand_word(&redirect.target);
+                    self.open_command_output_target(state, 1, &target, redirect)?;
+                    let stdout_target = state.fd_target(1).cloned().unwrap_or(OutputTarget::Stdout);
+                    state.fds.insert(2, stdout_target);
+                }
+                crate::parser::RedirectKind::DuplicateOutput => {
+                    let target_fd = redirect.fd.unwrap_or(1);
+                    let target = self.expand_word(&redirect.target);
+                    if is_closed_redirect_target(&target) {
+                        state.fds.insert(target_fd, OutputTarget::Closed);
+                        state.saw_output_redirect = true;
+                        continue;
+                    }
+                    if let Some(source_fd) = redirect_target_fd(&target) {
+                        let Some(source_target) = state.fd_target(source_fd).cloned() else {
+                            self.write_bad_fd_redirect_diagnostic(state, source_fd)?;
+                            self.exit_code = 1;
+                            state.redirect_failed = true;
+                            return Ok(true);
+                        };
+                        if source_target == OutputTarget::Closed {
+                            self.write_bad_fd_redirect_diagnostic(state, source_fd)?;
+                            self.exit_code = 1;
+                            state.redirect_failed = true;
+                            return Ok(true);
+                        }
+                        state.fds.insert(target_fd, source_target);
+                        state.saw_output_redirect = true;
+                        continue;
+                    }
+
+                    if target_fd == 1 {
+                        let path = target.strip_prefix('&').unwrap_or(&target);
+                        self.open_command_output_target(state, target_fd, path, redirect)?;
+                        if redirect.fd.is_none() {
+                            let stdout_target =
+                                state.fd_target(1).cloned().unwrap_or(OutputTarget::Stdout);
+                            state.fds.insert(2, stdout_target);
+                        }
+                    } else {
+                        self.write_ambiguous_redirect_diagnostic(state, &target)?;
+                        self.exit_code = 1;
+                        state.redirect_failed = true;
+                        return Ok(true);
+                    }
+                }
+                crate::parser::RedirectKind::CloseOutput => {
+                    state
+                        .fds
+                        .insert(redirect.fd.unwrap_or(1), OutputTarget::Closed);
+                    state.saw_output_redirect = true;
+                }
+                _ => {}
+            }
+        }
+
+        Ok(state.saw_output_redirect)
+    }
+
+    fn open_command_output_target(
+        &self,
+        state: &mut OutputFdState,
+        fd: u32,
+        target: &str,
+        redirect: &Redirect,
+    ) -> Result<(), ExecuteError> {
+        if is_closed_redirect_target(target) {
+            state.fds.insert(fd, OutputTarget::Closed);
+        } else if is_null_device(target) {
+            state.fds.insert(fd, OutputTarget::Null);
+        } else {
+            if redirect.append {
+                OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(shell_path_to_windows(target, &self.env_vars))?;
+            } else {
+                self.create_redirect_output(target, redirect.clobber)?;
+            }
+            state.fds.insert(fd, OutputTarget::Path(target.to_string()));
+        }
+        state.saw_output_redirect = true;
+        Ok(())
+    }
+
+    fn write_bad_fd_redirect_diagnostic(
+        &mut self,
+        state: &OutputFdState,
+        fd: u32,
+    ) -> Result<(), ExecuteError> {
+        let mut stderr = Vec::new();
+        writeln!(
+            &mut stderr,
+            "{}{fd}: Bad file descriptor",
+            self.diagnostic_prefix()
+        )?;
+        state.write_to_fd(self, 2, &stderr)
+    }
+
+    fn write_ambiguous_redirect_diagnostic(
+        &mut self,
+        state: &OutputFdState,
+        target: &str,
+    ) -> Result<(), ExecuteError> {
+        let target = target.strip_prefix('&').unwrap_or(target);
+        let mut stderr = Vec::new();
+        writeln!(
+            &mut stderr,
+            "{}{target}: ambiguous redirect",
+            self.diagnostic_prefix()
+        )?;
+        state.write_to_fd(self, 2, &stderr)
+    }
+
+    fn write_bad_output_fd_diagnostic(
+        &mut self,
+        cmd: &CommandNode,
+        fd: u32,
+    ) -> Result<(), ExecuteError> {
+        let command = cmd.words.first().map(String::as_str).unwrap_or("command");
+        let mut stderr = Vec::new();
+        writeln!(
+            &mut stderr,
+            "{}{command}: write error: Bad file descriptor",
+            self.diagnostic_prefix()
+        )?;
+        if fd == 2 {
+            self.write_default_stdout(&stderr)
+        } else {
+            self.write_default_stderr(&stderr)
+        }
+    }
+}
+
+impl OutputFdState {
+    fn fd_target(&self, fd: u32) -> Option<&OutputTarget> {
+        self.fds.get(&fd).or_else(|| match fd {
+            1 => self.fds.get(&1),
+            2 => self.fds.get(&2),
+            _ => None,
+        })
+    }
+
+    fn write_to_fd(
+        &self,
+        executor: &mut Executor,
+        fd: u32,
+        output: &[u8],
+    ) -> Result<(), ExecuteError> {
+        if output.is_empty() {
+            return Ok(());
+        }
+
+        match self.fd_target(fd).cloned().unwrap_or(match fd {
+            2 => OutputTarget::Stderr,
+            _ => OutputTarget::Stdout,
+        }) {
+            OutputTarget::Stdout => executor.write_default_stdout(output),
+            OutputTarget::Stderr => executor.write_default_stderr(output),
+            OutputTarget::Null | OutputTarget::Closed => Ok(()),
+            OutputTarget::CoprocStdin(fd) => {
+                if let Some(writer) = executor.coproc_stdin_writers.get_mut(&fd) {
+                    writer.write_all(output)?;
+                }
+                Ok(())
+            }
+            OutputTarget::Path(path) => {
+                let mut file = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(shell_path_to_windows(&path, &executor.env_vars))?;
+                file.write_all(output)?;
+                Ok(())
+            }
+        }
+    }
+}
+
+fn output_target_from_persistent(target: &str) -> OutputTarget {
+    match target {
+        FD_STDOUT_TARGET => OutputTarget::Stdout,
+        FD_STDERR_TARGET => OutputTarget::Stderr,
+        target if target.starts_with(FD_COPROC_STDIN_TARGET_PREFIX) => target
+            .strip_prefix(FD_COPROC_STDIN_TARGET_PREFIX)
+            .and_then(|fd| fd.parse::<u32>().ok())
+            .map(OutputTarget::CoprocStdin)
+            .unwrap_or_else(|| OutputTarget::Path(target.to_string())),
+        path if is_null_device(path) => OutputTarget::Null,
+        path => OutputTarget::Path(path.to_string()),
+    }
+}

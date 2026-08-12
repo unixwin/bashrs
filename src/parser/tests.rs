@@ -40,11 +40,11 @@ fn test_parse_heredoc_delimiter() {
 
 #[test]
 fn test_parse_multiple_heredoc_redirects_with_fd() {
-    let tokens = tokenize("done <<EOF1 3<<EOF2\none\nEOF1\ntwo\nEOF2");
+    let tokens = tokenize("cat <<EOF1 3<<EOF2\none\nEOF1\ntwo\nEOF2");
     let ast = parse(&tokens);
 
     assert_eq!(ast.commands.len(), 1);
-    assert_eq!(ast.commands[0].words, vec!["done"]);
+    assert_eq!(ast.commands[0].words, vec!["cat"]);
     assert_eq!(ast.commands[0].heredoc_redirects.len(), 2);
     assert_eq!(ast.commands[0].heredoc_redirects[0].fd, None);
     assert_eq!(ast.commands[0].heredoc_redirects[0].fd_var, None);

@@ -549,6 +549,25 @@ mod pipeline_tests {
     }
 
     #[test]
+    fn test_brace_group_inner_command_keeps_trailing_heredoc_body() {
+        let input = "{ cat <<EOF; }; echo Ok2\nOk1\nEOF\n";
+        let tokens = tokenize(input);
+        let ast = parse(&tokens);
+        assert_eq!(ast.commands.len(), 2);
+        let brace_group = ast.commands[0].brace_group.as_ref().unwrap();
+        let cat = &brace_group.body[0];
+
+        assert_eq!(cat.words, ["cat"]);
+        assert_eq!(cat.heredoc_delimiter.as_deref(), Some("EOF"));
+        assert_eq!(cat.heredoc.as_deref(), Some("Ok1\n"));
+        assert_eq!(
+            cat.heredoc_redirects[0].body.as_deref(),
+            Some("Ok1\n")
+        );
+        assert_eq!(ast.commands[1].words, ["echo", "Ok2"]);
+    }
+
+    #[test]
     fn test_brace_group_keeps_brace_arguments() {
         let input = "{ echo } arg; echo after; }";
         let tokens = tokenize(input);

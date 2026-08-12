@@ -293,6 +293,9 @@ impl<'a> Lexer<'a> {
                 Some(self.finish_word_token(start, false))
             }
             '{' => {
+                if self.brace_group_contains_heredoc_operator() {
+                    return Some(Token::new(TokenKind::Keyword, "{", start));
+                }
                 self.skip_brace();
                 if self.peek().is_some_and(|ch| !is_word_delimiter(ch)) {
                     return Some(self.finish_word_token(start, false));
@@ -308,6 +311,62 @@ impl<'a> Lexer<'a> {
             '}' => Some(Token::new(TokenKind::Keyword, "}", start)),
             _ => Some(self.finish_word_token(start, true)),
         }
+    }
+
+    fn brace_group_contains_heredoc_operator(&self) -> bool {
+        let chars = self.input[self.position..].chars().collect::<Vec<_>>();
+        let mut index = 0usize;
+        let mut depth = 1usize;
+        let mut single = false;
+        let mut double = false;
+        let mut escaped = false;
+
+        while index < chars.len() {
+            let ch = chars[index];
+            if escaped {
+                escaped = false;
+                index += 1;
+                continue;
+            }
+            if ch == '\\' && !single {
+                escaped = true;
+                index += 1;
+                continue;
+            }
+            if ch == '\'' && !double {
+                single = !single;
+                index += 1;
+                continue;
+            }
+            if ch == '"' && !single {
+                double = !double;
+                index += 1;
+                continue;
+            }
+            if single || double {
+                index += 1;
+                continue;
+            }
+
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        return false;
+                    }
+                }
+                '<' if chars.get(index + 1) == Some(&'<')
+                    && chars.get(index + 2) != Some(&'<') =>
+                {
+                    return true;
+                }
+                _ => {}
+            }
+            index += 1;
+        }
+
+        false
     }
 
     fn finish_prefixed_input_redirect(&mut self, start: usize) -> Token {

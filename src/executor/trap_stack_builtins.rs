@@ -7,6 +7,10 @@ impl Executor {
         stdout: &[u8],
         stderr: &[u8],
     ) -> Result<(), ExecuteError> {
+        if self.write_ordered_command_output(cmd, stdout, stderr)? {
+            return Ok(());
+        }
+
         if let Some(redirect) = &cmd.redirect_out {
             let target = self.expand_word(&redirect.target);
             if is_closed_redirect_target(&target) {

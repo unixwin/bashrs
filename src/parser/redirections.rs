@@ -481,14 +481,122 @@ pub(super) fn take_redirect_fd_prefix(cmd: &mut CommandNode) -> Option<u32> {
 
 pub(super) fn assign_heredoc_body(current_cmd: &mut CommandNode, ast: &mut Ast, body: String) {
     for command in ast.commands.iter_mut() {
-        if fill_pending_heredoc_body(command, &body) {
+        if fill_pending_heredoc_body_recursive(command, &body) {
             return;
         }
     }
-    if fill_pending_heredoc_body(current_cmd, &body) {
+    if fill_pending_heredoc_body_recursive(current_cmd, &body) {
         return;
     }
     current_cmd.heredoc = Some(body);
+}
+
+fn fill_pending_heredoc_body_recursive(cmd: &mut CommandNode, body: &str) -> bool {
+    if fill_pending_heredoc_body(cmd, body) {
+        return true;
+    }
+
+    if let Some(pipeline) = &mut cmd.pipeline_command {
+        if fill_pending_heredoc_body_in_commands(&mut pipeline.stages, body) {
+            return true;
+        }
+    }
+    if let Some(list) = &mut cmd.and_or_list {
+        if fill_pending_heredoc_body_in_commands(&mut list.commands, body) {
+            return true;
+        }
+    }
+    if let Some(time) = &mut cmd.time_command {
+        if fill_pending_heredoc_body_recursive(&mut time.command, body) {
+            return true;
+        }
+    }
+    if let Some(background) = &mut cmd.background_command {
+        if fill_pending_heredoc_body_recursive(&mut background.command, body) {
+            return true;
+        }
+    }
+    if let Some(inverted) = &mut cmd.inverted_command {
+        if fill_pending_heredoc_body_recursive(&mut inverted.command, body) {
+            return true;
+        }
+    }
+    if let Some(for_command) = &mut cmd.for_command {
+        if fill_pending_heredoc_body_in_commands(&mut for_command.body, body) {
+            return true;
+        }
+    }
+    if let Some(if_command) = &mut cmd.if_command {
+        if fill_pending_heredoc_body_in_commands(&mut if_command.condition, body)
+            || fill_pending_heredoc_body_in_commands(&mut if_command.then_body, body)
+            || if_command
+                .elif_branches
+                .iter_mut()
+                .any(|branch| {
+                    fill_pending_heredoc_body_in_commands(&mut branch.condition, body)
+                        || fill_pending_heredoc_body_in_commands(&mut branch.body, body)
+                })
+            || if_command
+                .else_body
+                .as_mut()
+                .is_some_and(|commands| fill_pending_heredoc_body_in_commands(commands, body))
+        {
+            return true;
+        }
+    }
+    if let Some(loop_command) = &mut cmd.loop_command {
+        if fill_pending_heredoc_body_in_commands(&mut loop_command.condition, body)
+            || fill_pending_heredoc_body_in_commands(&mut loop_command.body, body)
+        {
+            return true;
+        }
+    }
+    if let Some(subshell) = &mut cmd.subshell_command {
+        if fill_pending_heredoc_body_in_commands(&mut subshell.body, body) {
+            return true;
+        }
+    }
+    if let Some(case_command) = &mut cmd.case_command {
+        if case_command
+            .clauses
+            .iter_mut()
+            .any(|clause| fill_pending_heredoc_body_in_commands(&mut clause.body, body))
+        {
+            return true;
+        }
+    }
+    if let Some(select_command) = &mut cmd.select_command {
+        if fill_pending_heredoc_body_in_commands(&mut select_command.body, body) {
+            return true;
+        }
+    }
+    if let Some(function) = &mut cmd.function_command {
+        if fill_pending_heredoc_body_in_commands(&mut function.body, body) {
+            return true;
+        }
+    }
+    if let Some(brace_group) = &mut cmd.brace_group {
+        if fill_pending_heredoc_body_in_commands(&mut brace_group.body, body) {
+            return true;
+        }
+    }
+    if let Some(coproc) = &mut cmd.coproc_command {
+        if coproc
+            .body
+            .as_mut()
+            .is_some_and(|commands| fill_pending_heredoc_body_in_commands(commands, body))
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn fill_pending_heredoc_body_in_commands(commands: &mut [CommandNode], body: &str) -> bool {
+    commands
+        .iter_mut()
+        .any(|command| fill_pending_heredoc_body_recursive(command, body))
 }
 
 pub(super) fn fill_pending_heredoc_body(cmd: &mut CommandNode, body: &str) -> bool {

@@ -37,6 +37,10 @@ impl Executor {
             return Ok(());
         }
 
+        if self.command_output_redirect_fails(cmd)? {
+            return Ok(());
+        }
+
         let Some(program) = find_user_command(&cmd.words[0], &self.env_vars) else {
             let mut stderr = Vec::new();
             writeln!(
@@ -225,12 +229,15 @@ impl Executor {
                 if self.external_needs_fd_copy_capture(cmd) {
                     match child.wait_with_output() {
                         Ok(output) => {
+                            self.exit_code = 0;
                             self.write_external_fd_copy_output(
                                 cmd,
                                 &output.stdout,
                                 &output.stderr,
                             )?;
-                            self.exit_code = output.status.code().unwrap_or(1);
+                            if self.exit_code == 0 {
+                                self.exit_code = output.status.code().unwrap_or(1);
+                            }
                         }
                         Err(error) => self.report_external_spawn_error(cmd, error)?,
                     }

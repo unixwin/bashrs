@@ -116,6 +116,7 @@ mod pipeline_stages;
 mod read_helpers;
 mod read_split;
 mod redirect_inherit;
+mod redirection;
 mod select_exec;
 mod support_names;
 
@@ -208,6 +209,7 @@ const FD_OUTPUT_PROCESS_SUBSTITUTION_PREFIX: &str = "__RUBASH_FD_OUTPUT_PROCESS_
 const FD_CLOSED_PREFIX: &str = "__RUBASH_FD_CLOSED_";
 const FD_STDOUT_TARGET: &str = "__RUBASH_FD_STDOUT";
 const FD_STDERR_TARGET: &str = "__RUBASH_FD_STDERR";
+const FD_COPROC_STDIN_TARGET_PREFIX: &str = "__RUBASH_COPROC_STDIN:";
 const FD_PROCESS_STDIN_TARGET: &str = "__RUBASH_FD_PROCESS_STDIN";
 const INHERIT_PROCESS_STDIN: &str = "__RUBASH_INHERIT_PROCESS_STDIN";
 const LOCAL_EXPORT_ENV: &str = "__RUBASH_LOCAL_EXPORT_ENV";

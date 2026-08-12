@@ -53,6 +53,18 @@ impl Executor {
         match fd_target.as_str() {
             FD_STDOUT_TARGET => write_stdout_bytes(output)?,
             FD_STDERR_TARGET => write_stderr_bytes(output)?,
+            target if target.starts_with(FD_COPROC_STDIN_TARGET_PREFIX) => {
+                let Some(source_fd) = target
+                    .strip_prefix(FD_COPROC_STDIN_TARGET_PREFIX)
+                    .and_then(|fd| fd.parse::<u32>().ok())
+                else {
+                    return Ok(false);
+                };
+                let Some(writer) = self.coproc_stdin_writers.get_mut(&source_fd) else {
+                    return Ok(false);
+                };
+                writer.write_all(output)?;
+            }
             path => {
                 let mut file = OpenOptions::new()
                     .create(true)
@@ -110,6 +122,12 @@ impl Executor {
                 write_stderr_bytes(output)?;
                 return Ok(());
             }
+            if let Some(fd) = coproc_stdin_target_fd(&target) {
+                if let Some(writer) = self.coproc_stdin_writers.get_mut(&fd) {
+                    writer.write_all(output)?;
+                }
+                return Ok(());
+            }
             let mut file = OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -140,6 +158,12 @@ impl Executor {
                 return Ok(());
             }
             if is_null_device(&target) {
+                return Ok(());
+            }
+            if let Some(fd) = coproc_stdin_target_fd(&target) {
+                if let Some(writer) = self.coproc_stdin_writers.get_mut(&fd) {
+                    writer.write_all(output)?;
+                }
                 return Ok(());
             }
             let mut file = OpenOptions::new()
@@ -539,6 +563,12 @@ fn trace_stdio_write(
         );
     }
     result
+}
+
+fn coproc_stdin_target_fd(target: &str) -> Option<u32> {
+    target
+        .strip_prefix(FD_COPROC_STDIN_TARGET_PREFIX)
+        .and_then(|fd| fd.parse::<u32>().ok())
 }
 
 #[cfg(windows)]

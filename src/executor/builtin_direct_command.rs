@@ -37,7 +37,6 @@ impl Executor {
             }
             "echo" => {
                 self.execute_echo(&builtin_cmd)?;
-                self.exit_code = 0;
                 Ok(())
             }
             "printf" => {

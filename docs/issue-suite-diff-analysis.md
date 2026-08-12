@@ -194,6 +194,43 @@ This order prioritizes correctness foundations that many suites share. Fixes
 should be validated with focused Rust tests first, then the smallest relevant
 suite slice, then the broader issue-suite family.
 
+## 2026-08-12 Repair Checkpoint
+
+Current local repair work moved the first two repair-order families forward:
+
+- **fd/redirection**: centralized persistent fd redirection handling for
+  builtins, external commands, `echo`, `trap`, and `read`; added coverage for
+  close/dup behavior including `exec 3>&-`, closed input fds, dynamic fd
+  expansion, and mapfile/readarray `-u` cases.
+- **coproc fd lifecycle**: close/dup of persistent coproc descriptors now keeps
+  `coproc_stdin_writers` and `coproc_stdout_readers` in sync with fd state, so
+  closing a coproc stdin fd can unblock the reader and duplicated coproc writer
+  fds remain writable.
+- **heredoc parser/runtime**: heredoc bodies are assigned through nested
+  compound command structures, including brace groups and pipeline nodes, and
+  malformed reserved-word cases now produce parse errors instead of executing
+  later heredoc text as commands.
+- **pipeline boundary**: plain external pipelines can use concurrent OS pipes
+  when the first stage has heredoc/here-string input, but rubash no longer
+  rewrites external command arguments such as `head -3000`; GNU coreutils
+  compatibility for external commands belongs in winuxcmd.
+
+Focused checks passed locally:
+
+```text
+cargo test --lib --target-dir target/trace-test
+cargo test --test parser_tests heredoc --target-dir target/trace-test -- --nocapture
+cargo test --test cli_tests heredoc --target-dir target/trace-test -- --nocapture
+cargo test --test cli_tests coproc -- --nocapture
+cargo test --test cli_tests c_command_mapfile_ -- --nocapture
+```
+
+Open follow-up: `yes | head -3` still hangs when using WinuxCmd commands in
+the current shell pipeline environment. The current winuxcmd source tree already
+has `head -NUM` parsing and `head.*` tests passing, so the remaining hang should
+be investigated as pipe/handle close or upstream-process waiting semantics
+rather than as a rubash argument-normalization issue.
+
 ## Validation Rules Going Forward
 
 - Keep raw suite logs under `target/issue-suites/results/`.

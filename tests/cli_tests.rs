@@ -69,6 +69,50 @@ fn c_command_writes_to_named_coproc_stdin_fd() {
 }
 
 #[test]
+fn c_command_closing_coproc_stdin_fd_unblocks_reader() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "coproc C { cat; }; fd=${C[1]}; printf 'hi\\n' >&$fd; \
+             eval \"exec ${fd}>&-\"; read -r x <&${C[0]}; \
+             printf 'x=%s status=%s\\n' \"$x\" \"$?\"",
+        )
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run rubash");
+
+    assert!(wait_for_child_exit(&mut child, Duration::from_secs(3)));
+    let output = child.wait_with_output().expect("wait rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "x=hi status=0\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn c_command_duplicates_coproc_stdin_fd_for_writes() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "coproc C { cat; }; exec 7>&${C[1]}; printf 'hi\\n' >&7; \
+             eval \"exec ${C[1]}>&-\"; exec 7>&-; read -r x <&${C[0]}; \
+             printf 'x=%s status=%s\\n' \"$x\" \"$?\"",
+        )
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run rubash");
+
+    assert!(wait_for_child_exit(&mut child, Duration::from_secs(3)));
+    let output = child.wait_with_output().expect("wait rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "x=hi status=0\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn shopt_print_pipeline_is_captured_before_external_stage() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
@@ -240,6 +284,7 @@ fn malformed_pipeline_and_if_are_syntax_errors() {
         "echo hi &&",
         "echo hi & && echo x",
         "if then; fi; echo after",
+        "<<EOF; then <W",
         "while; do :; done",
         "case x in x) ;;",
         "( echo hi",
@@ -547,6 +592,59 @@ fn c_command_printf_uses_persistent_fd_copied_from_stderr() {
 }
 
 #[test]
+fn c_command_echo_applies_output_redirects_left_to_right() {
+    let literal_fd_path = Path::new("&3");
+    let _ = fs::remove_file(literal_fd_path);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("echo hi 3>&1 1>/dev/null >&3; printf 'status:%s\\n' \"$?\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "hi\nstatus:0\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(!literal_fd_path.exists());
+}
+
+#[test]
+fn c_command_echo_reports_bad_fd_after_exec_close() {
+    let literal_fd_path = Path::new("&3");
+    let _ = fs::remove_file(literal_fd_path);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("exec 3>&1; echo hi >&3; exec 3>&-; echo fail >&3; printf 'status:%s\\n' \"$?\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "hi\nstatus:1\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "rubash: 3: Bad file descriptor\n"
+    );
+    assert!(!literal_fd_path.exists());
+}
+
+#[test]
+fn c_command_echo_reports_write_error_for_closed_stdout() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("echo fail >&-; printf 'status:%s\\n' \"$?\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "status:1\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "rubash: echo: write error: Bad file descriptor\n"
+    );
+}
+
+#[test]
 fn c_command_exec_numeric_fd_copies_default_stdin_for_read_u() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
@@ -581,6 +679,48 @@ fn c_command_read_dev_null_reports_eof() {
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), "<>:1\n");
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn c_command_read_closed_stdin_reports_bad_fd() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("read value <&-; printf '<%s>:%s\\n' \"$value\" \"$?\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<>:1\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "rubash: read: read error: 0: Bad file descriptor\n"
+    );
+}
+
+#[test]
+fn c_command_read_closed_stdin_redirects_bad_fd_diagnostic() {
+    let error_path = Path::new("target").join("rubash-cli-read-closed-stderr.txt");
+    let _ = fs::remove_file(&error_path);
+    let script_path = shell_test_path(&error_path);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(format!(
+            "read value <&- 2> {script_path}; printf '<%s>:%s\\n' \"$value\" \"$?\""
+        ))
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<>:1\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert_eq!(
+        fs::read_to_string(&error_path)
+            .unwrap()
+            .replace("\r\n", "\n"),
+        "rubash: read: read error: 0: Bad file descriptor\n"
+    );
+    let _ = fs::remove_file(error_path);
 }
 
 #[test]
@@ -840,6 +980,44 @@ fn c_command_mapfile_uses_persistent_fd_copied_from_stdin() {
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), "2:alpha:beta\n");
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn c_command_mapfile_reports_bad_fd_after_exec_close() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("exec 3<&-; mapfile -u3 arr; printf 'status:%s len:%s\\n' \"$?\" \"${#arr[@]}\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "status:1 len:0\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "rubash: mapfile: 3: invalid file descriptor: Bad file descriptor\n"
+    );
+}
+
+#[test]
+fn c_command_mapfile_u_accepts_expanded_persistent_fd() {
+    let input_path = "target/rubash-cli-mapfile-fd-input.txt";
+    let _ = fs::remove_file(input_path);
+    fs::write(input_path, "alpha\nbeta\n").expect("write mapfile input");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(format!(
+            "exec 3<{input_path}; mapfile -u \"$((1+2))\" -t arr; \
+             printf '%s:%s:%s:%s\\n' \"$?\" \"${{#arr[@]}}\" \"${{arr[0]}}\" \"${{arr[1]}}\""
+        ))
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "0:2:alpha:beta\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+
+    let _ = fs::remove_file(input_path);
 }
 
 #[test]

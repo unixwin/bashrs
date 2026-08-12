@@ -311,7 +311,7 @@ impl Executor {
             return Ok(status);
         }
 
-        if cmd.words.len() == 1 {
+        if exec_has_only_redirects(cmd) {
             if let Some(status) = self.execute_stdio_only_exec_redirect(cmd)? {
                 return Ok(status);
             }
@@ -476,9 +476,7 @@ impl Executor {
             let fd = redirect.fd.unwrap_or(0);
             let target = self.expand_word(&redirect.target);
             if is_closed_redirect_target(&target) {
-                self.env_vars.remove(&fd_stdin_key(fd));
-                self.env_vars.remove(&fd_stdin_offset_key(fd));
-                self.env_vars.remove(&fd_dynamic_input_key(fd));
+                self.close_persistent_input_fd(fd);
                 self.env_vars.insert(fd_closed_key(fd), "1".to_string());
                 return Ok(Some(0));
             }
@@ -563,6 +561,14 @@ impl Executor {
             let _ = self.close_persistent_output_fd(target_fd);
             self.env_vars
                 .insert(fd_closed_key(target_fd), "1".to_string());
+        } else if self.coproc_stdin_writers.contains_key(&source_fd) {
+            self.env_vars.remove(&fd_closed_key(target_fd));
+            self.env_vars.insert(
+                fd_output_key(target_fd),
+                format!("{FD_COPROC_STDIN_TARGET_PREFIX}{source_fd}"),
+            );
+            self.env_vars
+                .remove(&fd_output_process_substitution_key(target_fd));
         } else if let Some(target) = self.env_vars.get(&fd_output_key(source_fd)).cloned() {
             self.env_vars.remove(&fd_closed_key(target_fd));
             self.env_vars.insert(fd_output_key(target_fd), target);
@@ -613,6 +619,7 @@ impl Executor {
     }
 
     fn close_persistent_output_fd(&mut self, fd: u32) -> Result<(), ExecuteError> {
+        self.coproc_stdin_writers.remove(&fd);
         let target = self.env_vars.remove(&fd_output_key(fd));
         let source = self
             .env_vars
@@ -624,6 +631,13 @@ impl Executor {
             let _ = fs::remove_file(path);
         }
         Ok(())
+    }
+
+    fn close_persistent_input_fd(&mut self, fd: u32) {
+        self.coproc_stdout_readers.remove(&fd);
+        self.env_vars.remove(&fd_stdin_key(fd));
+        self.env_vars.remove(&fd_stdin_offset_key(fd));
+        self.env_vars.remove(&fd_dynamic_input_key(fd));
     }
 
     pub(in crate::executor) fn execute_persistent_output_process_substitution(
@@ -843,9 +857,7 @@ impl Executor {
             .and_then(|value| value.parse::<u32>().ok())
         {
             let _ = self.close_persistent_output_fd(fd);
-            self.env_vars.remove(&fd_stdin_key(fd));
-            self.env_vars.remove(&fd_stdin_offset_key(fd));
-            self.env_vars.remove(&fd_dynamic_input_key(fd));
+            self.close_persistent_input_fd(fd);
             self.env_vars.remove(&fd_closed_key(fd));
         }
         self.env_vars.remove(name);
@@ -884,6 +896,23 @@ fn is_dynamic_fd_exec_redirect(cmd: &CommandNode) -> bool {
             || cmd.append.is_some()
             || cmd.here_string.is_some()
             || cmd.heredoc.is_some())
+}
+
+fn exec_has_only_redirects(cmd: &CommandNode) -> bool {
+    if cmd.words.len() == 1 {
+        return true;
+    }
+
+    matches!(
+        cmd.words.as_slice(),
+        [command, fd_word]
+            if command == "exec"
+                && fd_word.chars().all(|ch| ch.is_ascii_digit())
+                && cmd
+                    .redirects
+                    .iter()
+                    .any(|redirect| redirect.fd.is_some_and(|fd| fd.to_string() == *fd_word))
+    )
 }
 
 fn dynamic_fd_var_name(word: &str) -> Option<&str> {

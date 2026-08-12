@@ -523,6 +523,22 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                 return TokenAction::Continue;
             }
 
+            if command_is_empty(&state.current_cmd)
+                && matches!(
+                    token.value.as_str(),
+                    "then" | "do" | "else" | "elif" | "fi" | "done" | "esac"
+                )
+            {
+                note_command_line(&mut state.current_cmd, token);
+                state.current_cmd.assignments.insert(
+                    "__RUBASH_PARSE_ERROR__".to_string(),
+                    format!("unexpected token `{}`", token.value),
+                );
+                state.ast.commands.push(std::mem::take(&mut state.current_cmd));
+                *i += 1;
+                return TokenAction::Continue;
+            }
+
             if token.value == "(" && command_is_empty(&state.current_cmd) {
                 state.in_subshell = true;
                 *i += 1;

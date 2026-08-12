@@ -192,14 +192,15 @@ impl Executor {
         }
 
         let echo_args = echo_args_without_background_marker(&cmd.words[1..]);
+        let mut output = Vec::new();
+        crate::builtins::echo::write_echo(echo_args.iter().map(String::as_str), &mut output)?;
+        if self.write_ordered_command_output(cmd, &output, &[])? {
+            return Ok(());
+        }
+
         if let Some(redirect) = &cmd.redirect_out {
             let target = self.expand_word(&redirect.target);
             if self.has_output_fd_target(&target) {
-                let mut output = Vec::new();
-                crate::builtins::echo::write_echo(
-                    echo_args.iter().map(String::as_str),
-                    &mut output,
-                )?;
                 self.write_output_fd_redirect(&target, &output)?;
                 return Ok(());
             }
@@ -262,9 +263,8 @@ impl Executor {
             return Ok(());
         }
 
-        let mut output = Vec::new();
-        crate::builtins::echo::write_echo(echo_args.iter().map(String::as_str), &mut output)?;
         self.write_default_stdout(&output)?;
+        self.exit_code = 0;
         Ok(())
     }
 }

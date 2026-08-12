@@ -159,6 +159,87 @@ fn c_external_stderr_uses_persistent_fd_copied_from_stdout() {
 }
 
 #[test]
+fn c_external_command_reports_bad_fd_after_exec_close() {
+    let bin_dir = external_fd_copy_bin_dir();
+    let script_path = helper_path(&bin_dir, "emitout");
+    let literal_fd_path = Path::new("&3");
+    let _ = fs::remove_dir_all(&bin_dir);
+    let _ = fs::remove_file(literal_fd_path);
+    fs::create_dir_all(&bin_dir).unwrap();
+    write_helper_script(&script_path, "echo external-after-close\n");
+    let path = path_with_bin_first(&bin_dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .env("PATH", path)
+        .arg("-c")
+        .arg("exec 3>&-; emitout >&3; printf 'status:%s\\n' \"$?\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(stream_text(&output.stdout), "status:1\n");
+    assert_eq!(
+        stream_text(&output.stderr),
+        "rubash: 3: Bad file descriptor\n"
+    );
+    assert!(!literal_fd_path.exists());
+    let _ = fs::remove_dir_all(bin_dir);
+}
+
+#[test]
+fn c_external_command_reports_write_error_for_closed_stdout() {
+    let bin_dir = external_fd_copy_bin_dir();
+    let script_path = helper_path(&bin_dir, "emitout");
+    let _ = fs::remove_dir_all(&bin_dir);
+    fs::create_dir_all(&bin_dir).unwrap();
+    write_helper_script(&script_path, "echo external-closed-stdout\n");
+    let path = path_with_bin_first(&bin_dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .env("PATH", path)
+        .arg("-c")
+        .arg("emitout >&-; printf 'status:%s\\n' \"$?\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(stream_text(&output.stdout), "status:1\n");
+    assert_eq!(
+        stream_text(&output.stderr),
+        "rubash: emitout: write error: Bad file descriptor\n"
+    );
+    let _ = fs::remove_dir_all(bin_dir);
+}
+
+#[test]
+fn c_external_command_reports_ambiguous_stderr_fd_redirect() {
+    let bin_dir = external_fd_copy_bin_dir();
+    let script_path = helper_path(&bin_dir, "emiterr");
+    let literal_fd_path = Path::new("&bad");
+    let _ = fs::remove_dir_all(&bin_dir);
+    let _ = fs::remove_file(literal_fd_path);
+    fs::create_dir_all(&bin_dir).unwrap();
+    write_helper_script(&script_path, "echo external-error >&2\n");
+    let path = path_with_bin_first(&bin_dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .env("PATH", path)
+        .arg("-c")
+        .arg("emiterr 2>&bad; printf 'status:%s\\n' \"$?\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(stream_text(&output.stdout), "status:1\n");
+    assert_eq!(
+        stream_text(&output.stderr),
+        "rubash: bad: ambiguous redirect\n"
+    );
+    assert!(!literal_fd_path.exists());
+    let _ = fs::remove_dir_all(bin_dir);
+}
+
+#[test]
 fn c_external_combined_redirect_preserves_stderr_first_output() {
     let bin_dir = external_fd_copy_bin_dir();
     let script_path = helper_path(&bin_dir, "emitboth");
