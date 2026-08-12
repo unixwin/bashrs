@@ -80,7 +80,21 @@ fn command_starts_if(executor: &Executor, command: &CommandNode) -> bool {
 }
 
 fn command_first_word_is(executor: &Executor, command: &CommandNode, word: &str) -> bool {
+    if command.words.is_empty()
+        && command
+            .assignments
+            .get("__RUBASH_PARSE_ERROR__")
+            .and_then(parse_unexpected_token)
+            .is_some_and(|token| token == word)
+    {
+        return true;
+    }
     command_control_word(executor, &command.words).as_deref() == Some(word)
+}
+
+fn parse_unexpected_token(message: &String) -> Option<String> {
+    let (_, token) = message.split_once("unexpected token `")?;
+    Some(token.trim_end_matches(['`', '\'']).to_string())
 }
 
 fn command_tail_first_word_is(
@@ -89,10 +103,18 @@ fn command_tail_first_word_is(
     start: usize,
     word: &str,
 ) -> bool {
+    if start >= command.words.len() {
+        return false;
+    }
     command_control_word(executor, &command.words[start..]).as_deref() == Some(word)
 }
 
 fn command_control_word(executor: &Executor, words: &[String]) -> Option<String> {
+    if let Some(word) = words.first() {
+        if word == "__RUBASH_PARSE_ERROR__" {
+            return words.get(1).cloned();
+        }
+    }
     expanded_command_words(executor, words).into_iter().next()
 }
 

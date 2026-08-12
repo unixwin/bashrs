@@ -240,7 +240,9 @@ impl Executor {
             return None;
         }
         let alias = self.aliases.get(word)?;
-        if !needs_parser_level_alias_expansion(&alias.value) {
+        if !needs_parser_level_alias_expansion(&alias.value)
+            && alias.value.trim() != "if"
+        {
             return None;
         }
 

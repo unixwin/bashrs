@@ -28,6 +28,7 @@ impl Executor {
         let Some(mut source) = self.alias_parser_source(first_word, &command.words[1..]) else {
             return Ok(None);
         };
+        let compound_alias = alias_source_compound_end_word(&source).is_some();
         append_source_redirects(&mut source, command);
         if alias_source_compound_end_word(&source).is_none() {
             return Ok(None);
@@ -39,7 +40,11 @@ impl Executor {
                 let Some(next_command) = ast.commands.get(command_index) else {
                     break;
                 };
-                let command_source = bash_command_source_text(next_command);
+                let command_source = if compound_alias {
+                    alias_reparse_command_source(next_command)
+                } else {
+                    bash_command_source_text(next_command)
+                };
                 if !command_source.is_empty() {
                     source.push_str("; ");
                     source.push_str(&command_source);
@@ -755,6 +760,27 @@ fn alias_source_compound_end_word(source: &str) -> Option<&'static str> {
         "case" => Some("esac"),
         "for" | "while" | "until" | "select" => Some("done"),
         _ => None,
+    }
+}
+
+fn alias_reparse_command_source(command: &CommandNode) -> String {
+    if command.words.is_empty() {
+        if let Some(message) = command.assignments.get("__RUBASH_PARSE_ERROR__") {
+            return alias_reparse_reserved_word(message);
+        }
+    }
+    bash_command_source_text(command)
+}
+
+fn alias_reparse_reserved_word(message: &str) -> String {
+    let Some((_, word)) = message.split_once("unexpected token `") else {
+        return String::new();
+    };
+    let word = word.trim_end_matches(['`', '\'']);
+    if matches!(word, "then" | "elif" | "else" | "fi" | "do" | "done" | "in" | "esac") {
+        word.to_string()
+    } else {
+        String::new()
     }
 }
 
