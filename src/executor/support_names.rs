@@ -357,6 +357,7 @@ pub(in crate::executor) fn apply_stderr_append_redirect(
             command.redirect_err.is_none() && command.redirect_err_append.is_none();
         if inherits_stderr {
             command.redirect_err_append = Some(redirect.clone());
+            command.redirects.insert(0, redirect.clone());
             apply_inherited_stderr_to_stdout_fd_copy(command, redirect);
         }
         if let Some(for_command) = &mut command.for_command {
