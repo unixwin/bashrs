@@ -7,6 +7,9 @@ This document is the durable version of the issue-suite run notes. Files under
 `target/issue-suites/results/` are raw run artifacts; this document is the
 tracked summary used to decide what to fix and where.
 
+The concrete implementation playbook for future agents is
+[`docs/gnu-bash-compatibility-implementation-plan.md`](gnu-bash-compatibility-implementation-plan.md).
+
 ## Executive Summary
 
 The failures are not one-off test noise. They cluster into a small number of
@@ -206,4 +209,3 @@ suite slice, then the broader issue-suite family.
   real semantics and tests.
 - Do not count ksh-only syntax as required Bash support unless GNU Bash can run
   the construct or a Bash-compatible subset is being tested.
-

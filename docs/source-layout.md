@@ -9,6 +9,9 @@ semantic ownership, state boundaries, and testable behavior.
 Use `docs/bash-source-map.md` to keep every Rubash subsystem traceable to the
 corresponding GNU Bash source files and upstream test groups. Use
 `docs/bash-implementation-inventory.md` for the file-by-file ownership map.
+For current implementation sequencing, agent workflow, and the rubash /
+winuxcmd / winuxsh architecture boundary, use
+[`docs/gnu-bash-compatibility-implementation-plan.md`](gnu-bash-compatibility-implementation-plan.md).
 
 ## Target Layout
 
@@ -140,6 +143,9 @@ architecture.
 - Do not port GNU Bash C files line-by-line, but do assign each
   implementation-shaped upstream file to a Rubash owner.
 - Do not mirror generated files such as `y.tab.c` and `y.tab.h`.
+- Treat filename collisions by module ownership, not basename. For example,
+  `src/builtins/kill.rs` owns the Bash `kill` builtin, while
+  `src/input/readline/kill.rs` owns readline editing behavior.
 - Every new semantic module should update `docs/bash-source-map.md` and, when
   needed, `docs/bash-implementation-inventory.md`.
 - Every compatibility PR should name the upstream `tests/run-*` group it moves.
