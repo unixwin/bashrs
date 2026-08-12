@@ -118,6 +118,8 @@ impl Executor {
             .and_then(|value| value.parse::<u32>().ok())
             .unwrap_or_else(std::process::id);
         env_vars.remove("__RUBASH_SHELL_PID");
+        let owns_signal_mailbox =
+            crate::builtins::kill::register_signal_mailbox(std::process::id()).is_ok();
 
         Self {
             exit_code: 0,
@@ -140,6 +142,7 @@ impl Executor {
             random_state: Cell::new(current_epoch_micros() as u32),
             shell_pid,
             subshell_depth: Cell::new(0),
+            owns_signal_mailbox,
             last_background_pid: None,
             background_children: HashMap::new(),
             background_jobs: HashMap::new(),
@@ -150,6 +153,7 @@ impl Executor {
             suppress_errexit: 0,
             debug_trap_running: false,
             return_trap_running: false,
+            signal_trap_running: false,
             debug_trap_command: None,
             arithmetic_expansion_error: Cell::new(false),
             last_command_substitution_status: Cell::new(None),

@@ -318,6 +318,10 @@ impl Default for Executor {
 
 impl Drop for Executor {
     fn drop(&mut self) {
+        if self.owns_signal_mailbox {
+            crate::builtins::kill::unregister_signal_mailbox(std::process::id());
+        }
+
         let current_names: Vec<String> = env::vars().map(|(name, _)| name).collect();
         for name in current_names {
             if !self.process_env_snapshot.contains_key(&name) {

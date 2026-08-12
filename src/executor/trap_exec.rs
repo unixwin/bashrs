@@ -108,6 +108,55 @@ impl Executor {
         result
     }
 
+    pub(crate) fn run_pending_signal_traps(&mut self) -> Result<(), ExecuteError> {
+        if self.signal_trap_running {
+            return Ok(());
+        }
+
+        let signals = crate::builtins::kill::take_pending_signals(std::process::id())?;
+        for signal in signals {
+            let Some(signal_name) = signal_trap_name(signal) else {
+                continue;
+            };
+            let action = crate::builtins::trap::get_trap_action(&self.env_vars, &signal_name);
+            let Some(action) = action else {
+                return Err(ExecuteError::ExitCode(128 + signal));
+            };
+            if action.is_empty() {
+                continue;
+            }
+
+            let saved_exit = self.exit_code;
+            self.exit_code = saved_exit;
+            self.signal_trap_running = true;
+            let old_signal_status = self.env_vars.insert(
+                "__RUBASH_SIGNAL_TRAP_STATUS".to_string(),
+                saved_exit.to_string(),
+            );
+            let tokens = crate::lexer::tokenize(&action);
+            let ast = crate::parser::parse(&tokens);
+            let result = self.execute_ast(&ast);
+            match old_signal_status {
+                Some(value) => {
+                    self.env_vars
+                        .insert("__RUBASH_SIGNAL_TRAP_STATUS".to_string(), value);
+                }
+                None => {
+                    self.env_vars.remove("__RUBASH_SIGNAL_TRAP_STATUS");
+                }
+            }
+            self.signal_trap_running = false;
+            match result {
+                Ok(()) => self.exit_code = saved_exit,
+                Err(error @ ExecuteError::Return(_)) => return Err(error),
+                Err(error @ ExecuteError::ExitCode(_)) => return Err(error),
+                Err(error) => return Err(error),
+            }
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn run_function_return_trap(&mut self) -> Result<(), ExecuteError> {
         // Bash only fires a RETURN trap for function returns when tracing is
         // enabled (`set -T`) or `extdebug` is active.  Sourced files use the
@@ -814,6 +863,13 @@ impl Executor {
         }
         Ok(())
     }
+}
+
+fn signal_trap_name(signal: i32) -> Option<String> {
+    if signal <= 0 {
+        return None;
+    }
+    crate::builtins::kill::translate_signal(&signal.to_string()).map(|name| format!("SIG{name}"))
 }
 
 fn is_dynamic_fd_exec_redirect(cmd: &CommandNode) -> bool {

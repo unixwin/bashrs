@@ -367,6 +367,7 @@ impl Executor {
 
         loop {
             self.with_errexit_suppressed(|executor| executor.execute_ast(&condition))?;
+            self.run_pending_signal_traps()?;
             let condition_matched = self.exit_code == 0;
             if condition_matched == loop_command.until {
                 break;
@@ -376,6 +377,7 @@ impl Executor {
             self.loop_depth += 1;
             let result = self.execute_ast(&body);
             self.loop_depth -= 1;
+            self.run_pending_signal_traps()?;
             match result {
                 Ok(()) => {
                     last_body_status = self.exit_code;

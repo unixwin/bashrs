@@ -171,6 +171,16 @@ where
             continue;
         };
 
+        match deliver_rubash_signal(pid, signal) {
+            Ok(true) => continue,
+            Ok(false) => {}
+            Err(error) => {
+                writeln!(stderr, "{}kill: ({pid}) - {error}", diagnostic_prefix())?;
+                status = 1;
+                continue;
+            }
+        }
+
         if let Err(message) = signal_process(pid, signal) {
             writeln!(stderr, "{}kill: ({pid}) - {message}", diagnostic_prefix())?;
             status = 1;
@@ -244,6 +254,31 @@ pub fn process_exists(pid: u32) -> bool {
     pid == std::process::id() || signal_process(pid, 0).is_ok_or_permission_denied()
 }
 
+pub fn register_signal_mailbox(pid: u32) -> io::Result<()> {
+    let dir = signal_mailbox_dir();
+    std::fs::create_dir_all(&dir)?;
+    std::fs::write(signal_marker_path(pid), std::process::id().to_string())
+}
+
+pub fn unregister_signal_mailbox(pid: u32) {
+    let _ = std::fs::remove_file(signal_marker_path(pid));
+    let _ = std::fs::remove_file(signal_queue_path(pid));
+}
+
+pub fn take_pending_signals(pid: u32) -> io::Result<Vec<i32>> {
+    let path = signal_queue_path(pid);
+    let content = match std::fs::read_to_string(&path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    let _ = std::fs::remove_file(path);
+    Ok(content
+        .lines()
+        .filter_map(|line| line.trim().parse::<i32>().ok())
+        .collect())
+}
+
 fn signal_name(number: i32) -> Option<&'static str> {
     SIGNALS
         .iter()
@@ -281,6 +316,39 @@ fn diagnostic_prefix() -> String {
     }
 
     "rubash: ".to_string()
+}
+
+fn deliver_rubash_signal(pid: u32, signal: i32) -> io::Result<bool> {
+    if !signal_marker_path(pid).is_file() {
+        return Ok(false);
+    }
+    if !process_exists(pid) {
+        unregister_signal_mailbox(pid);
+        return Ok(false);
+    }
+    if signal == 0 {
+        return Ok(true);
+    }
+
+    std::fs::create_dir_all(signal_mailbox_dir())?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(signal_queue_path(pid))?;
+    writeln!(file, "{signal}")?;
+    Ok(true)
+}
+
+fn signal_mailbox_dir() -> std::path::PathBuf {
+    std::env::temp_dir().join("rubash-signals")
+}
+
+fn signal_marker_path(pid: u32) -> std::path::PathBuf {
+    signal_mailbox_dir().join(format!("{pid}.alive"))
+}
+
+fn signal_queue_path(pid: u32) -> std::path::PathBuf {
+    signal_mailbox_dir().join(format!("{pid}.queue"))
 }
 
 #[cfg(windows)]

@@ -659,6 +659,32 @@ fn c_command_background_subshell_preserves_shell_pid() {
 }
 
 #[test]
+fn c_command_background_kill_shell_pid_runs_term_trap() {
+    let delay = if cfg!(windows) {
+        "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command Start-Sleep -Milliseconds 250; "
+    } else {
+        "sleep 0.25; "
+    };
+    let script = format!(
+        "trap 'echo TERM; return' TERM; \
+         f() {{ ({delay}kill $$) & until (exit 42); do (exit 42); done; }}; \
+         f; printf 'status:%s\\n' \"$?\""
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(script)
+        .output()
+        .expect("run rubash");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "TERM\nstatus:42\n");
+}
+
+#[test]
 fn c_command_kill_rejects_invalid_pid_operand() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

@@ -30,6 +30,8 @@ impl Executor {
         let mut subshell_depth: Option<usize> = None;
         let mut subshell_stdin: Option<(String, String)> = None;
         while index < ast.commands.len() {
+            self.run_pending_signal_traps()?;
+
             // Bash reports an arithmetic expansion error (`$(( '1' ))`,
             // floating point, ...) and skips the rest of the current command
             // list, but the script continues with the next line. Rubash
@@ -413,6 +415,7 @@ impl Executor {
                 index += 1;
             }
         }
+        self.run_pending_signal_traps()?;
         Ok(())
     }
 

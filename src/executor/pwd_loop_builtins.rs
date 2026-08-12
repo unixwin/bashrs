@@ -173,7 +173,10 @@ impl Executor {
                 }
             }
         } else {
-            self.exit_code
+            self.env_vars
+                .get("__RUBASH_SIGNAL_TRAP_STATUS")
+                .and_then(|value| value.parse::<i32>().ok())
+                .unwrap_or(self.exit_code)
         };
 
         let in_function = self.function_depth > 0;
