@@ -161,6 +161,10 @@ fn tokenize_with_heredocs(input: &str) -> Vec<Token> {
     output
 }
 
+pub fn has_unclosed_input_syntax(input: &str) -> bool {
+    has_unclosed_quotes(input) || has_unclosed_command_substitution(input)
+}
+
 fn tokenize_plain(input: &str) -> Vec<Token> {
     let lexer = Lexer::new(input);
     let mut tokens = Vec::new();

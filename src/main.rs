@@ -3,7 +3,7 @@
 //! Run with: cargo run
 
 use rubash::executor::{ExecuteError, Executor};
-use rubash::lexer::{tokenize, TokenKind};
+use rubash::lexer::{has_unclosed_input_syntax, tokenize, TokenKind};
 use rubash::parser::parse;
 use std::env;
 use std::fs;
@@ -528,6 +528,11 @@ fn run_source(executor: &mut Executor, input: &str, interactive: bool) -> i32 {
     // including pending here-documents, rather than executing script files one
     // physical line at a time. This keeps batch input whole; interactive mode
     // still feeds one line at a time from the REPL.
+    if !interactive && has_unclosed_input_syntax(input) {
+        eprintln!("rubash: syntax error: unexpected end of file");
+        return 2;
+    }
+
     let tokens = tokenize(input);
     let ast = parse(&tokens);
 

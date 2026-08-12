@@ -402,6 +402,26 @@ fn malformed_case_reserved_word_boundaries_are_syntax_errors() {
             .output()
             .expect("run rubash");
         assert_eq!(output.status.code(), Some(2), "command: {command}");
+        assert!(output.stdout.is_empty(), "command: {command}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("syntax error"));
+    }
+}
+
+#[test]
+fn unterminated_complete_command_strings_are_syntax_errors() {
+    for command in [
+        "echo $(echo hi",
+        "echo \"hi",
+        "echo `echo hi",
+        "echo $((1+2)",
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+            .arg("-c")
+            .arg(command)
+            .output()
+            .expect("run rubash");
+        assert_eq!(output.status.code(), Some(2), "command: {command}");
+        assert!(output.stdout.is_empty(), "command: {command}");
         assert!(String::from_utf8_lossy(&output.stderr).contains("syntax error"));
     }
 }
