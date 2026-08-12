@@ -33,7 +33,7 @@ impl Executor {
 
         let Some(do_index) = ast.commands[index + 1..]
             .iter()
-            .position(|command| command.words.first().map(String::as_str) == Some("do"))
+            .position(|command| command_is_control_word(command, "do"))
             .map(|offset| index + 1 + offset)
         else {
             return Ok(None);
@@ -175,7 +175,11 @@ impl Executor {
         while ast
             .commands
             .get(do_index)
-            .is_some_and(|command| command.words.is_empty() && command.brace_group.is_none())
+            .is_some_and(|command| {
+                command.words.is_empty()
+                    && command.brace_group.is_none()
+                    && !command.assignments.contains_key("__RUBASH_PARSE_ERROR__")
+            })
         {
             do_index += 1;
         }
@@ -243,7 +247,7 @@ impl Executor {
             return Ok(Some(do_index + 1));
         }
 
-        if do_command.words.first().map(String::as_str) != Some("do") {
+        if !command_is_control_word(do_command, "do") {
             return Ok(None);
         }
 
@@ -288,6 +292,16 @@ impl Executor {
         self.execute_for_command(&for_command)?;
         Ok(Some(done_index + 1))
     }
+}
+
+fn command_is_control_word(command: &CommandNode, word: &str) -> bool {
+    command.words.first().map(String::as_str) == Some(word)
+        || (command.words.is_empty()
+            && command
+                .assignments
+                .get("__RUBASH_PARSE_ERROR__")
+                .and_then(|message| message.split_once("unexpected token `"))
+                .is_some_and(|(_, token)| token.trim_end_matches(['`', '\'']) == word))
 }
 
 fn synthetic_keyword_metadata(keyword: &str) -> Box<WordMetadata> {

@@ -14,7 +14,7 @@ impl Executor {
                 nested_loop_depth += 1;
                 continue;
             }
-            if command.words.first().map(String::as_str) == Some("done") {
+            if control_word(command) == Some("done") {
                 if nested_loop_depth == 0 {
                     return Some(index);
                 }
@@ -25,7 +25,8 @@ impl Executor {
     }
 
     pub(in crate::executor) fn embedded_do_loop_depth(&self, command: &CommandNode) -> usize {
-        if command.words.first().map(String::as_str) == Some("do")
+        if control_word(command) == Some("do")
+            && command.words.len() > 1
             && self.words_start_alias_loop(&command.words[1..])
         {
             1
@@ -49,4 +50,15 @@ impl Executor {
             Some("for" | "while" | "until" | "select")
         )
     }
+}
+
+fn control_word(command: &CommandNode) -> Option<&str> {
+    if let Some(word) = command.words.first() {
+        return Some(word.as_str());
+    }
+    command
+        .assignments
+        .get("__RUBASH_PARSE_ERROR__")
+        .and_then(|message| message.split_once("unexpected token `"))
+        .map(|(_, token)| token.trim_end_matches(['`', '\'']))
 }
