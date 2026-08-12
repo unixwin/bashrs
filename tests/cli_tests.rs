@@ -719,6 +719,35 @@ fn c_command_kill_sigkill_terminates_windows_pid() {
     );
 }
 
+#[test]
+fn c_command_kill_sigkill_terminates_rubash_child_pid() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("while :; do :; done")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn long-running rubash child");
+    let pid = child.id();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(format!("kill -9 {pid}"))
+        .output()
+        .expect("run rubash");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        wait_for_child_exit(&mut child, Duration::from_secs(5)),
+        "rubash child process {pid} did not exit after kill -9"
+    );
+}
+
 #[cfg(windows)]
 fn spawn_long_child() -> Child {
     Command::new("powershell.exe")

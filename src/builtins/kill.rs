@@ -322,6 +322,11 @@ fn deliver_rubash_signal(pid: u32, signal: i32) -> io::Result<bool> {
     if !signal_marker_path(pid).is_file() {
         return Ok(false);
     }
+    // SIGKILL is not trappable.  Even for another Rubash process that has a
+    // signal mailbox, it must fall through to the native process terminator.
+    if signal == 9 {
+        return Ok(false);
+    }
     if !process_exists(pid) {
         unregister_signal_mailbox(pid);
         return Ok(false);
@@ -357,16 +362,14 @@ fn signal_process(pid: u32, signal: i32) -> Result<(), &'static str> {
         CloseHandle, GetLastError, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, STILL_ACTIVE,
     };
     use windows_sys::Win32::System::Threading::{
-        GetExitCodeProcess, OpenProcess, TerminateProcess, PROCESS_QUERY_INFORMATION,
-        PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+        GetExitCodeProcess, OpenProcess, TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        PROCESS_TERMINATE,
     };
-
-    const SYNCHRONIZE_ACCESS: u32 = 0x0010_0000;
 
     let access = if signal == 0 {
         PROCESS_QUERY_LIMITED_INFORMATION
     } else {
-        PROCESS_QUERY_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE_ACCESS
+        PROCESS_TERMINATE
     };
 
     let handle = unsafe { OpenProcess(access, 0, pid) };
@@ -379,18 +382,18 @@ fn signal_process(pid: u32, signal: i32) -> Result<(), &'static str> {
         });
     }
 
-    let mut exit_code = 0;
-    let process_is_active = unsafe {
-        GetExitCodeProcess(handle, &mut exit_code) != 0 && exit_code == STILL_ACTIVE as u32
-    };
-    if !process_is_active {
-        unsafe {
-            CloseHandle(handle);
+    if signal == 0 {
+        let mut exit_code = 0;
+        let process_is_active = unsafe {
+            GetExitCodeProcess(handle, &mut exit_code) != 0 && exit_code == STILL_ACTIVE as u32
+        };
+        if !process_is_active {
+            unsafe {
+                CloseHandle(handle);
+            }
+            return Err("No such process");
         }
-        return Err("No such process");
-    }
-
-    if signal != 0 && unsafe { TerminateProcess(handle, 1) == 0 } {
+    } else if unsafe { TerminateProcess(handle, 1) == 0 } {
         unsafe {
             CloseHandle(handle);
         }
