@@ -81,6 +81,25 @@ impl Executor {
                     );
                 }
             }
+
+            let path = shell_path_to_windows(&expanded_target, &self.env_vars);
+            if redirect.append {
+                let _ = OpenOptions::new()
+                    .create(true)
+                    .read(true)
+                    .write(true)
+                    .open(&path);
+            }
+            let input = fs::read_to_string(path).ok()?;
+            if input.is_empty() {
+                return None;
+            }
+            return Some(trim_read_input(
+                input,
+                delimiter,
+                char_limit,
+                exact_char_limit,
+            ));
         }
 
         if let Some(line) = self.stdin_string_for_command(cmd) {

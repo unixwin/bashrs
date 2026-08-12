@@ -9,7 +9,7 @@ impl Executor {
             "#" => return Some(self.positional_params.len().to_string()),
             "@" | "*" => return Some(self.positional_params.join(" ")),
             "?" => return Some(self.exit_code.to_string()),
-            "$" => return Some(std::process::id().to_string()),
+            "$" => return Some(self.shell_pid_value().to_string()),
             "!" => return Some(self.last_background_pid_value()),
             "-" => return Some(self.shell_option_flags()),
             "0" => return Some(self.script_name_value()),

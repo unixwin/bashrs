@@ -1,5 +1,6 @@
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
 use std::{fs, path::Path};
 
 use regex::Regex;
@@ -27,9 +28,7 @@ fn assert_stderr_matches(stderr: &str, pattern: &str) {
 fn c_command_reads_named_coproc_stdout_through_array_fd() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
-        .arg(
-            "coproc MY { printf 'coproc-ok\\n'; }; read -r out <&\"${MY[0]}\"; echo \"$out\"",
-        )
+        .arg("coproc MY { printf 'coproc-ok\\n'; }; read -r out <&\"${MY[0]}\"; echo \"$out\"")
         .output()
         .expect("run rubash");
 
@@ -142,7 +141,10 @@ fn quoted_environment_paths_keep_native_windows_form() {
         .expect("run rubash");
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), format!("{expected}\n"));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!("{expected}\n")
+    );
 }
 
 #[test]
@@ -225,7 +227,10 @@ fn umask_symbolic_mode_prints_after_setting_mode() {
         .expect("run rubash");
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "u=rwx,g=rwx,o=rx\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "u=rwx,g=rwx,o=rx\n"
+    );
 }
 
 #[test]
@@ -248,7 +253,10 @@ fn malformed_pipeline_and_if_are_syntax_errors() {
             .arg(command)
             .output()
             .expect("run rubash");
-        assert!(!output.status.success(), "command unexpectedly succeeded: {command}");
+        assert!(
+            !output.status.success(),
+            "command unexpectedly succeeded: {command}"
+        );
         assert!(String::from_utf8_lossy(&output.stderr).contains("syntax error"));
     }
 }
@@ -560,6 +568,172 @@ fn c_command_exec_numeric_fd_copies_default_stdin_for_read_u() {
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), "<from-stdin>:0\n");
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn c_command_read_dev_null_reports_eof() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("read value < /dev/null; printf '<%s>:%s\\n' \"$value\" \"$?\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<>:1\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn c_command_read_uses_regular_stdin_redirect_file() {
+    let input_path = Path::new("target").join("rubash-cli-read-redirect-input.txt");
+    fs::write(&input_path, "from-file\n").unwrap();
+    let script_path = shell_test_path(&input_path);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(format!(
+            "read value < {script_path}; printf '<%s>:%s\\n' \"$value\" \"$?\""
+        ))
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<from-file>:0\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    let _ = fs::remove_file(input_path);
+}
+
+#[test]
+fn c_command_kill_zero_accepts_current_process() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(format!("kill -0 {}", std::process::id()))
+        .output()
+        .expect("run rubash");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn c_command_kill_zero_accepts_shell_pid() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("kill -0 $$; printf 'status:%s\\n' \"$?\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "status:0\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn c_command_background_subshell_preserves_shell_pid() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("echo parent:$$:$BASHPID; (echo bg:$$:$BASHPID) & wait")
+        .output()
+        .expect("run rubash");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
+    let parent = lines.next().expect("parent line");
+    let child = lines.next().expect("child line");
+    let parent_fields = parent.split(':').collect::<Vec<_>>();
+    let child_fields = child.split(':').collect::<Vec<_>>();
+    assert_eq!(parent_fields[1], child_fields[1], "$$ should stay stable");
+    assert_ne!(
+        parent_fields[2], child_fields[2],
+        "BASHPID should identify the background child"
+    );
+}
+
+#[test]
+fn c_command_kill_rejects_invalid_pid_operand() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("kill abc")
+        .output()
+        .expect("run rubash");
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("kill: abc: arguments must be process or job IDs"));
+}
+
+#[test]
+fn c_command_kill_sigkill_terminates_windows_pid() {
+    let mut child = spawn_long_child();
+    let pid = child.id();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(format!("kill -9 {pid}"))
+        .output()
+        .expect("run rubash");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        wait_for_child_exit(&mut child, Duration::from_secs(5)),
+        "child process {pid} did not exit after kill -9"
+    );
+}
+
+#[cfg(windows)]
+fn spawn_long_child() -> Child {
+    Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            "Start-Sleep -Seconds 30",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn long-running child")
+}
+
+#[cfg(not(windows))]
+fn spawn_long_child() -> Child {
+    Command::new("sleep")
+        .arg("30")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn long-running child")
+}
+
+fn wait_for_child_exit(child: &mut Child, timeout: Duration) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if child.try_wait().expect("poll child").is_some() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    let _ = child.kill();
+    let _ = child.wait();
+    false
 }
 
 #[test]

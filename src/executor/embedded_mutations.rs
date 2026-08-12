@@ -93,7 +93,7 @@ impl Executor {
                 }
                 Some('$') => {
                     chars.next();
-                    output.push_str(&std::process::id().to_string());
+                    output.push_str(&self.shell_pid_value().to_string());
                 }
                 Some('!') => {
                     chars.next();
@@ -136,9 +136,7 @@ impl Executor {
                         let (expression, matched) =
                             collect_dollar_paren_arithmetic_expansion(&mut chars);
                         if matched {
-                            if let Some(value) =
-                                self.eval_arithmetic_expansion_value(&expression)
-                            {
+                            if let Some(value) = self.eval_arithmetic_expansion_value(&expression) {
                                 output.push_str(&value.to_string());
                             } else if let Some(message) =
                                 crate::executor::arithmetic::arithmetic_error_message(&expression)
@@ -415,11 +413,7 @@ impl Executor {
         // propagates to the outer assignment, which then checks -e.
         // POSIX mode is the exception: `set -o posix; z=$(false;echo posix)`
         // exits (set-e1.sub), so keep errexit active there.
-        let posix_mode = self
-            .env_vars
-            .get("__RUBASH_POSIX_MODE")
-            .map(String::as_str)
-            == Some("1");
+        let posix_mode = self.env_vars.get("__RUBASH_POSIX_MODE").map(String::as_str) == Some("1");
         let result = if posix_mode {
             self.execute_ast(&ast)
         } else {
@@ -773,8 +767,22 @@ fn is_specialized_command_substitution_word(words: &[String]) -> bool {
     matches!(
         words.first().map(String::as_str),
         Some(
-            "echo" | "recho" | "printf" | "cat" | "basename" | "umask" | "ulimit" | "pwd"
-                | "type" | "kill" | "trap" | "mktemp" | "set" | "export" | "true" | ":"
+            "echo"
+                | "recho"
+                | "printf"
+                | "cat"
+                | "basename"
+                | "umask"
+                | "ulimit"
+                | "pwd"
+                | "type"
+                | "kill"
+                | "trap"
+                | "mktemp"
+                | "set"
+                | "export"
+                | "true"
+                | ":"
         )
     )
 }

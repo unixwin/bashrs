@@ -109,7 +109,7 @@ impl Executor {
             b'@' | b'*' => self.positional_params.join(" "),
             b'#' => self.positional_params.len().to_string(),
             b'?' => self.exit_code.to_string(),
-            b'$' => std::process::id().to_string(),
+            b'$' => self.shell_pid_value().to_string(),
             b'!' => self.last_background_pid_value(),
             b'-' => self.shell_option_flags(),
             _ => return None,

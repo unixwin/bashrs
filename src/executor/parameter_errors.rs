@@ -291,7 +291,7 @@ impl Executor {
             "#" => Some(self.positional_params.len().to_string()),
             "@" | "*" => Some(self.positional_params.join(" ")),
             "?" => Some(self.exit_code.to_string()),
-            "$" => Some(std::process::id().to_string()),
+            "$" => Some(self.shell_pid_value().to_string()),
             "!" => Some(self.last_background_pid_value()),
             "-" => Some(self.shell_option_flags()),
             "0" => Some(self.script_name_value()),

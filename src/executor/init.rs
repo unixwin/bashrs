@@ -19,15 +19,12 @@ impl Executor {
         // supplied (including empty) HOME value.
         #[cfg(windows)]
         if !env_vars.contains_key("HOME") {
-            let fallback_home = env_vars
-                .get("USERPROFILE")
-                .cloned()
-                .or_else(|| {
-                    env_vars
-                        .get("HOMEDRIVE")
-                        .zip(env_vars.get("HOMEPATH"))
-                        .map(|(drive, path)| format!("{drive}{path}"))
-                });
+            let fallback_home = env_vars.get("USERPROFILE").cloned().or_else(|| {
+                env_vars
+                    .get("HOMEDRIVE")
+                    .zip(env_vars.get("HOMEPATH"))
+                    .map(|(drive, path)| format!("{drive}{path}"))
+            });
             if let Some(home) = fallback_home {
                 env_vars.insert("HOME".to_string(), home);
             }
@@ -116,6 +113,11 @@ impl Executor {
         mark_env_name(&mut env_vars, READONLY_VARS, "UID");
         mark_env_name(&mut env_vars, READONLY_VARS, "EUID");
         mark_env_name(&mut env_vars, READONLY_VARS, "PPID");
+        let shell_pid = env_vars
+            .get("__RUBASH_SHELL_PID")
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or_else(std::process::id);
+        env_vars.remove("__RUBASH_SHELL_PID");
 
         Self {
             exit_code: 0,
@@ -136,6 +138,7 @@ impl Executor {
             loop_depth: 0,
             function_depth: 0,
             random_state: Cell::new(current_epoch_micros() as u32),
+            shell_pid,
             subshell_depth: Cell::new(0),
             last_background_pid: None,
             background_children: HashMap::new(),

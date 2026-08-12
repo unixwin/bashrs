@@ -1771,6 +1771,7 @@ impl Executor {
                 0
             } else if read_fd.is_some()
                 || command_closes_stdin(cmd)
+                || command_redirects_stdin(cmd)
                 || self.env_vars.contains_key(&fd_closed_key(0))
             {
                 self.assign_read_scalar_names(&scalar_names, "", raw);
@@ -1912,4 +1913,10 @@ fn command_closes_stdin(cmd: &CommandNode) -> bool {
     cmd.redirect_in
         .as_ref()
         .is_some_and(|redirect| redirect.fd.unwrap_or(0) == 0 && redirect.target == "&-")
+}
+
+fn command_redirects_stdin(cmd: &CommandNode) -> bool {
+    cmd.redirect_in
+        .as_ref()
+        .is_some_and(|redirect| redirect.fd.unwrap_or(0) == 0)
 }

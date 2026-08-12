@@ -41,11 +41,7 @@ impl Executor {
             "BASH_COMMAND" => Some(
                 self.debug_trap_command
                     .clone()
-                    .or_else(|| {
-                        self.env_vars
-                            .get("__RUBASH_CURRENT_COMMAND")
-                            .cloned()
-                    })
+                    .or_else(|| self.env_vars.get("__RUBASH_CURRENT_COMMAND").cloned())
                     .unwrap_or_default(),
             ),
             "SHELLOPTS" => Some(crate::builtins::set::shellopts_value(&self.env_vars)),
@@ -53,6 +49,10 @@ impl Executor {
             "PIPESTATUS" => Some(self.pipestatus.first().copied().unwrap_or(0).to_string()),
             _ => None,
         }
+    }
+
+    pub(in crate::executor) fn shell_pid_value(&self) -> u32 {
+        self.shell_pid
     }
 
     pub(in crate::executor) fn last_background_pid_value(&self) -> String {
@@ -107,9 +107,7 @@ impl Executor {
                 if !stack.is_empty() && stack.last().map(String::as_str) != Some("main") {
                     stack.push("main".to_string());
                 }
-                return Some(format_indexed_array_values(
-                    stack,
-                ))
+                return Some(format_indexed_array_values(stack));
             }
             "BASH_ARGC" => return Some(format_indexed_array_values(self.bash_argc_stack.clone())),
             "BASH_ARGV" => return Some(format_indexed_array_values(self.bash_argv_stack.clone())),

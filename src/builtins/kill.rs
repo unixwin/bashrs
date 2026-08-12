@@ -109,6 +109,7 @@ where
         return Ok(status);
     }
 
+    let mut signal = 15;
     let mut index = 0;
     let mut operands_start = 0;
     while let Some(value) = args.get(index).map(String::as_str) {
@@ -117,32 +118,34 @@ where
             break;
         }
         if value == "-s" || value == "-n" {
-            let Some(signal) = args.get(index + 1).map(String::as_str) else {
+            let Some(sigspec) = args.get(index + 1).map(String::as_str) else {
                 write_kill_usage(stderr)?;
                 return Ok(2);
             };
-            if translate_signal(signal).is_none() {
+            if translate_signal(sigspec).is_none() {
                 writeln!(
                     stderr,
-                    "{}kill: {signal}: invalid signal specification",
+                    "{}kill: {sigspec}: invalid signal specification",
                     diagnostic_prefix()
                 )?;
                 return Ok(1);
             }
+            signal = signal_number_from_spec(sigspec).unwrap_or(15);
             index += 2;
             operands_start = index;
             continue;
         }
         if value.starts_with('-') && value != "-" {
-            let signal = value.trim_start_matches('-');
-            if translate_signal(signal).is_none() {
+            let sigspec = value.trim_start_matches('-');
+            if translate_signal(sigspec).is_none() {
                 writeln!(
                     stderr,
-                    "{}kill: {signal}: invalid signal specification",
+                    "{}kill: {sigspec}: invalid signal specification",
                     diagnostic_prefix()
                 )?;
                 return Ok(1);
             }
+            signal = signal_number_from_spec(sigspec).unwrap_or(15);
             index += 1;
             operands_start = index;
             continue;
@@ -156,10 +159,25 @@ where
         return Ok(2);
     }
 
-    // Process signalling is handled by the executor's tracked-job path. For
-    // ordinary PIDs, validation above is still important even on platforms
-    // where the shell cannot deliver every POSIX signal directly.
-    Ok(0)
+    let mut status = 0;
+    for operand in &args[operands_start..] {
+        let Some(pid) = parse_pid(operand) else {
+            writeln!(
+                stderr,
+                "{}kill: {operand}: arguments must be process or job IDs",
+                diagnostic_prefix()
+            )?;
+            status = 1;
+            continue;
+        };
+
+        if let Err(message) = signal_process(pid, signal) {
+            writeln!(stderr, "{}kill: ({pid}) - {message}", diagnostic_prefix())?;
+            status = 1;
+        }
+    }
+
+    Ok(status)
 }
 
 fn write_kill_usage<E>(stderr: &mut E) -> io::Result<()>
@@ -195,6 +213,35 @@ pub fn translate_signal(value: &str) -> Option<&'static str> {
 
     let name = value.strip_prefix("SIG").unwrap_or(value);
     signal_number(name)
+}
+
+fn signal_number_from_spec(value: &str) -> Option<i32> {
+    if value == "0" {
+        return Some(0);
+    }
+
+    let name = value.strip_prefix("SIG").unwrap_or(value);
+    if name == "EXIT" {
+        return Some(0);
+    }
+
+    if let Ok(mut number) = value.parse::<i32>() {
+        if number > 128 {
+            number -= 128;
+        }
+        return (number == 0 || signal_name(number).is_some()).then_some(number);
+    }
+
+    signal_number(name)?.parse::<i32>().ok()
+}
+
+fn parse_pid(value: &str) -> Option<u32> {
+    let pid = value.parse::<u32>().ok()?;
+    (pid != 0).then_some(pid)
+}
+
+pub fn process_exists(pid: u32) -> bool {
+    pid == std::process::id() || signal_process(pid, 0).is_ok_or_permission_denied()
 }
 
 fn signal_name(number: i32) -> Option<&'static str> {
@@ -234,4 +281,89 @@ fn diagnostic_prefix() -> String {
     }
 
     "rubash: ".to_string()
+}
+
+#[cfg(windows)]
+fn signal_process(pid: u32, signal: i32) -> Result<(), &'static str> {
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, GetLastError, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, STILL_ACTIVE,
+    };
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, TerminateProcess, PROCESS_QUERY_INFORMATION,
+        PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+    };
+
+    const SYNCHRONIZE_ACCESS: u32 = 0x0010_0000;
+
+    let access = if signal == 0 {
+        PROCESS_QUERY_LIMITED_INFORMATION
+    } else {
+        PROCESS_QUERY_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE_ACCESS
+    };
+
+    let handle = unsafe { OpenProcess(access, 0, pid) };
+    if handle.is_null() {
+        let error = unsafe { GetLastError() };
+        return Err(match error {
+            ERROR_ACCESS_DENIED => "Permission denied",
+            ERROR_INVALID_PARAMETER => "No such process",
+            _ => "Cannot open process",
+        });
+    }
+
+    let mut exit_code = 0;
+    let process_is_active = unsafe {
+        GetExitCodeProcess(handle, &mut exit_code) != 0 && exit_code == STILL_ACTIVE as u32
+    };
+    if !process_is_active {
+        unsafe {
+            CloseHandle(handle);
+        }
+        return Err("No such process");
+    }
+
+    if signal != 0 && unsafe { TerminateProcess(handle, 1) == 0 } {
+        unsafe {
+            CloseHandle(handle);
+        }
+        return Err("Failed to terminate process");
+    }
+
+    unsafe {
+        CloseHandle(handle);
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn signal_process(pid: u32, signal: i32) -> Result<(), &'static str> {
+    let result = unsafe { libc::kill(pid as libc::pid_t, signal) };
+    if result == 0 {
+        return Ok(());
+    }
+
+    match std::io::Error::last_os_error().raw_os_error() {
+        Some(libc::ESRCH) => Err("No such process"),
+        Some(libc::EPERM) => Err("Permission denied"),
+        _ => Err("Failed to signal process"),
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn signal_process(_pid: u32, signal: i32) -> Result<(), &'static str> {
+    if signal == 0 {
+        Err("No such process")
+    } else {
+        Err("Failed to signal process")
+    }
+}
+
+trait KillResultExt {
+    fn is_ok_or_permission_denied(&self) -> bool;
+}
+
+impl KillResultExt for Result<(), &'static str> {
+    fn is_ok_or_permission_denied(&self) -> bool {
+        self.is_ok() || matches!(self, Err(message) if *message == "Permission denied")
+    }
 }

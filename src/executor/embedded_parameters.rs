@@ -73,7 +73,7 @@ impl Executor {
                 }
                 Some('$') => {
                     chars.next();
-                    output.push_str(&std::process::id().to_string());
+                    output.push_str(&self.shell_pid_value().to_string());
                 }
                 Some('!') => {
                     chars.next();

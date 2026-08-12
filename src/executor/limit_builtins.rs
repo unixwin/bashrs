@@ -64,11 +64,8 @@ impl Executor {
 
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        let status = crate::builtins::kill::execute_with_io(
-            &cmd.words[1..],
-            &mut stdout,
-            &mut stderr,
-        )?;
+        let status =
+            crate::builtins::kill::execute_with_io(&cmd.words[1..], &mut stdout, &mut stderr)?;
         self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
         Ok(status)
     }
@@ -230,25 +227,12 @@ impl Executor {
 
 #[cfg(unix)]
 fn process_exists(pid: u32) -> bool {
-    // Signal 0 performs the existence/permission check without delivering a
-    // signal.  A negative result with EPERM still means the process exists.
-    let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
-    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    crate::builtins::kill::process_exists(pid)
 }
 
 #[cfg(windows)]
 fn process_exists(pid: u32) -> bool {
-    // `tasklist` is available on supported Windows versions and avoids
-    // depending on a third-party process enumeration crate.  CSV output is
-    // stable across localized system messages.
-    let Ok(output) = std::process::Command::new("tasklist")
-        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
-        .output()
-    else {
-        return false;
-    };
-    let needle = format!(",\"{pid}\",");
-    String::from_utf8_lossy(&output.stdout).contains(&needle)
+    crate::builtins::kill::process_exists(pid)
 }
 
 #[cfg(not(any(unix, windows)))]

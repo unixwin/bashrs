@@ -82,10 +82,7 @@ impl Executor {
             return "./e".to_string();
         }
         let word_parts = split_shell_words_with_quote_info(source);
-        let words: Vec<String> = word_parts
-            .iter()
-            .map(|(word, _)| word.clone())
-            .collect();
+        let words: Vec<String> = word_parts.iter().map(|(word, _)| word.clone()).collect();
         let words = self.expand_aliases(&words);
 
         if let Some(output) = self.timed_command_substitution_output(&words) {
@@ -137,17 +134,18 @@ impl Executor {
         }
 
         if words.first().map(String::as_str) == Some("printf") {
-            let expanded_args: Vec<String> = words[1..]
-                .iter()
-                .enumerate()
-                .map(|(index, word)| {
-                    strip_matching_quotes(&self.expand_protected_tilde(
-                        word,
-                        word_parts.get(index + 1).map(|(_, q)| *q),
-                    ))
-                    .to_string()
-                })
-                .collect();
+            let expanded_args: Vec<String> =
+                words[1..]
+                    .iter()
+                    .enumerate()
+                    .map(|(index, word)| {
+                        strip_matching_quotes(&self.expand_protected_tilde(
+                            word,
+                            word_parts.get(index + 1).map(|(_, q)| *q),
+                        ))
+                        .to_string()
+                    })
+                    .collect();
             let mut env_vars = self.env_vars.clone();
             let mut stdout = Vec::new();
             let mut stderr = Vec::new();
@@ -384,6 +382,7 @@ impl Executor {
             loop_depth: self.loop_depth,
             function_depth: self.function_depth,
             random_state: Cell::new(self.random_state.get()),
+            shell_pid: self.shell_pid,
             subshell_depth: Cell::new(self.subshell_depth.get() + 1),
             last_background_pid: self.last_background_pid,
             arithmetic_expansion_error: Cell::new(false),

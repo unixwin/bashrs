@@ -88,11 +88,14 @@ impl Executor {
 
         match word {
             "$?" => Some(self.exit_code.to_string()),
-            "$$" => Some(std::process::id().to_string()),
+            "$$" => Some(self.shell_pid_value().to_string()),
             "$!" => Some(self.last_background_pid_value()),
             "$@" => Some(self.positional_params.join(" ")),
             // Bash joins `$*` with the first character of IFS, not a space.
-            "$*" => Some(self.positional_params.join(&self.ifs_first_char_separator())),
+            "$*" => Some(
+                self.positional_params
+                    .join(&self.ifs_first_char_separator()),
+            ),
             "$#" => Some(self.positional_params.len().to_string()),
             "$-" => Some(self.shell_option_flags()),
             _ => tilde_expand::expand_word_prefix(word, &self.env_vars),
@@ -194,11 +197,7 @@ impl Executor {
             if crate::builtins::set::shell_option_enabled(&self.env_vars, "nounset") {
                 if let Some(name) = arithmetic_unbound_variable(&expression, &self.env_vars) {
                     if !self.arithmetic_expansion_error.replace(true) {
-                        eprintln!(
-                            "{}{}: unbound variable",
-                            self.diagnostic_prefix(),
-                            name
-                        );
+                        eprintln!("{}{}: unbound variable", self.diagnostic_prefix(), name);
                     }
                     return Some(String::new());
                 }

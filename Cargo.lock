@@ -164,6 +164,7 @@ dependencies = [
  "pretty_assertions",
  "regex",
  "signal-hook",
+ "windows-sys",
 ]
 
 [[package]]

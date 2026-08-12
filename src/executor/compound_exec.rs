@@ -32,6 +32,7 @@ impl Executor {
                 child.env(key, value);
             }
         }
+        child.env("__RUBASH_SHELL_PID", self.shell_pid.to_string());
 
         let child = child.spawn()?;
         let pid = child.id();

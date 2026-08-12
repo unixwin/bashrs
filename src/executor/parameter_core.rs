@@ -87,8 +87,7 @@ impl Executor {
             if let Some(value) = self.eval_arithmetic_expansion_value(expression) {
                 return value.to_string();
             }
-            if let Some(message) =
-                crate::executor::arithmetic::arithmetic_error_message(expression)
+            if let Some(message) = crate::executor::arithmetic::arithmetic_error_message(expression)
             {
                 if !self.arithmetic_expansion_error.replace(true) {
                     eprintln!("{}{}", self.diagnostic_prefix(), message);
@@ -144,7 +143,7 @@ impl Executor {
             "#" => return self.positional_params.len().to_string(),
             "@" | "*" => return self.positional_params.join(" "),
             "?" => return self.exit_code.to_string(),
-            "$" => return std::process::id().to_string(),
+            "$" => return self.shell_pid_value().to_string(),
             "!" => return self.last_background_pid_value(),
             "-" => return self.shell_option_flags(),
             "0" => return self.script_name_value(),
