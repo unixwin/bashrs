@@ -425,8 +425,10 @@ impl Executor {
             };
             let input_key = fd_stdin_key(fd);
             let offset_key = fd_stdin_offset_key(fd);
-            let body =
-                strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(&body)).to_string();
+            // A loop's numbered heredoc is still an ordinary unquoted
+            // heredoc.  Keep its expansion rules identical to the command's
+            // stdin heredoc, including parameter and command substitutions.
+            let body = self.expand_heredoc_body(&body);
             saved_fd_inputs.push((
                 input_key.clone(),
                 self.env_vars.get(&input_key).cloned(),

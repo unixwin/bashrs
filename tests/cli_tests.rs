@@ -410,6 +410,21 @@ fn malformed_case_reserved_word_boundaries_are_syntax_errors() {
 }
 
 #[test]
+fn loop_numbered_heredoc_expands_variables_in_its_receiver_context() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "value=expanded; while IFS= read -r line <&3; do printf '%s\\n' \"$line\"; done 3<<EOF\n$value\nEOF",
+        )
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "expanded\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn unterminated_complete_command_strings_are_syntax_errors() {
     for command in [
         "echo $(echo hi",
