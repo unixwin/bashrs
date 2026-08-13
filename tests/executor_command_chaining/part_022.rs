@@ -188,6 +188,23 @@ fn test_shopt_print_mode_preserves_query_status() {
 }
 
 #[test]
+fn test_shopt_o_uses_readable_format_without_print_flag() {
+    let output_path = "target/rubash-shopt-o-readable-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!("shopt -o pipefail > {output_path}; shopt -o -p pipefail >> {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    assert!(executor.execute_ast(&ast).is_ok());
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "pipefail       \toff\nset +o pipefail\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_shopt_list_returns_failure_for_disabled_option() {
     let output_path = "target/rubash-shopt-list-disabled-status.txt";
     let _ = fs::remove_file(output_path);
