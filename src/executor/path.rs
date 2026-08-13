@@ -234,17 +234,23 @@ fn find_msys_absolute_command(_name: &str, _env_vars: &HashMap<String, String>) 
 
 fn external_argument_path(arg: &str, env_vars: &HashMap<String, String>) -> String {
     if cfg!(windows) {
-        // A bare `/X/` is ambiguous in an external command: it is commonly a
-        // regexp or a git pathspec, not a Windows drive path. Preserve it so
-        // argument forwarding does not silently change its meaning. Longer
-        // `/X/...` paths remain eligible for the shell's drive conversion.
         let normalized = arg.replace('\\', "/");
-        if normalized.len() == 3
+        let drive_path = normalized.len() >= 3
             && normalized.as_bytes()[0] == b'/'
             && normalized.as_bytes()[2] == b'/'
-            && normalized.as_bytes()[1].is_ascii_alphabetic()
-        {
-            return arg.to_string();
+            && normalized.as_bytes()[1].is_ascii_alphabetic();
+        if drive_path {
+            let drive = normalized.as_bytes()[1].to_ascii_lowercase();
+            let translated = shell_path_to_windows(arg, env_vars);
+            // `/c/...` is Rubash's explicit POSIX display-path spelling and
+            // must be translated even before the target is created. Other
+            // `/X/...` arguments are ambiguous (regexes, git pathspecs,
+            // sed/awk fragments); convert those only when they resolve to a
+            // real filesystem path.
+            if drive != b'c' && !translated.exists() {
+                return arg.to_string();
+            }
+            return translated.to_string_lossy().into_owned();
         }
         shell_path_to_windows(arg, env_vars)
             .to_string_lossy()
@@ -755,6 +761,24 @@ mod tests {
 
         assert!(!used_shell);
         assert_eq!(args, vec!["/h/".to_string(), "--literal".to_string()]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_external_arguments_preserve_nonexistent_drive_shaped_patterns() {
+        let env_vars = HashMap::new();
+        let (command, used_shell) = external_command_for_program(
+            &PathBuf::from("git.exe"),
+            &["/h/not-a-real-pathspec".to_string()],
+            &env_vars,
+        );
+        let args = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(!used_shell);
+        assert_eq!(args, vec!["/h/not-a-real-pathspec".to_string()]);
     }
 
     #[cfg(windows)]

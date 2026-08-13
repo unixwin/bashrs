@@ -827,6 +827,18 @@ unhandled signals retain their existing fatal behavior.
 Verification: `cargo test --test executor_tests command_chaining::part_045`
 (13 passed) and `cargo test --lib` (162 passed).
 
+### 2026-08-14 external argument path conversion boundary
+
+Issue #31's remaining root cause was broader than the original `/h/` special
+case: every nonexistent `/X/...` argument was converted to `X:\...`, which
+could corrupt regexes and Git pathspecs. External argument conversion now
+keeps explicit `/c/...` shell display paths convertible, but preserves other
+drive-shaped arguments unless the translated target exists. Added a Windows
+regression for `/h/not-a-real-pathspec`.
+
+Verification: `cargo test --lib path` (20 passed) and `cargo test --lib`
+(163 passed).
+
 ### 2026-08-13 WinuxCmd streaming `head` fixes the producer hang
 
 The BusyBox `heredoc_huge`/large-producer failure was reproduced through the
