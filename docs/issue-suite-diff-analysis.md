@@ -12,6 +12,16 @@ The concrete implementation playbook for future agents is
 
 ## Executive Summary
 
+### 2026-08-13 wait -n completed-status retention
+
+`wait -n` now retains the exit status it reaps so a later explicit `wait PID`
+can query that completed child as Bash permits. The status is consumed by the
+explicit wait, while ordinary explicit waits still remove the job immediately.
+This fixes the jobs/wait root-cause slice tracked by Issues #22 and #23.
+
+Verification: `cargo test --test executor_tests command_chaining::part_036`
+(27 passed).
+
 ### 2026-08-13 Arithmetic Literal Diagnostics Progress
 
 Arithmetic literal failures now preserve the GNU Bash `expr.c::strlong`
