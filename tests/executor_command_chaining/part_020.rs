@@ -2,6 +2,28 @@ use super::super::*;
 use std::fs;
 
 #[test]
+fn test_direct_readonly_assignment_stops_noninteractive_script() {
+    let output_path = target_test_path("rubash-direct-readonly-fatal-output.txt");
+    let _ = fs::remove_file(&output_path);
+    let shell_output_path = shell_test_path(&output_path);
+    let input = format!(
+        "readonly RUBASH_DIRECT_READONLY=1; \\
+         RUBASH_DIRECT_READONLY=2; echo after > {shell_output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_err());
+    assert_eq!(executor.last_exit_code(), 1);
+    assert!(!std::path::Path::new(&output_path).exists());
+    std::env::remove_var("RUBASH_DIRECT_READONLY");
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn test_backtick_in_comment_does_not_swallow_temporary_export() {
     let output_path = target_test_path("rubash-comment-backtick-temp-export-output.txt");
     let _ = fs::remove_file(&output_path);

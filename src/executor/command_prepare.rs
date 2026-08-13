@@ -103,6 +103,15 @@ impl Executor {
             }
             if !self.apply_shell_assignment(name, expanded_value) {
                 status = 1;
+                let (base_name, _) = assignment_name_and_append(name);
+                if is_marked_var(&self.env_vars, READONLY_VARS, base_name) {
+                    // A direct assignment to a readonly variable is a fatal
+                    // non-interactive shell error in Bash. Builtin-owned
+                    // assignments (export/declare/local) retain their own
+                    // recoverable status handling.
+                    self.exit_code = 1;
+                    return Err(ExecuteError::ExitCode(1));
+                }
             }
         }
         self.apply_no_output_builtin_redirects(cmd)?;

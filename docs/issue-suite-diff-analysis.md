@@ -661,6 +661,18 @@ loop-internal `break`/`continue` handling is unchanged.
 Verification: `cargo test --test executor_tests part_050` (14 passed), plus
 direct `rubash -c 'break; echo status:$?'` and `continue` probes.
 
+### 2026-08-13 readonly assignment fatal status
+
+The Oil `bugs` readonly-assignment case exposed a status/lifetime mismatch:
+Rubash printed `readonly variable` and set status 1, but continued a plain
+assignment command list. GNU Bash treats a direct assignment to a readonly
+variable as a fatal non-interactive shell error. The assignment owner now
+returns `ExecuteError::ExitCode(1)` for that case, while `declare`/`export`/
+`local` keep their builtin-specific recoverable diagnostics.
+
+Verification: direct readonly assignment regression, `part_018` (13 passed),
+and `part_019` (10 passed).
+
 ### 2026-08-13 refreshed upstream slice audit
 
 The old Bash actual-output snapshot was stale after the recent parser,
