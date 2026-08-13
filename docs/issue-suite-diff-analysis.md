@@ -512,6 +512,22 @@ cargo test --test cli_tests c_command_reads_named_coproc_stdout_through_array_fd
 cargo test --test cli_tests c_command_writes_to_named_coproc_stdin_fd: pass
 ```
 
+### 2026-08-14 compatibility slice refresh
+
+The bounded Bash comparison slices for `getopts`, `nameref`, `ifs`, `trap`,
+`parser`, `redir`, `arith`, and `arith-for` all pass against the current
+Rubash executable. The 26 checked-in differential probes also pass, including
+the command-substitution, heredoc receiver, case-pattern, path-form,
+redirection, parameter-pattern, debug-trap, positional, var-op, arithmetic,
+and alias cases.
+
+The remaining P0 report for BusyBox `heredoc_huge` is still an external
+Windows pipeline integration issue: the reproducer is `yes | head -3000 |
+md5sum`, while the current environment exposes the WinuxCmd dispatcher as
+`winuxcmd.exe` without individual command entry points. Rubash's heredoc
+collection and bounded large-heredoc tests complete successfully; the
+dispatcher/handle-inheritance boundary remains open for the WinuxCmd side.
+
 Open follow-up: `yes | head -3` still hangs when using WinuxCmd commands in
 the current shell pipeline environment. The current winuxcmd source tree already
 has `head -NUM` parsing and `head.*` tests passing, so the remaining hang should
