@@ -11,6 +11,8 @@ mod examples;
 mod fd_redirects;
 #[path = "cli_tests/scripts.rs"]
 mod scripts;
+#[path = "cli_tests/compat_issue_regressions.rs"]
+mod compat_issue_regressions;
 
 fn shell_test_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
