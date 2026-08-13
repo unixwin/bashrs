@@ -821,6 +821,12 @@ The implementation change is in the separate WinuxCmd working tree and must
 be committed/released there before this evidence can close the Rubash-side
 issue.
 
+The same day, the bounded GNU Bash upstream slices were rerun with the local
+GNU Bash 5.2 runner at `D:/Git/bin/bash.exe`: `run-parser`, `run-arith`, and
+`run-redir`, `run-getopts`, `run-trap`, and `run-coproc` each passed 1/1. These `.right`-based slices are focused regression
+evidence; they do not by themselves close the broader Bash actual-output
+differences tracked by Issues #20--#25.
+
 ### 2026-08-13 process-substitution redirect recovery
 
 The `shopt1.sub` investigation exposed a narrower process-substitution
