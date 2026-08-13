@@ -178,6 +178,18 @@ fn find_msys_absolute_command(_name: &str, _env_vars: &HashMap<String, String>) 
 
 fn external_argument_path(arg: &str, env_vars: &HashMap<String, String>) -> String {
     if cfg!(windows) {
+        // A bare `/X/` is ambiguous in an external command: it is commonly a
+        // regexp or a git pathspec, not a Windows drive path. Preserve it so
+        // argument forwarding does not silently change its meaning. Longer
+        // `/X/...` paths remain eligible for the shell's drive conversion.
+        let normalized = arg.replace('\\', "/");
+        if normalized.len() == 3
+            && normalized.as_bytes()[0] == b'/'
+            && normalized.as_bytes()[2] == b'/'
+            && normalized.as_bytes()[1].is_ascii_alphabetic()
+        {
+            return arg.to_string();
+        }
         shell_path_to_windows(arg, env_vars)
             .to_string_lossy()
             .into_owned()
@@ -669,6 +681,24 @@ mod tests {
 
         assert!(!used_shell);
         assert_eq!(args, vec![r"C:\Users\example\file.txt"]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_external_arguments_preserve_bare_drive_shaped_patterns() {
+        let env_vars = HashMap::new();
+        let (command, used_shell) = external_command_for_program(
+            &PathBuf::from("git.exe"),
+            &["/h/".to_string(), "--literal".to_string()],
+            &env_vars,
+        );
+        let args = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(!used_shell);
+        assert_eq!(args, vec!["/h/".to_string(), "--literal".to_string()]);
     }
 
     #[cfg(windows)]

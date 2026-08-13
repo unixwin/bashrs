@@ -26,7 +26,9 @@ impl Executor {
             {
                 return Some(line);
             }
-            if let Some(output) = self.read_coproc_stdout(fd) {
+            if let Some(output) =
+                self.read_coproc_stdout(fd, delimiter, char_limit, exact_char_limit)
+            {
                 return Some(trim_read_input(
                     output,
                     delimiter,
