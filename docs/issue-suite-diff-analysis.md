@@ -493,6 +493,25 @@ cargo test --test cli_tests coproc -- --nocapture
 cargo test --test cli_tests c_command_mapfile_ -- --nocapture
 ```
 
+### 2026-08-14 Pipeline missing-command diagnostics
+
+Pipeline stages now preserve the ordinary external-command failure contract.
+When a stage is absent from `PATH`, it returns status 127 and emits
+`<command>: command not found`, instead of returning the internal
+`pipeline command could not execute: builtin command not found` error. This
+keeps missing WinuxCmd wrappers (for example a dispatcher command without a
+`head.exe` entry point) distinguishable from genuine builtin pipeline
+failures, while existing builtin stages such as `set | cat` and `export | cat`
+continue through the shell-aware pipeline path.
+
+Focused verification:
+
+```text
+cargo test --test cli_tests pipeline_missing_external_command_reports_command_not_found: pass
+cargo test --test cli_tests c_command_reads_named_coproc_stdout_through_array_fd: pass
+cargo test --test cli_tests c_command_writes_to_named_coproc_stdin_fd: pass
+```
+
 Open follow-up: `yes | head -3` still hangs when using WinuxCmd commands in
 the current shell pipeline environment. The current winuxcmd source tree already
 has `head -NUM` parsing and `head.*` tests passing, so the remaining hang should
