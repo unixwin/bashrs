@@ -205,8 +205,17 @@ impl Executor {
                 output.status,
             )));
         }
-        let Some(program) = find_user_command(&self.expand_word(name), &self.env_vars) else {
-            return Ok(None);
+        let expanded_name = self.expand_word(name);
+        let Some(program) = find_user_command(&expanded_name, &self.env_vars) else {
+            return Ok(Some((
+                String::new(),
+                format!(
+                    "{}{}: command not found\n",
+                    self.diagnostic_prefix(),
+                    expanded_name
+                ),
+                127,
+            )));
         };
 
         let args: Vec<String> = command.words[1..]

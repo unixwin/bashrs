@@ -425,6 +425,20 @@ fn loop_numbered_heredoc_expands_variables_in_its_receiver_context() {
 }
 
 #[test]
+fn pipeline_missing_external_command_reports_command_not_found() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("printf 'input\\n' | rubash_missing_pipeline_command")
+        .output()
+        .expect("run rubash");
+
+    assert!(!output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("rubash_missing_pipeline_command: command not found"));
+}
+
+#[test]
 fn unterminated_complete_command_strings_are_syntax_errors() {
     for command in [
         "echo $(echo hi",
