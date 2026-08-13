@@ -815,6 +815,18 @@ Verification:
 - `cargo test --test executor_tests command_chaining::part_026` (15 passed)
 - direct Bash/Rubash probe for `kill -s 0 -1` (both status 0)
 
+### 2026-08-14 default SIGCHLD disposition
+
+The pending-signal dispatcher treated every signal without an installed trap
+as a fatal `128 + signal` exit. Bash ignores child-completion notifications
+by default, so a queued SIGCHLD could incorrectly terminate a shell after a
+background child was reaped. `run_pending_signal_traps` now discards the
+default SIGCHLD notification unless a CHLD trap is explicitly installed; other
+unhandled signals retain their existing fatal behavior.
+
+Verification: `cargo test --test executor_tests command_chaining::part_045`
+(13 passed) and `cargo test --lib` (162 passed).
+
 ### 2026-08-13 WinuxCmd streaming `head` fixes the producer hang
 
 The BusyBox `heredoc_huge`/large-producer failure was reproduced through the

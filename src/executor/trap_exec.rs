@@ -120,6 +120,13 @@ impl Executor {
             };
             let action = crate::builtins::trap::get_trap_action(&self.env_vars, &signal_name);
             let Some(action) = action else {
+                // Bash's default disposition for SIGCHLD is to ignore it.
+                // Child completion/reaping notifications must not turn into
+                // a synthetic 128+SIGCHLD shell exit when no CHLD trap is
+                // installed (busybox ash `reap*.tests`).
+                if signal == 20 {
+                    continue;
+                }
                 return Err(ExecuteError::ExitCode(128 + signal));
             };
             if action.is_empty() {
