@@ -182,11 +182,6 @@ impl Executor {
                                 state.fd_target(1).cloned().unwrap_or(OutputTarget::Stdout);
                             state.fds.insert(2, stdout_target);
                         }
-                    } else if target_fd == 2 && redirect_target_fd(&target).is_none() {
-                        let stdout_target = state.fd_target(1).cloned().unwrap_or(OutputTarget::Stdout);
-                        state.fds.insert(2, stdout_target);
-                        state.saw_output_redirect = true;
-                        continue;
                     } else {
                         self.write_ambiguous_redirect_diagnostic(state, &target)?;
                         self.exit_code = 1;
