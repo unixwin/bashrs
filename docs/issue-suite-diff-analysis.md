@@ -801,6 +801,26 @@ That path must preserve the parent shopt state and Bash's ENOEXEC fallback
 semantics. The existing bridges therefore remain in place until those real
 owners are fixed and covered.
 
+### 2026-08-13 WinuxCmd streaming `head` fixes the producer hang
+
+The BusyBox `heredoc_huge`/large-producer failure was reproduced through the
+Windows external pipeline path. WinuxCmd's `head` decoded stdin by first
+reading the entire stream, so an unbounded producer such as `yes` could never
+reach EOF and the pipeline deadlocked. The stdin path in
+`WinuxCmd/src/commands/head.cpp` now uses the existing bounded streaming
+reader; whole-stream text decoding remains for regular files. WinuxCmd's
+`yes` implementation continues until its downstream pipe closes.
+
+Verification with the rebuilt WinuxCmd backend:
+
+- `cargo test --test cli_tests external_pipeline` (4/4 passed)
+- `cargo test --test cli_tests external_pipeline_writes_large_output_redirect_without_blocking`
+  (passed; 120,000-byte output)
+
+The implementation change is in the separate WinuxCmd working tree and must
+be committed/released there before this evidence can close the Rubash-side
+issue.
+
 ### 2026-08-13 process-substitution redirect recovery
 
 The `shopt1.sub` investigation exposed a narrower process-substitution
