@@ -209,7 +209,7 @@ where
                 {
                     status = EXECUTION_FAILURE;
                 }
-                crate::builtins::set::print_shell_option(env_vars, name, true, stdout)?;
+                crate::builtins::set::print_shell_option(env_vars, name, print, stdout)?;
             }
             ShoptMode::Query if !crate::builtins::set::shell_option_enabled(env_vars, name) => {
                 status = EXECUTION_FAILURE;

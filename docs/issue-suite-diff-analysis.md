@@ -34,6 +34,15 @@ Verification: `cargo test --test executor_tests command_chaining::part_005`
 (40 passed); Bash upstream `run-heredoc`, `run-comsub`, `run-comsub-eof`,
 `run-comsub-posix`, `run-redir`, `run-vredir`, and `run-procsub` (7/7).
 
+### 2026-08-13 shopt -o display mode
+
+`shopt -o option` uses the normal readable `name<tab>on|off` format. Rubash
+was incorrectly passing the reusable-print flag unconditionally, producing
+`set +/-o name` for the non-`-p` form. The `-p` form remains reusable.
+
+Verification: Bash upstream `run-shopt` (1/1) and `cargo test --lib`
+(163 passed).
+
 ### 2026-08-13 Arithmetic Literal Diagnostics Progress
 
 Arithmetic literal failures now preserve the GNU Bash `expr.c::strlong`
