@@ -1,6 +1,38 @@
 use super::*;
 
 impl Executor {
+    pub(in crate::executor) fn reparse_reserved_word_aliases(&self, source: &str) -> Option<String> {
+        let mut tokens = crate::lexer::tokenize(source);
+        let mut changed = false;
+        for token in &mut tokens {
+            if !matches!(token.kind, crate::lexer::TokenKind::Word | crate::lexer::TokenKind::Keyword)
+            {
+                continue;
+            }
+            let Some(alias) = self.aliases.get(&token.value) else {
+                continue;
+            };
+            let value = alias.value.trim();
+            if !matches!(value, "if" | "then" | "elif" | "else" | "fi") {
+                continue;
+            }
+            token.value = value.to_string();
+            token.raw = value.to_string();
+            changed = true;
+        }
+        if !changed {
+            return None;
+        }
+        Some(
+            tokens
+                .iter()
+                .filter(|token| token.kind != crate::lexer::TokenKind::Eof)
+                .map(|token| token.raw.as_str())
+                .collect::<Vec<_>>()
+                .join(" "),
+        )
+    }
+
     pub(in crate::executor) fn report_arithmetic_error_with_label(
         &self,
         label: &str,
@@ -241,7 +273,7 @@ impl Executor {
         }
         let alias = self.aliases.get(word)?;
         if !needs_parser_level_alias_expansion(&alias.value)
-            && alias.value.trim() != "if"
+            && !matches!(alias.value.trim(), "if" | "then" | "elif" | "else" | "fi")
         {
             return None;
         }

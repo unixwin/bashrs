@@ -495,6 +495,18 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
                 "unexpected token `then'".to_string()
             },
         );
+        // Keep the original token stream available to the executor.  Bash
+        // expands aliases while parsing, so an alias such as `f=fi` can close
+        // this compound command even though the first parse did not see `fi`.
+        // The parse-error marker still makes genuinely malformed input fail.
+        state.current_cmd.assignments.insert(
+            "__RUBASH_PARSE_SOURCE__".to_string(),
+            tokens[i..]
+                .iter()
+                .map(|token| token.raw.as_str())
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
         let mut next_i = i + 1;
         while tokens.get(next_i).is_some() {
             next_i += 1;

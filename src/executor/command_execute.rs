@@ -13,6 +13,13 @@ impl Executor {
         self.report_command_heredoc_errors(cmd)?;
 
         if cmd.assignments.contains_key("__RUBASH_PARSE_ERROR__") {
+            if let Some(source) = cmd.assignments.get("__RUBASH_PARSE_SOURCE__") {
+                if let Some(reparsed) = self.reparse_reserved_word_aliases(source) {
+                    let tokens = crate::lexer::tokenize(&reparsed);
+                    let ast = crate::parser::parse(&tokens);
+                    return self.execute_ast(&ast);
+                }
+            }
             let message = cmd
                 .assignments
                 .get("__RUBASH_PARSE_ERROR__")
