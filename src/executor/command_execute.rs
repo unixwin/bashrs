@@ -122,6 +122,14 @@ impl Executor {
         // can apply Bash's follow-up command suppression semantics.
         if self.arithmetic_expansion_error.get() {
             self.arithmetic_expansion_error.set(false);
+            if self
+                .env_vars
+                .remove("__RUBASH_ARITH_NOUNSET_ERROR")
+                .is_some()
+            {
+                self.exit_code = 1;
+                return Err(ExecuteError::ExitCode(1));
+            }
             self.exit_code = 1;
             return Ok(());
         }

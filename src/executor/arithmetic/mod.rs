@@ -17,6 +17,10 @@ impl Executor {
             normalize_arithmetic_quotes(&self.expand_arithmetic_special_parameters(expression));
         if crate::builtins::set::shell_option_enabled(&self.env_vars, "nounset") {
             if let Some(name) = arithmetic_unbound_variable(&expression, &self.env_vars) {
+                self.env_vars.insert(
+                    "__RUBASH_ARITH_NOUNSET_ERROR".to_string(),
+                    "1".to_string(),
+                );
                 if !self.arithmetic_expansion_error.replace(true) {
                     eprintln!("{}{}: unbound variable", self.diagnostic_prefix(), name);
                 }
@@ -45,6 +49,10 @@ impl Executor {
             normalize_arithmetic_quotes(&self.expand_arithmetic_special_parameters(expression));
         if crate::builtins::set::shell_option_enabled(&self.env_vars, "nounset") {
             if let Some(name) = arithmetic_unbound_variable(&expression, &self.env_vars) {
+                self.env_vars.insert(
+                    "__RUBASH_ARITH_NOUNSET_ERROR".to_string(),
+                    "1".to_string(),
+                );
                 if !self.arithmetic_expansion_error.replace(true) {
                     eprintln!("{}{}: unbound variable", self.diagnostic_prefix(), name);
                 }
