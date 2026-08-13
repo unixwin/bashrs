@@ -327,6 +327,7 @@ impl Executor {
                 redirect.target = new_target.clone();
             }
         }
+        sync_ordered_redirect_targets(&mut rewritten);
         Ok((rewritten, files))
     }
 
@@ -617,6 +618,23 @@ impl Executor {
             return Some(input);
         }
         Some(strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(body)).to_string())
+    }
+}
+
+fn sync_ordered_redirect_targets(command: &mut CommandNode) {
+    for redirect in &mut command.redirects {
+        if !redirect.target.starts_with(">(") {
+            continue;
+        }
+        let source = if redirect.fd.unwrap_or(1) == 2 {
+            command.redirect_err_append.as_ref().or(command.redirect_err.as_ref())
+        } else {
+            command.redirect_out.as_ref().or(command.append.as_ref())
+        };
+        if let Some(source) = source {
+            redirect.target = source.target.clone();
+            redirect.target_metadata = source.target_metadata.clone();
+        }
     }
 }
 

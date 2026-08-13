@@ -294,6 +294,18 @@ pub(in crate::executor) fn apply_stdout_append_redirect(
     for command in commands {
         if command.redirect_out.is_none() && command.append.is_none() {
             command.append = Some(redirect.clone());
+            if command.redirects.iter().any(|existing| {
+                matches!(
+                    existing.kind,
+                    crate::parser::RedirectKind::Output
+                        | crate::parser::RedirectKind::Append
+                        | crate::parser::RedirectKind::ClobberOutput
+                )
+            }) {
+                command.redirects.push(redirect.clone());
+            } else {
+                command.redirects.insert(0, redirect.clone());
+            }
         }
         if let Some(for_command) = &mut command.for_command {
             apply_stdout_append_redirect(&mut for_command.body, redirect);
@@ -357,7 +369,19 @@ pub(in crate::executor) fn apply_stderr_append_redirect(
             command.redirect_err.is_none() && command.redirect_err_append.is_none();
         if inherits_stderr {
             command.redirect_err_append = Some(redirect.clone());
-            command.redirects.insert(0, redirect.clone());
+            let has_stdout_redirect = command.redirects.iter().any(|existing| {
+                matches!(
+                    existing.kind,
+                    crate::parser::RedirectKind::Output
+                        | crate::parser::RedirectKind::Append
+                        | crate::parser::RedirectKind::ClobberOutput
+                ) && existing.fd.unwrap_or(1) == 1
+            });
+            if has_stdout_redirect {
+                command.redirects.push(redirect.clone());
+            } else {
+                command.redirects.insert(0, redirect.clone());
+            }
             apply_inherited_stderr_to_stdout_fd_copy(command, redirect);
         }
         if let Some(for_command) = &mut command.for_command {
