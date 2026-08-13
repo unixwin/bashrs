@@ -1,11 +1,23 @@
 use super::*;
 
 impl Executor {
+    pub(in crate::executor) fn open_input_redirect(&self, target: &str) -> io::Result<File> {
+        if is_null_device(target) {
+            return File::open(shell_path_to_windows("/dev/null", &self.env_vars));
+        }
+        File::open(shell_path_to_windows(target, &self.env_vars))
+    }
+
     pub(in crate::executor) fn create_redirect_output(
         &self,
         target: &str,
         clobber: bool,
     ) -> io::Result<File> {
+        if is_null_device(target) {
+            return OpenOptions::new()
+                .write(true)
+                .open(shell_path_to_windows("/dev/null", &self.env_vars));
+        }
         let path = shell_path_to_windows(target, &self.env_vars);
         if !clobber && crate::builtins::set::shell_option_enabled(&self.env_vars, "noclobber") {
             return OpenOptions::new().write(true).create_new(true).open(path);
@@ -28,6 +40,12 @@ impl Executor {
                 io::ErrorKind::Unsupported,
                 "stdio file descriptor",
             ));
+        }
+        if is_null_device(&path) {
+            return OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(shell_path_to_windows("/dev/null", &self.env_vars));
         }
         OpenOptions::new()
             .create(true)
@@ -66,6 +84,9 @@ impl Executor {
                 writer.write_all(output)?;
             }
             path => {
+                if is_null_device(path) {
+                    return Ok(true);
+                }
                 let mut file = OpenOptions::new()
                     .create(true)
                     .append(true)
@@ -285,7 +306,9 @@ impl Executor {
         }
 
         let mut flag_updates = Vec::new();
-        for (index, arg) in args.iter().enumerate() {
+        let mut index = 0;
+        while index < args.len() {
+            let arg = &args[index];
             if arg == "--" {
                 self.apply_set_flag_updates(&flag_updates);
                 self.positional_params = args[index + 1..].to_vec();
@@ -309,15 +332,40 @@ impl Executor {
             };
 
             let flags = &arg[1..];
-            if flags.is_empty()
-                || flags
-                    .chars()
-                    .any(|flag| !self.is_supported_short_set_flag(flag))
+            if flags.is_empty() {
+                self.apply_set_flag_updates(&flag_updates);
+                self.positional_params = args[index + 1..].to_vec();
+                return true;
+            }
+
+            if flags == "o" {
+                let Some(option_name) = args.get(index + 1) else {
+                    return false;
+                };
+                if !crate::builtins::set::is_shell_option(option_name) {
+                    return false;
+                }
+                let enabled = prefix == '-';
+                crate::builtins::set::set_shell_option(&mut self.env_vars, option_name, enabled);
+                if option_name == "posix" {
+                    self.env_vars.insert(
+                        "__RUBASH_POSIX_MODE".to_string(),
+                        if enabled { "1" } else { "0" }.to_string(),
+                    );
+                }
+                index += 2;
+                continue;
+            }
+
+            if flags
+                .chars()
+                .any(|flag| !self.is_supported_short_set_flag(flag))
             {
                 return false;
             }
 
             flag_updates.push((prefix, flags.to_string()));
+            index += 1;
         }
 
         false

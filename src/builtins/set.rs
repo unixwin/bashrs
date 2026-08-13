@@ -94,7 +94,10 @@ where
                     {
                         if !is_shell_option(name) {
                             writeln!(stderr, "rubash: set: {}: invalid option name", name)?;
-                            return Ok(EXECUTION_FAILURE);
+                            // GNU set.def treats an invalid `-o` name as a
+                            // usage error, distinct from a valid option that
+                            // simply reports failure.
+                            return Ok(EX_USAGE);
                         }
                         set_shell_option(env_vars, name, prefix == '-');
                         index += 1;
@@ -191,6 +194,15 @@ mod tests {
 
         assert_eq!(status, EXECUTION_FAILURE);
         assert!(stderr.contains("invalid option"));
+    }
+
+    #[test]
+    fn set_o_invalid_name_is_usage_error() {
+        let env_vars = HashMap::new();
+        let (status, _stdout, stderr) = run_set(&["-o", "no_such"], &env_vars);
+
+        assert_eq!(status, EX_USAGE);
+        assert!(stderr.contains("invalid option name"));
     }
 
     #[test]

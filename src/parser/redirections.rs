@@ -529,13 +529,10 @@ fn fill_pending_heredoc_body_recursive(cmd: &mut CommandNode, body: &str) -> boo
     if let Some(if_command) = &mut cmd.if_command {
         if fill_pending_heredoc_body_in_commands(&mut if_command.condition, body)
             || fill_pending_heredoc_body_in_commands(&mut if_command.then_body, body)
-            || if_command
-                .elif_branches
-                .iter_mut()
-                .any(|branch| {
-                    fill_pending_heredoc_body_in_commands(&mut branch.condition, body)
-                        || fill_pending_heredoc_body_in_commands(&mut branch.body, body)
-                })
+            || if_command.elif_branches.iter_mut().any(|branch| {
+                fill_pending_heredoc_body_in_commands(&mut branch.condition, body)
+                    || fill_pending_heredoc_body_in_commands(&mut branch.body, body)
+            })
             || if_command
                 .else_body
                 .as_mut()

@@ -248,6 +248,55 @@ fn test_set_nounset_with_positional_operands() {
 }
 
 #[test]
+fn test_set_plus_assigns_operands_after_empty_option_word() {
+    let output_path = "target/rubash-set-plus-operands-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input =
+        format!("set + alpha beta; printf '%s %s %s\\n' \"$#\" \"$1\" \"$2\" > {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    assert!(executor.execute_ast(&ast).is_ok());
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "2 alpha beta\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_set_long_option_continues_to_positional_operands() {
+    let output_path = "target/rubash-set-long-option-operands-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "set -o pipefail alpha beta; printf '%s %s %s %s\\n' \"$#\" \"$1\" \"$2\" \"$-\" > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    assert!(executor.execute_ast(&ast).is_ok());
+    let output = fs::read_to_string(output_path).unwrap();
+    assert!(output.starts_with("2 alpha beta "));
+    assert!(output.trim_end().ends_with("hB"));
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_set_plus_long_option_continues_to_positional_operands() {
+    let output_path = "target/rubash-set-plus-long-option-operands-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "set +o pipefail alpha beta; printf '%s %s %s\\n' \"$#\" \"$1\" \"$2\" > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    assert!(executor.execute_ast(&ast).is_ok());
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "2 alpha beta\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_set_o_nounset_updates_shell_flags() {
     let output_path = "target/rubash-set-o-nounset-flags-output.txt";
     let _ = fs::remove_file(output_path);

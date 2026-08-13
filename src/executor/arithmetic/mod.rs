@@ -13,7 +13,8 @@ use super::Executor;
 
 impl Executor {
     pub(crate) fn eval_arithmetic_command_value(&mut self, expression: &str) -> Option<i128> {
-        let expression = self.expand_arithmetic_special_parameters(expression);
+        let expression =
+            normalize_arithmetic_quotes(&self.expand_arithmetic_special_parameters(expression));
         if crate::builtins::set::shell_option_enabled(&self.env_vars, "nounset") {
             if let Some(name) = arithmetic_unbound_variable(&expression, &self.env_vars) {
                 if !self.arithmetic_expansion_error.replace(true) {
@@ -40,7 +41,8 @@ impl Executor {
     /// before evaluation (`$(( "1" + 1 ))` is `2`), while the command
     /// context (`for (( ... ))` headers) keeps them and rejects them.
     pub(crate) fn eval_arithmetic_expansion_value(&mut self, expression: &str) -> Option<i128> {
-        let expression = self.expand_arithmetic_special_parameters(expression);
+        let expression =
+            normalize_arithmetic_quotes(&self.expand_arithmetic_special_parameters(expression));
         if crate::builtins::set::shell_option_enabled(&self.env_vars, "nounset") {
             if let Some(name) = arithmetic_unbound_variable(&expression, &self.env_vars) {
                 if !self.arithmetic_expansion_error.replace(true) {
@@ -50,7 +52,7 @@ impl Executor {
             }
         }
         eval_mutable_arith_value_with_random(
-            &strip_arith_double_quotes(&expression),
+            &expression,
             &mut self.env_vars,
             Some(&self.random_state),
         )
@@ -74,7 +76,7 @@ pub(crate) fn eval_conditional_arith_value(
     env_vars: &HashMap<String, String>,
 ) -> Option<i128> {
     let mut env_vars = env_vars.clone();
-    eval_mutable_arith_value(&strip_arith_double_quotes(value), &mut env_vars)
+    eval_mutable_arith_value(value, &mut env_vars)
 }
 
 pub(super) fn arithmetic_unbound_variable(
@@ -111,7 +113,18 @@ pub(super) fn arithmetic_unbound_variable(
         }
         previous = name.chars().last();
     }
-    None
+    // `expr.c::evalexp` marks every parser failure invalid, including
+    // malformed array subscripts and adjacent operands that do not fit one
+    // of the specialized diagnostics above. Keep the failure observable even
+    // when we cannot identify the exact parser token.
+    let token = expression
+        .split_whitespace()
+        .last()
+        .filter(|token| !token.is_empty())
+        .unwrap_or(expression);
+    Some(format!(
+        "{expression}: syntax error in expression (error token is \"{token}\")"
+    ))
 }
 
 /// Strip double quotes from an arithmetic expression before evaluation.
@@ -156,6 +169,20 @@ pub(super) fn strip_arith_double_quotes(input: &str) -> String {
     output
 }
 
+fn normalize_arithmetic_quotes(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' && matches!(chars.peek(), Some('"')) {
+            chars.next();
+            output.push('"');
+        } else {
+            output.push(ch);
+        }
+    }
+    output
+}
+
 /// Produces a Bash-style error message for an arithmetic expansion that
 /// failed to evaluate (`$(( 1.5 ))`, `$(( 2 ** -1 ))`, division by zero, ...).
 /// Rubash used to silently drop these; Bash reports them on stderr with rc=1.
@@ -166,9 +193,46 @@ pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<
         ));
     }
 
-    if let Some(token) = invalid_based_literal(expression) {
+    if let Some((token, error)) = invalid_based_literal(expression) {
         return Some(format!(
-            "{expression}: value too great for base (error token is \"{token}\")"
+            "{expression}: {error} (error token is \"{token}\")"
+        ));
+    }
+
+    // Bash rejects numeric constants as assignment or increment lvalues.
+    // The evaluator reports this as a failed expression; preserve the useful
+    // diagnostic instead of silently returning status 1.
+    let trimmed = expression.trim();
+    if trimmed == "++" || trimmed == "--" {
+        let token = if trimmed == "++" { "+ " } else { "- " };
+        let display_expression = format!("{trimmed} ");
+        return Some(format!(
+            "{display_expression}: syntax error: operand expected (error token is \"{token}\")"
+        ));
+    }
+    if trimmed
+        .split_once('=')
+        .is_some_and(|(left, _)| left.trim().chars().all(|ch| ch.is_ascii_digit()))
+        || trimmed
+            .strip_suffix("++")
+            .or_else(|| trimmed.strip_suffix("--"))
+            .is_some_and(|value| value.trim().chars().all(|ch| ch.is_ascii_digit()))
+    {
+        let message = if trimmed.split_once('=').is_some() {
+            "attempted assignment to non-variable"
+        } else {
+            "syntax error: operand expected"
+        };
+        return Some(format!(
+            "{expression}: {message} (error token is \"{}\")",
+            trimmed.trim_start_matches(|ch: char| ch.is_ascii_digit())
+        ));
+    }
+
+    if trimmed.ends_with(['+', '-', '*', '/', '%', '&', '|', '^', '<', '>']) {
+        let token = trimmed.chars().last().unwrap_or_default();
+        return Some(format!(
+            "{expression}: syntax error: operand expected (error token is \"{token}\")"
         ));
     }
 
@@ -253,13 +317,31 @@ fn invalid_octal_literal(expression: &str) -> Option<String> {
     None
 }
 
-fn invalid_based_literal(expression: &str) -> Option<String> {
+#[derive(Clone, Copy)]
+enum ArithmeticLiteralError {
+    InvalidBase,
+    InvalidIntegerConstant,
+    ValueTooGreatForBase,
+    InvalidNumber,
+}
+
+impl ArithmeticLiteralError {
+    fn message(self) -> &'static str {
+        match self {
+            Self::InvalidBase => "invalid arithmetic base",
+            Self::InvalidIntegerConstant => "invalid integer constant",
+            Self::ValueTooGreatForBase => "value too great for base",
+            Self::InvalidNumber => "invalid number",
+        }
+    }
+}
+
+fn invalid_based_literal(expression: &str) -> Option<(String, &'static str)> {
     let bytes = expression.as_bytes();
     let mut index = 0;
     while index < bytes.len() {
         if !bytes[index].is_ascii_digit()
-            || (index > 0
-                && (bytes[index - 1].is_ascii_alphanumeric() || bytes[index - 1] == b'_'))
+            || (index > 0 && (bytes[index - 1].is_ascii_alphanumeric() || bytes[index - 1] == b'_'))
         {
             index += 1;
             continue;
@@ -274,26 +356,44 @@ fn invalid_based_literal(expression: &str) -> Option<String> {
         }
         index += 1;
         let digits_start = index;
-        while bytes.get(index).is_some_and(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'@' | b'_')
-        }) {
+        while bytes
+            .get(index)
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'@' | b'_'))
+        {
             index += 1;
         }
-        let token = &expression[start..index];
+        let mut token_end = index;
+        while bytes.get(token_end) == Some(&b'#') {
+            token_end += 1;
+            while bytes
+                .get(token_end)
+                .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'@' | b'_'))
+            {
+                token_end += 1;
+            }
+        }
+        let token = &expression[start..token_end];
         let base = expression[start..digits_start - 1].parse::<u32>().ok();
         let digits = &expression[digits_start..index];
-        let valid = base.is_some_and(|base| {
-            (2..=64).contains(&base)
-                && !digits.is_empty()
-                && digits
-                    .chars()
-                    .all(|digit| arithmetic_digit_value(digit, base).is_some_and(|value| value < base))
-        });
-        if !valid {
-            return Some(token.to_string());
-        }
+        let error = if token_end != index {
+            ArithmeticLiteralError::InvalidNumber
+        } else if base == Some(0) {
+            ArithmeticLiteralError::InvalidNumber
+        } else if base.is_none() || !base.is_some_and(|base| (2..=64).contains(&base)) {
+            ArithmeticLiteralError::InvalidBase
+        } else if digits.is_empty() {
+            ArithmeticLiteralError::InvalidIntegerConstant
+        } else if !digits.chars().all(|digit| {
+            arithmetic_digit_value(digit, base.unwrap()).is_some_and(|value| value < base.unwrap())
+        }) {
+            ArithmeticLiteralError::ValueTooGreatForBase
+        } else {
+            continue;
+        };
+        return Some((token.to_string(), error.message()));
     }
     invalid_octal_literal(expression)
+        .map(|token| (token, ArithmeticLiteralError::InvalidNumber.message()))
 }
 
 pub(super) fn arithmetic_division_by_zero_token(expression: &str) -> Option<&'static str> {
@@ -338,6 +438,12 @@ pub(super) fn eval_mutable_arith_value_with_random(
     env_vars: &mut HashMap<String, String>,
     random_state: Option<&Cell<u32>>,
 ) -> Option<i128> {
+    // GNU Bash's subexpr() treats an empty arithmetic expression as zero.
+    // This matters for expansion and variable contexts, where an empty
+    // quoted operand is valid rather than a parser failure.
+    if value.trim().is_empty() {
+        return Some(0);
+    }
     let mut parser = ConditionalArithParser {
         input: value.as_bytes(),
         pos: 0,

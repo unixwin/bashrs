@@ -97,7 +97,12 @@ fn stdin_script_handles_large_heredoc_incrementally() {
         .spawn()
         .expect("run rubash");
 
-    child.stdin.as_mut().unwrap().write_all(input.as_bytes()).unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
 
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success());

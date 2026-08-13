@@ -138,40 +138,6 @@ impl Executor {
         true
     }
 
-    pub(super) fn execute_upstream_herestr_script(&mut self) -> bool {
-        if self.env_vars.contains_key(HERESTR_TEST_DONE)
-            || !self
-                .env_vars
-                .get("__RUBASH_SCRIPT_NAME")
-                .is_some_and(|script| script.ends_with("herestr.tests"))
-        {
-            return false;
-        }
-
-        print!("{}", HERESTR_TEST_OUTPUT.replace("\r\n", "\n"));
-        self.env_vars
-            .insert(HERESTR_TEST_DONE.to_string(), "1".to_string());
-        self.exit_code = 0;
-        true
-    }
-
-    pub(super) fn execute_upstream_invert_script(&mut self) -> bool {
-        if self.env_vars.contains_key(INVERT_TEST_DONE)
-            || !self
-                .env_vars
-                .get("__RUBASH_SCRIPT_NAME")
-                .is_some_and(|script| script.ends_with("invert.tests"))
-        {
-            return false;
-        }
-
-        print!("{}", INVERT_TEST_OUTPUT.replace("\r\n", "\n"));
-        self.env_vars
-            .insert(INVERT_TEST_DONE.to_string(), "1".to_string());
-        self.exit_code = 0;
-        true
-    }
-
     pub(super) fn execute_upstream_posixpipe_script(&mut self) -> bool {
         if self.env_vars.contains_key(POSIXPIPE_TEST_DONE)
             || !self
@@ -202,57 +168,6 @@ impl Executor {
         print!("{}", SHOPT_TEST_OUTPUT.replace("\r\n", "\n"));
         self.env_vars
             .insert(SHOPT_TEST_DONE.to_string(), "1".to_string());
-        self.exit_code = 0;
-        true
-    }
-
-    pub(super) fn execute_upstream_strip_script(&mut self) -> bool {
-        if self.env_vars.contains_key(STRIP_TEST_DONE)
-            || !self
-                .env_vars
-                .get("__RUBASH_SCRIPT_NAME")
-                .is_some_and(|script| script.ends_with("strip.tests"))
-        {
-            return false;
-        }
-
-        print!("{}", STRIP_TEST_OUTPUT.replace("\r\n", "\n"));
-        self.env_vars
-            .insert(STRIP_TEST_DONE.to_string(), "1".to_string());
-        self.exit_code = 0;
-        true
-    }
-
-    pub(super) fn execute_upstream_tilde_script(&mut self) -> bool {
-        if self.env_vars.contains_key(TILDE_TEST_DONE)
-            || !self
-                .env_vars
-                .get("__RUBASH_SCRIPT_NAME")
-                .is_some_and(|script| script.ends_with("tilde.tests"))
-        {
-            return false;
-        }
-
-        print!("{}", TILDE_TEST_OUTPUT.replace("\r\n", "\n"));
-        self.env_vars
-            .insert(TILDE_TEST_DONE.to_string(), "1".to_string());
-        self.exit_code = 0;
-        true
-    }
-
-    pub(super) fn execute_upstream_tilde2_script(&mut self) -> bool {
-        if self.env_vars.contains_key(TILDE2_TEST_DONE)
-            || !self
-                .env_vars
-                .get("__RUBASH_SCRIPT_NAME")
-                .is_some_and(|script| script.ends_with("tilde2.tests"))
-        {
-            return false;
-        }
-
-        print!("{}", TILDE2_TEST_OUTPUT.replace("\r\n", "\n"));
-        self.env_vars
-            .insert(TILDE2_TEST_DONE.to_string(), "1".to_string());
         self.exit_code = 0;
         true
     }

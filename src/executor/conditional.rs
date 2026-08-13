@@ -163,10 +163,7 @@ impl Executor {
         // starts with `)` (`[[ ) ]]`) as syntax errors. Rubash has no parser
         // error channel yet, so evaluate them as false instead of letting
         // the fallback treat them as a truthy word.
-        if args.is_empty()
-            || args[0] == ")"
-            || (args.len() == 1 && args[0] == "]]")
-        {
+        if args.is_empty() || args[0] == ")" || (args.len() == 1 && args[0] == "]]") {
             return Some(1);
         }
 
@@ -283,16 +280,12 @@ impl Executor {
                 extglob_case_pattern_matches_nocase(&right_pattern, &left)
             }
             "=" | "==" if extglob => extglob_case_pattern_matches(&right_pattern, &left),
-            "=" | "==" => {
-                conditional_pattern_or_string_matches(&left, &right_pattern, nocasematch)
-            }
+            "=" | "==" => conditional_pattern_or_string_matches(&left, &right_pattern, nocasematch),
             "!=" if extglob && nocasematch => {
                 !extglob_case_pattern_matches_nocase(&right_pattern, &left)
             }
             "!=" if extglob => !extglob_case_pattern_matches(&right_pattern, &left),
-            "!=" => {
-                !conditional_pattern_or_string_matches(&left, &right_pattern, nocasematch)
-            }
+            "!=" => !conditional_pattern_or_string_matches(&left, &right_pattern, nocasematch),
             "=~" => self.conditional_regex_match(&left, &right),
             "<" => left < right,
             ">" => left > right,
@@ -320,9 +313,9 @@ impl Executor {
         while index < chars.len() {
             if chars[index] == '\\' {
                 if unquoted_start < index {
-                    output.push_str(&self.expand_word(
-                        &chars[unquoted_start..index].iter().collect::<String>(),
-                    ));
+                    output.push_str(
+                        &self.expand_word(&chars[unquoted_start..index].iter().collect::<String>()),
+                    );
                 }
                 if let Some(next) = chars.get(index + 1) {
                     output.push('\\');
@@ -340,9 +333,9 @@ impl Executor {
                 continue;
             };
             if unquoted_start < index {
-                output.push_str(&self.expand_word(
-                    &chars[unquoted_start..index].iter().collect::<String>(),
-                ));
+                output.push_str(
+                    &self.expand_word(&chars[unquoted_start..index].iter().collect::<String>()),
+                );
             }
             let body = chars[index + opener_len..end].iter().collect::<String>();
             let value = match kind {
@@ -356,9 +349,7 @@ impl Executor {
         }
 
         if unquoted_start < chars.len() {
-            output.push_str(&self.expand_word(
-                &chars[unquoted_start..].iter().collect::<String>(),
-            ));
+            output.push_str(&self.expand_word(&chars[unquoted_start..].iter().collect::<String>()));
         }
         output
     }
@@ -541,6 +532,7 @@ impl Executor {
             &mut self.env_vars,
             Some(&self.random_state),
         ) else {
+            self.report_arithmetic_error_with_label("[[", &left);
             return false;
         };
         let Some(right) = eval_mutable_arith_value_with_random(
@@ -548,6 +540,7 @@ impl Executor {
             &mut self.env_vars,
             Some(&self.random_state),
         ) else {
+            self.report_arithmetic_error_with_label("[[", &right);
             return false;
         };
         match op {

@@ -101,25 +101,58 @@ where
         index = 1;
     }
 
-    if args
-        .get(index)
-        .is_some_and(|arg| arg.starts_with('-') && arg[1..].contains('l'))
-    {
+    let mut list_signals = false;
+    let mut print_trap_commands = false;
+    let mut print_actions = false;
+    while let Some(arg) = args.get(index) {
+        if arg == "--" {
+            index += 1;
+            break;
+        }
+        if !arg.starts_with('-') || arg == "-" {
+            break;
+        }
+        for option in arg[1..].chars() {
+            match option {
+                'l' => list_signals = true,
+                'p' => print_trap_commands = true,
+                'P' => print_actions = true,
+                _ => {
+                    writeln!(stderr, "rubash: trap: {arg}: invalid option")?;
+                    print_usage(stderr)?;
+                    return Ok(EX_USAGE);
+                }
+            }
+        }
+        index += 1;
+    }
+
+    if list_signals {
         print_signal_list(stdout)?;
         return Ok(0);
     }
 
-    if index >= args.len() || args.get(index).map(String::as_str) == Some("-p") {
-        if args.get(index).map(String::as_str) == Some("-p") {
-            index += 1;
-        }
+    if print_trap_commands && print_actions {
+        writeln!(stderr, "rubash: trap: cannot specify both -p and -P")?;
+        return Ok(EX_USAGE);
+    }
+
+    if print_actions && index >= args.len() {
+        writeln!(stderr, "rubash: trap: -P requires at least one signal name")?;
+        return Ok(EX_USAGE);
+    }
+
+    if index >= args.len() || print_trap_commands || print_actions {
         let signals = normalized_signals(&args[index..], stderr)?;
+        if signals.invalid {
+            return Ok(1);
+        }
         let selected = if args[index..].is_empty() {
             None
         } else {
             Some(signals.signals.as_slice())
         };
-        print_traps(env_vars, selected, stdout)?;
+        print_traps(env_vars, selected, stdout, print_actions)?;
         return Ok(i32::from(signals.invalid));
     }
 
@@ -246,6 +279,7 @@ fn print_traps<W>(
     env_vars: &HashMap<String, String>,
     selected: Option<&[String]>,
     stdout: &mut W,
+    actions_only: bool,
 ) -> io::Result<()>
 where
     W: Write,
@@ -257,7 +291,11 @@ where
 
     for signal in signals {
         if let Some(action) = env_vars.get(&trap_key(&signal)) {
-            writeln!(stdout, "trap -- {} {}", shell_quote(action), signal)?;
+            if actions_only {
+                writeln!(stdout, "{action}")?;
+            } else {
+                writeln!(stdout, "trap -- {} {}", shell_quote(action), signal)?;
+            }
         }
     }
     Ok(())

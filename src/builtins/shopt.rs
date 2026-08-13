@@ -139,7 +139,12 @@ where
             ShoptMode::Unset => set_option(env_vars, name, false),
             ShoptMode::Query if !option_enabled(env_vars, name) => status = EXECUTION_FAILURE,
             ShoptMode::Query => {}
-            ShoptMode::List if print => print_shopt(env_vars, name, true, stdout)?,
+            ShoptMode::List if print => {
+                if !option_enabled(env_vars, name) {
+                    status = EXECUTION_FAILURE;
+                }
+                print_shopt(env_vars, name, true, stdout)?;
+            }
             ShoptMode::List => {
                 if !option_enabled(env_vars, name) {
                     status = EXECUTION_FAILURE;
@@ -199,6 +204,11 @@ where
                 crate::builtins::set::set_shell_option(env_vars, name, false);
             }
             _ if print || mode == ShoptMode::List => {
+                if mode == ShoptMode::List
+                    && !crate::builtins::set::shell_option_enabled(env_vars, name)
+                {
+                    status = EXECUTION_FAILURE;
+                }
                 crate::builtins::set::print_shell_option(env_vars, name, true, stdout)?;
             }
             ShoptMode::Query if !crate::builtins::set::shell_option_enabled(env_vars, name) => {

@@ -307,9 +307,7 @@ impl Executor {
     }
 }
 
-fn split_top_level_pattern_operator(
-    name: &str,
-) -> Option<(&str, &str, PatternRemoval)> {
+fn split_top_level_pattern_operator(name: &str) -> Option<(&str, &str, PatternRemoval)> {
     let chars = name.char_indices().collect::<Vec<_>>();
     let mut nested = 0usize;
     let mut quote = None;

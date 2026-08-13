@@ -187,7 +187,5 @@ fn integer_compound_assignment_is_scalar(value: &str) -> bool {
     let Some(inner) = value.strip_prefix('(').and_then(|v| v.strip_suffix(')')) else {
         return false;
     };
-    !inner.is_empty()
-        && !inner.chars().any(|ch| ch.is_whitespace())
-        && !inner.contains(['[', ']'])
+    !inner.is_empty() && !inner.chars().any(|ch| ch.is_whitespace()) && !inner.contains(['[', ']'])
 }

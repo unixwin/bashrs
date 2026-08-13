@@ -87,11 +87,14 @@ impl Executor {
             if let Some(value) = self.eval_arithmetic_expansion_value(expression) {
                 return value.to_string();
             }
-            if let Some(message) = crate::executor::arithmetic::arithmetic_error_message(expression)
-            {
-                if !self.arithmetic_expansion_error.replace(true) {
-                    eprintln!("{}{}", self.diagnostic_prefix(), message);
-                }
+            if !self.arithmetic_expansion_error.replace(true) {
+                let message = crate::executor::arithmetic::arithmetic_error_message(expression)
+                    .unwrap_or_else(|| {
+                        format!(
+                            "{expression}: syntax error in expression (error token is \"{expression}\")"
+                        )
+                    });
+                eprintln!("{}{}", self.diagnostic_prefix(), message);
             }
         }
 

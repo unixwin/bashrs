@@ -59,6 +59,35 @@ fn test_cat_reads_process_substitution_argument() {
     let _ = fs::remove_file(output_path);
 }
 
+#[cfg(windows)]
+#[test]
+fn test_process_substitution_extensionless_script_preserves_shopt_state() {
+    let helper_path = target_test_path("rubash-process-subst-shopt-helper");
+    let output_path = target_test_path("rubash-process-subst-shopt-output.txt");
+    let _ = fs::remove_file(&helper_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(&helper_path, "shopt -q completion_strip_exe; echo completion:$?\nshopt -q globskipdots; echo globskip:$?\n").unwrap();
+
+    let helper = shell_test_path(&helper_path);
+    let output = shell_test_path(&output_path);
+    let input =
+        format!("shopt -s completion_strip_exe; shopt -u globskipdots; cat <({helper}) > {output}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(&output_path).unwrap(),
+        "completion:0\nglobskip:1\n"
+    );
+    let _ = fs::remove_file(helper_path);
+    let _ = fs::remove_file(output_path);
+}
+
 #[test]
 fn test_process_substitution_preserves_quoted_printf_escapes() {
     let output_path = "target/rubash-process-subst-printf-quoted-output.txt";

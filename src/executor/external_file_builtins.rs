@@ -163,22 +163,20 @@ impl Executor {
             return Ok(true);
         }
 
-        if cmd.words.len() <= 1 {
+        if !cat_has_file_operands(cmd) {
             if let Some(input) = self.read_function_stdin('\0', None, false) {
                 self.write_cat_output(cmd, input.as_bytes())?;
                 self.exit_code = 0;
                 return Ok(true);
             }
+            if cmd.words.len() <= 1 {
+                return Ok(false);
+            }
             return Ok(false);
         }
 
         let mut output = Vec::new();
-        for word in cmd
-            .words
-            .iter()
-            .skip(1)
-            .filter(|word| !word.starts_with('-'))
-        {
+        for word in cat_file_operands(cmd) {
             let target = self.expand_word(word);
             match fs::read(shell_path_to_windows(&target, &self.env_vars)) {
                 Ok(bytes) => output.extend(bytes),
@@ -229,4 +227,62 @@ impl Executor {
         self.exit_code = 0;
         Ok(true)
     }
+}
+
+fn cat_file_operands(cmd: &CommandNode) -> Vec<&String> {
+    let mut operands = Vec::new();
+    let mut skip_next = false;
+    let redirect_targets = cat_redirect_targets(cmd);
+
+    for word in cmd.words.iter().skip(1) {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if is_cat_redirect_operator_word(word) {
+            skip_next = true;
+            continue;
+        }
+        if word.starts_with('-') {
+            continue;
+        }
+        if redirect_targets.iter().any(|target| *target == word) {
+            continue;
+        }
+        operands.push(word);
+    }
+
+    operands
+}
+
+fn cat_redirect_targets(cmd: &CommandNode) -> Vec<&String> {
+    [
+        cmd.redirect_in.as_ref(),
+        cmd.redirect_out.as_ref(),
+        cmd.append.as_ref(),
+        cmd.redirect_err.as_ref(),
+        cmd.redirect_err_append.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|redirect| &redirect.target)
+    .collect()
+}
+
+fn cat_has_file_operands(cmd: &CommandNode) -> bool {
+    !cat_file_operands(cmd).is_empty()
+}
+
+fn is_cat_redirect_operator_word(word: &str) -> bool {
+    matches!(
+        word,
+        "<" | ">" | ">|" | ">>" | "2>" | "2>|" | "2>>" | "&>" | "&>>"
+    ) || word.chars().next().is_some_and(|ch| ch.is_ascii_digit())
+        && matches!(
+            word.chars()
+                .skip_while(|ch| ch.is_ascii_digit())
+                .collect::<String>()
+                .as_str(),
+            "<" | ">" | ">|" | ">>"
+        )
 }

@@ -108,7 +108,7 @@ pub(super) fn has_unclosed_quotes(input: &str) -> bool {
     single || double || ansi_single
 }
 
-pub(super) fn has_unclosed_command_substitution(input: &str) -> bool {
+pub(crate) fn has_unclosed_command_substitution(input: &str) -> bool {
     let chars = input.chars().collect::<Vec<_>>();
     let mut index = 0usize;
     let mut depth = 0usize;
@@ -207,6 +207,14 @@ pub(super) fn has_unclosed_command_substitution(input: &str) -> bool {
             continue;
         }
         if ch == '$' && chars.get(index + 1) == Some(&'(') {
+            if chars.get(index + 2) == Some(&'(') {
+                if skip_arithmetic_substitution(&chars, index + 3).is_none() {
+                    return true;
+                }
+                index = skip_arithmetic_substitution(&chars, index + 3).unwrap();
+                comment_start = false;
+                continue;
+            }
             depth += 1;
             if depth == 1 {
                 case_depth = 0;
@@ -282,6 +290,51 @@ pub(super) fn has_unclosed_command_substitution(input: &str) -> bool {
     }
 
     depth > 0 || backtick || ansi_single
+}
+
+/// Skip a `$((...))` expansion while checking its own parenthesis and quote
+/// state. Arithmetic `#` is an operator-context character, not a shell
+/// comment introducer.
+fn skip_arithmetic_substitution(chars: &[char], mut index: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut single = false;
+    let mut double = false;
+    let mut escaped = false;
+
+    while index < chars.len() {
+        let ch = chars[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+        if ch == '\\' && !single {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+        if ch == '\'' && !double {
+            single = !single;
+            index += 1;
+            continue;
+        }
+        if ch == '"' && !single {
+            double = !double;
+            index += 1;
+            continue;
+        }
+        if !single && !double {
+            if ch == '(' {
+                depth += 1;
+            } else if ch == ')' && depth > 0 {
+                depth -= 1;
+            } else if ch == ')' && chars.get(index + 1) == Some(&')') {
+                return Some(index + 2);
+            }
+        }
+        index += 1;
+    }
+    None
 }
 
 fn update_command_substitution_case_depth(

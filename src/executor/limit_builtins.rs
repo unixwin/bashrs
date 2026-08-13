@@ -101,6 +101,9 @@ impl Executor {
                     status = 1;
                     continue;
                 };
+                if request.check_only && pid == 0 {
+                    continue;
+                }
                 if !process_exists(pid) {
                     writeln!(
                         stderr,

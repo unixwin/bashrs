@@ -16,7 +16,7 @@ pub(in crate::executor) fn echo_args_without_background_marker(args: &[String]) 
 }
 
 pub(in crate::executor) fn is_null_device(path: &str) -> bool {
-    matches!(path, "/dev/null" | "NUL")
+    path == "/dev/null" || path.eq_ignore_ascii_case("NUL")
 }
 
 pub(in crate::executor) fn is_closed_redirect_target(path: &str) -> bool {

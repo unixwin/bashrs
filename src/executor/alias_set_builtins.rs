@@ -185,23 +185,6 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<(), ExecuteError> {
-        if cmd.words.get(1).map(String::as_str) == Some("-o")
-            && cmd.words.get(2).map(String::as_str) == Some("posix")
-        {
-            self.env_vars
-                .insert("__RUBASH_POSIX_MODE".to_string(), "1".to_string());
-            crate::builtins::set::set_shell_option(&mut self.env_vars, "posix", true);
-            self.exit_code = 0;
-            return Ok(());
-        }
-        if cmd.words.get(1).map(String::as_str) == Some("+o")
-            && cmd.words.get(2).map(String::as_str) == Some("posix")
-        {
-            self.env_vars.remove("__RUBASH_POSIX_MODE");
-            crate::builtins::set::set_shell_option(&mut self.env_vars, "posix", false);
-            self.exit_code = 0;
-            return Ok(());
-        }
         if self.apply_simple_set_flags(&cmd.words[1..]) {
             self.exit_code = 0;
             return Ok(());

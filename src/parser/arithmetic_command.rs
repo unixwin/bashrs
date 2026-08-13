@@ -110,7 +110,7 @@ fn arithmetic_token_value(token: &Token) -> String {
     // Arithmetic parsing removes shell quotes from token values. Preserve
     // single quotes in the command expression so the evaluator can reject
     // `(( '1' ))` like Bash instead of silently treating it as 1.
-    if token.raw.contains('\'') {
+    if token.raw.contains(['\'', '"']) {
         token.raw.clone()
     } else {
         token.value.clone()

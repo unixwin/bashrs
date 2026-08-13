@@ -12,6 +12,19 @@ impl Executor {
             return self.execute_arithmetic_for_command(arithmetic, &for_command.body);
         }
 
+        if !is_shell_name(&for_command.variable) {
+            eprintln!(
+                "{}for: `{}`: not a valid identifier",
+                self.diagnostic_prefix(),
+                for_command.variable
+            );
+            self.exit_code = if self.posix_mode_enabled() { 2 } else { 1 };
+            if self.posix_mode_enabled() {
+                return Err(ExecuteError::ExitCode(2));
+            }
+            return Ok(());
+        }
+
         let values = if for_command.default_positional {
             self.positional_params.clone()
         } else {

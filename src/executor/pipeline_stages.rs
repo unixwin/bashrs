@@ -152,8 +152,7 @@ impl Executor {
         call.redirect_out = None;
         call.append = None;
 
-        let saved_capture =
-            crate::executor::shell_options::begin_stdout_capture();
+        let saved_capture = crate::executor::shell_options::begin_stdout_capture();
         let mut subshell = self.command_substitution_executor();
         subshell
             .env_vars

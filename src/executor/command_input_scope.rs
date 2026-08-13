@@ -59,8 +59,21 @@ impl Executor {
         if quoted {
             return body.to_string();
         }
-        self.expand_embedded_parameters(body)
+        self.expand_embedded_parameters(&remove_heredoc_quoted_newlines(body))
     }
+}
+
+fn remove_heredoc_quoted_newlines(body: &str) -> String {
+    let mut output = String::with_capacity(body.len());
+    let mut chars = body.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' && chars.peek() == Some(&'\n') {
+            chars.next();
+            continue;
+        }
+        output.push(ch);
+    }
+    output
 }
 
 #[allow(dead_code)]

@@ -165,6 +165,29 @@ fn test_builtin_shopt_updates_shell_option_state() {
 }
 
 #[test]
+fn test_shopt_print_mode_preserves_query_status() {
+    let output_path = "target/rubash-shopt-print-status.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "shopt -u nullglob; shopt -p nullglob > {output_path}; echo $? >> {output_path}; \
+         shopt -s nullglob; shopt -p nullglob >> {output_path}; echo $? >> {output_path}; \
+         shopt -o -p errexit >> {output_path}; echo $? >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "shopt -u nullglob\n1\nshopt -s nullglob\n0\nset +o errexit\n1\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_shopt_list_returns_failure_for_disabled_option() {
     let output_path = "target/rubash-shopt-list-disabled-status.txt";
     let _ = fs::remove_file(output_path);

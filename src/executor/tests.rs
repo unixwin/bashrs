@@ -1,9 +1,9 @@
 mod unit_tests {
+    use crate::executor::alias_helpers::split_shell_words;
+    use crate::executor::parameter_decode::strip_matching_quotes;
     use crate::executor::Executor;
     use crate::lexer::tokenize;
     use crate::parser::parse;
-    use crate::executor::parameter_decode::strip_matching_quotes;
-    use crate::executor::alias_helpers::split_shell_words;
 
     #[test]
     fn test_execute_echo() {
@@ -127,7 +127,3 @@ mod unit_tests {
         assert_eq!(executor.decode_prompt_string("\\$"), "$");
     }
 }
-
-
-
-

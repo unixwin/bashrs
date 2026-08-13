@@ -117,7 +117,8 @@ fn test_pushd_n_accepts_double_dash_before_directory() {
 fn test_pushd_accepts_existing_relative_directory() {
     let output_path = "target/rubash-pushd-relative-output.txt";
     let _ = fs::remove_file(output_path);
-    let input = format!("pushd . > {output_path}; echo $? >> {output_path}; dirs -p >> {output_path}");
+    let input =
+        format!("pushd . > {output_path}; echo $? >> {output_path}; dirs -p >> {output_path}");
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
     let mut executor = Executor::new();

@@ -214,11 +214,8 @@ impl Executor {
 
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        let status = crate::builtins::help::execute_with_io(
-            &cmd.words[1..],
-            &mut stdout,
-            &mut stderr,
-        )?;
+        let status =
+            crate::builtins::help::execute_with_io(&cmd.words[1..], &mut stdout, &mut stderr)?;
         self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
         Ok(status)
     }

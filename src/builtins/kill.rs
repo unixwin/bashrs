@@ -171,6 +171,14 @@ where
             continue;
         };
 
+        // Bash treats pid 0 as the current process group. Windows does not
+        // expose that target through OpenProcess, but signal 0 is only an
+        // existence probe, so the shell can answer it from its own group
+        // context without attempting to terminate a process.
+        if pid == 0 && signal == 0 {
+            continue;
+        }
+
         match deliver_rubash_signal(pid, signal) {
             Ok(true) => continue,
             Ok(false) => {}
@@ -247,7 +255,7 @@ fn signal_number_from_spec(value: &str) -> Option<i32> {
 
 fn parse_pid(value: &str) -> Option<u32> {
     let pid = value.parse::<u32>().ok()?;
-    (pid != 0).then_some(pid)
+    Some(pid)
 }
 
 pub fn process_exists(pid: u32) -> bool {

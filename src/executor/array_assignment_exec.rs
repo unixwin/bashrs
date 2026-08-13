@@ -61,7 +61,7 @@ impl Executor {
         if !index.ends_with(']') || !is_shell_name(name) {
             return false;
         }
-        let raw_index = cmd
+        let raw_subscript = cmd
             .array_element_assignments
             .iter()
             .find(|assignment| {
@@ -130,11 +130,6 @@ impl Executor {
             self.exit_code = 0;
             return true;
         }
-        if is_marked_var(&self.env_vars, READONLY_VARS, name) {
-            eprintln!("{}{}: readonly variable", self.diagnostic_prefix(), name);
-            self.exit_code = 1;
-            return true;
-        }
         if name == "BASH_CMDS" {
             let command_name = index
                 .trim_end_matches(']')
@@ -147,11 +142,67 @@ impl Executor {
         }
 
         let index = index.trim_end_matches(']');
+        if index.trim().is_empty() {
+            eprintln!(
+                "{}{}: bad array subscript",
+                self.diagnostic_prefix(),
+                cmd.words[0]
+            );
+            self.exit_code = 1;
+            return true;
+        }
+        if index.trim() == "*" {
+            eprintln!(
+                "{}{}: cannot assign to non-numeric index",
+                self.diagnostic_prefix(),
+                cmd.words[0]
+            );
+            self.exit_code = 1;
+            return true;
+        }
+        if value.starts_with('(') && value.ends_with(')') {
+            eprintln!(
+                "{}{}: cannot assign list to array member",
+                self.diagnostic_prefix(),
+                cmd.words[0]
+            );
+            self.exit_code = 1;
+            return true;
+        }
+        let Some(computed_index) = eval_conditional_arith_value(index, &self.env_vars) else {
+            eprintln!(
+                "{}{}: bad array subscript",
+                self.diagnostic_prefix(),
+                cmd.words[0]
+            );
+            self.exit_code = 1;
+            return true;
+        };
+        if computed_index < 0
+            && resolve_indexed_array_subscript(
+                &self.env_vars.get(name).cloned().unwrap_or_default(),
+                computed_index,
+            )
+            .is_none()
+        {
+            eprintln!(
+                "{}{}: bad array subscript",
+                self.diagnostic_prefix(),
+                cmd.words[0]
+            );
+            self.exit_code = 1;
+            return true;
+        }
+        if is_marked_var(&self.env_vars, READONLY_VARS, name) {
+            eprintln!("{}{}: readonly variable", self.diagnostic_prefix(), name);
+            self.exit_code = 1;
+            return true;
+        }
         if is_marked_var(&self.env_vars, ASSOC_VARS, name) {
             // TODO(assoc.c/arrayfunc.c): Bash parses associative subscripts
             // with quote removal and expansion. This stores the simple
             // `A[key]=value` form exercised by upstream builtins5.sub.
-            let key = self.assoc_subscript_key(raw_index.unwrap_or(index));
+            let key = self.assoc_subscript_key(raw_subscript.unwrap_or(index));
             let current = self.env_vars.get(name).cloned().unwrap_or_default();
             let mut entries = assoc_entries(&current);
             let value = if append {
@@ -194,12 +245,9 @@ impl Executor {
             return true;
         }
 
-        let Some(raw_index) = eval_conditional_arith_value(index, &self.env_vars) else {
-            return false;
-        };
         let current = self.env_vars.get(name).cloned().unwrap_or_default();
-        let index = if raw_index < 0 {
-            let Some(index) = resolve_indexed_array_subscript(&current, raw_index) else {
+        let index = if computed_index < 0 {
+            let Some(index) = resolve_indexed_array_subscript(&current, computed_index) else {
                 eprintln!(
                     "{}{}: bad array subscript",
                     self.diagnostic_prefix(),
@@ -210,7 +258,7 @@ impl Executor {
             };
             index
         } else {
-            let Ok(index) = usize::try_from(raw_index) else {
+            let Ok(index) = usize::try_from(computed_index) else {
                 return false;
             };
             index

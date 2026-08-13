@@ -67,7 +67,11 @@ impl<'a> Lexer<'a> {
         let c = self.advance()?;
 
         match c {
-            '\n' => Some(Token::new(TokenKind::Semicolon, ";", start)),
+            '\n' => {
+                let mut token = Token::new(TokenKind::Semicolon, ";", start);
+                token.line_break = true;
+                Some(token)
+            }
             '|' => {
                 if self.peek() == Some('|') {
                     self.advance();
@@ -356,9 +360,7 @@ impl<'a> Lexer<'a> {
                         return false;
                     }
                 }
-                '<' if chars.get(index + 1) == Some(&'<')
-                    && chars.get(index + 2) != Some(&'<') =>
-                {
+                '<' if chars.get(index + 1) == Some(&'<') && chars.get(index + 2) != Some(&'<') => {
                     return true;
                 }
                 _ => {}

@@ -138,12 +138,16 @@ impl Executor {
                         if matched {
                             if let Some(value) = self.eval_arithmetic_expansion_value(&expression) {
                                 output.push_str(&value.to_string());
-                            } else if let Some(message) =
-                                crate::executor::arithmetic::arithmetic_error_message(&expression)
-                            {
-                                if !self.arithmetic_expansion_error.replace(true) {
-                                    eprintln!("{}{}", self.diagnostic_prefix(), message);
-                                }
+                            } else if !self.arithmetic_expansion_error.replace(true) {
+                                let message = crate::executor::arithmetic::arithmetic_error_message(
+                                    &expression,
+                                )
+                                .unwrap_or_else(|| {
+                                    format!(
+                                        "{expression}: syntax error in expression (error token is \"{expression}\")"
+                                    )
+                                });
+                                eprintln!("{}{}", self.diagnostic_prefix(), message);
                             }
                         } else {
                             output.push_str("$((");

@@ -1,17 +1,32 @@
 use super::ConditionalArithParser;
-use crate::executor::arithmetic::{arithmetic_digit_value, bash_arith, parse_arithmetic_digits};
+use crate::executor::arithmetic::{
+    arithmetic_digit_value, bash_arith, eval_mutable_arith_value_with_random,
+    parse_arithmetic_digits,
+};
 use crate::executor::{is_shell_name_char, is_shell_name_start};
 
 impl ConditionalArithParser<'_> {
     pub(super) fn parse_factor(&mut self) -> Option<i128> {
         self.skip_ws();
         if self.consume("++") {
-            let lvalue = self.parse_lvalue()?;
-            return self.update_lvalue(&lvalue, 1, true);
+            let operand_start = self.pos;
+            if let Some(lvalue) = self.parse_lvalue() {
+                return self.update_lvalue(&lvalue, 1, true);
+            }
+            // Bash's arithmetic expansion keeps the operand value for a
+            // non-lvalue such as `$((++7))`; only an arithmetic command
+            // reports the invalid increment. The caller handles that
+            // command-context distinction through its surrounding status.
+            self.pos = operand_start;
+            return self.parse_factor();
         }
         if self.consume("--") {
-            let lvalue = self.parse_lvalue()?;
-            return self.update_lvalue(&lvalue, -1, true);
+            let operand_start = self.pos;
+            if let Some(lvalue) = self.parse_lvalue() {
+                return self.update_lvalue(&lvalue, -1, true);
+            }
+            self.pos = operand_start;
+            return self.parse_factor();
         }
         match self.peek()? {
             b'+' => {
@@ -37,11 +52,32 @@ impl ConditionalArithParser<'_> {
                 (self.peek()? == b')').then(|| self.pos += 1)?;
                 Some(value)
             }
+            b'"' => self.parse_quoted_operand(),
             b'$' => self.parse_dollar_variable(),
             ch if ch.is_ascii_digit() => self.parse_number(),
             ch if is_shell_name_start(ch as char) => self.parse_variable(),
             _ => None,
         }
+    }
+
+    fn parse_quoted_operand(&mut self) -> Option<i128> {
+        self.pos += 1;
+        let start = self.pos;
+        while let Some(ch) = self.peek() {
+            self.pos += 1;
+            if ch == b'"' {
+                let text = std::str::from_utf8(&self.input[start..self.pos - 1]).ok()?;
+                if text.trim().is_empty() {
+                    return Some(0);
+                }
+                return eval_mutable_arith_value_with_random(
+                    text,
+                    self.env_vars,
+                    self.random_state,
+                );
+            }
+        }
+        None
     }
 
     pub(super) fn parse_number(&mut self) -> Option<i128> {

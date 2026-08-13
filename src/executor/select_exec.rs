@@ -11,6 +11,19 @@ impl Executor {
         cmd: &CommandNode,
         select_command: &SelectCommand,
     ) -> Result<(), ExecuteError> {
+        if !is_shell_name(&select_command.variable) {
+            eprintln!(
+                "{}select: `{}`: not a valid identifier",
+                self.diagnostic_prefix(),
+                select_command.variable
+            );
+            self.exit_code = if self.posix_mode_enabled() { 2 } else { 1 };
+            if self.posix_mode_enabled() {
+                return Err(ExecuteError::ExitCode(2));
+            }
+            return Ok(());
+        }
+
         let mut redirect_cmd = cmd.clone();
         let group_outputs =
             self.materialize_compound_output_process_substitutions(&mut redirect_cmd)?;

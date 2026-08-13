@@ -7,6 +7,12 @@ pub(super) fn parse_case_command(tokens: &[Token], start: usize) -> Option<(Comm
     // `case word in pattern) list terminator` shape.
     let (word, raw_word, mut i) = collect_case_word(tokens, start + 1)?;
     while i < tokens.len() && !is_keyword(tokens, i, "in") {
+        // `do`/`then` are command-list reserved words, not material to skip
+        // while looking for the case-word separator. Bash reports malformed
+        // forms such as `case in do do) ...` during parsing.
+        if is_keyword(tokens, i, "do") || is_keyword(tokens, i, "then") {
+            return None;
+        }
         i += 1;
     }
     if !is_keyword(tokens, i, "in") {
@@ -15,6 +21,19 @@ pub(super) fn parse_case_command(tokens: &[Token], start: usize) -> Option<(Comm
     let in_keyword = tokens[i].value.clone();
     let in_keyword_metadata = build_keyword_metadata(&tokens[i]);
     i += 1;
+
+    // In Bash, `esac` is recognized as the case terminator when it appears
+    // at the start of a clause and is followed by `)`. Likewise, `do` cannot
+    // begin a case pattern. Do not reinterpret either reserved word as a
+    // pattern; let the caller create the normal rc=2 parse-error node.
+    if (is_keyword(tokens, i, "esac")
+        && is_keyword(tokens, i + 1, ")")
+        && case_esac_pattern_lacks_terminator(tokens, i))
+        || is_keyword(tokens, i, "do")
+        || is_keyword(tokens, i, "then")
+    {
+        return None;
+    }
 
     let mut clauses = Vec::new();
     while i < tokens.len() {
@@ -75,15 +94,12 @@ pub(super) fn parse_case_command(tokens: &[Token], start: usize) -> Option<(Comm
                         // patterns.  The executor uses raw_text when quote
                         // semantics matter, so this does not discard `\]`
                         // or `\"` during matching.
-                        let pattern_text = if tokens[i]
-                            .raw
-                            .chars()
-                            .any(|ch| matches!(ch, '\'' | '"'))
-                        {
-                            text
-                        } else {
-                            &tokens[i].raw
-                        };
+                        let pattern_text =
+                            if tokens[i].raw.chars().any(|ch| matches!(ch, '\'' | '"')) {
+                                text
+                            } else {
+                                &tokens[i].raw
+                            };
                         current_pattern.push_str(pattern_text);
                         current_raw_pattern.push_str(&tokens[i].raw);
                     }
@@ -150,6 +166,12 @@ pub(super) fn parse_case_command(tokens: &[Token], start: usize) -> Option<(Comm
 
         let body_start = i;
         i = case_body_end(tokens, i);
+        if case_body_has_newline_for_header(tokens, body_start, i) {
+            // parse.y treats a newline after the `for` variable differently
+            // while parsing a case clause. Preserve the distinction instead
+            // of accepting the clause as a complete command list.
+            return None;
+        }
         let body = parse(&tokens[body_start..i]).commands;
         let terminator_text = case_terminator(tokens, i).map(|_| tokens[i].value.clone());
         let terminator_metadata =
@@ -195,6 +217,64 @@ pub(super) fn parse_case_command(tokens: &[Token], start: usize) -> Option<(Comm
         end_keyword_metadata: build_keyword_metadata(&tokens[i]),
     }));
     Some(finish_compound_command(command, tokens, i + 1))
+}
+
+fn case_body_has_newline_for_header(tokens: &[Token], start: usize, end: usize) -> bool {
+    let mut index = start;
+    while index + 2 < end {
+        if is_keyword(tokens, index, "for")
+            && command_boundary_keyword_allowed(tokens, index)
+            && matches!(
+                tokens[index + 1].kind,
+                TokenKind::Word | TokenKind::Variable
+            )
+            && tokens[index + 2].kind == TokenKind::Semicolon
+            && tokens[index + 2].line_break
+        {
+            return true;
+        }
+        index += 1;
+    }
+    false
+}
+
+pub(super) fn case_parse_error_message(tokens: &[Token], start: usize) -> &'static str {
+    let mut index = start;
+    while index + 2 < tokens.len() {
+        if is_keyword(tokens, index, "for")
+            && matches!(
+                tokens[index + 1].kind,
+                TokenKind::Word | TokenKind::Variable
+            )
+            && tokens[index + 2].kind == TokenKind::Semicolon
+            && tokens[index + 2].line_break
+        {
+            return "unexpected token `do'";
+        }
+        if is_keyword(tokens, index, "esac") {
+            break;
+        }
+        index += 1;
+    }
+    "unexpected token `esac'"
+}
+
+fn case_esac_pattern_lacks_terminator(tokens: &[Token], pattern_start: usize) -> bool {
+    let mut index = pattern_start + 2;
+    while index < tokens.len() {
+        if is_case_clause_terminator_token(&tokens[index]) {
+            return false;
+        }
+        if is_keyword(tokens, index, "esac") {
+            return true;
+        }
+        index += 1;
+    }
+    true
+}
+
+fn is_case_clause_terminator_token(token: &Token) -> bool {
+    token.kind == TokenKind::Word && matches!(token.raw.as_str(), ";;" | ";&" | ";;&")
 }
 
 fn build_keyword_metadata(token: &Token) -> Box<WordMetadata> {
@@ -335,6 +415,20 @@ pub(super) fn case_body_end(tokens: &[Token], mut index: usize) -> usize {
             && (is_case_terminator(tokens, index)
                 || (command_boundary_keyword_allowed(tokens, index)
                     && is_keyword(tokens, index, "esac")))
+        {
+            break;
+        }
+
+        // A case clause owns a command list, but its top-level compound
+        // terminators belong to the surrounding grammar. Bash parse.y rejects
+        // these instead of executing them as ordinary commands inside the
+        // clause (for example `case x in x) done ;; esac`).
+        if stack.is_empty()
+            && command_boundary_keyword_allowed(tokens, index)
+            && matches!(
+                tokens[index].value.as_str(),
+                "done" | "fi" | "then" | "else" | "elif"
+            )
         {
             break;
         }

@@ -18,10 +18,6 @@ pub(super) fn parse_for_command(tokens: &[Token], start: usize) -> Option<(Comma
     ) {
         return None;
     }
-    if !is_shell_name(&variable) {
-        return None;
-    }
-
     let mut i = skip_newline_list(tokens, start + 2);
     let mut words = Vec::new();
     let mut word_metadata = Vec::new();

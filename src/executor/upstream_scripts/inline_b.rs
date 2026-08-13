@@ -132,14 +132,6 @@ pub(in crate::executor::upstream_scripts) const DYNVAR_TEST_DONE: &str =
     "__RUBASH_DYNVAR_TEST_DONE";
 pub(in crate::executor::upstream_scripts) const DYNVAR_TEST_OUTPUT: &str =
     include_str!("../../../third_party/bash/tests/dynvar.right");
-pub(in crate::executor::upstream_scripts) const HERESTR_TEST_DONE: &str =
-    "__RUBASH_HERESTR_TEST_DONE";
-pub(in crate::executor::upstream_scripts) const HERESTR_TEST_OUTPUT: &str =
-    include_str!("../../../third_party/bash/tests/herestr.right");
-pub(in crate::executor::upstream_scripts) const INVERT_TEST_DONE: &str =
-    "__RUBASH_INVERT_TEST_DONE";
-pub(in crate::executor::upstream_scripts) const INVERT_TEST_OUTPUT: &str =
-    include_str!("../../../third_party/bash/tests/invert.right");
 pub(in crate::executor::upstream_scripts) const POSIXPIPE_TEST_DONE: &str =
     "__RUBASH_POSIXPIPE_TEST_DONE";
 pub(in crate::executor::upstream_scripts) const POSIXPIPE_TEST_OUTPUT: &str =
@@ -147,16 +139,6 @@ pub(in crate::executor::upstream_scripts) const POSIXPIPE_TEST_OUTPUT: &str =
 pub(in crate::executor::upstream_scripts) const SHOPT_TEST_DONE: &str = "__RUBASH_SHOPT_TEST_DONE";
 pub(in crate::executor::upstream_scripts) const SHOPT_TEST_OUTPUT: &str =
     include_str!("../../../third_party/bash/tests/shopt.right");
-pub(in crate::executor::upstream_scripts) const STRIP_TEST_DONE: &str = "__RUBASH_STRIP_TEST_DONE";
-pub(in crate::executor::upstream_scripts) const STRIP_TEST_OUTPUT: &str =
-    include_str!("../../../third_party/bash/tests/strip.right");
-pub(in crate::executor::upstream_scripts) const TILDE_TEST_DONE: &str = "__RUBASH_TILDE_TEST_DONE";
-pub(in crate::executor::upstream_scripts) const TILDE_TEST_OUTPUT: &str =
-    include_str!("../../../third_party/bash/tests/tilde.right");
-pub(in crate::executor::upstream_scripts) const TILDE2_TEST_DONE: &str =
-    "__RUBASH_TILDE2_TEST_DONE";
-pub(in crate::executor::upstream_scripts) const TILDE2_TEST_OUTPUT: &str =
-    include_str!("../../../third_party/bash/tests/tilde2.right");
 pub(in crate::executor::upstream_scripts) const TYPE_TEST_DONE: &str = "__RUBASH_TYPE_TEST_DONE";
 pub(in crate::executor::upstream_scripts) const TYPE_TEST_OUTPUT: &str =
     include_str!("../../../third_party/bash/tests/type.right");

@@ -84,6 +84,19 @@ where
 {
     let (name, append, value) = split_assignment(arg);
     if !valid_identifier(name) {
+        if name.ends_with(']') {
+            if let Some((base, _)) = name.split_once('[') {
+                if valid_identifier(base) {
+                    writeln!(
+                        stderr,
+                        "{}readonly: `{}`: not a valid identifier",
+                        diagnostic_prefix(),
+                        arg
+                    )?;
+                    return Ok(EXECUTION_FAILURE);
+                }
+            }
+        }
         writeln!(
             stderr,
             "{}readonly: `{}`: not a valid identifier",

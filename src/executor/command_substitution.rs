@@ -85,6 +85,21 @@ impl Executor {
         let words: Vec<String> = word_parts.iter().map(|(word, _)| word.clone()).collect();
         let words = self.expand_aliases(&words);
 
+        // Bash parses compound command substitutions as a complete command
+        // list. Word-based shortcuts cannot preserve reserved-word boundaries
+        // such as `if x; then ...`, so route these forms through the real AST
+        // parser before dispatching a simple command shortcut.
+        if command_substitution_needs_command_list(source, &words) {
+            if command_substitution_has_unclosed_compound(source) {
+                self.last_command_substitution_status.set(Some(2));
+                return String::new();
+            }
+            if let Some(output) = self.command_list_substitution_output(source) {
+                return output;
+            }
+            return String::new();
+        }
+
         if let Some(output) = self.timed_command_substitution_output(&words) {
             return output;
         }
@@ -342,6 +357,11 @@ impl Executor {
         let tokens = crate::lexer::tokenize(source);
         let ast = crate::parser::parse(&tokens);
 
+        if ast.commands.iter().any(command_has_parse_error) {
+            self.last_command_substitution_status.set(Some(2));
+            return Some(String::new());
+        }
+
         let saved_dir = env::current_dir().ok();
         let mut subshell = self.command_substitution_executor();
         subshell.stdout_capture = Some(Vec::new());
@@ -435,6 +455,18 @@ impl Executor {
     }
 }
 
+fn command_has_parse_error(command: &CommandNode) -> bool {
+    command.assignments.contains_key("__RUBASH_PARSE_ERROR__")
+        || command
+            .and_or_list
+            .as_ref()
+            .is_some_and(|list| list.commands.iter().any(command_has_parse_error))
+        || command
+            .pipeline_command
+            .as_ref()
+            .is_some_and(|pipeline| pipeline.stages.iter().any(command_has_parse_error))
+}
+
 fn command_substitution_words_have_redirects(words: &[String]) -> bool {
     words.iter().any(|word| {
         matches!(
@@ -442,6 +474,30 @@ fn command_substitution_words_have_redirects(words: &[String]) -> bool {
             "<" | ">" | ">>" | ">|" | "1>" | "1>>" | "1>|" | "2>" | "2>>" | "2>|"
         )
     })
+}
+
+fn command_substitution_needs_command_list(source: &str, words: &[String]) -> bool {
+    let starts_compound = matches!(
+        words.first().map(String::as_str),
+        Some("if" | "for" | "case" | "while" | "until" | "{" | "(")
+    );
+    starts_compound || source.contains(';')
+}
+
+fn command_substitution_has_unclosed_compound(source: &str) -> bool {
+    let words = split_shell_words(source);
+    match words.first().map(String::as_str) {
+        Some("if") => {
+            words.iter().any(|word| word == "then") && !words.iter().any(|word| word == "fi")
+        }
+        Some("for" | "while" | "until" | "select") => {
+            words.iter().any(|word| word == "do") && !words.iter().any(|word| word == "done")
+        }
+        Some("case") => {
+            words.iter().any(|word| word == "in") && !words.iter().any(|word| word == "esac")
+        }
+        _ => false,
+    }
 }
 
 fn readfile_path_is_quoted(path: &str) -> bool {

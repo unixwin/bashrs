@@ -1,5 +1,7 @@
 use super::{ArithLValue, ConditionalArithParser};
-use crate::executor::arithmetic::assignment_operator_at;
+use crate::executor::arithmetic::{
+    assignment_operator_at, eval_mutable_arith_value_with_random, strip_arith_double_quotes,
+};
 use crate::executor::{
     is_marked_var, is_shell_name, is_shell_name_char, is_shell_name_start, strip_matching_quotes,
     ASSOC_VARS, NAMEREF_VARS,
@@ -37,15 +39,55 @@ impl ConditionalArithParser<'_> {
             });
         }
 
-        let index = self.parse_comma()?;
-        self.skip_ws();
-        if !self.consume("]") {
-            return None;
-        }
+        let index = if self.peek() == Some(b'"') || self.peek() == Some(b'\'') {
+            let expression = self.collect_quoted_index_expression()?;
+            let expression = strip_arith_double_quotes(&expression);
+            eval_mutable_arith_value_with_random(&expression, self.env_vars, self.random_state)?
+        } else {
+            let index = self.parse_comma()?;
+            self.skip_ws();
+            if !self.consume("]") {
+                return None;
+            }
+            index
+        };
         Some(ArithLValue::Indexed {
             name: resolved_name,
             index,
         })
+    }
+
+    fn collect_quoted_index_expression(&mut self) -> Option<String> {
+        let start = self.pos;
+        let mut bracket_depth = 0usize;
+        let mut single = false;
+        let mut double = false;
+        let mut escaped = false;
+        while let Some(ch) = self.peek() {
+            self.pos += 1;
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == b'\\' && !single {
+                escaped = true;
+                continue;
+            }
+            match ch {
+                b'\'' if !double => single = !single,
+                b'"' if !single => double = !double,
+                b'[' if !single && !double => bracket_depth += 1,
+                b']' if !single && !double && bracket_depth > 0 => bracket_depth -= 1,
+                b']' if !single && !double => {
+                    let expression = std::str::from_utf8(&self.input[start..self.pos - 1])
+                        .ok()?
+                        .to_string();
+                    return Some(expression);
+                }
+                _ => {}
+            }
+        }
+        None
     }
 
     pub(super) fn resolved_lvalue_name(&self, name: &str) -> String {

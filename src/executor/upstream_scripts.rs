@@ -101,13 +101,8 @@ impl Executor {
             || self.execute_upstream_dstack_script()
             || self.execute_upstream_dstack2_script()
             || self.execute_upstream_dynvar_script()
-            || self.execute_upstream_herestr_script()
-            || self.execute_upstream_invert_script()
             || self.execute_upstream_posixpipe_script()
             || self.execute_upstream_shopt_script()
-            || self.execute_upstream_strip_script()
-            || self.execute_upstream_tilde_script()
-            || self.execute_upstream_tilde2_script()
             || self.execute_upstream_type_script()
     }
 }

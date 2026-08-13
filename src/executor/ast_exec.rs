@@ -32,18 +32,6 @@ impl Executor {
         while index < ast.commands.len() {
             self.run_pending_signal_traps()?;
 
-            // Bash reports an arithmetic expansion error (`$(( '1' ))`,
-            // floating point, ...) and skips the rest of the current command
-            // list, but the script continues with the next line. Rubash
-            // reports the error during expansion; skip the next command here
-            // (Bash: `x=$(( '1' )); echo hi` runs neither assignment nor echo,
-            // but `echo ok` on the next line still runs).
-            if self.arithmetic_expansion_error.get() {
-                self.arithmetic_expansion_error.set(false);
-                self.exit_code = 1;
-                index += 1;
-                continue;
-            }
             let command = &ast.commands[index];
             if self.noexec_enabled() {
                 self.exit_code = 0;
@@ -310,9 +298,7 @@ impl Executor {
                 // the subshell boundary instead of propagating it.
                 Err(ExecuteError::ExitCode(code)) if subshell_env.is_some() => {
                     self.exit_code = code;
-                    while index + 1 < ast.commands.len()
-                        && !ast.commands[index + 1].subshell_end
-                    {
+                    while index + 1 < ast.commands.len() && !ast.commands[index + 1].subshell_end {
                         index += 1;
                     }
                     if index + 1 < ast.commands.len() {

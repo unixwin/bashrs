@@ -560,10 +560,7 @@ mod pipeline_tests {
         assert_eq!(cat.words, ["cat"]);
         assert_eq!(cat.heredoc_delimiter.as_deref(), Some("EOF"));
         assert_eq!(cat.heredoc.as_deref(), Some("Ok1\n"));
-        assert_eq!(
-            cat.heredoc_redirects[0].body.as_deref(),
-            Some("Ok1\n")
-        );
+        assert_eq!(cat.heredoc_redirects[0].body.as_deref(), Some("Ok1\n"));
         assert_eq!(ast.commands[1].words, ["echo", "Ok2"]);
     }
 
@@ -1060,28 +1057,61 @@ mod command_body_kind_tests {
     }
 
     #[test]
-    fn test_for_and_select_require_shell_name_variables() {
+    fn test_case_rejects_newline_for_header_at_do_boundary() {
+        let input = "case x in x)\nfor x\nin x\ndo echo x; done\nesac";
+        let ast = parse(&tokenize(input));
+        assert!(ast
+            .commands
+            .iter()
+            .any(|command| { command.assignments.get("__RUBASH_PARSE_ERROR__").is_some() }));
+    }
+
+    #[test]
+    fn test_top_level_for_still_allows_newline_before_in() {
+        let input = "for x\nin x\ndo echo x; done";
+        let ast = parse(&tokenize(input));
+        assert!(ast.commands[0].for_command.is_some());
+    }
+
+    #[test]
+    fn test_for_and_select_preserve_invalid_variables_for_execution_check() {
         let invalid_for_ast = parse(&tokenize("for 1bad in a; do echo $x; done"));
         let variable_for_ast = parse(&tokenize("for $name in a; do echo $name; done"));
         let invalid_select_ast = parse(&tokenize("select 1bad in a; do echo $x; done"));
         let variable_select_ast = parse(&tokenize("select $name in a; do echo $name; done"));
 
-        assert!(invalid_for_ast
-            .commands
-            .iter()
-            .all(|command| command.for_command.is_none()));
-        assert!(variable_for_ast
-            .commands
-            .iter()
-            .all(|command| command.for_command.is_none()));
-        assert!(invalid_select_ast
-            .commands
-            .iter()
-            .all(|command| command.select_command.is_none()));
-        assert!(variable_select_ast
-            .commands
-            .iter()
-            .all(|command| command.select_command.is_none()));
+        assert_eq!(
+            invalid_for_ast.commands[0]
+                .for_command
+                .as_ref()
+                .unwrap()
+                .variable,
+            "1bad"
+        );
+        assert_eq!(
+            variable_for_ast.commands[0]
+                .for_command
+                .as_ref()
+                .unwrap()
+                .variable,
+            "$name"
+        );
+        assert_eq!(
+            invalid_select_ast.commands[0]
+                .select_command
+                .as_ref()
+                .unwrap()
+                .variable,
+            "1bad"
+        );
+        assert_eq!(
+            variable_select_ast.commands[0]
+                .select_command
+                .as_ref()
+                .unwrap()
+                .variable,
+            "$name"
+        );
     }
 
     #[test]

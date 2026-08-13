@@ -479,7 +479,10 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                     "__RUBASH_PARSE_ERROR__".to_string(),
                     format!("unexpected token `{}`", token.value),
                 );
-                state.ast.commands.push(std::mem::take(&mut state.current_cmd));
+                state
+                    .ast
+                    .commands
+                    .push(std::mem::take(&mut state.current_cmd));
             } else {
                 // TODO(parse.y/execute_cmd.c): This preserves the AND-OR
                 // list connector on simple commands. Full Bash grammar needs
@@ -534,7 +537,10 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                     "__RUBASH_PARSE_ERROR__".to_string(),
                     format!("unexpected token `{}`", token.value),
                 );
-                state.ast.commands.push(std::mem::take(&mut state.current_cmd));
+                state
+                    .ast
+                    .commands
+                    .push(std::mem::take(&mut state.current_cmd));
                 *i += 1;
                 return TokenAction::Continue;
             }

@@ -75,6 +75,44 @@ fn test_trap_lp_lists_signals_and_returns_success() {
 }
 
 #[test]
+fn test_trap_p_uppercase_prints_action_only() {
+    let output_path = "target/rubash-trap-action-only-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input =
+        format!("trap 'echo action' TERM; trap -P TERM > {output_path}; echo $? >> {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "echo action\n0\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_trap_p_uppercase_requires_signal_and_is_mutually_exclusive() {
+    for (command, expected_status) in [("trap -P", "2\n"), ("trap -p -P TERM", "2\n")] {
+        let output_path = format!(
+            "target/rubash-trap-p-upper-status-{}.txt",
+            expected_status.len()
+        );
+        let _ = fs::remove_file(&output_path);
+        let input = format!("{command}; echo $? > {output_path}");
+        let tokens = tokenize(&input);
+        let ast = parse(&tokens);
+        let mut executor = Executor::new();
+
+        let result = executor.execute_ast(&ast);
+
+        assert!(result.is_ok());
+        assert_eq!(fs::read_to_string(&output_path).unwrap(), expected_status);
+        let _ = fs::remove_file(output_path);
+    }
+}
+
+#[test]
 fn test_read_r_reads_here_string_without_backslash_escape() {
     let output_path = "target/rubash-read-r-output.txt";
     let _ = fs::remove_file(output_path);

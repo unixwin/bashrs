@@ -19,9 +19,9 @@ mod word;
 mod tests;
 
 use brace_scan::{has_unclosed_brace_group, opens_function_body_after_previous_signature};
-use continuation::{
-    ends_with_unquoted_backslash, has_unclosed_command_substitution, has_unclosed_quotes,
-};
+use continuation::{ends_with_unquoted_backslash, has_unclosed_quotes};
+
+pub(crate) use continuation::has_unclosed_command_substitution;
 use heredoc::heredoc_delimiters;
 use scanner::Lexer;
 
@@ -142,7 +142,9 @@ fn tokenize_with_heredocs(input: &str) -> Vec<Token> {
             }
             output.push(Token::new(TokenKind::HereDocBody, &body, position));
         }
-        output.push(Token::new(TokenKind::Semicolon, ";", logical_start_line));
+        let mut separator = Token::new(TokenKind::Semicolon, ";", logical_start_line);
+        separator.line_break = true;
+        output.push(separator);
     }
 
     if !logical_line.is_empty() {
@@ -151,7 +153,9 @@ fn tokenize_with_heredocs(input: &str) -> Vec<Token> {
             token.position = logical_start_line;
         }
         output.append(&mut line_tokens);
-        output.push(Token::new(TokenKind::Semicolon, ";", logical_start_line));
+        let mut separator = Token::new(TokenKind::Semicolon, ";", logical_start_line);
+        separator.line_break = true;
+        output.push(separator);
     }
 
     output

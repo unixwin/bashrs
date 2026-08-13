@@ -104,15 +104,14 @@ impl Executor {
             if redirect.fd.unwrap_or(0) == 0 && self.input_fd_redirects_to_process_stdin(&target) {
                 return Ok(());
             }
-            let path = shell_path_to_windows(&target, &self.env_vars);
             let file = if redirect.append {
                 OpenOptions::new()
                     .create(true)
                     .read(true)
                     .write(true)
-                    .open(path)?
+                    .open(shell_path_to_windows(&target, &self.env_vars))?
             } else {
-                File::open(path)?
+                self.open_input_redirect(&target)?
             };
             if redirect.fd.unwrap_or(0) == 0 {
                 process.stdin(Stdio::from(file));
@@ -142,6 +141,7 @@ impl Executor {
     ) -> Result<(CommandNode, ProcessSubstitutionFiles), ExecuteError> {
         let mut rewritten = cmd.clone();
         let mut files = ProcessSubstitutionFiles::default();
+        let mut redirect_target_rewrites = Vec::new();
         for word_index in 0..rewritten.words.len() {
             let metadata = rewritten.word_metadata.get(word_index).cloned();
             let substitutions = metadata
@@ -214,10 +214,14 @@ impl Executor {
             let path = self.empty_process_substitution_temp()?;
             let display_path = shell_display_path(&path.to_string_lossy());
             if let Some(redirect) = &mut rewritten.redirect_out {
+                let old_target = redirect.target.clone();
                 redirect.target = display_path.clone();
+                redirect_target_rewrites.push((old_target, redirect.target.clone()));
             }
             if let Some(redirect) = &mut rewritten.redirect_err_append {
+                let old_target = redirect.target.clone();
                 redirect.target = display_path;
+                redirect_target_rewrites.push((old_target, redirect.target.clone()));
             }
             files
                 .outputs
@@ -230,10 +234,14 @@ impl Executor {
             let path = self.empty_process_substitution_temp()?;
             let display_path = shell_display_path(&path.to_string_lossy());
             if let Some(redirect) = &mut rewritten.append {
+                let old_target = redirect.target.clone();
                 redirect.target = display_path.clone();
+                redirect_target_rewrites.push((old_target, redirect.target.clone()));
             }
             if let Some(redirect) = &mut rewritten.redirect_err_append {
+                let old_target = redirect.target.clone();
                 redirect.target = display_path;
+                redirect_target_rewrites.push((old_target, redirect.target.clone()));
             }
             files
                 .outputs
@@ -248,7 +256,9 @@ impl Executor {
                 {
                     let source = source.to_string();
                     let path = self.empty_process_substitution_temp()?;
+                    let old_target = redirect.target.clone();
                     redirect.target = shell_display_path(&path.to_string_lossy());
+                    redirect_target_rewrites.push((old_target, redirect.target.clone()));
                     files
                         .outputs
                         .push(OutputProcessSubstitution { path, source });
@@ -264,7 +274,9 @@ impl Executor {
                 {
                     let source = source.to_string();
                     let path = self.empty_process_substitution_temp()?;
+                    let old_target = redirect.target.clone();
                     redirect.target = shell_display_path(&path.to_string_lossy());
+                    redirect_target_rewrites.push((old_target, redirect.target.clone()));
                     files
                         .outputs
                         .push(OutputProcessSubstitution { path, source });
@@ -280,7 +292,9 @@ impl Executor {
                 {
                     let source = source.to_string();
                     let path = self.empty_process_substitution_temp()?;
+                    let old_target = redirect.target.clone();
                     redirect.target = shell_display_path(&path.to_string_lossy());
+                    redirect_target_rewrites.push((old_target, redirect.target.clone()));
                     files
                         .outputs
                         .push(OutputProcessSubstitution { path, source });
@@ -296,11 +310,21 @@ impl Executor {
                 {
                     let source = source.to_string();
                     let path = self.empty_process_substitution_temp()?;
+                    let old_target = redirect.target.clone();
                     redirect.target = shell_display_path(&path.to_string_lossy());
+                    redirect_target_rewrites.push((old_target, redirect.target.clone()));
                     files
                         .outputs
                         .push(OutputProcessSubstitution { path, source });
                 }
+            }
+        }
+        for redirect in &mut rewritten.redirects {
+            if let Some((_, new_target)) = redirect_target_rewrites
+                .iter()
+                .find(|(old_target, _)| redirect.target == *old_target)
+            {
+                redirect.target = new_target.clone();
             }
         }
         Ok((rewritten, files))

@@ -194,9 +194,7 @@ fn fold_pipeline_commands(commands: Vec<CommandNode>) -> Vec<CommandNode> {
             || stages.last().is_some_and(|command| command.pipe.is_some())
             || looks_like_case_pattern_alternate(&stages)
         {
-            if stages.len() == 1
-                || stages.last().is_some_and(|command| command.pipe.is_some())
-            {
+            if stages.len() == 1 || stages.last().is_some_and(|command| command.pipe.is_some()) {
                 let mut command = stages
                     .into_iter()
                     .next()
@@ -476,7 +474,13 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
             .get(i + 1)
             .map(|next| next.value == "then" || next.kind == TokenKind::Semicolon)
             .unwrap_or(true);
-        if !condition_is_empty {
+        let has_then_without_fi = tokens[i + 1..]
+            .iter()
+            .any(|candidate| candidate.value == "then")
+            && !tokens[i + 1..]
+                .iter()
+                .any(|candidate| candidate.value == "fi");
+        if !condition_is_empty && !has_then_without_fi {
             return None;
         }
 
@@ -485,7 +489,11 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
         // accepted and silently ran the following commands).
         state.current_cmd.assignments.insert(
             "__RUBASH_PARSE_ERROR__".to_string(),
-            "unexpected token `then'".to_string(),
+            if has_then_without_fi {
+                "unexpected end of file while looking for `fi'".to_string()
+            } else {
+                "unexpected token `then'".to_string()
+            },
         );
         let mut next_i = i + 1;
         while tokens.get(next_i).is_some() {
@@ -494,7 +502,10 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
                 break;
             }
         }
-        state.ast.commands.push(std::mem::take(&mut state.current_cmd));
+        state
+            .ast
+            .commands
+            .push(std::mem::take(&mut state.current_cmd));
         return Some(next_i);
     }
 
@@ -519,7 +530,10 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
                 break;
             }
         }
-        state.ast.commands.push(std::mem::take(&mut state.current_cmd));
+        state
+            .ast
+            .commands
+            .push(std::mem::take(&mut state.current_cmd));
         return Some(next_i);
     }
 
@@ -556,7 +570,7 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
             tokens,
             i,
             "esac",
-            "unexpected token `esac'",
+            case_parse_error_message(tokens, i),
         ));
     }
 
@@ -595,6 +609,13 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
             push_compound_command(state, conditional_cmd);
             return Some(next_i);
         }
+        return Some(push_parse_error_until(
+            state,
+            tokens,
+            i,
+            "]]",
+            "unexpected EOF while looking for `]]'",
+        ));
     }
 
     if command_allows_compound_start(&state.current_cmd)
@@ -664,10 +685,10 @@ fn push_parse_error_until(
     terminator: &str,
     message: &str,
 ) -> usize {
-    state.current_cmd.assignments.insert(
-        "__RUBASH_PARSE_ERROR__".to_string(),
-        message.to_string(),
-    );
+    state
+        .current_cmd
+        .assignments
+        .insert("__RUBASH_PARSE_ERROR__".to_string(), message.to_string());
     let mut next_i = start + 1;
     while tokens.get(next_i).is_some() {
         let is_terminator = is_keyword(tokens, next_i, terminator);
@@ -676,7 +697,10 @@ fn push_parse_error_until(
             break;
         }
     }
-    state.ast.commands.push(std::mem::take(&mut state.current_cmd));
+    state
+        .ast
+        .commands
+        .push(std::mem::take(&mut state.current_cmd));
     next_i
 }
 

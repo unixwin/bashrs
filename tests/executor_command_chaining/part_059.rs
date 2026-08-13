@@ -48,7 +48,9 @@ fn test_noninteractive_shell_option_defaults_match_bash() {
 
     assert!(result.is_ok());
     let output = fs::read_to_string(output_path).unwrap();
-    assert!(output.lines().any(|line| line.starts_with("emacs") && line.ends_with("\toff")));
+    assert!(output
+        .lines()
+        .any(|line| line.starts_with("emacs") && line.ends_with("\toff")));
     assert!(output
         .lines()
         .any(|line| line.starts_with("history") && line.ends_with("\toff")));
@@ -59,9 +61,8 @@ fn test_noninteractive_shell_option_defaults_match_bash() {
 fn test_igncr_shell_option_is_listed_and_toggleable() {
     let output_path = "target/rubash-set-igncr-output.txt";
     let _ = fs::remove_file(output_path);
-    let input = format!(
-        "set -o igncr; set -o > {output_path}; set +o igncr; set -o >> {output_path}"
-    );
+    let input =
+        format!("set -o igncr; set -o > {output_path}; set +o igncr; set -o >> {output_path}");
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
     let mut executor = Executor::new();
@@ -93,7 +94,9 @@ fn test_shopt_without_options_lists_readable_states() {
 
     assert!(result.is_ok());
     let output = fs::read_to_string(output_path).unwrap();
-    assert!(output.lines().any(|line| line.starts_with("checkwinsize") && line.ends_with("\ton")));
+    assert!(output
+        .lines()
+        .any(|line| line.starts_with("checkwinsize") && line.ends_with("\ton")));
     assert!(!output.contains("shopt -s "));
     let _ = fs::remove_file(output_path);
 }

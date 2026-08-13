@@ -18,9 +18,23 @@ impl Executor {
                 .get("__RUBASH_PARSE_ERROR__")
                 .map(String::as_str)
                 .unwrap_or("unexpected token");
+            eprintln!("{}syntax error near {message}", self.diagnostic_prefix(),);
+            self.exit_code = 2;
+            return Err(ExecuteError::ExitCode(2));
+        }
+
+        if cmd
+            .word_metadata
+            .iter()
+            .any(|metadata| crate::lexer::has_unclosed_command_substitution(&metadata.raw))
+            || cmd
+                .assignments
+                .values()
+                .any(|value| crate::lexer::has_unclosed_command_substitution(value))
+        {
             eprintln!(
-                "{}syntax error near {message}",
-                self.diagnostic_prefix(),
+                "{}syntax error: unexpected EOF while looking for matching `)'",
+                self.diagnostic_prefix()
             );
             self.exit_code = 2;
             return Err(ExecuteError::ExitCode(2));
@@ -86,19 +100,28 @@ impl Executor {
         }
 
         let expanded = self.expand_command_words(cmd)?;
+        if self.last_command_substitution_status.get() == Some(2) {
+            eprintln!(
+                "{}syntax error in command substitution",
+                self.diagnostic_prefix()
+            );
+            self.exit_code = 2;
+            self.last_command_substitution_status.set(None);
+            return Err(ExecuteError::ExitCode(2));
+        }
         let original_raws: Vec<Option<&str>> = cmd
             .word_metadata
             .iter()
             .map(|metadata| Some(metadata.raw.as_str()))
             .collect();
-        let cmd =
-            self.apply_alias_expansion_after_word_expansion(expanded, &original_raws);
+        let cmd = self.apply_alias_expansion_after_word_expansion(expanded, &original_raws);
 
         // Arithmetic expansion errors are reported during word expansion.
         // The failing command itself must not be dispatched (Bash returns 1),
         // while the AST-level marker remains set so the command-list walker
         // can apply Bash's follow-up command suppression semantics.
         if self.arithmetic_expansion_error.get() {
+            self.arithmetic_expansion_error.set(false);
             self.exit_code = 1;
             return Ok(());
         }
@@ -148,9 +171,7 @@ fn unterminated_extglob(raw: &str) -> bool {
             index += 1;
             continue;
         }
-        if matches!(ch, '@' | '*' | '+' | '?' | '!')
-            && chars.get(index + 1) == Some(&'(')
-        {
+        if matches!(ch, '@' | '*' | '+' | '?' | '!') && chars.get(index + 1) == Some(&'(') {
             extglob_depth += 1;
             index += 2;
             continue;

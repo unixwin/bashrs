@@ -81,3 +81,17 @@ fn test_large_single_quoted_unicode_word_tokenizes() {
         Some(payload.as_str())
     );
 }
+
+#[test]
+fn test_escaped_quote_array_assignment_stays_one_word() {
+    let tokens = tokenize(r#"a[\" \"]=15; echo after"#);
+    let words = tokens
+        .iter()
+        .filter(|token| matches!(token.kind, TokenKind::Word | TokenKind::Assignment))
+        .collect::<Vec<_>>();
+
+    assert_eq!(words[0].value, "a[\" \"]=15");
+    assert_eq!(words[0].raw, r#"a[\" \"]=15"#);
+    assert_eq!(words[1].value, "echo");
+    assert_eq!(words[2].value, "after");
+}

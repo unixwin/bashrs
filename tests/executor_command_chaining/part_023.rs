@@ -209,7 +209,10 @@ fn test_umask_symbolic_modes_copy_permissions() {
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(fs::read_to_string(status_path).unwrap(), "1\n1\n");
-    assert_eq!(fs::read_to_string(output_path).unwrap(), "u=rwx,g=rx,o=rx\n");
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "u=rwx,g=rx,o=rx\n"
+    );
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_file(status_path);
 }

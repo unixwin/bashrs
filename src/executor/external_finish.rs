@@ -247,13 +247,31 @@ fn direct_windows_shell_script_path(
         return None;
     }
 
+    if !command_name.contains('/') && !command_name.contains('\\') {
+        return None;
+    }
+
     let path = shell_path_to_windows(command_name, env_vars);
     if !path.is_file() {
         return None;
     }
 
-    path.extension()
+    if path
+        .extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("sh"))
-        .then_some(path)
+    {
+        return Some(path);
+    }
+
+    // Bash's execute_cmd.c retries a readable text file with the current
+    // shell after an ENOEXEC result.  Windows cannot produce that errno for
+    // extensionless files because the command resolver may select `sh.exe`
+    // first, so identify the same script shape before spawning an external
+    // interpreter.  Keep binary files on the native process path.
+    if path.extension().is_some() {
+        return None;
+    }
+    let source = std::fs::read(&path).ok()?;
+    (!source.contains(&0)).then_some(path)
 }

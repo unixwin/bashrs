@@ -59,13 +59,10 @@ impl Executor {
             if let Some(fd) = expanded_target.strip_prefix('&') {
                 let fd = fd.trim_matches(|ch| ch == '"' || ch == '\x1d');
                 if let Ok(fd) = fd.parse::<u32>() {
-                    if let Some(output) = self.read_coproc_stdout(fd) {
-                        return Some(trim_read_input(
-                            output,
-                            delimiter,
-                            char_limit,
-                            exact_char_limit,
-                        ));
+                    if let Some(output) =
+                        self.read_coproc_stdout(fd, delimiter, char_limit, exact_char_limit)
+                    {
+                        return Some(output);
                     }
                     if let Some(line) =
                         self.read_virtual_fd_stdin(fd, delimiter, char_limit, exact_char_limit)
@@ -129,7 +126,13 @@ impl Executor {
             .or_else(|| self.read_inherited_process_stdin(delimiter, char_limit, exact_char_limit))
     }
 
-    fn read_coproc_stdout(&mut self, fd: u32) -> Option<String> {
+    fn read_coproc_stdout(
+        &mut self,
+        fd: u32,
+        delimiter: char,
+        char_limit: Option<usize>,
+        exact_char_limit: bool,
+    ) -> Option<String> {
         // Bash exposes the coprocess output as COPROC[0] (and NAME[0]).
         // Rubash stores that endpoint as a PipeReader keyed by the child PID.
         // A zero descriptor retains the legacy unnamed-coproc behavior; named
@@ -144,14 +147,52 @@ impl Executor {
         };
         let mut reader = self.coproc_stdout_readers.remove(&pid)?;
         let mut bytes = Vec::new();
+        let mut consumed_chars = 0usize;
+        let mut ended = false;
         use std::io::Read;
-        // Windows may report ERROR_NO_DATA when the producer closes its pipe;
-        // bytes already read before that close are still valid shell input.
-        let _ = reader.read_to_end(&mut bytes);
+
+        // Bash keeps the coprocess descriptor open across read builtin calls.
+        // Read only one logical input record (or the requested character
+        // limit), then retain the reader for the next call instead of
+        // draining the pipe and losing unread records.
+        loop {
+            let mut byte = [0u8; 1];
+            match reader.read(&mut byte) {
+                Ok(0) => {
+                    ended = true;
+                    break;
+                }
+                Ok(_) => {
+                    bytes.push(byte[0]);
+                    if byte[0] == delimiter as u8 && !exact_char_limit {
+                        break;
+                    }
+                    if let Some(limit) = char_limit {
+                        consumed_chars += 1;
+                        if consumed_chars >= limit {
+                            break;
+                        }
+                    }
+                }
+                Err(_) => {
+                    ended = true;
+                    break;
+                }
+            }
+        }
+
+        if !ended {
+            self.coproc_stdout_readers.insert(pid, reader);
+        }
         if bytes.is_empty() {
             return None;
         }
-        Some(String::from_utf8_lossy(&bytes).to_string())
+        Some(trim_read_input(
+            String::from_utf8_lossy(&bytes).to_string(),
+            delimiter,
+            char_limit,
+            exact_char_limit,
+        ))
     }
 
     pub(crate) fn process_substitution_output(&mut self, source: &str) -> Option<String> {

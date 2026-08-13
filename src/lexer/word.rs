@@ -78,8 +78,21 @@ impl<'a> Lexer<'a> {
 
     pub(super) fn skip_word(&mut self) {
         let mut extglob_operator = false;
+        let array_assignment = self.looks_like_array_element_assignment();
+        let mut array_subscript_depth = 0usize;
+        let mut array_value_paren_depth = 0usize;
         while let Some(c) = self.peek() {
-            if " \t\n|&;<>(){}".contains(c) {
+            let in_array_value = array_assignment && array_value_paren_depth > 0;
+            if " \t\n|&;<>(){}".contains(c)
+                && !(array_assignment && array_subscript_depth > 0 && c.is_ascii_whitespace())
+                && !(in_array_value && c.is_ascii_whitespace())
+                && !(in_array_value && matches!(c, '(' | ')'))
+                && !(array_assignment
+                    && array_subscript_depth == 0
+                    && array_value_paren_depth == 0
+                    && c == '('
+                    && self.input[..self.position].ends_with('='))
+            {
                 if c == '(' && extglob_operator {
                     self.skip_extglob_group();
                     extglob_operator = false;
@@ -94,6 +107,22 @@ impl<'a> Lexer<'a> {
                 break;
             }
             match c {
+                '(' if array_assignment
+                    && array_subscript_depth == 0
+                    && array_value_paren_depth == 0
+                    && self.input[..self.position].ends_with('=') =>
+                {
+                    self.advance();
+                    array_value_paren_depth = 1;
+                }
+                '(' if in_array_value => {
+                    self.advance();
+                    array_value_paren_depth += 1;
+                }
+                ')' if in_array_value => {
+                    self.advance();
+                    array_value_paren_depth = array_value_paren_depth.saturating_sub(1);
+                }
                 '`' => {
                     // TODO(parse.y/subst.c): Command substitution is part of
                     // the surrounding word. Keeping it atomic is required for
@@ -115,6 +144,16 @@ impl<'a> Lexer<'a> {
                 '\\' => {
                     self.advance();
                     self.advance();
+                    extglob_operator = false;
+                }
+                '[' if array_assignment => {
+                    self.advance();
+                    array_subscript_depth += 1;
+                    extglob_operator = false;
+                }
+                ']' if array_assignment && array_subscript_depth > 0 => {
+                    self.advance();
+                    array_subscript_depth -= 1;
                     extglob_operator = false;
                 }
                 '$' => {
@@ -151,6 +190,68 @@ impl<'a> Lexer<'a> {
                 }
             }
         }
+    }
+
+    fn looks_like_array_element_assignment(&self) -> bool {
+        let rest = &self.input[self.position..];
+        if self.position == 0
+            || self.input.as_bytes()[self.position - 1] != b'[' && !rest.starts_with('[')
+        {
+            return false;
+        }
+        let open = if rest.starts_with('[') {
+            self.position
+        } else {
+            return false;
+        };
+        let name_end = open;
+        let mut name_start = name_end;
+        while name_start > 0 {
+            let ch = self.input.as_bytes()[name_start - 1] as char;
+            if ch == '_' || ch.is_ascii_alphanumeric() {
+                name_start -= 1;
+            } else {
+                break;
+            }
+        }
+        let name = &self.input[name_start..name_end];
+        let mut name_chars = name.chars();
+        let Some(first) = name_chars.next() else {
+            return false;
+        };
+        if !(first == '_' || first.is_ascii_alphabetic()) {
+            return false;
+        }
+        if !name_chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric()) {
+            return false;
+        }
+        let mut depth = 1usize;
+        let mut escaped = false;
+        let mut close = None;
+        for (offset, ch) in rest.char_indices().skip(1) {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            match ch {
+                '[' => depth += 1,
+                ']' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        close = Some(offset);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        close
+            .and_then(|offset| rest.get(offset + 1..))
+            .is_some_and(|tail| tail.starts_with('='))
     }
 
     fn word_so_far_ends_extglob_operator(&self, start: usize) -> bool {

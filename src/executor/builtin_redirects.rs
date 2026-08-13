@@ -23,13 +23,9 @@ impl Executor {
             let target = self.expand_word(&redirect.target);
             if is_closed_redirect_target(&target) {
             } else if redirect.append {
-                OpenOptions::new()
-                    .create(true)
-                    .read(true)
-                    .write(true)
-                    .open(shell_path_to_windows(&target, &self.env_vars))?;
+                self.open_input_redirect(&target)?;
             } else {
-                File::open(shell_path_to_windows(&target, &self.env_vars))?;
+                self.open_input_redirect(&target)?;
             }
         }
 
@@ -43,10 +39,16 @@ impl Executor {
         if let Some(redirect) = &cmd.append {
             let target = self.expand_word(&redirect.target);
             if !is_closed_redirect_target(&target) && !self.has_output_fd_target(&target) {
-                OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(shell_path_to_windows(&target, &self.env_vars))?;
+                self.open_output_fd_append(&target).or_else(|_| {
+                    if is_null_device(&target) {
+                        self.create_redirect_output(&target, true)
+                    } else {
+                        OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(shell_path_to_windows(&target, &self.env_vars))
+                    }
+                })?;
             }
         }
 

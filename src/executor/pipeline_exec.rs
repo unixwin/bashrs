@@ -1,4 +1,35 @@
 use super::*;
+
+#[cfg(windows)]
+fn stdio_from_transferred_handle<T>(handle: T) -> Stdio
+where
+    T: std::os::windows::io::IntoRawHandle,
+{
+    use std::os::windows::io::FromRawHandle;
+    unsafe { Stdio::from_raw_handle(handle.into_raw_handle()) }
+}
+
+#[cfg(windows)]
+fn wait_for_windows_pipeline_member(
+    process: &mut std::process::Child,
+) -> Result<std::process::ExitStatus, ExecuteError> {
+    // Bash waits for the pipeline job to publish each member's status. Give
+    // a producer that observed a closed downstream pipe a short opportunity
+    // to exit naturally before applying the Windows hard-kill fallback.
+    const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(5);
+    const NATURAL_EXIT_WINDOW: std::time::Duration = std::time::Duration::from_millis(100);
+    let deadline = std::time::Instant::now() + NATURAL_EXIT_WINDOW;
+    loop {
+        if let Some(status) = process.try_wait().map_err(ExecuteError::IoError)? {
+            return Ok(status);
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = process.kill();
+            return process.wait().map_err(ExecuteError::IoError);
+        }
+        std::thread::sleep(POLL_INTERVAL);
+    }
+}
 use crate::executor::external_setup::shared_combined_output_process_substitution;
 
 impl Executor {
@@ -52,9 +83,7 @@ impl Executor {
                 .collect();
             stage.words = self.expand_aliases_with_raw(&stage.words, &raws);
         }
-        let ast = Ast {
-            commands: stages,
-        };
+        let ast = Ast { commands: stages };
         self.execute_simple_pipeline(&ast, 0)?.ok_or_else(|| {
             ExecuteError::UnknownBuiltin("pipeline command could not execute".to_string())
         })?;
@@ -314,25 +343,141 @@ impl Executor {
     /// downstream `head` has already stopped reading.  Restrict this path to
     /// plain external `|` pipelines; builtins, compound commands, redirects,
     /// and `|&` retain the shell-aware path above.
+    #[cfg(windows)]
     fn execute_external_pipeline_concurrently(
         &mut self,
         commands: &[&CommandNode],
     ) -> Result<Option<Vec<(String, String, i32)>>, ExecuteError> {
         if commands.len() < 2
             || self.stderr_capture.is_some()
-            || commands
-                .iter()
-                .enumerate()
-                .any(|(index, command)| {
+            || commands.iter().enumerate().any(|(index, command)| {
                 command.time_command.is_some()
                     || command.brace_group.is_some()
                     || command.subshell
-                    || command_has_non_concurrent_pipeline_redirects(command, index)
+                    || command_has_non_concurrent_pipeline_redirects(command, index, commands.len())
                     || command.redirect_in.is_some()
-                    || command.redirect_out.is_some()
                     || command.redirect_err.is_some()
                     || command.redirect_err_append.is_some()
-                    || command.append.is_some()
+                    || ((command.redirect_out.is_some() || command.append.is_some())
+                        && index + 1 != commands.len())
+                    || ((command.heredoc.is_some()
+                        || !command.heredoc_redirects.is_empty()
+                        || command.here_string.is_some())
+                        && index != 0)
+                    || !command.assignments.is_empty()
+                    || !command.process_substitutions.is_empty()
+                    || command.pipe == Some(2)
+            })
+        {
+            return Ok(None);
+        }
+
+        let mut specs = Vec::with_capacity(commands.len());
+        for command in commands {
+            let Some(name) = command.words.first() else {
+                return Ok(None);
+            };
+            let expanded_name = self.expand_word(name);
+            if crate::executor::builtin_names::is_shell_builtin_name(&expanded_name) {
+                return Ok(None);
+            }
+            let Some(program) = find_user_command(&expanded_name, &self.env_vars) else {
+                return Ok(None);
+            };
+            let args = command.words[1..]
+                .iter()
+                .map(|word| self.expand_word(word))
+                .collect::<Vec<_>>();
+            specs.push((program, args));
+        }
+
+        let mut pipes: Vec<(Option<os_pipe::PipeReader>, Option<os_pipe::PipeWriter>)> =
+            Vec::with_capacity(commands.len() - 1);
+        for _ in 0..commands.len() - 1 {
+            let (read, write) = os_pipe::pipe().map_err(ExecuteError::IoError)?;
+            pipes.push((Some(read), Some(write)));
+        }
+
+        let mut processes = Vec::with_capacity(commands.len());
+        for (index, (program, args)) in specs.iter().enumerate() {
+            let (mut process, _) = external_command_for_program(program, args, &self.env_vars);
+            self.apply_child_environment(&mut process);
+
+            if index == 0 {
+                process.stdin(Stdio::piped());
+            } else {
+                let (read, _) = &mut pipes[index - 1];
+                process.stdin(stdio_from_transferred_handle(
+                    read.take().expect("pipeline reader already transferred"),
+                ));
+            }
+            if index + 1 < commands.len() {
+                let (_, write) = &mut pipes[index];
+                process.stdout(stdio_from_transferred_handle(
+                    write.take().expect("pipeline writer already transferred"),
+                ));
+            } else {
+                process.stdout(Stdio::piped()).stderr(Stdio::piped());
+            }
+
+            let child = process.spawn().map_err(ExecuteError::IoError)?;
+            processes.push(child);
+        }
+
+        // Spawn every stage before writing a heredoc. A large heredoc can fill
+        // the first stdin pipe while the downstream stages are still absent.
+        if let Some(mut stdin) = processes[0].stdin.take() {
+            let input = self.initial_pipeline_input(commands[0]);
+            if !input.is_empty() {
+                stdin.write_all(input.as_bytes())?;
+            }
+        }
+
+        let mut results = Vec::with_capacity(processes.len());
+        let last = processes.pop().expect("pipeline has at least two stages");
+        let output = last.wait_with_output()?;
+        results.push((
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+            output.status.code().unwrap_or(1),
+        ));
+        for mut process in processes.into_iter().rev() {
+            let status = wait_for_windows_pipeline_member(&mut process)?;
+            results.push((String::new(), String::new(), status.code().unwrap_or(1)));
+        }
+        results.reverse();
+        self.write_pipeline_output(commands[commands.len() - 1], &results.last().unwrap().0)?;
+        if let Some((_, stderr, _)) = results.last() {
+            if !stderr.is_empty() {
+                std::io::stderr().write_all(stderr.as_bytes())?;
+            }
+        }
+        let statuses = results
+            .iter()
+            .map(|(_, _, status)| *status)
+            .collect::<Vec<_>>();
+        self.exit_code = self.pipeline_exit_status(&statuses);
+        self.set_pipestatus(statuses);
+        Ok(Some(results))
+    }
+
+    #[cfg(not(windows))]
+    fn execute_external_pipeline_concurrently(
+        &mut self,
+        commands: &[&CommandNode],
+    ) -> Result<Option<Vec<(String, String, i32)>>, ExecuteError> {
+        if commands.len() < 2
+            || self.stderr_capture.is_some()
+            || commands.iter().enumerate().any(|(index, command)| {
+                command.time_command.is_some()
+                    || command.brace_group.is_some()
+                    || command.subshell
+                    || command_has_non_concurrent_pipeline_redirects(command, index, commands.len())
+                    || command.redirect_in.is_some()
+                    || command.redirect_err.is_some()
+                    || command.redirect_err_append.is_some()
+                    || ((command.redirect_out.is_some() || command.append.is_some())
+                        && index + 1 != commands.len())
                     || ((command.heredoc.is_some()
                         || !command.heredoc_redirects.is_empty()
                         || command.here_string.is_some())
@@ -429,7 +574,10 @@ impl Executor {
                 }
             }
         }
-        let statuses = results.iter().map(|(_, _, status)| *status).collect::<Vec<_>>();
+        let statuses = results
+            .iter()
+            .map(|(_, _, status)| *status)
+            .collect::<Vec<_>>();
         self.exit_code = self.pipeline_exit_status(&statuses);
         self.set_pipestatus(statuses);
         Ok(Some(results))
@@ -581,9 +729,7 @@ impl Executor {
                 if let Some(output) = self.execute_function_pipeline_stage(command, input)? {
                     Ok(Some(output))
                 } else {
-                    if let Some(output) =
-                        self.execute_builtin_pipeline_stage(command, input)?
-                    {
+                    if let Some(output) = self.execute_builtin_pipeline_stage(command, input)? {
                         Ok(Some(output))
                     } else {
                         self.execute_external_pipeline_stage(command, input)
@@ -659,17 +805,30 @@ fn pipeline_stage_reads_stdin_by_default(command: &CommandNode) -> bool {
     )
 }
 
-fn command_has_non_concurrent_pipeline_redirects(command: &CommandNode, index: usize) -> bool {
+fn command_has_non_concurrent_pipeline_redirects(
+    command: &CommandNode,
+    index: usize,
+    pipeline_len: usize,
+) -> bool {
     if command.redirects.is_empty() {
         return false;
     }
-    index != 0
-        || command.redirects.iter().any(|redirect| {
-            !matches!(
+    let is_last_stage = index + 1 == pipeline_len;
+    command.redirects.iter().any(|redirect| {
+        let is_initial_heredoc = index == 0
+            && matches!(
                 redirect.kind,
                 crate::parser::RedirectKind::HereDoc | crate::parser::RedirectKind::HereString
-            )
-        })
+            );
+        let is_final_output = is_last_stage
+            && matches!(
+                redirect.kind,
+                crate::parser::RedirectKind::Output
+                    | crate::parser::RedirectKind::Append
+                    | crate::parser::RedirectKind::ClobberOutput
+            );
+        !is_initial_heredoc && !is_final_output
+    })
 }
 
 struct TimePipelinePrefix {

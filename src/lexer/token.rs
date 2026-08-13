@@ -32,6 +32,8 @@ pub struct Token {
     pub raw: String,
     pub position: usize,
     pub column: usize,
+    /// Whether this separator came from a physical line break.
+    pub line_break: bool,
 }
 
 impl Token {
@@ -42,6 +44,7 @@ impl Token {
             raw: value.to_string(),
             position,
             column: position,
+            line_break: false,
         }
     }
 
@@ -52,6 +55,7 @@ impl Token {
             raw: raw.to_string(),
             position,
             column: position,
+            line_break: false,
         }
     }
 }

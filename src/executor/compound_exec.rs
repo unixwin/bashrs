@@ -192,26 +192,30 @@ impl Executor {
         arithmetic: &ArithmeticForCommand,
         body: &[CommandNode],
     ) -> Result<(), ExecuteError> {
+        let mut arithmetic_failed = false;
         if !arithmetic.init.trim().is_empty()
             && self
                 .eval_arithmetic_command_value(&arithmetic.init)
                 .is_none()
         {
+            self.report_arithmetic_error(&arithmetic.init);
             self.exit_code = 1;
-            return Ok(());
+            arithmetic_failed = true;
         }
 
         let mut ran_body = false;
         let body_ast = Ast {
             commands: body.to_vec(),
         };
-        loop {
+        while !arithmetic_failed {
             if !arithmetic.test.trim().is_empty() {
                 match self.eval_arithmetic_command_value(&arithmetic.test) {
                     Some(0) => break,
                     Some(_) => {}
                     None => {
+                        self.report_arithmetic_error(&arithmetic.test);
                         self.exit_code = 1;
+                        arithmetic_failed = true;
                         break;
                     }
                 }
@@ -242,12 +246,16 @@ impl Executor {
                     .eval_arithmetic_command_value(&arithmetic.update)
                     .is_none()
             {
+                self.report_arithmetic_error(&arithmetic.update);
                 self.exit_code = 1;
+                arithmetic_failed = true;
                 break;
             }
         }
 
-        if !ran_body {
+        if arithmetic_failed {
+            self.exit_code = 1;
+        } else if !ran_body {
             self.exit_code = 0;
         }
         Ok(())
@@ -625,10 +633,7 @@ impl Executor {
                 if is_closed_redirect_target(&target) {
                     child.stdin(Stdio::null());
                 } else if redirect_target_fd(&target).is_none() {
-                    child.stdin(Stdio::from(File::open(shell_path_to_windows(
-                        &target,
-                        &self.env_vars,
-                    ))?));
+                    child.stdin(Stdio::from(self.open_input_redirect(&target)?));
                 }
             }
         }

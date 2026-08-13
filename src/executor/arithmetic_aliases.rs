@@ -1,22 +1,39 @@
 use super::*;
 
 impl Executor {
+    pub(in crate::executor) fn report_arithmetic_error_with_label(
+        &self,
+        label: &str,
+        expression: &str,
+    ) {
+        if let Some(token) = arithmetic_division_by_zero_token(expression) {
+            eprintln!(
+                "{}{}: {expression}: division by 0 (error token is \"{token}\")",
+                self.diagnostic_prefix(),
+                label
+            );
+        } else if let Some(message) =
+            crate::executor::arithmetic::arithmetic_error_message(expression)
+        {
+            eprintln!("{}{}: {message}", self.diagnostic_prefix(), label);
+        }
+    }
+
+    pub(in crate::executor) fn report_arithmetic_error(&self, expression: &str) {
+        self.report_arithmetic_error_with_label("((", expression);
+    }
+
+    pub(in crate::executor) fn report_let_arithmetic_error(&self, expression: &str) {
+        self.report_arithmetic_error_with_label("let", expression);
+    }
+
     pub(in crate::executor) fn execute_arithmetic_command(&mut self, cmd: &CommandNode) -> i32 {
         let expression = cmd.words.get(1).map(String::as_str).unwrap_or_default();
         match self.eval_arithmetic_command_value(expression) {
             Some(0) => 1,
             Some(_) => 0,
             None => {
-                if let Some(token) = arithmetic_division_by_zero_token(expression) {
-                    eprintln!(
-                        "{}((: {expression} : division by 0 (error token is \"{token}\")",
-                        self.diagnostic_prefix()
-                    );
-                } else if let Some(message) =
-                    crate::executor::arithmetic::arithmetic_error_message(expression)
-                {
-                    eprintln!("{}: {message}", self.diagnostic_prefix());
-                }
+                self.report_arithmetic_error(expression);
                 1
             }
         }
@@ -24,6 +41,7 @@ impl Executor {
 
     pub(in crate::executor) fn execute_let(&mut self, expressions: &[String]) -> i32 {
         if expressions.is_empty() {
+            eprintln!("{}let: expression expected", self.diagnostic_prefix());
             return 1;
         }
 
@@ -42,6 +60,7 @@ impl Executor {
             let expression = arithmetic_expression_arg(&expression);
             value = self.eval_arithmetic_command_value(&expression);
             if value.is_none() {
+                self.report_let_arithmetic_error(&expression);
                 return 1;
             }
             index += 1;

@@ -149,9 +149,7 @@ fn test_kill_capital_l_translates_and_lists_signals() {
 fn test_kill_zero_reports_missing_process() {
     let output_path = "target/rubash-kill-zero-missing-status-output.txt";
     let error_path = "target/rubash-kill-zero-missing-error-output.txt";
-    let input = format!(
-        "kill -0 4294967294 2> {error_path}; echo $? > {output_path}"
-    );
+    let input = format!("kill -0 4294967294 2> {error_path}; echo $? > {output_path}");
 
     let tokens = tokenize(&input);
     let ast = parse(&tokens);

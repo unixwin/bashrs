@@ -124,10 +124,7 @@ pub fn external_command_for_program(
 }
 
 #[cfg(windows)]
-fn find_msys_absolute_command(
-    name: &str,
-    env_vars: &HashMap<String, String>,
-) -> Option<PathBuf> {
+fn find_msys_absolute_command(name: &str, env_vars: &HashMap<String, String>) -> Option<PathBuf> {
     let suffix = name
         .strip_prefix("/usr/bin/")
         .or_else(|| name.strip_prefix("/bin/"))?;
@@ -148,7 +145,10 @@ fn find_msys_absolute_command(
     }
 
     for root in roots {
-        let candidates = [root.join("usr").join("bin").join(suffix), root.join("bin").join(suffix)];
+        let candidates = [
+            root.join("usr").join("bin").join(suffix),
+            root.join("bin").join(suffix),
+        ];
         for candidate in candidates {
             if let Some(found) = executable_candidate(&candidate, env_vars) {
                 return Some(found);
@@ -172,10 +172,7 @@ fn add_msys_root(roots: &mut Vec<PathBuf>, executable: &Path) {
 }
 
 #[cfg(not(windows))]
-fn find_msys_absolute_command(
-    _name: &str,
-    _env_vars: &HashMap<String, String>,
-) -> Option<PathBuf> {
+fn find_msys_absolute_command(_name: &str, _env_vars: &HashMap<String, String>) -> Option<PathBuf> {
     None
 }
 
@@ -534,7 +531,10 @@ mod tests {
             "CLAUDE_CODE_GIT_BASH_PATH".to_string(),
             bash.to_string_lossy().to_string(),
         );
-        env_vars.insert("PATH".to_string(), root.join("bin").to_string_lossy().to_string());
+        env_vars.insert(
+            "PATH".to_string(),
+            root.join("bin").to_string_lossy().to_string(),
+        );
 
         assert_eq!(find_user_command("/usr/bin/tool", &env_vars), Some(command));
         let _ = fs::remove_dir_all(root);

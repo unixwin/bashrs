@@ -29,10 +29,17 @@ pub(super) fn parse_conditional_command(
 
     let mut command = CommandNode::new();
     command.line = tokens.get(start).map(|token| token.position);
-    if args.first().is_some_and(|arg| arg == ")") {
+    if args.first().is_some_and(|arg| arg == ")")
+        || conditional_expression_is_invalid(
+            &expression_args
+                .iter()
+                .map(|(arg, _)| arg.as_str())
+                .collect::<Vec<_>>(),
+        )
+    {
         command.assignments.insert(
             "__RUBASH_PARSE_ERROR__".to_string(),
-            "unexpected token `)'".to_string(),
+            "unexpected token in conditional expression".to_string(),
         );
     }
     command.words.push("[[".to_string());
@@ -48,6 +55,24 @@ pub(super) fn parse_conditional_command(
     }));
 
     Some(finish_compound_command(command, tokens, end + 1))
+}
+
+fn conditional_expression_is_invalid(args: &[&str]) -> bool {
+    if args.is_empty() {
+        return true;
+    }
+
+    // parse.y's conditional parser rejects shell operators and unmatched
+    // delimiters as syntax errors. They must not fall through to the normal
+    // false-status path used for a valid, non-matching condition.
+    args.iter().any(|arg| matches!(*arg, "&" | "<" | ">" | "]"))
+        || args.iter().filter(|arg| **arg == "(").count()
+            != args.iter().filter(|arg| **arg == ")").count()
+        || args.len() > 3
+            && !is_conditional_unary_operator(args[0])
+            && !is_conditional_binary_operator(args.get(1).copied().unwrap_or_default())
+            && !args.contains(&"||")
+            && !args.contains(&"&&")
 }
 
 fn collect_conditional_args(

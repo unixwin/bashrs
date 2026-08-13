@@ -110,10 +110,7 @@ pub(super) fn set_pwd_from_stack(
     env_vars.insert("PWD".to_string(), pwd);
 }
 
-pub(super) fn logical_dir_exists(
-    dir: &str,
-    env_vars: &HashMap<String, String>,
-) -> bool {
+pub(super) fn logical_dir_exists(dir: &str, env_vars: &HashMap<String, String>) -> bool {
     // The shell keeps POSIX-looking paths in PWD even on Windows.  Resolve
     // those paths before checking them, while allowing relative operands such
     // as `pushd .` and `pushd ..` against the process working directory.
