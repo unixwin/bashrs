@@ -1815,6 +1815,11 @@ impl Executor {
     }
 
     fn read_fd_is_available(&self, cmd: &CommandNode, fd: u32) -> bool {
+        if self.coproc_stdout_readers.contains_key(&fd)
+            || (fd == 0 && !self.coproc_stdout_readers.is_empty())
+        {
+            return true;
+        }
         if self.env_vars.contains_key(&fd_stdin_key(fd)) {
             return true;
         }
