@@ -307,6 +307,9 @@ impl Executor {
         }
 
         let mut source = alias_compound_source_words(&words);
+        if words.get(1).map(String::as_str) == Some("-c") {
+            source = format!("coproc {}", words[1..].join(" "));
+        }
         append_source_redirects(&mut source, command);
         let mut next_index = index + 1;
         if alias_coproc_needs_following_body(&words) {

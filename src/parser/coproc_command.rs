@@ -25,7 +25,9 @@ pub(super) fn parse_coproc_command(tokens: &[Token], start: usize) -> Option<(Co
                 || is_keyword(tokens, i + 1, "{")
                 || is_keyword(tokens, i + 1, "(")
                 || is_coproc_shell_command_start(tokens, i + 1);
-            if next_is_compound || is_coproc_simple_command_start(next_after) {
+            if !lookahead.value.starts_with('-')
+                && (next_is_compound || is_coproc_simple_command_start(next_after))
+            {
                 name = Some((lookahead.value.clone(), lookahead.raw.clone()));
                 i += 1; // consume the name
             }
