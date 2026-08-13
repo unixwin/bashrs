@@ -182,7 +182,7 @@ impl Executor {
                 let Some(next_command) = ast.commands.get(next_index) else {
                     break;
                 };
-                let command_source = bash_command_source_text(next_command);
+                let command_source = alias_reparse_command_source(next_command);
                 if !command_source.is_empty() {
                     source.push_str("; ");
                     source.push_str(&command_source);
@@ -549,7 +549,7 @@ fn alias_group_source(
         let Some(next_command) = ast.commands.get(command_index) else {
             break;
         };
-        let command_source = bash_command_source_text(next_command);
+        let command_source = alias_reparse_command_source(next_command);
         if !command_source.is_empty() {
             source.push_str("; ");
             source.push_str(&command_source);
@@ -590,7 +590,7 @@ fn alias_time_source(
         let Some(next_command) = ast.commands.get(command_index) else {
             break;
         };
-        let command_source = bash_command_source_text(next_command);
+        let command_source = alias_reparse_command_source(next_command);
         if !command_source.is_empty() {
             source.push_str("; ");
             source.push_str(&command_source);
@@ -601,6 +601,17 @@ fn alias_time_source(
         }
     }
 
+    while let Some(next_command) = ast.commands.get(next_index) {
+        if !next_command.words.is_empty() || next_command.redirects.is_empty() {
+            break;
+        }
+        let command_source = alias_reparse_command_source(next_command);
+        if !command_source.is_empty() {
+            source.push_str(" ");
+            source.push_str(&command_source);
+        }
+        next_index += 1;
+    }
     (source, next_index)
 }
 

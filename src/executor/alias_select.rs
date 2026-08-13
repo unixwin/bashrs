@@ -1,4 +1,5 @@
 use super::*;
+use super::alias_loop_match::control_word;
 
 impl Executor {
     pub(in crate::executor) fn execute_alias_introduced_select(
@@ -31,11 +32,11 @@ impl Executor {
         }
 
         let mut do_index = command_index + 1;
-        while ast
-            .commands
-            .get(do_index)
-            .is_some_and(|command| command.words.is_empty() && command.brace_group.is_none())
-        {
+        while ast.commands.get(do_index).is_some_and(|command| {
+            command.words.is_empty()
+                && command.brace_group.is_none()
+                && command.assignments.get("__RUBASH_PARSE_ERROR__").is_none()
+        }) {
             do_index += 1;
         }
 
@@ -84,7 +85,7 @@ impl Executor {
             self.execute_select_command(do_command, &select_command)?;
             return Ok(Some(do_index + 1));
         }
-        if do_command.words.first().map(String::as_str) != Some("do") {
+        if control_word(do_command) != Some("do") {
             return Ok(None);
         }
 
@@ -126,8 +127,9 @@ impl Executor {
             end_keyword_metadata: Some(synthetic_keyword_metadata("done")),
             body,
         };
-        self.execute_select_command(done_command, &select_command)?;
-        Ok(Some(done_index + 1))
+        let redirect_command = ast.commands.get(done_index + 1).unwrap_or(done_command);
+        self.execute_select_command(redirect_command, &select_command)?;
+        Ok(Some((done_index + 2).min(ast.commands.len())))
     }
 }
 

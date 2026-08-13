@@ -1,4 +1,5 @@
 use super::*;
+use super::alias_loop_match::control_word;
 
 impl Executor {
     pub(in crate::executor) fn execute_alias_introduced_arithmetic_for(
@@ -22,7 +23,7 @@ impl Executor {
             return Ok(Some(body_index + 1));
         }
 
-        if body_command.words.first().map(String::as_str) != Some("do") {
+        if control_word(body_command) != Some("do") {
             return Ok(None);
         }
 
@@ -44,8 +45,9 @@ impl Executor {
         let Some(done_command) = ast.commands.get(done_index) else {
             return Ok(None);
         };
-        self.execute_for_command_with_redirects(&for_command, done_command)?;
-        Ok(Some(done_index + 1))
+        let redirect_command = ast.commands.get(done_index + 1).unwrap_or(done_command);
+        self.execute_for_command_with_redirects(&for_command, redirect_command)?;
+        Ok(Some((done_index + 2).min(ast.commands.len())))
     }
 
     fn alias_arithmetic_for_header(
@@ -70,8 +72,7 @@ impl Executor {
                 index += 1;
                 continue;
             }
-            if command.brace_group.is_some()
-                || command.words.first().map(String::as_str) == Some("do")
+            if command.brace_group.is_some() || control_word(command) == Some("do")
             {
                 break;
             }
@@ -81,8 +82,7 @@ impl Executor {
 
         if parts.len() == 2
             && ast.commands.get(index).is_some_and(|command| {
-                command.brace_group.is_some()
-                    || command.words.first().map(String::as_str) == Some("do")
+                command.brace_group.is_some() || control_word(command) == Some("do")
             })
         {
             parts.push(String::new());
@@ -206,5 +206,8 @@ fn append_alias_arithmetic_redirect(text: &mut String, redirect: Option<&Redirec
 }
 
 fn alias_arithmetic_empty_command(command: &CommandNode) -> bool {
-    command.words.is_empty() && command.brace_group.is_none() && command_has_no_effect(command)
+    command.words.is_empty()
+        && command.brace_group.is_none()
+        && command.assignments.get("__RUBASH_PARSE_ERROR__").is_none()
+        && command_has_no_effect(command)
 }

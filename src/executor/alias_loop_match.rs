@@ -52,7 +52,7 @@ impl Executor {
     }
 }
 
-fn control_word(command: &CommandNode) -> Option<&str> {
+pub(in crate::executor) fn control_word(command: &CommandNode) -> Option<&str> {
     if let Some(word) = command.words.first() {
         return Some(word.as_str());
     }
