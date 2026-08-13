@@ -521,18 +521,20 @@ the command-substitution, heredoc receiver, case-pattern, path-form,
 redirection, parameter-pattern, debug-trap, positional, var-op, arithmetic,
 and alias cases.
 
-The remaining P0 report for BusyBox `heredoc_huge` is still an external
-Windows pipeline integration issue: the reproducer is `yes | head -3000 |
-md5sum`, while the current environment exposes the WinuxCmd dispatcher as
-`winuxcmd.exe` without individual command entry points. Rubash's heredoc
-collection and bounded large-heredoc tests complete successfully; the
-dispatcher/handle-inheritance boundary remains open for the WinuxCmd side.
+The remaining P0 report for BusyBox `heredoc_huge` is an external Windows
+pipeline integration issue: the reproducer is `yes | head -3000 | md5sum`,
+while the current environment exposes the WinuxCmd dispatcher as
+`winuxcmd.exe` without individual command entry points. Rubash now detects a
+dispatcher-owned command through `winuxcmd help <command>` and passes the
+original command name to every external launch path. The current WinuxCmd
+`yes` implementation intentionally emits only 1000 lines, so the 3000-line
+fixture remains a backend-capacity failure rather than a Rubash lookup or
+heredoc-collection failure.
 
-Open follow-up: `yes | head -3` still hangs when using WinuxCmd commands in
-the current shell pipeline environment. The current winuxcmd source tree already
-has `head -NUM` parsing and `head.*` tests passing, so the remaining hang should
-be investigated as pipe/handle close or upstream-process waiting semantics
-rather than as a rubash argument-normalization issue.
+Open follow-up: validate the full `yes | head -3` and `yes | head -3000 |
+md5sum` slices after WinuxCmd raises or removes its safety output cap. Rubash's
+remaining integration work is then pipe/handle close and upstream-process
+waiting validation, rather than command-name argument normalization.
 
 ## Validation Rules Going Forward
 

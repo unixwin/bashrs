@@ -222,7 +222,12 @@ impl Executor {
             .iter()
             .map(|word| self.expand_word(word))
             .collect();
-        let (mut process, _) = external_command_for_program(&program, &args, &self.env_vars);
+        let (mut process, _) = external_command_for_named_program(
+            &program,
+            Some(&expanded_name),
+            &args,
+            &self.env_vars,
+        );
 
         self.apply_child_environment(&mut process);
         for (var_name, var_value) in &command.assignments {

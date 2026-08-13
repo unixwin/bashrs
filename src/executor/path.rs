@@ -31,6 +31,16 @@ pub fn find_user_command(name: &str, env_vars: &HashMap<String, String>) -> Opti
         }
     }
 
+    // A workspace may expose WinuxCmd as one dispatcher executable instead of
+    // one wrapper per command.  Ask the dispatcher whether it owns the name
+    // before returning it; unknown names must retain Bash's 127 behavior.
+    #[cfg(windows)]
+    if let Some(dispatcher) = find_winuxcmd_dispatcher(env_vars) {
+        if winuxcmd_has_command(&dispatcher, name, env_vars) {
+            return Some(dispatcher);
+        }
+    }
+
     None
 }
 
@@ -77,6 +87,15 @@ pub fn external_command_for_program(
     args: &[String],
     env_vars: &HashMap<String, String>,
 ) -> (Command, bool) {
+    external_command_for_named_program(program, None, args, env_vars)
+}
+
+pub fn external_command_for_named_program(
+    program: &Path,
+    command_name: Option<&str>,
+    args: &[String],
+    env_vars: &HashMap<String, String>,
+) -> (Command, bool) {
     let native_args = args
         .iter()
         .map(|arg| external_argument_path(arg, env_vars))
@@ -119,8 +138,45 @@ pub fn external_command_for_program(
     }
 
     let mut command = Command::new(program);
+    if is_winuxcmd_dispatcher(program) {
+        if let Some(command_name) = command_name {
+            command.arg(command_name);
+        }
+    }
     command.args(&native_args);
     (command, false)
+}
+
+fn is_winuxcmd_dispatcher(path: &Path) -> bool {
+    cfg!(windows)
+        && path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .is_some_and(|stem| stem.eq_ignore_ascii_case("winuxcmd"))
+}
+
+#[cfg(windows)]
+fn find_winuxcmd_dispatcher(env_vars: &HashMap<String, String>) -> Option<PathBuf> {
+    split_shell_path(env_vars.get("PATH").map(String::as_str).unwrap_or_default())
+        .into_iter()
+        .map(|dir| shell_path_to_windows(&dir, env_vars).join("winuxcmd"))
+        .find_map(|candidate| executable_candidate(&candidate, env_vars))
+}
+
+#[cfg(windows)]
+fn winuxcmd_has_command(
+    dispatcher: &Path,
+    name: &str,
+    env_vars: &HashMap<String, String>,
+) -> bool {
+    let mut command = Command::new(dispatcher);
+    command.arg("help").arg(name);
+    for key in ["SystemRoot", "WINDIR", "ComSpec"] {
+        if let Some(value) = env_vars.get(key) {
+            command.env(key, value);
+        }
+    }
+    command.output().is_ok_and(|output| output.status.success())
 }
 
 #[cfg(windows)]
@@ -699,6 +755,25 @@ mod tests {
 
         assert!(!used_shell);
         assert_eq!(args, vec!["/h/".to_string(), "--literal".to_string()]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_dispatcher_receives_original_command_name_before_arguments() {
+        let env_vars = HashMap::new();
+        let (command, used_shell) = external_command_for_named_program(
+            Path::new(r"C:\tools\winuxcmd.exe"),
+            Some("head"),
+            &["-3000".to_string(), "input.txt".to_string()],
+            &env_vars,
+        );
+        let args = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(!used_shell);
+        assert_eq!(args, vec!["head", "-3000", "input.txt"]);
     }
 
     #[cfg(windows)]

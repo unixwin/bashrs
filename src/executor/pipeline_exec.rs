@@ -400,7 +400,12 @@ impl Executor {
 
         let mut processes = Vec::with_capacity(commands.len());
         for (index, (program, args)) in specs.iter().enumerate() {
-            let (mut process, _) = external_command_for_program(program, args, &self.env_vars);
+            let (mut process, _) = external_command_for_named_program(
+                program,
+                Some(&self.expand_word(&commands[index].words[0])),
+                args,
+                &self.env_vars,
+            );
             self.apply_child_environment(&mut process);
 
             if index == 0 {
@@ -514,7 +519,12 @@ impl Executor {
         let mut first_stdin: Option<std::process::ChildStdin> = None;
 
         for (index, (program, args)) in specs.iter().enumerate() {
-            let (mut process, _) = external_command_for_program(&program, &args, &self.env_vars);
+            let (mut process, _) = external_command_for_named_program(
+                &program,
+                Some(&self.expand_word(&commands[index].words[0])),
+                &args,
+                &self.env_vars,
+            );
             self.apply_child_environment(&mut process);
 
             if let Some(stdout) = previous_stdout.take() {

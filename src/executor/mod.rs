@@ -183,7 +183,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use self::path::{
-    apply_required_windows_child_environment, external_command_for_program, find_shell,
+    apply_required_windows_child_environment, external_command_for_named_program, find_shell,
     find_user_command, shell_path_to_windows, standard_path,
 };
 

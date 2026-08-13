@@ -54,7 +54,12 @@ impl Executor {
         };
 
         let (mut process, used_shell) =
-            external_command_for_program(&program, &cmd.words[1..], &self.env_vars);
+        external_command_for_named_program(
+            &program,
+            Some(&cmd.words[0]),
+            &cmd.words[1..],
+            &self.env_vars,
+        );
         self.apply_external_environment(cmd, &mut process);
         self.apply_external_redirects(cmd, &mut process)?;
         self.spawn_external_process(cmd, &program, process, used_shell)
