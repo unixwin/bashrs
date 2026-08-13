@@ -766,6 +766,26 @@ fn test_command_substitution_captures_heredoc_pipeline() {
 }
 
 #[test]
+fn test_stdin_script_waits_for_command_substitution_heredoc_closer() {
+    let output_path = "target/rubash-stdin-comsub-heredoc-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "TEST=$(cat <<EOF | sort -u\nabc\ngeh\ndef\nabc\nEOF\n)\necho $TEST > {output_path}\n"
+    );
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-s")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    use std::io::Write;
+    child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+    let status = child.wait().unwrap();
+    assert!(status.success());
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "abc def geh\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_backtick_command_substitution_captures_heredoc() {
     let output_path = "target/rubash-backtick-comsub-heredoc-output.txt";
     let _ = fs::remove_file(output_path);

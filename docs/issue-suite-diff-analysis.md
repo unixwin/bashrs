@@ -22,6 +22,18 @@ This fixes the jobs/wait root-cause slice tracked by Issues #22 and #23.
 Verification: `cargo test --test executor_tests command_chaining::part_036`
 (27 passed).
 
+### 2026-08-13 command-substitution heredoc collection
+
+Batch stdin execution now waits for command-substitution syntax to close after
+all declared heredoc bodies have been collected. Previously parentheses in a
+heredoc body could make the top-level input check report an EOF syntax error
+before the body and closing `)` were available. Command-list substitution also
+now uses the real parser for heredoc-bearing sources.
+
+Verification: `cargo test --test executor_tests command_chaining::part_005`
+(40 passed); Bash upstream `run-heredoc`, `run-comsub`, `run-comsub-eof`,
+`run-comsub-posix`, `run-redir`, `run-vredir`, and `run-procsub` (7/7).
+
 ### 2026-08-13 Arithmetic Literal Diagnostics Progress
 
 Arithmetic literal failures now preserve the GNU Bash `expr.c::strlong`

@@ -306,6 +306,9 @@ fn run_stdin_script(executor: &mut Executor) -> i32 {
 }
 
 fn stdin_source_needs_more(source: &str) -> bool {
+    if has_unclosed_input_syntax(source) {
+        return true;
+    }
     if stdin_source_is_function_signature(source) {
         return true;
     }
@@ -528,7 +531,10 @@ fn run_source(executor: &mut Executor, input: &str, interactive: bool) -> i32 {
     // including pending here-documents, rather than executing script files one
     // physical line at a time. This keeps batch input whole; interactive mode
     // still feeds one line at a time from the REPL.
-    if !interactive && has_unclosed_input_syntax(input) {
+    // The heredoc collector must see the complete script before command
+    // substitution balance is checked: parentheses in a heredoc body are
+    // literal data, not shell syntax.
+    if !interactive && has_unclosed_input_syntax(input) && !input.contains("<<") {
         eprintln!("rubash: syntax error: unexpected end of file");
         return 2;
     }

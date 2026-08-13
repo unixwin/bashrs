@@ -350,10 +350,6 @@ impl Executor {
     }
 
     fn command_list_substitution_output(&self, source: &str) -> Option<String> {
-        if source.contains("<<") {
-            return None;
-        }
-
         let tokens = crate::lexer::tokenize(source);
         let ast = crate::parser::parse(&tokens);
 
