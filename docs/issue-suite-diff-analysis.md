@@ -801,6 +801,20 @@ That path must preserve the parent shopt state and Bash's ENOEXEC fallback
 semantics. The existing bridges therefore remain in place until those real
 owners are fixed and covered.
 
+### 2026-08-14 kill explicit signal-zero process-group operand
+
+GNU Bash treats `kill -s 0 -1` as a signal-zero existence probe against the
+current process group. Rubash's option scanner previously continued parsing
+after `-s 0`, interpreted `-1` as another signal specification, and returned
+usage status 2. The scanner now treats the remaining words as operands after
+an explicit `-s`/`-n` option; signal-zero group operands are accepted by the
+Windows backend without attempting native process termination.
+
+Verification:
+
+- `cargo test --test executor_tests command_chaining::part_026` (15 passed)
+- direct Bash/Rubash probe for `kill -s 0 -1` (both status 0)
+
 ### 2026-08-13 WinuxCmd streaming `head` fixes the producer hang
 
 The BusyBox `heredoc_huge`/large-producer failure was reproduced through the

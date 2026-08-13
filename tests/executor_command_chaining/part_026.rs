@@ -191,6 +191,19 @@ fn test_kill_validates_signal_options_and_pid_operands() {
 }
 
 #[test]
+fn test_kill_signal_zero_accepts_negative_process_group_operand() {
+    let output_path = "target/rubash-kill-signal-zero-group-status.txt";
+    let input = format!("kill -s 0 -1; echo $? > {output_path}");
+
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+    assert!(executor.execute_ast(&ast).is_ok());
+
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "0\n");
+}
+
+#[test]
 fn test_kill_redirects_stderr() {
     let error_path = "target/rubash-kill-stderr-output.txt";
     let status_path = "target/rubash-kill-stderr-status.txt";

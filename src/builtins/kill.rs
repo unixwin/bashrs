@@ -133,7 +133,10 @@ where
             signal = signal_number_from_spec(sigspec).unwrap_or(15);
             index += 2;
             operands_start = index;
-            continue;
+            // After an explicit signal option, the remaining words are
+            // operands. In particular, `kill -s 0 -1` uses -1 as a process
+            // group operand, not as another short signal specification.
+            break;
         }
         if value.starts_with('-') && value != "-" {
             let sigspec = value.trim_start_matches('-');
@@ -161,6 +164,14 @@ where
 
     let mut status = 0;
     for operand in &args[operands_start..] {
+        if signal == 0 && matches!(operand.as_str(), "-1" | "0") {
+            // Windows cannot address a Unix process group through
+            // OpenProcess, but signal 0 is only an existence probe. These
+            // group targets are valid Bash operands and do not require a
+            // native termination call.
+            continue;
+        }
+
         let Some(pid) = parse_pid(operand) else {
             writeln!(
                 stderr,
