@@ -211,6 +211,16 @@ was incorrectly passing the reusable-print flag unconditionally, producing
 Verification: Bash upstream `run-shopt` (1/1) and `cargo test --lib`
 (163 passed).
 
+### 2026-08-13 parameter replacement literal backslashes
+
+Parameter replacement patterns containing an escaped backslash now normalize
+the lexer quote markers before matching. This makes `${P//\\\\//}` replace
+Windows path separators with `/`, matching Bash, while preserving ordinary
+glob pattern semantics.
+
+Verification: `cargo test --test executor_tests command_chaining::part_024`
+(13 passed); direct Bash/Rubash probe outputs `C:/work/dir/file.txt`.
+
 ### 2026-08-13 Arithmetic Literal Diagnostics Progress
 
 Arithmetic literal failures now preserve the GNU Bash `expr.c::strlong`

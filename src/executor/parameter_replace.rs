@@ -31,10 +31,15 @@ pub(in crate::executor) fn replace_parameter_pattern(
         // `\x14` is the internal marker for a literal backslash decoded by
         // decode_parameter_pattern_quotes; plain string replacement must
         // match the real `\` character in the value.
-        let literal = pattern.replace('\x14', "\\").replace('\x18', "\\");
+        let literal = normalize_parameter_pattern_backslashes(pattern);
         return replace_with_amp(value, &literal, replacement, global);
     }
 
+    // A quoted backslash in a replacement pattern is a literal character,
+    // not a glob escape. The lexer may leave it as the internal quote marker;
+    // normalize it before matching the value.
+    let pattern = normalize_parameter_pattern_backslashes(pattern);
+    let pattern = pattern.as_str();
     let indices: Vec<usize> = value
         .char_indices()
         .map(|(index, _)| index)
@@ -61,6 +66,13 @@ pub(in crate::executor) fn replace_parameter_pattern(
     }
 
     output
+}
+
+fn normalize_parameter_pattern_backslashes(pattern: &str) -> String {
+    pattern
+        .replace("\x18\x18", "\\")
+        .replace('\x14', "\\")
+        .replace('\x18', "\\")
 }
 
 pub(in crate::executor) fn replace_parameter_prefix(
