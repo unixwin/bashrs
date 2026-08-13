@@ -408,6 +408,7 @@ impl Executor {
             last_background_pid: self.last_background_pid,
             arithmetic_expansion_error: Cell::new(false),
             background_children: HashMap::new(),
+            background_statuses: HashMap::new(),
             background_jobs: HashMap::new(),
             background_job_order: Vec::new(),
             coproc_stdin_writers: HashMap::new(),

@@ -172,7 +172,7 @@ impl Executor {
         cmd: &CommandNode,
     ) -> Result<i32, ExecuteError> {
         if let Some((pid, wait_var)) = self.wait_any_background_request(cmd) {
-            if let Some(status) = self.wait_for_background_pid(pid)? {
+            if let Some(status) = self.wait_for_background_pid(pid, true)? {
                 if let Some(wait_var) = wait_var {
                     self.apply_shell_assignment(&wait_var, pid.to_string());
                 }
@@ -189,6 +189,7 @@ impl Executor {
             }
             self.background_jobs.clear();
             self.background_job_order.clear();
+            self.background_statuses.clear();
             self.coproc_stdin_writers.clear();
             self.coproc_stdout_readers.clear();
             self.write_buffered_builtin_output(cmd, &[], &[])?;
@@ -208,12 +209,12 @@ impl Executor {
 
         if cmd.words.len() == 2 {
             if let Some(pid) = self.resolve_background_job(&cmd.words[1]) {
-                if let Some(status) = self.wait_for_background_pid(pid)? {
+                if let Some(status) = self.wait_for_background_pid(pid, false)? {
                     self.write_buffered_builtin_output(cmd, &[], &[])?;
                     return Ok(status);
                 }
             } else if let Ok(pid) = cmd.words[1].parse::<u32>() {
-                if let Some(status) = self.wait_for_background_pid(pid)? {
+                if let Some(status) = self.wait_for_background_pid(pid, false)? {
                     self.write_buffered_builtin_output(cmd, &[], &[])?;
                     return Ok(status);
                 }
@@ -248,7 +249,7 @@ impl Executor {
                     write_wait_operand_error(&operand, &self.diagnostic_prefix(), &mut stderr)?;
                 continue;
             };
-            if let Some(wait_status) = self.wait_for_background_pid(pid)? {
+            if let Some(wait_status) = self.wait_for_background_pid(pid, false)? {
                 status = wait_status;
             } else {
                 status =
@@ -273,13 +274,23 @@ impl Executor {
         Some((pid, request.assign_var))
     }
 
-    fn wait_for_background_pid(&mut self, pid: u32) -> Result<Option<i32>, ExecuteError> {
+    fn wait_for_background_pid(
+        &mut self,
+        pid: u32,
+        retain_for_explicit_wait: bool,
+    ) -> Result<Option<i32>, ExecuteError> {
+        if let Some(status) = self.background_statuses.remove(&pid) {
+            return Ok(Some(status));
+        }
         let Some(mut child) = self.background_children.remove(&pid) else {
             return Ok(None);
         };
         let status = child.wait()?.code().unwrap_or(1);
         self.background_jobs.remove(&pid);
         self.background_job_order.retain(|job_pid| *job_pid != pid);
+        if retain_for_explicit_wait {
+            self.background_statuses.insert(pid, status);
+        }
         self.coproc_stdin_writers.remove(&pid);
         self.coproc_stdout_readers.remove(&pid);
         Ok(Some(status))
@@ -429,7 +440,9 @@ impl Executor {
         }
 
         job.parse::<u32>().ok().filter(|pid| {
-            self.background_children.contains_key(pid) || self.background_jobs.contains_key(pid)
+            self.background_children.contains_key(pid)
+                || self.background_jobs.contains_key(pid)
+                || self.background_statuses.contains_key(pid)
         })
     }
 

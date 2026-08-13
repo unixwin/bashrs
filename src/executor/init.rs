@@ -145,6 +145,7 @@ impl Executor {
             owns_signal_mailbox,
             last_background_pid: None,
             background_children: HashMap::new(),
+            background_statuses: HashMap::new(),
             background_jobs: HashMap::new(),
             background_job_order: Vec::new(),
             coproc_stdin_writers: HashMap::new(),

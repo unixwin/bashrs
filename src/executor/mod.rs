@@ -344,6 +344,9 @@ pub struct Executor {
     owns_signal_mailbox: bool,
     last_background_pid: Option<u32>,
     background_children: HashMap<u32, std::process::Child>,
+    /// Exit statuses reaped by `wait -n`, which Bash still makes available to
+    /// a later explicit `wait PID`.
+    background_statuses: HashMap<u32, i32>,
     background_jobs: HashMap<u32, String>,
     background_job_order: Vec<u32>,
     coproc_stdin_writers: HashMap<u32, std::io::PipeWriter>,
