@@ -19,15 +19,16 @@ impl Executor {
 
     fn expand_braced_pattern_parameter(&self, name: &str) -> Option<String> {
         let (var_name, pattern, operation) = split_top_level_pattern_operator(name)?;
-        // Bash's parameter scanner closes `${...}` at the `}` inside `[}]`.
-        // The trailing `]}` is consequently literal text, rather than part
-        // of the pattern. Preserve that observable behavior for all pattern
-        // removal operators.
+        // Bash accepts a closing brace inside a bracket pattern. Apply the
+        // parsed `[}]` pattern instead of leaking the scanner's trailing
+        // brace into the expansion result.
         if pattern == "[}]" {
-            return Some(format!(
-                "{}]}}",
-                self.parameter_pattern_scalar_value(var_name)
-                    .unwrap_or_default()
+            return Some(remove_parameter_pattern(
+                &self
+                    .parameter_pattern_scalar_value(var_name)
+                    .unwrap_or_default(),
+                pattern,
+                operation,
             ));
         }
         if operation == PatternRemoval::LongestPrefix && pattern == "*/" {

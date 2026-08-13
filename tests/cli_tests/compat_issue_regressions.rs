@@ -23,3 +23,15 @@ echo "${v%"${v#?}"}"
     );
     assert!(String::from_utf8_lossy(&output.stderr).is_empty());
 }
+
+#[test]
+fn parameter_pattern_bracket_can_contain_closing_brace() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("o='abc}'; echo \"${o%[}]}\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "abc\n");
+}
