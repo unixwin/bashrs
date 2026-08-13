@@ -650,6 +650,17 @@ Regression coverage:
 
 Raw suite artifact: `target/issue-suites/results/bash-actual/work/array/`.
 
+### 2026-08-13 loop-control diagnostics outside loops
+
+Oil/mksh `break-5` and `continue-5` exposed that Rubash already emitted
+Bash's “only meaningful in a loop” diagnostic but reset the command status to
+zero. GNU Bash leaves the command list running while making `$?` equal to 128.
+`src/executor/pwd_loop_builtins.rs` now preserves status 128 for both builtins;
+loop-internal `break`/`continue` handling is unchanged.
+
+Verification: `cargo test --test executor_tests part_050` (14 passed), plus
+direct `rubash -c 'break; echo status:$?'` and `continue` probes.
+
 ### 2026-08-13 refreshed upstream slice audit
 
 The old Bash actual-output snapshot was stale after the recent parser,

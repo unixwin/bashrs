@@ -2,7 +2,7 @@ use super::super::*;
 use std::fs;
 
 #[test]
-fn test_break_outside_loop_returns_success() {
+fn test_break_outside_loop_returns_status_128() {
     let output_path = "target/rubash-break-outside-output.txt";
     let _ = fs::remove_file(output_path);
     let input = format!("break not-a-number; echo $? > {output_path}");
@@ -14,7 +14,7 @@ fn test_break_outside_loop_returns_success() {
 
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
-    assert_eq!(fs::read_to_string(output_path).unwrap(), "0\n");
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "128\n");
     let _ = fs::remove_file(output_path);
 }
 
@@ -33,12 +33,29 @@ fn test_break_outside_loop_redirects_stderr() {
 
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
-    assert_eq!(fs::read_to_string(output_path).unwrap(), "0\n");
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "128\n");
     assert!(fs::read_to_string(error_path)
         .unwrap()
         .contains("break: only meaningful in a `for', `while', or `until' loop"));
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_file(error_path);
+}
+
+#[test]
+fn test_continue_outside_loop_returns_status_128() {
+    let output_path = "target/rubash-continue-outside-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!("continue; echo $? > {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "128\n");
+    let _ = fs::remove_file(output_path);
 }
 
 #[test]
