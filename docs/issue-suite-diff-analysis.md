@@ -1211,3 +1211,20 @@ Verification:
 - `run-redir` and `run-vredir`: PASS 0; raw logs remain under
   `target/bash-upstream-tests/logs/`.
 - `git diff --check`: passed.
+### 2026-08-14 exec redirection before option parsing
+
+The repro `fd=-1; exec $fd>out; echo after` showed that Rubash applied the
+stdout redirect only while invoking the `exec` builtin. Bash applies command
+redirections before `exec` parses its options, so it reports `exec: -1:
+invalid option` while the later `echo` remains redirected to `out`.
+
+`src/executor/trap_exec.rs` now detects an expanded `exec` invocation with no
+command operand and persists its redirections before running the builtin. This
+uses the normal expanded-word command-operand check and the existing persistent
+fd machinery, so valid option-only and invalid-option cases share the same
+ordering.
+
+Verification:
+
+- `cargo test --test cli_tests fd_redirects -- --nocapture` (14 passed)
+- `scripts/run-bash-upstream-tests.sh run-redir` (1/1 passed)

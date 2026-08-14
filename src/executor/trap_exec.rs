@@ -344,6 +344,17 @@ impl Executor {
             }
         }
 
+        // Bash applies redirections before `exec` parses its options.  This
+        // matters when an expanded option is invalid: the diagnostic is still
+        // emitted, but a stdout redirection remains in effect afterwards.
+        if self.exec_has_no_command_operand_after_expansion(cmd) {
+            self.execute_stdio_only_exec_redirect(cmd)?;
+            return Ok(crate::builtins::exec::execute(
+                &cmd.words[1..],
+                &self.env_vars,
+            )?);
+        }
+
         if let Some(redirect) = &cmd.redirect_out {
             let target = self.expand_word(&redirect.target);
             let mut file = self.create_redirect_output(&target, redirect.clobber)?;
@@ -951,6 +962,23 @@ impl Executor {
             return Err(ExecuteError::ExitCode(status));
         }
         Ok(())
+    }
+
+    fn exec_has_no_command_operand_after_expansion(&self, cmd: &CommandNode) -> bool {
+        if cmd.words.len() <= 1 {
+            return false;
+        }
+
+        let expanded_args: Vec<String> = cmd.words[1..]
+            .iter()
+            .map(|word| self.expand_word(word))
+            .collect();
+        !crate::builtins::exec::replaces_shell(&expanded_args)
+            && (cmd.redirect_out.is_some()
+                || cmd.append.is_some()
+                || cmd.redirect_err.is_some()
+                || cmd.redirect_err_append.is_some()
+                || cmd.redirect_in.is_some())
     }
 }
 

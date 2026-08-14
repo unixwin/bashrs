@@ -274,6 +274,26 @@ fn c_exec_reports_ambiguous_redirect_for_invalid_expanded_fd() {
 }
 
 #[test]
+fn c_exec_keeps_stdout_redirect_after_invalid_expanded_option() {
+    let output_path = Path::new("target").join("rubash-cli-exec-invalid-option.txt");
+    let _ = fs::remove_file(&output_path);
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(format!(
+            "fd=-1; exec $fd>{}; echo after",
+            output_path.to_string_lossy().replace('\\', "/")
+        ))
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(stream_text(&output.stdout), "");
+    assert!(stream_text(&output.stderr).contains("exec: -1: invalid option"));
+    assert_eq!(read_text(&output_path), "after\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn c_external_combined_redirect_preserves_stderr_first_output() {
     let bin_dir = external_fd_copy_bin_dir();
     let script_path = helper_path(&bin_dir, "emitboth");
