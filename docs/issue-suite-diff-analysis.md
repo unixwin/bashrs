@@ -1315,3 +1315,15 @@ Regression coverage:
 - `cargo test --lib umask` (6 passed)
 - `cargo test --test executor_tests umask` (8 passed)
 - `cargo test --test cli_tests` (155 passed)
+
+### 2026-08-14 here-string redirect validation boundary
+
+The ambiguous-redirect guard added for unquoted file targets was also
+inspecting the data word of `<<<`. A here-string is input content, not a path,
+so values containing spaces or newlines must not be rejected. The shared
+redirect validator now skips parser redirects marked `HereString` while
+continuing to validate ordinary file and fd redirects.
+
+This removed the common failure behind the mapfile/readarray here-string
+cluster in the integration suite. Verification: mapfile 25/25, readarray
+12/12, and fd redirect regressions 14/14.

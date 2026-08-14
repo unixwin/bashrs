@@ -47,6 +47,9 @@ impl Executor {
         }
 
         for redirect in candidates {
+            if matches!(redirect.kind, crate::parser::RedirectKind::HereString) {
+                continue;
+            }
             let target = self.expand_word(&redirect.target);
             let invalid_fd_target = target.starts_with('&')
                 && !is_closed_redirect_target(&target)
