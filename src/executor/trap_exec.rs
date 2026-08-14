@@ -440,8 +440,12 @@ impl Executor {
             let target = self.expand_word(&redirect.target);
             let fd = redirect.fd.unwrap_or(1);
             if is_closed_redirect_target(&target) {
-                self.close_persistent_output_fd(fd)?;
-                self.env_vars.insert(fd_closed_key(fd), "1".to_string());
+                if let Some(name) = redirect.fd_var.as_deref() {
+                    self.close_dynamic_fd(name)?;
+                } else {
+                    self.close_persistent_output_fd(fd)?;
+                    self.env_vars.insert(fd_closed_key(fd), "1".to_string());
+                }
                 return Ok(Some(0));
             }
             if let Some(source_fd) = redirect_target_fd(&target) {
@@ -810,7 +814,7 @@ impl Executor {
         if let Some(redirect) = &cmd.redirect_out {
             let target = self.expand_word(&redirect.target);
             if is_closed_redirect_target(&target) {
-                self.close_dynamic_fd(name)?;
+                self.close_dynamic_output_fd(name)?;
                 return Ok(Some(0));
             }
 
@@ -834,7 +838,7 @@ impl Executor {
             if let Some(redirect) = &cmd.append {
             let target = self.expand_word(&redirect.target);
             if is_closed_redirect_target(&target) {
-                self.close_dynamic_fd(name)?;
+                self.close_dynamic_output_fd(name)?;
                 return Ok(Some(0));
             }
             let fd = self.allocate_dynamic_fd();
@@ -947,6 +951,22 @@ impl Executor {
     fn close_dynamic_fd(&mut self, name: &str) -> Result<(), ExecuteError> {
         if let Some(fd) = self.dynamic_fd_variable_value(name) {
             self.close_persistent_fd(fd)?;
+        }
+        Ok(())
+    }
+
+    fn close_dynamic_output_fd(&mut self, name: &str) -> Result<(), ExecuteError> {
+        let Some(fd) = self.dynamic_fd_variable_value(name) else {
+            return Ok(());
+        };
+
+        // Coprocess input/output endpoints currently share the child PID as
+        // their virtual descriptor. Close only the output capability so
+        // `exec {COPROC[1]}>&-` does not invalidate `COPROC[0]` as well.
+        self.close_persistent_output_fd(fd)?;
+        if !self.fd_table.is_open_for_read(fd) {
+            self.fd_table.close(fd);
+            self.env_vars.insert(fd_closed_key(fd), "1".to_string());
         }
         Ok(())
     }

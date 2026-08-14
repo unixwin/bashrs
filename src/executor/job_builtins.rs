@@ -110,6 +110,7 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<i32, ExecuteError> {
+        self.refresh_background_jobs()?;
         let mut stderr = Vec::new();
         let action = crate::builtins::jobs::execute_with_io(
             &cmd.words[1..],
@@ -171,6 +172,7 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<i32, ExecuteError> {
+        self.refresh_background_jobs()?;
         if let Some((pid, wait_var)) = self.wait_any_background_request(cmd) {
             if let Some(status) = self.wait_for_background_pid(pid, true)? {
                 if let Some(wait_var) = wait_var {
@@ -267,12 +269,48 @@ impl Executor {
         let pid = if let Some(first) = request.operands.first() {
             self.resolve_background_job(first)?
         } else {
-            self.background_job_order
-                .iter()
+            // A completed child may no longer have a Child handle, but its
+            // status remains in `background_statuses` until wait -n consumes
+            // it. Jobs that wait -n already consumed are removed from
+            // `background_jobs` while their status remains available to an
+            // explicit wait PID.
+            self.background_statuses
+                .keys()
                 .copied()
-                .find(|pid| self.background_children.contains_key(pid))?
+                .find(|pid| self.background_jobs.contains_key(pid))
+                .or_else(|| {
+                    self.background_job_order
+                        .iter()
+                        .copied()
+                        .find(|pid| self.background_children.contains_key(pid))
+                })?
         };
         Some((pid, request.assign_var))
+    }
+
+    fn refresh_background_jobs(&mut self) -> Result<(), ExecuteError> {
+        let mut finished = Vec::new();
+        for (pid, child) in &mut self.background_children {
+            if let Some(status) = child.try_wait()? {
+                finished.push((*pid, status.code().unwrap_or(1)));
+            }
+        }
+
+        for (pid, status) in finished {
+            self.background_children.remove(&pid);
+            self.job_table.mark_completed(pid, status);
+            self.background_statuses.entry(pid).or_insert(status);
+        }
+        Ok(())
+    }
+
+    fn forget_background_job_tracking(&mut self, pid: u32) {
+        self.background_children.remove(&pid);
+        self.background_jobs.remove(&pid);
+        self.background_job_order.retain(|job_pid| *job_pid != pid);
+        self.coproc_stdin_writers.remove(&pid);
+        self.coproc_stdout_readers.remove(&pid);
+        self.fd_table.close(pid);
     }
 
     fn wait_for_background_pid(
@@ -281,6 +319,7 @@ impl Executor {
         retain_for_explicit_wait: bool,
     ) -> Result<Option<i32>, ExecuteError> {
         if let Some(status) = self.background_statuses.remove(&pid) {
+            self.forget_background_job_tracking(pid);
             return Ok(Some(status));
         }
         let Some(mut child) = self.background_children.remove(&pid) else {
@@ -288,14 +327,10 @@ impl Executor {
         };
         let status = child.wait()?.code().unwrap_or(1);
         self.job_table.mark_completed(pid, status);
-        self.background_jobs.remove(&pid);
-        self.background_job_order.retain(|job_pid| *job_pid != pid);
         if retain_for_explicit_wait {
             self.background_statuses.insert(pid, status);
         }
-        self.coproc_stdin_writers.remove(&pid);
-        self.coproc_stdout_readers.remove(&pid);
-        self.fd_table.close(pid);
+        self.forget_background_job_tracking(pid);
         Ok(Some(status))
     }
 
@@ -348,16 +383,28 @@ impl Executor {
     ) -> String {
         let mut output = String::new();
         for (job_number, pid, source) in jobs {
+            let state = self
+                .job_table
+                .pid_to_job
+                .get(&pid)
+                .and_then(|job_id| self.job_table.jobs.get(job_id))
+                .and_then(|job| {
+                    (job.state == crate::jobs::ProcessState::Completed)
+                        .then_some(job.exit_status.unwrap_or(1))
+                });
+            let state_text = match state {
+                Some(0) => "Done".to_string(),
+                Some(status) => format!("Exit {status}"),
+                None => "Running".to_string(),
+            };
             if options.pids_only {
                 output.push_str(&format!("{pid}\n"));
             } else if options.long {
                 output.push_str(&format!(
-                    "[{job_number}]  {pid} Running                 {source} &\n"
+                    "[{job_number}]  {pid} {state_text:<22} {source} &\n"
                 ));
             } else {
-                output.push_str(&format!(
-                    "[{job_number}]  Running                 {source} &\n"
-                ));
+                output.push_str(&format!("[{job_number}]  {state_text:<22} {source} &\n"));
             }
         }
         output

@@ -115,6 +115,40 @@ compatibility fallback. The next fd gate is external child materialization and
 removal of that fallback mirror; `<>` and the native `vredir4/5/7/8` probes
 remain separate gates.
 
+### 2026-08-14 Coproc virtual close versus external child materialization
+
+The named-coproc fd lifetime slice now has a focused real regression. The
+previous close path treated `C[0]` and `C[1]` as one complete virtual fd and
+closed both capabilities when `exec {C[1]}>&-` ran. The corrected owner,
+`src/executor/trap_exec.rs::close_dynamic_output_fd`, closes only the output
+capability and preserves the coprocess stdout reader until it is explicitly
+closed or consumed.
+
+Evidence:
+
+| Command | Result | Raw evidence |
+|---|---|---|
+| `cargo test --test cli_tests c_command_closing_named_coproc_stdin_fd_produces_eof -- --nocapture` | 1/1 pass | CLI regression output |
+| `cargo test --test executor_tests command_chaining::part_080 -- --nocapture` | 152/152 pass | fd/coproc regression output |
+| `BASH_RUNNER=D:/Git/bin/bash.exe D:/Git/bin/bash.exe scripts/run-bash-upstream-tests.sh run-coproc` | 1/1 pass | `target/bash-upstream-tests/logs/run-coproc.log` |
+| direct `coproc { cat; }` probe | Bash `read:hello`; Rubash `read:`; both `done` | `target/issue-suites/results/coproc-kernel-20260814/` |
+
+The direct probe is the important boundary evidence. The Rubash-only loop
+passes, so virtual writer-close and reader preservation are no longer the
+root cause there. An external `cat` still does not receive the same data/EOF
+behavior after child fd materialization. This is an open WinuxCmd/std child
+setup and `FdTable::materialize_for_child` TODO, not a reason to revert the
+virtual fd fix or to add an output bridge.
+
+Open gates:
+
+- [ ] Make materialized coprocess stdin/out handles follow the shell fd
+      lifetime for external children.
+- [ ] Add external-child `cat` regressions for read, write, duplicate, close,
+      and `wait "$C_PID"` status, with dated stdout/stderr/status artifacts.
+- [ ] Re-run the official Bash `.tests` `coproc` actual-output body and update
+      its ledger row only after the bridge is unnecessary.
+
 ## 2026-08-14 Ordered Output Migration
 
 The current bounded verification is:

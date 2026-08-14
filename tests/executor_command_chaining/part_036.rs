@@ -118,6 +118,44 @@ fn test_wait_n_waits_one_background_job() {
 }
 
 #[test]
+fn test_jobs_refreshes_completed_background_status() {
+    let output_path = "target/rubash-jobs-completed-status-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!("false & sleep 0.2; jobs -l > {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    let output = fs::read_to_string(output_path).unwrap();
+    assert!(
+        output.contains("Exit 1"),
+        "unexpected jobs output: {output:?}"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_wait_n_prefers_a_completed_job_over_an_earlier_running_job() {
+    let output_path = "target/rubash-wait-n-completed-first-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "sleep 3 & slow=$!; false & fast=$!; sleep 1; wait -n; printf 'status:%s\\n' \"$?\" > {output_path}; wait \"$slow\""
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "status:1\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_wait_n_preserves_status_for_later_explicit_pid_wait() {
     let output_path = "target/rubash-wait-n-explicit-pid-output.txt";
     let _ = fs::remove_file(output_path);

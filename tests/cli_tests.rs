@@ -88,6 +88,46 @@ fn c_command_writes_to_named_coproc_stdin_fd() {
 }
 
 #[test]
+fn c_command_closing_named_coproc_stdin_fd_produces_eof() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "coproc C { while read -r value; do printf 'got:%s\\n' \"$value\"; done; }; \
+             printf 'hello\\n' >&\"${C[1]}\"; read -r value <&\"${C[0]}\"; \
+             exec {C[1]}>&-; wait \"$C_PID\"; printf 'read:%s\\n' \"$value\"",
+        )
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn rubash coproc close probe");
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if child.try_wait().expect("poll rubash coproc close probe").is_some() {
+            let output = child
+                .wait_with_output()
+                .expect("collect rubash coproc close probe");
+            assert!(
+                output.status.success(),
+                "stderr: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(String::from_utf8_lossy(&output.stdout), "read:got:hello\n");
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    let _ = child.kill();
+    let output = child.wait_with_output().expect("collect timed out probe");
+    panic!(
+        "rubash coproc stdin close did not produce EOF within 5 seconds; stdout={:?} stderr={:?}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn c_command_external_reads_named_coproc_stdout_through_array_fd() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
