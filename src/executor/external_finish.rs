@@ -69,7 +69,7 @@ impl Executor {
         // input needs to be transferred.
         if self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
             && !self.env_vars.contains_key(FUNCTION_STDIN)
-            && !self.env_vars.contains_key(&fd_stdin_key(0))
+            && self.fd_table.input_snapshot(0).is_none()
         {
             return Ok(false);
         }

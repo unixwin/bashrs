@@ -72,18 +72,10 @@ impl Executor {
             let (Some(fd), Some(body)) = (redirect.fd, redirect.body.clone()) else {
                 continue;
             };
-            let input_key = fd_stdin_key(fd);
-            let offset_key = fd_stdin_offset_key(fd);
             let body =
                 strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(&body)).to_string();
-            saved_fd_inputs.push((
-                input_key.clone(),
-                self.env_vars.get(&input_key).cloned(),
-                offset_key.clone(),
-                self.env_vars.get(&offset_key).cloned(),
-            ));
-            self.env_vars.insert(input_key, body);
-            self.env_vars.insert(offset_key, "0".to_string());
+            saved_fd_inputs.push((fd, self.fd_table.entries.get(&fd).cloned()));
+            self.fd_table.open_input(fd, FdReadEndpoint::text(&body), true);
         }
 
         let mut ran_body = false;
@@ -126,9 +118,15 @@ impl Executor {
             }
         });
 
-        for (input_key, old_input, offset_key, old_offset) in saved_fd_inputs {
-            restore_optional_env_var(&mut self.env_vars, &input_key, old_input);
-            restore_optional_env_var(&mut self.env_vars, &offset_key, old_offset);
+        for (fd, old_entry) in saved_fd_inputs {
+            match old_entry {
+                Some(entry) => {
+                    self.fd_table.entries.insert(fd, entry);
+                }
+                None => {
+                    self.fd_table.entries.remove(&fd);
+                }
+            }
         }
         loop_result?;
 

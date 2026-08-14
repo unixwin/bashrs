@@ -113,12 +113,10 @@ impl FdTable {
     }
 
     pub(crate) fn allocate_dynamic(&mut self) -> u32 {
+        // Bash's F_DUPFD requests the lowest available descriptor at or above
+        // SHELL_FD_BASE. Closed dynamic entries are reusable immediately.
         let fd = (10..1024)
-            .find(|fd| {
-                self.entries
-                    .get(fd)
-                    .map_or(true, |entry| !Self::occupied(entry))
-            })
+            .find(|fd| self.entries.get(fd).map_or(true, |entry| !Self::occupied(entry)))
             .unwrap_or(10);
         self.next_dynamic_fd = fd.saturating_add(1).max(10);
         fd
@@ -397,9 +395,13 @@ mod tests {
         let mut table = FdTable::new();
         let first = table.allocate_dynamic();
         table.open_input(first, FdReadEndpoint::text("a\n"), true);
+        let second = table.allocate_dynamic();
+        table.open_input(second, FdReadEndpoint::text("b\n"), true);
         table.close(first);
-        table.next_dynamic_fd = first;
+        table.close(second);
         assert_eq!(table.allocate_dynamic(), first);
+        table.open_input(first, FdReadEndpoint::text("c\n"), true);
+        assert_eq!(table.allocate_dynamic(), second);
     }
 
     #[test]

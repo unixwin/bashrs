@@ -30,6 +30,7 @@ impl Executor {
         let mut subshell_depth: Option<usize> = None;
         let mut subshell_stdin: Option<(String, String)> = None;
         while index < ast.commands.len() {
+            self.refresh_background_jobs()?;
             self.run_pending_signal_traps()?;
 
             let command = &ast.commands[index];

@@ -1,4 +1,5 @@
 use super::*;
+use crate::shell::VariableStore;
 
 impl Executor {
     pub fn new() -> Self {
@@ -122,7 +123,10 @@ impl Executor {
             crate::builtins::kill::register_signal_mailbox(std::process::id()).is_ok();
 
         Self {
-            shell_state: ShellState::default(),
+            shell_state: ShellState {
+                variables: VariableStore::from_environment(&env_vars),
+                ..ShellState::default()
+            },
             fd_table: FdTable::new(),
             job_table: JobTable::default(),
             exit_code: 0,
@@ -148,11 +152,11 @@ impl Executor {
             owns_signal_mailbox,
             last_background_pid: None,
             background_children: HashMap::new(),
-            background_statuses: HashMap::new(),
             background_jobs: HashMap::new(),
             background_job_order: Vec::new(),
             coproc_stdin_writers: HashMap::new(),
             coproc_stdout_readers: HashMap::new(),
+            coproc_stderr_forwarders: HashMap::new(),
             assignment_output_process_substitutions: HashMap::new(),
             suppress_errexit: 0,
             debug_trap_running: false,

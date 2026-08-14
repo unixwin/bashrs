@@ -4,8 +4,8 @@ mod glob;
 mod words;
 
 pub(super) use array::{append_array_value, format_indexed_array_storage, indexed_array_entries};
-pub(super) use assoc::append_assoc_value;
-use assoc::{parse_assoc_words, quote_assoc_key};
+pub(super) use assoc::{append_assoc_value, parse_assoc_words};
+use assoc::quote_assoc_key;
 pub(super) use words::{parse_array_tokens, split_storage_words, unquote_storage_value};
 
 pub(super) fn parse_single_element_array(value: &str) -> Option<&str> {

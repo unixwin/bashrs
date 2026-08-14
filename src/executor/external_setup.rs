@@ -138,7 +138,6 @@ impl Executor {
             }
         } else if self.fd_table.is_closed(0)
             || (self.fd_table.has_entry(0) && !self.fd_table.is_open_for_read(0))
-            || self.env_vars.contains_key(&fd_closed_key(0))
         {
             process.stdin(Stdio::null());
         }
@@ -231,17 +230,6 @@ impl Executor {
                             .and_then(|materialized| materialized.read.clone())
                         {
                             redirect.target = shell_display_path(&path.to_string_lossy());
-                        }
-                    } else if !self.fd_table.has_entry(fd)
-                        && self.env_vars.contains_key(&fd_dynamic_input_key(fd))
-                    {
-                        if let Some(input) = self.virtual_fd_stdin_remaining(fd) {
-                            let path = self.write_process_substitution_temp(&input)?;
-                            let input_len = self.virtual_fd_stdin_len(fd);
-                            self.env_vars
-                                .insert(fd_stdin_offset_key(fd), input_len);
-                            redirect.target = shell_display_path(&path.to_string_lossy());
-                            files.inputs.push(path);
                         }
                     } else if let Some(input) = self.external_fd_heredoc_input(cmd, fd) {
                         let path = self.write_process_substitution_temp(&input)?;
@@ -645,26 +633,16 @@ impl Executor {
         {
             return None;
         }
-        let input = self.env_vars.get(&fd_stdin_key(fd))?;
-        if input == FD_PROCESS_STDIN_TARGET {
-            return None;
-        }
-        let offset = self
-            .env_vars
-            .get(&fd_stdin_offset_key(fd))
-            .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(0);
-        Some(input.get(offset..).unwrap_or_default().to_string())
+        // External child input must come from the FdTable. A missing entry is
+        // an unopened fd, not permission to resurrect the legacy env mirror.
+        None
     }
 
     fn virtual_fd_stdin_len(&self, fd: u32) -> String {
         if let Some((input, _)) = self.fd_table.input_snapshot(fd) {
             return input.len().to_string();
         }
-        self.env_vars
-            .get(&fd_stdin_key(fd))
-            .map(|input| input.len().to_string())
-            .unwrap_or_else(|| "0".to_string())
+        "0".to_string()
     }
 
     fn external_fd_heredoc_input(&self, cmd: &CommandNode, fd: u32) -> Option<String> {

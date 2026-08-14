@@ -135,7 +135,7 @@ impl Executor {
             return Some(line);
         }
 
-        if self.env_vars.contains_key(&fd_closed_key(0)) {
+        if self.fd_table.is_closed(0) {
             return None;
         }
 
@@ -165,9 +165,14 @@ impl Executor {
         }
         let pid = if fd == 0 {
             *self.coproc_stdout_readers.keys().next()?
+        } else if let Some(FdReadEndpoint::CoprocStdout(pid)) = self.fd_table.read_endpoint(fd) {
+            pid
         } else {
-            self.coproc_stdout_readers.contains_key(&fd).then_some(fd)?
+            fd
         };
+        if !self.coproc_stdout_readers.contains_key(&pid) {
+            return None;
+        }
         let mut reader = self.coproc_stdout_readers.remove(&pid)?;
         let mut bytes = Vec::new();
         let mut consumed_chars = 0usize;
@@ -206,6 +211,13 @@ impl Executor {
 
         if !ended {
             self.coproc_stdout_readers.insert(pid, reader);
+        } else if matches!(
+            self.fd_table.read_endpoint(fd),
+            Some(FdReadEndpoint::CoprocStdout(_))
+        ) {
+            // EOF closes this shell-owned read capability. Job reaping remains
+            // separate so wait can still consume the child's final status.
+            self.fd_table.close_input(fd);
         }
         if bytes.is_empty() {
             return None;
@@ -261,54 +273,22 @@ impl Executor {
                 return None;
             }
         }
-        let input_key = fd_stdin_key(fd);
-        let offset_key = fd_stdin_offset_key(fd);
-        let input = self.env_vars.get(&input_key)?.clone();
-        if input == FD_PROCESS_STDIN_TARGET {
+        // Coprocess readers are stream endpoints, not text mirrors. Once the
+        // pipe reaches EOF, do not interpret the legacy environment adapter
+        // value as shell input.
+        if matches!(
+            self.fd_table.read_endpoint(fd),
+            Some(FdReadEndpoint::CoprocStdout(_))
+        ) {
+            return None;
+        }
+        if matches!(
+            self.fd_table.read_endpoint(fd),
+            Some(FdReadEndpoint::InheritedProcessStdin)
+        ) {
             return self.read_inherited_process_stdin(delimiter, char_limit, exact_char_limit);
         }
-        let offset = self
-            .env_vars
-            .get(&offset_key)
-            .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(0);
-        if offset >= input.len() {
-            return None;
-        }
-        if char_limit == Some(0) {
-            return Some(String::new());
-        }
-
-        let slice = &input[offset..];
-        let mut output = String::new();
-        let mut consumed = 0usize;
-        let mut took_any = false;
-        for (index, ch) in slice.char_indices() {
-            if !exact_char_limit && ch == delimiter {
-                consumed = index + ch.len_utf8();
-                took_any = true;
-                break;
-            }
-
-            output.push(ch);
-            consumed = index + ch.len_utf8();
-            took_any = true;
-            if char_limit.is_some_and(|limit| output.chars().count() >= limit) {
-                break;
-            }
-        }
-        if !took_any {
-            return None;
-        }
-
-        self.env_vars
-            .insert(offset_key, (offset + consumed).to_string());
-        Some(trim_read_input(
-            output,
-            delimiter,
-            char_limit,
-            exact_char_limit,
-        ))
+        None
     }
 
     pub(in crate::executor) fn read_function_stdin(

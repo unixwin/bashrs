@@ -148,6 +148,224 @@ fd materialization. The remaining TODOs are:
 - [ ] Refresh the official `.tests` `coproc` row against the current commit;
       do not close it from the `run-coproc` `.right` result.
 
+## 2026-08-14 Coproc And Background-Termination Follow-Up
+
+The remaining official `coproc.tests` hang had two concrete semantic causes,
+both now covered by real Rust code and regressions:
+
+1. `cat -` was classified as an external file operand because the host-side
+   cat adapter only streamed the no-operand form. In a coprocess child this
+   delegated stdin to `cat.exe`, which could retain the nested pipe and block
+   the parent `read`. `external_file_builtins.rs` now treats `-` as stdin when
+   there are no file operands and streams inherited stdin through Rubash.
+2. Windows `kill PID` sent SIGTERM to another Rubash process through its
+   cooperative mailbox. A coprocess blocked in a native pipe read cannot poll
+   that mailbox, so `wait $PID` never completed. `builtins/kill.rs` now keeps
+   mailbox delivery for the current shell, while cross-process Windows jobs
+   fall through to native process termination.
+
+Real regressions:
+
+- [x] `cargo test --test cli_tests c_command_external_cat_dash_receives_coproc_data_before_writer_close -- --nocapture`
+- [x] `cargo test --test cli_tests c_command_starts_cat_dash_coproc_after_waiting_for_previous_coproc -- --nocapture`
+- [x] `cargo test --test cli_tests coproc -- --nocapture` -> 14/14
+- [x] Bridge-free official body now completes without timeout.
+
+Raw comparison:
+`target/issue-suites/results/coproc-actual-20260814-catdash-term/`
+
+| Run | Status | Interpretation |
+|---|---:|---|
+| GNU Bash source body | `0` | Reference output; `REFLECT` is terminated with status 143. |
+| Rubash source body | `1` | The coproc lifecycle output now completes; remaining output/status differences are environment or final fd-diagnostic work. |
+
+Remaining TODOs for the `coproc` row:
+
+- [ ] Provide a Windows `xcase` equivalent or classify the missing support
+      utility as harness-owned; do not implement it as a coproc shortcut.
+- [ ] Define the Windows mapping for `/etc/passwd` and compare the pipeline
+      through an available fixture before judging pipeline semantics.
+- [ ] Reproduce the final `exec 4<&${COPROC[0]}-; exec >&${COPROC[1]}-;
+      read foo <&4` sequence in a minimal probe. Align closed-pipe behavior
+      and status with Bash, or document the intentional Windows diagnostic.
+- [ ] Refresh the official actual-output ledger row after the three remaining
+      items are classified; keep the `coproc.tests` upstream `.right` bridge
+      enabled until then.
+
+## 2026-08-14 Coproc Streaming Child Progress
+
+The bridge-free delayed external-child reproducer is now fixed. Before the
+fix, `coproc C { cat; }` received `hello` through `C[1]`, but the parent read
+from `C[0]` could not complete before the writer was closed because nested
+Rubash delegated the no-operand inherited-stdin `cat` to `winuxcmd/cat.exe`.
+The semantic owner now streams inherited process stdin in chunks from
+`src/executor/external_file_builtins.rs`, flushing each chunk through the
+existing Rubash output path. Explicit redirects such as `cat <&"${C[0]}"`
+remain on the fd-table child setup path.
+
+Raw artifact:
+`target/issue-suites/results/coproc-stream-20260814-6d83e10/`.
+Both Bash and Rubash returned rc 0 and exact stdout `read:hello\n`; the
+reproducer filename deliberately does not match `coproc.tests`, so the
+upstream output bridge cannot intercept it.
+
+Verification:
+
+- [x] `cargo test --test cli_tests c_command_external_cat_receives_coproc_data_before_writer_close -- --nocapture`
+      passes with a 5-second child timeout.
+- [x] `cargo test --test cli_tests coproc -- --nocapture` -> 10/10.
+- [x] `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`
+      -> 152/152.
+- [x] Add and verify the symmetric external writer case (`cat` output to
+      `C[1]`) and duplicate/close lifetime cases.
+- [x] Run the official body without the `coproc.tests` upstream bridge and
+      save its Bash/Rubash outputs under the dated raw result directory.
+- [ ] Classify `/etc/passwd`, `xcase`, and final closed-pipe diagnostics
+      separately as host/harness or remaining semantic differences.
+- [ ] Refresh the official actual-output ledger row only after the bridge-free
+      body is green or every remaining difference is documented as
+      environment-only.
+
+## 2026-08-14 Coproc Lifecycle And Diagnostic Classification
+
+The final closed-pipe reproducer is now implemented at the job/fd lifecycle
+owner rather than in the `read` builtin. Before this change, a completed
+coprocess left its virtual `COPROC[0]`/`COPROC[1]` endpoints and the legacy fd
+environment mirror alive. A later `exec 4<&${C[0]}-; read foo <&4` therefore
+looked like an ordinary EOF. Bash retires the coprocess variables when the
+child exits, and the moved fd reports `4: Bad file descriptor`.
+
+`execute_ast_inner` now refreshes background jobs before each command.
+Completed coprocesses are retired by `job_builtins.rs`: endpoint aliases are
+closed in `FdTable`, compatibility fd keys are removed, and the coprocess
+array plus `${NAME}_PID` are unset. Redirected numeric fds are validated by
+the `read` owner only after this state transition. This preserves normal EOF
+for a live/open stream and reports a closed descriptor for a retired one.
+
+Focused evidence:
+
+- [x] `cargo test --test cli_tests coproc -- --nocapture` -> 15/15.
+- [x] `cargo test --test cli_tests c_command_retires_finished_coproc_endpoints_before_later_redirects -- --nocapture` -> 1/1.
+- [x] `cargo test --test executor_tests command_chaining::part_080 -- --nocapture` -> 152/152.
+- [x] EOF after a coproc reader reaches the end no longer falls back to
+      `__RUBASH_COPROC_STDIN:<pid>`.
+- [x] BrokenPipe from a coproc writer is rendered as
+      `command: write error: Bad file descriptor`, without Windows error 232.
+- [x] Cross-process Windows SIGTERM now produces status `143` for the
+      `REFLECT` coprocess regression.
+
+Latest bridge-free official comparison:
+`target/issue-suites/results/coproc-actual-20260814-coproc-fd2/`
+
+| Run | Status | Relevant result |
+|---|---:|---|
+| GNU Bash source body copied to `coproc-actual-body.sh` | `0` | `REFLECT` status `143`; `/etc/passwd` and closed-fd diagnostics appear on stdout; coproc array displays Bash fd values `63 60`. |
+| Rubash source body copied to `coproc-actual-body.sh` | `0` | `REFLECT` status `143`; pipeline `/etc/passwd` and `xcase` diagnostics now appear on stdout; coproc array displays virtual PIDs. |
+
+Remaining TODOs are deliberately split by ownership:
+
+- [ ] `xcase` is absent on this Windows host. Classify it as a
+      harness/host-owned missing utility or provide a real Windows fixture;
+      do not add a coproc-specific shortcut.
+- [ ] `/etc/passwd` is not present on the Windows host. Keep this as a
+      fixture/path TODO. The direct external-child case is fixed and covered,
+      and the concurrent external pipeline now routes intermediate-stage fd2
+      through the persistent shell fd2 owner. The missing path itself remains
+      a host fixture decision.
+- [x] Add and pass a focused regression for `exec 2>&1` followed by an
+      external child that fails to open a path; its diagnostic is now on
+      stdout and status remains 1.
+- [x] Add and pass the corresponding pipeline-stage regression without using
+      the simple `cat` stdin shortcut; intermediate stderr is drained without
+      blocking and written through the persistent fd2 owner.
+- [x] Classify coproc-child stderr separately: `coproc xcase -n -u` is a
+      missing host command, and its command-not-found diagnostic now follows
+      the parent's fd2 endpoint in the bridge-free body.
+- [x] Give coprocess children an explicit fd2 materialization path. The
+      `compound_exec.rs` owner now forwards piped child stderr through a
+      snapshot of the parent `FdTable` endpoint and joins the forwarder when
+      the child completes. Explicit coproc stderr redirects still override
+      this default path.
+- [ ] Replace the coproc array's `(pid pid)` virtual values with stable shell
+      fd values or document a deliberate Windows representation. Bash prints
+      `63 60`; Rubash currently prints the child PID twice. This is observable
+      even when endpoint reads/writes work.
+- [ ] Match the diagnostic produced by `echo ${COPROC[@]}` after
+      `exec >&${COPROC[1]}-`. Bash reports `echo: write error: Bad file
+      descriptor`; Rubash currently emits an empty line and only reports the
+      later `4: Bad file descriptor` from `read <&4`.
+- [ ] Refresh the official actual-output ledger only after the `xcase`, path
+      fixture, coproc-child fd2, virtual-fd display, and closed-output
+      diagnostic classifications are recorded. Keep the
+      `coproc.tests` upstream `.right` bridge enabled until that gate is
+      complete.
+
+## 2026-08-14 Coproc Child fd2 Follow-up
+
+The bridge-free official source body was rerun after moving coproc child
+stderr onto the parent shell fd2 owner. The raw comparison is stored at
+`target/issue-suites/results/coproc-actual-20260814-coproc-fd2/`.
+
+The previous `compound_exec.rs` setup used `Stdio::inherit()` for every
+coproc child's stderr. That inherited the Rubash process stderr handle and
+ignored `exec 2>&1`. The implementation now selects a forwarding target from
+the parent `FdTable`, pipes child stderr, forwards chunks to stdout/stderr,
+files, a closed sink, or an existing coproc writer, and joins the forwarding
+thread when the job is reaped. Explicit `2>`, `2>>`, and `2>&-` coproc
+redirects remain applied after the default fd2 setup.
+
+Verification:
+
+- [x] `cargo test --test cli_tests c_command_coproc_child_inherits_persistent_stderr_to_stdout -- --nocapture` -> 1/1.
+- [x] `cargo test --test cli_tests coproc -- --nocapture` -> 16/16.
+- [x] `cargo test --test executor_tests command_chaining::part_080 -- --nocapture` -> 152/152.
+- [x] Bridge-free Bash and Rubash source bodies both exit `0`.
+- [x] `xcase: command not found` is in Rubash stdout and Rubash stderr is
+      empty for the bridge-free body.
+
+Remaining differences are separate owners:
+
+- [ ] Replace the coproc array's `(pid pid)` virtual values with stable shell
+      fd values or document a deliberate Windows representation. Bash prints
+      `63 60`; Rubash currently prints the child PID twice.
+- [ ] Match Bash's `echo: write error: Bad file descriptor` after
+      `exec >&${COPROC[1]}-`; Rubash still emits an empty line and reports
+      only the later `4: Bad file descriptor` from `read <&4`.
+
+## 2026-08-14 Pipeline Stage fd2 Follow-up
+
+The bridge-free source body was rerun with the same GNU Bash source copied to
+`coproc-actual-body.sh`, so the Rubash upstream handler did not match the file
+name. The raw comparison is stored at
+`target/issue-suites/results/coproc-actual-20260814-pipeline-fd2/`.
+
+The real pipeline difference was in the Windows concurrent external-pipeline
+owner. It configured stderr only for the last stage and wrote that output to
+host stderr. Intermediate stages therefore bypassed `exec 2>&1`. The owner in
+`src/executor/pipeline_exec.rs` now captures every stage's stderr when the
+shell fd2 endpoint is `FdWriteEndpoint::Stdout`; intermediate readers run on
+threads so a large diagnostic cannot fill a pipe and deadlock the pipeline.
+The concurrent path is also disabled while stdout capture is active, because
+inheriting a native handle would bypass shell capture.
+
+Verification:
+
+- [x] `cargo test --test cli_tests c_command_pipeline_stages_inherit_persistent_stderr_to_stdout -- --nocapture` -> 1/1.
+- [x] `cargo test --test executor_tests command_chaining::part_080 -- --nocapture` -> 152/152.
+- [x] `cargo test --test cli_tests coproc -- --nocapture` -> 15/15.
+- [x] Both bridge-free source-body processes exit `0`.
+- [x] The Rubash pipeline `/etc/passwd` diagnostic is now in bridge-free
+      stdout, not bridge-free stderr.
+
+Remaining differences in this artifact are intentionally separate TODOs:
+
+- [ ] `xcase` is unavailable on the Windows host; decide on a fixture or
+      host-owned classification.
+- [ ] Coproc child stderr still uses inherited process stderr and does not
+      follow the parent shell's virtual fd2 endpoint.
+- [ ] Coproc endpoint display and closed-output diagnostics still differ from
+      Bash as listed above.
+
 ## Per-Test TODOs
 
 Status labels used below:
@@ -177,7 +395,7 @@ Status labels used below:
 | `comsub` | `0/0` | semantic lead: command-substitution state isolation and expansion | [ ] Identify the first differing command substitution and test variable, stdin, status, and nested substitution state separately. |
 | `comsub2` | `2/0` | unclassified parser/command-substitution status difference | [ ] Reproduce the exact malformed source; determine whether parser EOF, nested compound parsing, or status propagation is responsible. |
 | `cond` | `0/0` | semantic lead: conditional grammar, arithmetic operands, and test status | [ ] Split `[[ ]]`, arithmetic, pattern, and invalid-operator cases; add one parser/status regression for each. |
-| `coproc` | `0/0` | partial semantic fix: virtual writer close and reader preservation are covered; external-child materialization remains open | [x] Rubash coproc loop observes EOF after `exec {C[1]}>&-`. [ ] Verify external child fd materialization, EOF, reader close, wait status, and refresh the official actual-output row. |
+| `coproc` | `0/0` | semantic kernel covered for endpoint lifetime, virtual fd display, external children, pipeline-stage fd2, coproc-child fd2, and closed-output diagnostics; official output remains open only for host fixtures and ledger refresh | [x] Add and pass loop, external `cat`/`cat -`, duplicate/move fd, completed cleanup, cross-process termination, direct/intermediate/coproc-child fd2, virtual-fd display, and closed-output diagnostic regressions. [ ] Classify missing `xcase` and `/etc/passwd` as host fixtures, then refresh the official actual-output row without the `.right` bridge. |
 | `dbg-support` | `0/0` | semantic lead: DEBUG/RETURN/EXIT trap metadata and `BASH_COMMAND` state | [ ] Compare hook order and `FUNCNAME`/`BASH_COMMAND` values; add focused trap regressions. |
 | `dstack` | `0/0` | unclassified: directory-stack state and builtin output | [ ] Extract `pushd`, `popd`, `dirs`, and invalid-directory cases; assign ownership between shell state and builtins. |
 | `dynvar` | `0/0` | unclassified: dynamic variable scope and assignment state | [ ] Reproduce the first dynamic-scope mismatch; compare nameref, function scope, and command-substitution state. |
@@ -229,7 +447,7 @@ Status labels used below:
 | `trap` | `2/0` | semantic lead: trap option parsing, invalid signals, and status/diagnostic propagation | [ ] Split `-l`, `-p`, `-P`, action-only, invalid signal, and execution timing cases; add trap regressions. |
 | `type` | `127/0` | isolate first: command lookup/PATH mismatch likely | [ ] Reproduce with a controlled PATH and command fixture; then align builtin, function, alias, and file classification. |
 | `varenv` | `0/0` | semantic lead: exported environment, shell state, and child inheritance | [ ] Compare scalar/array export, special variables, subshell state, and child environment serialization. |
-| `vredir` | `0/0` | semantic lead: dynamic fd allocation, ordered redirects, close/move, and diagnostics | [ ] Run `vredir4`, `vredir5`, `vredir7`, and `vredir8` primitives separately; connect each result to `FdTable` tests and remove only the corresponding bridge after real coverage. |
+| `vredir` | `0/0` | partial semantic fix: lowest-free dynamic fd reuse and nameref/array storage now match; varredir failure recovery, diagnostics, and presentation remain open | [x] Re-run `vredir4`, `vredir5`, and `vredir7` without the bridge; add FdTable and CLI regressions for reuse and nameref targets. [ ] Fix `vredir8` failed `<>` allocation state and classify `/dev/tty`; decide whether function pretty-print and variable-name diagnostics are contract or formatting TODOs. |
 
 ## Closure Rule
 
@@ -244,3 +462,74 @@ A row can be marked complete only when all of the following exist:
 
 Until then, the row remains an open TODO even if a focused `.right` runner
 reports PASS.
+
+## 2026-08-14 Current Coproc Artifact
+
+The newest bridge-free comparison is stored at
+`target/issue-suites/results/coproc-actual-20260814-closed-output/`. The source
+was copied to `coproc-actual-body.sh`, so it does not match the
+`coproc.tests` filename handler. It was run against the working tree at
+`6d83e106c9dfe814c180203fb3a3f8be68ea22ce` with GNU Bash
+`D:/Git/bin/bash.exe`; both shells completed with status `0`.
+
+| Difference | Status | Durable interpretation / TODO |
+|---|---|---|
+| `COPROC[0]`/`COPROC[1]` values | Done | Rubash exposes stable shell-owned virtual descriptors (`10 11`, then `12 13`, then `14 15`). Bash's native values (`63 60`) are implementation-specific and are not a required Windows representation. The distinct-fd regression is `c_command_exposes_distinct_virtual_fds_for_named_coproc`. |
+| `echo ${COPROC[@]}` after `exec >&${COPROC[1]}-` | Done | Shared `write_ordered_command_output` now detects a persistent closed fd even when the current command has no redirect and emits `rubash: echo: write error: Bad file descriptor`. Regression: `c_command_echo_reports_persistent_closed_stdout`. |
+| `xcase` command | Open, host fixture | `xcase` is absent on this Windows host. Keep this as a harness/host-owned fixture decision; do not add a coproc-specific output shortcut. |
+| `/etc/passwd` pipeline | Open, host fixture | `/etc/passwd` is absent on Windows. The pipeline fd2 routing is covered; provide a project fixture or classify the Unix path as outside the Windows contract. |
+| Diagnostic spelling/locale | Open, host fixture | Bash prints `cat: ... No such file or directory`; WinuxCmd prints the equivalent localized `cat： ... 没有那个文件或目录`. Decide whether actual-output comparisons normalize host utility locale. |
+
+The focused verification for this slice is:
+
+- [x] `cargo test --test cli_tests c_command_echo_reports_persistent_closed_stdout -- --nocapture` -> 1/1.
+- [x] `cargo test --test cli_tests c_command_coproc_child_inherits_persistent_stderr_to_stdout -- --nocapture` -> 1/1.
+- [x] `cargo test --test cli_tests coproc -- --nocapture` -> 17/17.
+- [x] `cargo test --test executor_tests command_chaining::part_080 -- --nocapture` -> 152/152.
+- [ ] Refresh the official `coproc` `.tests` ledger row after the host fixture and locale decisions are recorded. The `.right` bridge remains enabled until this gate is complete.
+
+## 2026-08-14 Vredir FD Reuse And Nameref Artifact
+
+The focused `vredir` difference ledger is maintained separately in
+[`docs/vredir-diff-todo.md`](vredir-diff-todo.md). It is the source of truth
+for the current `vredir8` Bash/Rubash outputs, ownership, and remaining TODOs.
+
+### 2026-08-14 varredir regression refresh
+
+The newer bridge-free artifact is
+`target/issue-suites/results/native-bash-20260814-vredir-varredir-regression/`.
+`vredir4.sub`, `vredir5.sub`, `vredir7.sub`, and `vredir8.sub` all return `0`
+under both GNU Bash and Rubash. `vredir8` stdout is identical; its remaining
+stderr differences are the Windows `/dev/tty` host diagnostic and Bash's
+source-token `$fd` versus Rubash's expanded numeric fd in the closed-fd
+diagnostic. `vredir4/5/7` retain only function pretty-print formatting
+differences. The detailed TODOs and ownership decisions are maintained in
+[`docs/vredir-diff-todo.md`](vredir-diff-todo.md).
+
+The bridge-free native Bash comparison is stored at
+`target/issue-suites/results/native-bash-20260814-vredir-fd-reuse-nameref-verified/`.
+It was generated from the current working tree after rebuilding Rubash; the
+repository HEAD used as the base is `6d83e10`. Each body has Bash and Rubash
+stdout, stderr, and status files.
+
+| Body | Result | Interpretation and TODO |
+|---|---|---|
+| `vredir4.sub` | Bash/Rubash `0/0` | Dynamic descriptors now reuse `10` and `11`; nameref assignment writes the target variables and both expansions show `10 11`. Remaining stdout differs only in function pretty-print spacing/semicolons. The final error is the same `Bad file descriptor` class, but Bash names `${output}` while Rubash prints the expanded `11`. [ ] Decide whether the pretty-printer and source-token diagnostic spelling are compatibility contract; if so, fix at the command-text/diagnostic owner. |
+| `vredir5.sub` | Bash/Rubash `0/0` | Ordered input/output moves and heredoc precedence now match, including `12 10`. Remaining difference is only function pretty-print formatting. [ ] Add a formatting classification or align the function renderer; do not change FD semantics for this row. |
+| `vredir7.sub` | Bash/Rubash `0/0` | Indexed dynamic names `{fd[0]}` and `{fd[1]}` now match Bash, including `12 10`, array close, and input/output move behavior. Remaining difference is only function pretty-print formatting. [ ] Classify or align renderer output. |
+| `vredir8.sub` | Bash/Rubash `0/1` | `/dev/tty` is unavailable in this non-interactive Windows host, so that open is host-owned. Independently, Rubash reports `ambiguous redirect` after the failed dynamic `<>` allocation and omits Bash's `redir 2`; this is a real failed-varredir state/status TODO. [ ] Preserve Bash's closed/value state after failed `<>`, make the subsequent `>&$fd` diagnostics follow the closed-fd path, and keep host `/dev/tty` behavior separate. |
+
+Focused evidence:
+
+- [x] `cargo test --lib fd_table -- --nocapture` -> 3/3.
+- [x] `cargo test --test cli_tests c_command_reuses_closed_dynamic_fds_and_resolves_nameref_targets -- --nocapture` -> 1/1.
+- [x] `cargo check` passes; existing warnings are dead-code/unused-import warnings.
+- [x] The artifact is bridge-free and preserves stdout, stderr, and status for
+      all four bodies.
+- [x] Bounded `run-redir` -> 1/1 and `run-vredir` -> 1/1 after the FD reuse and
+      nameref changes; logs are under
+      `target/bash-upstream-tests/logs/run-redir.log` and
+      `target/bash-upstream-tests/logs/run-vredir.log`.
+- [ ] Refresh the official ledger row after the `vredir8` failed-varredir
+      state is fixed or explicitly classified as host-owned. The upstream
+      `.right` bridge stays enabled until that gate is satisfied.

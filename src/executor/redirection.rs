@@ -92,6 +92,39 @@ impl Executor {
     ) -> Result<bool, ExecuteError> {
         let mut state = self.command_output_fd_state();
         if !self.apply_ordered_output_redirects(cmd, &mut state)? {
+            // A persistent `exec >&N-` closes the shell fd without adding a
+            // redirect to the current command. Buffered builtins still need
+            // Bash's write diagnostic instead of silently dropping output.
+            if !stdout.is_empty()
+                && state
+                    .fd_target(1)
+                    .is_some_and(|target| *target == OutputTarget::Closed)
+            {
+                self.write_bad_output_fd_diagnostic(cmd, 1)?;
+                self.exit_code = 1;
+                return Ok(true);
+            }
+            if !stderr.is_empty()
+                && state
+                    .fd_target(2)
+                    .is_some_and(|target| *target == OutputTarget::Closed)
+            {
+                self.write_bad_output_fd_diagnostic(cmd, 2)?;
+                self.exit_code = 1;
+                return Ok(true);
+            }
+            if !stdout.is_empty()
+                && matches!(state.fd_target(1), Some(OutputTarget::CoprocStdin(_)))
+            {
+                self.write_state_output_or_diagnostic(cmd, &state, 1, stdout)?;
+                return Ok(true);
+            }
+            if !stderr.is_empty()
+                && matches!(state.fd_target(2), Some(OutputTarget::CoprocStdin(_)))
+            {
+                self.write_state_output_or_diagnostic(cmd, &state, 2, stderr)?;
+                return Ok(true);
+            }
             return Ok(false);
         }
         if state.redirect_failed {
@@ -117,9 +150,27 @@ impl Executor {
             return Ok(true);
         }
 
-        state.write_to_fd(self, 1, stdout)?;
-        state.write_to_fd(self, 2, stderr)?;
+        self.write_state_output_or_diagnostic(cmd, &state, 1, stdout)?;
+        self.write_state_output_or_diagnostic(cmd, &state, 2, stderr)?;
         Ok(true)
+    }
+
+    fn write_state_output_or_diagnostic(
+        &mut self,
+        cmd: &CommandNode,
+        state: &OutputFdState,
+        fd: u32,
+        output: &[u8],
+    ) -> Result<(), ExecuteError> {
+        match state.write_to_fd(self, fd, output) {
+            Ok(()) => Ok(()),
+            Err(error) if is_closed_output_error(&error) => {
+                self.write_bad_output_fd_diagnostic(cmd, fd)?;
+                self.exit_code = 1;
+                Ok(())
+            }
+            Err(error) => Err(error),
+        }
     }
 
     pub(in crate::executor) fn command_needs_ordered_output_capture(
@@ -144,9 +195,7 @@ impl Executor {
         state.fds.insert(1, OutputTarget::Stdout);
         state.fds.insert(2, OutputTarget::Stderr);
 
-        // FdTable is the semantic source of truth. The environment-key scan
-        // below remains only for descriptors whose old mutation path has not
-        // migrated yet.
+        // FdTable is the semantic source of truth for every output endpoint.
         for (fd, entry) in &self.fd_table.entries {
             let target = if entry.closed || entry.write.is_none() {
                 OutputTarget::Closed
@@ -169,40 +218,6 @@ impl Executor {
                 }
             };
             state.fds.insert(*fd, target);
-        }
-
-        for fd in [1, 2] {
-            if state.fds.contains_key(&fd) {
-                continue;
-            }
-            if self.env_vars.contains_key(&fd_closed_key(fd)) {
-                state.fds.insert(fd, OutputTarget::Closed);
-            } else if let Some(target) = self.env_vars.get(&fd_output_key(fd)) {
-                state.fds.insert(fd, output_target_from_persistent(target));
-            }
-        }
-
-        for (key, value) in &self.env_vars {
-            let Some(fd) = key
-                .strip_prefix(FD_OUTPUT_PREFIX)
-                .and_then(|fd| fd.parse::<u32>().ok())
-            else {
-                continue;
-            };
-            state
-                .fds
-                .entry(fd)
-                .or_insert_with(|| output_target_from_persistent(value));
-        }
-
-        for key in self.env_vars.keys() {
-            let Some(fd) = key
-                .strip_prefix(FD_CLOSED_PREFIX)
-                .and_then(|fd| fd.parse::<u32>().ok())
-            else {
-                continue;
-            };
-            state.fds.entry(fd).or_insert(OutputTarget::Closed);
         }
 
         state
@@ -404,6 +419,12 @@ impl OutputFdState {
             OutputTarget::CoprocStdin(fd) => {
                 if let Some(writer) = executor.coproc_stdin_writers.get_mut(&fd) {
                     writer.write_all(output)?;
+                } else {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::BrokenPipe,
+                        "coprocess input is closed",
+                    )
+                    .into());
                 }
                 Ok(())
             }
@@ -419,16 +440,11 @@ impl OutputFdState {
     }
 }
 
-fn output_target_from_persistent(target: &str) -> OutputTarget {
-    match target {
-        FD_STDOUT_TARGET => OutputTarget::Stdout,
-        FD_STDERR_TARGET => OutputTarget::Stderr,
-        target if target.starts_with(FD_COPROC_STDIN_TARGET_PREFIX) => target
-            .strip_prefix(FD_COPROC_STDIN_TARGET_PREFIX)
-            .and_then(|fd| fd.parse::<u32>().ok())
-            .map(OutputTarget::CoprocStdin)
-            .unwrap_or_else(|| OutputTarget::Path(target.to_string())),
-        path if is_null_device(path) => OutputTarget::Null,
-        path => OutputTarget::Path(path.to_string()),
-    }
+fn is_closed_output_error(error: &ExecuteError) -> bool {
+    matches!(
+        error,
+        ExecuteError::IoError(error)
+            if error.kind() == std::io::ErrorKind::BrokenPipe
+                || error.raw_os_error() == Some(232)
+    )
 }

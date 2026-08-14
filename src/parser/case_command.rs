@@ -61,10 +61,14 @@ pub(super) fn parse_case_command(tokens: &[Token], start: usize) -> Option<(Comm
         let mut pattern_separator_metadata = Vec::new();
         let mut current_pattern = String::new();
         let mut current_raw_pattern = String::new();
+        let mut current_pattern_has_token = false;
         let mut in_extglob = 0i32;
         while i < tokens.len() {
             // Check if this is a ) that ends the case pattern (not inside extglob)
             if is_keyword(tokens, i, ")") && in_extglob == 0 {
+                if !current_pattern_has_token {
+                    return None;
+                }
                 // Bash does not perform quote removal on case patterns
                 // (execute_cmd.c), so raw `\]` / `\"` / `\\` escapes survive.
                 patterns.push(current_pattern.clone());
@@ -72,6 +76,9 @@ pub(super) fn parse_case_command(tokens: &[Token], start: usize) -> Option<(Comm
                 current_pattern.clear();
                 current_raw_pattern.clear();
                 break;
+            }
+            if tokens[i].kind != TokenKind::Pipe {
+                current_pattern_has_token = true;
             }
             match tokens[i].kind {
                 TokenKind::Word
@@ -148,6 +155,7 @@ pub(super) fn parse_case_command(tokens: &[Token], start: usize) -> Option<(Comm
                         pattern_separators.push(tokens[i].value.clone());
                         current_pattern.clear();
                         current_raw_pattern.clear();
+                        current_pattern_has_token = false;
                     } else {
                         current_pattern.push('|');
                         current_raw_pattern.push_str(&tokens[i].raw);

@@ -98,16 +98,25 @@ impl Executor {
                 Ok(())
             }
             ":" => {
-                self.apply_no_output_builtin_redirects(cmd)?;
-                self.exit_code = crate::builtins::colon::colon();
+                let redirect_failed = self.apply_no_output_builtin_redirects_with_status(cmd)?;
+                self.exit_code = if redirect_failed {
+                    1
+                } else {
+                    crate::builtins::colon::colon()
+                };
                 Ok(())
             }
             "true" => {
                 if crate::builtins::enable::is_disabled(&self.env_vars, "true") {
                     self.execute_external(cmd)
                 } else {
-                    self.apply_no_output_builtin_redirects(cmd)?;
-                    self.exit_code = crate::builtins::colon::true_builtin();
+                    let redirect_failed =
+                        self.apply_no_output_builtin_redirects_with_status(cmd)?;
+                    self.exit_code = if redirect_failed {
+                        1
+                    } else {
+                        crate::builtins::colon::true_builtin()
+                    };
                     Ok(())
                 }
             }
@@ -115,8 +124,13 @@ impl Executor {
                 if crate::builtins::enable::is_disabled(&self.env_vars, "false") {
                     self.execute_external(cmd)
                 } else {
-                    self.apply_no_output_builtin_redirects(cmd)?;
-                    self.exit_code = crate::builtins::colon::false_builtin();
+                    let redirect_failed =
+                        self.apply_no_output_builtin_redirects_with_status(cmd)?;
+                    self.exit_code = if redirect_failed {
+                        1
+                    } else {
+                        crate::builtins::colon::false_builtin()
+                    };
                     Ok(())
                 }
             }

@@ -162,7 +162,7 @@ impl Executor {
     }
 
     pub(in crate::executor) fn mapfile_fd_is_available(&self, cmd: &CommandNode, fd: u32) -> bool {
-        if self.env_vars.contains_key(&fd_stdin_key(fd)) {
+        if self.fd_table.is_open_for_read(fd) {
             return true;
         }
         if cmd
@@ -216,22 +216,13 @@ impl Executor {
                 return Some(input);
             }
         }
-        let input_key = fd_stdin_key(fd);
-        let offset_key = fd_stdin_offset_key(fd);
-        let input = self.env_vars.get(&input_key)?.clone();
-        if input == FD_PROCESS_STDIN_TARGET {
+        if matches!(
+            self.fd_table.read_endpoint(fd),
+            Some(FdReadEndpoint::InheritedProcessStdin)
+        ) {
             return self.read_inherited_process_stdin_to_string();
         }
-        let offset = self
-            .env_vars
-            .get(&offset_key)
-            .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(0);
-        if offset >= input.len() {
-            return None;
-        }
-        self.env_vars.insert(offset_key, input.len().to_string());
-        Some(input[offset..].to_string())
+        None
     }
 
     fn mapfile_heredoc_fd_input(&self, cmd: &CommandNode, fd: u32) -> Option<String> {

@@ -72,6 +72,92 @@ fn c_command_keeps_named_coproc_output_fds_distinct() {
 }
 
 #[test]
+fn c_command_exposes_distinct_virtual_fds_for_named_coproc() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "coproc C { sleep 1; }; printf '%s %s\\n' \"${C[0]}\" \"${C[1]}\"; \
+             wait \"$C_PID\"",
+        )
+        .output()
+        .expect("run coproc virtual fd probe");
+
+    assert!(output.status.success());
+    let values = String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .map(|value| value.parse::<u32>().expect("coproc fd is numeric"))
+        .collect::<Vec<_>>();
+    assert_eq!(values.len(), 2);
+    assert_ne!(values[0], values[1]);
+    assert!(values.iter().all(|value| *value < 1024));
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn c_command_reuses_closed_dynamic_fds_and_resolves_nameref_targets() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "exec {first}<&0; exec {second}>&1; printf 'first:%s %s\\n' \"$first\" \"$second\"; \
+             exec {first}<&-; exec {second}>&-; \
+             declare -n input_fd=input; declare -n output_fd=output; \
+             exec {input_fd}<&0; exec {output_fd}>&1; \
+             printf 'second:%s %s %s %s\\n' \"$input\" \"$output\" \"$input_fd\" \"$output_fd\"",
+        )
+        .output()
+        .expect("run dynamic fd reuse and nameref probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "first:10 11\nsecond:10 11 10 11\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn c_command_dynamic_varredir_covers_read_write_dup_and_auto_close() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            ": {fd}<>/dev/null; printf 'rw=%s fd=%s\\n' \"$?\" \"$fd\"; \
+             : {dup}>&1; printf 'dup=%s fd=%s\\n' \"$?\" \"$dup\"; \
+             shopt -s varredir_close; : {auto}>&1; \
+             printf 'auto=%s fd=%s\\n' \"$?\" \"$auto\"; \
+             printf 'after-auto=%s\\n' \"$?\"",
+        )
+        .output()
+        .expect("run dynamic varredir probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "rw=0 fd=10\ndup=0 fd=11\nauto=0 fd=12\nafter-auto=0\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn c_command_failed_dynamic_varredir_continues_and_does_not_set_variable() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "unset fd; : {fd}<>target/does-not-exist-rubash-varredir; \
+             open_status=$?; printf 'open=%s fd=%s\\n' \"$open_status\" \"${fd-unset}\"; \
+             printf 'continued\\n'",
+        )
+        .output()
+        .expect("run failed dynamic varredir probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "open=1 fd=unset\ncontinued\n"
+    );
+    assert!(!String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn c_command_writes_to_named_coproc_stdin_fd() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
@@ -125,6 +211,247 @@ fn c_command_closing_named_coproc_stdin_fd_produces_eof() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn c_command_retires_finished_coproc_endpoints_before_later_redirects() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("--")
+        .arg("-c")
+        .arg(
+            "coproc C { :; }; sleep 1; \
+             printf 'c0=<%s> pid=<%s>\\n' \"${C[0]-unset}\" \"${C_PID-unset}\"; \
+             exec 4<&${C[0]}-; read value <&4; \
+             printf 'status=%s value=<%s>\\n' \"$?\" \"$value\"",
+        )
+        .output()
+        .expect("run finished coproc endpoint probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "c0=<unset> pid=<unset>\nstatus=1 value=<>\n"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "rubash: 4: Bad file descriptor\n"
+    );
+}
+
+#[test]
+fn c_command_materializes_persistent_stderr_to_stdout_for_external_children() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("--")
+        .arg("-c")
+        .arg(
+            "exec 2>&1; /usr/bin/cat /definitely-missing-rubash-fd2-path; \
+             printf 'status=%s\\n' \"$?\"",
+        )
+        .output()
+        .expect("run persistent fd2 external child probe");
+
+    assert!(output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stdout)
+            .contains("/definitely-missing-rubash-fd2-path")
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("status=1"));
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn c_command_pipeline_stages_inherit_persistent_stderr_to_stdout() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("--")
+        .arg("-c")
+        .arg(
+            "exec 2>&1; cat /definitely-missing-rubash-pipeline-fd2-path | cat; \
+             printf 'status=%s\\n' \"$?\"",
+        )
+        .output()
+        .expect("run persistent fd2 pipeline probe");
+
+    assert!(output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stdout)
+            .contains("/definitely-missing-rubash-pipeline-fd2-path")
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("status=0"));
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn c_command_coproc_child_inherits_persistent_stderr_to_stdout() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("--")
+        .arg("-c")
+        .arg(
+            "exec 2>&1; coproc xcase -n -u; wait \"$COPROC_PID\"; \
+             printf 'done=%s\\n' \"$?\"",
+        )
+        .output()
+        .expect("run persistent fd2 coproc child probe");
+
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("xcase: command not found"));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("done=127"));
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn c_command_echo_reports_persistent_closed_stdout() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("--")
+        .arg("-c")
+        .arg(
+            "coproc C { :; }; sleep 1; exec 2>&1; exec >&${C[1]}-; \
+             echo ${C[@]}",
+        )
+        .output()
+        .expect("run persistent closed stdout probe");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "rubash: echo: write error: Bad file descriptor\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn c_command_external_cat_receives_coproc_data_before_writer_close() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "coproc C { cat; }; printf 'hello\\n' >&\"${C[1]}\"; \
+             read -r value <&\"${C[0]}\"; exec {C[1]}>&-; \
+             wait \"$C_PID\"; printf 'read:%s\\n' \"$value\"",
+        )
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn external coproc cat probe");
+
+    if !wait_for_child_exit(&mut child, Duration::from_secs(5)) {
+        let output = child
+            .wait_with_output()
+            .expect("collect timed-out external coproc cat probe");
+        panic!(
+            "external coproc cat did not finish; stdout={:?} stderr={:?}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let output = child
+        .wait_with_output()
+        .expect("collect external coproc cat probe");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "read:hello\n");
+}
+
+#[test]
+fn c_command_external_cat_dash_receives_coproc_data_before_writer_close() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "coproc C { cat -; }; printf 'hello\\n' >&\"${C[1]}\"; \
+             read -r value <&\"${C[0]}\"; exec {C[1]}>&-; \
+             wait \"$C_PID\"; printf 'read:%s\\n' \"$value\"",
+        )
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn external cat dash coproc probe");
+
+    if !wait_for_child_exit(&mut child, Duration::from_secs(5)) {
+        let output = child
+            .wait_with_output()
+            .expect("collect timed-out external cat dash coproc probe");
+        panic!(
+            "external cat dash coproc did not finish; stdout={:?} stderr={:?}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let output = child
+        .wait_with_output()
+        .expect("collect external cat dash coproc probe");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "read:hello\n");
+}
+
+#[test]
+fn c_command_starts_cat_dash_coproc_after_waiting_for_previous_coproc() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "coproc FIRST { echo a b c; sleep 2; }; read line <&${FIRST[0]}; \
+             wait $FIRST_PID; coproc REFLECT { cat -; }; \
+             echo flop >&${REFLECT[1]}; read line <&${REFLECT[0]}; \
+             { sleep 1; kill $REFLECT_PID; } & wait $REFLECT_PID >/dev/null 2>&1; \
+             printf '%s\\n' \"$line\"",
+        )
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn sequential coproc probe");
+
+    if !wait_for_child_exit(&mut child, Duration::from_secs(8)) {
+        let output = child
+            .wait_with_output()
+            .expect("collect timed-out sequential coproc probe");
+        panic!(
+            "sequential coproc probe did not finish; stdout={:?} stderr={:?}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let output = child
+        .wait_with_output()
+        .expect("collect sequential coproc probe");
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "flop\n");
+}
+
+#[test]
+fn c_command_moves_coproc_reader_to_numbered_fd() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "coproc C { printf 'moved\\n'; }; exec 4<&\"${C[0]}\"-; \
+             read -r value <&4; printf 'read:%s\\n' \"$value\"",
+        )
+        .output()
+        .expect("run coproc reader move probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "read:moved\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn c_command_moves_coproc_writer_to_numbered_fd() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "coproc C { read -r value; printf 'got:%s\\n' \"$value\"; }; \
+             exec 4>&\"${C[1]}\"-; printf 'payload\\n' >&4; exec 4>&-; \
+             read -r value <&\"${C[0]}\"; printf '%s\\n' \"$value\"",
+        )
+        .output()
+        .expect("run coproc writer move probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "got:payload\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
 #[test]
@@ -446,6 +773,7 @@ fn malformed_pipeline_and_if_are_syntax_errors() {
         "<<EOF; then <W",
         "while; do :; done",
         "case x in x) ;;",
+        "case x in ) echo x;; esac",
         "( echo hi",
         "{ echo hi;",
         "echo @(",

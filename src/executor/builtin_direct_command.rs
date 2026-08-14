@@ -21,18 +21,33 @@ impl Executor {
 
         match name {
             ":" => {
-                self.apply_no_output_builtin_redirects(&builtin_cmd)?;
-                self.exit_code = crate::builtins::colon::colon();
+                let redirect_failed =
+                    self.apply_no_output_builtin_redirects_with_status(&builtin_cmd)?;
+                self.exit_code = if redirect_failed {
+                    1
+                } else {
+                    crate::builtins::colon::colon()
+                };
                 Ok(())
             }
             "true" => {
-                self.apply_no_output_builtin_redirects(&builtin_cmd)?;
-                self.exit_code = crate::builtins::colon::true_builtin();
+                let redirect_failed =
+                    self.apply_no_output_builtin_redirects_with_status(&builtin_cmd)?;
+                self.exit_code = if redirect_failed {
+                    1
+                } else {
+                    crate::builtins::colon::true_builtin()
+                };
                 Ok(())
             }
             "false" => {
-                self.apply_no_output_builtin_redirects(&builtin_cmd)?;
-                self.exit_code = crate::builtins::colon::false_builtin();
+                let redirect_failed =
+                    self.apply_no_output_builtin_redirects_with_status(&builtin_cmd)?;
+                self.exit_code = if redirect_failed {
+                    1
+                } else {
+                    crate::builtins::colon::false_builtin()
+                };
                 Ok(())
             }
             "echo" => {

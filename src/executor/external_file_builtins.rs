@@ -169,6 +169,13 @@ impl Executor {
                 self.exit_code = 0;
                 return Ok(true);
             }
+            if cmd.redirect_in.is_none()
+                && cmd.heredoc.is_none()
+                && cmd.here_string.is_none()
+                && self.env_vars.get(INHERIT_PROCESS_STDIN).map(String::as_str) == Some("1")
+            {
+                return self.stream_inherited_cat(cmd);
+            }
             if cmd.words.len() <= 1 {
                 return Ok(false);
             }
@@ -192,6 +199,22 @@ impl Executor {
             }
         }
         self.write_cat_output(cmd, &output)?;
+        self.exit_code = 0;
+        Ok(true)
+    }
+
+    fn stream_inherited_cat(&mut self, cmd: &CommandNode) -> Result<bool, ExecuteError> {
+        use std::io::Read;
+
+        let mut stdin = std::io::stdin().lock();
+        let mut buffer = [0_u8; 8192];
+        loop {
+            let count = stdin.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            self.write_cat_output(cmd, &buffer[..count])?;
+        }
         self.exit_code = 0;
         Ok(true)
     }

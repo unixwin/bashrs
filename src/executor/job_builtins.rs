@@ -183,18 +183,22 @@ impl Executor {
             }
         }
 
-        if cmd.words.len() == 1 && !self.background_children.is_empty() {
+        if cmd.words.len() == 1
+            && self.job_table.jobs.values().any(|job| job.background)
+        {
+            let pids = self
+                .job_table
+                .jobs
+                .values()
+                .filter(|job| job.background)
+                .flat_map(|job| job.pids.iter().copied())
+                .collect::<Vec<_>>();
             let mut status = 0;
-            for (pid, mut child) in std::mem::take(&mut self.background_children) {
-                let wait_status = child.wait()?;
-                status = wait_status.code().unwrap_or(1);
-                self.fd_table.close(pid);
+            for pid in pids {
+                if let Some(wait_status) = self.wait_for_background_pid(pid, false)? {
+                    status = wait_status;
+                }
             }
-            self.background_jobs.clear();
-            self.background_job_order.clear();
-            self.background_statuses.clear();
-            self.coproc_stdin_writers.clear();
-            self.coproc_stdout_readers.clear();
             self.write_buffered_builtin_output(cmd, &[], &[])?;
             return Ok(status);
         }
@@ -270,25 +274,25 @@ impl Executor {
             self.resolve_background_job(first)?
         } else {
             // A completed child may no longer have a Child handle, but its
-            // status remains in `background_statuses` until wait -n consumes
-            // it. Jobs that wait -n already consumed are removed from
-            // `background_jobs` while their status remains available to an
-            // explicit wait PID.
-            self.background_statuses
+            // status remains in JobTable until an explicit wait consumes it.
+            self.job_table
+                .completed_statuses
                 .keys()
+                .next()
                 .copied()
-                .find(|pid| self.background_jobs.contains_key(pid))
                 .or_else(|| {
-                    self.background_job_order
-                        .iter()
-                        .copied()
-                        .find(|pid| self.background_children.contains_key(pid))
+                    self.job_table
+                        .jobs
+                        .values()
+                        .filter(|job| job.background && job.state != crate::jobs::ProcessState::Completed)
+                        .filter_map(|job| job.pids.last().copied())
+                        .next()
                 })?
         };
         Some((pid, request.assign_var))
     }
 
-    fn refresh_background_jobs(&mut self) -> Result<(), ExecuteError> {
+    pub(in crate::executor) fn refresh_background_jobs(&mut self) -> Result<(), ExecuteError> {
         let mut finished = Vec::new();
         for (pid, child) in &mut self.background_children {
             if let Some(status) = child.try_wait()? {
@@ -298,13 +302,90 @@ impl Executor {
 
         for (pid, status) in finished {
             self.background_children.remove(&pid);
+            self.join_coproc_stderr_forwarder(pid)?;
             self.job_table.mark_completed(pid, status);
-            self.background_statuses.entry(pid).or_insert(status);
+            self.retire_completed_coproc(pid);
         }
         Ok(())
     }
 
-    fn forget_background_job_tracking(&mut self, pid: u32) {
+    fn join_coproc_stderr_forwarder(&mut self, pid: u32) -> Result<(), ExecuteError> {
+        let Some(forwarder) = self.coproc_stderr_forwarders.remove(&pid) else {
+            return Ok(());
+        };
+        let result = forwarder.join().map_err(|_| {
+            ExecuteError::IoError(std::io::Error::other("coprocess stderr forwarder panicked"))
+        })?;
+        result.map_err(ExecuteError::IoError)
+    }
+
+    fn retire_completed_coproc(&mut self, pid: u32) {
+        let is_coproc = self.coproc_stdin_writers.contains_key(&pid)
+            || self.coproc_stdout_readers.contains_key(&pid)
+            || self.fd_table.entries.values().any(|entry| {
+                matches!(
+                    entry.read.as_ref(),
+                    Some(FdReadEndpoint::CoprocStdout(endpoint_pid)) if *endpoint_pid == pid
+                ) || matches!(
+                    entry.write.as_ref(),
+                    Some(FdWriteEndpoint::CoprocStdin(endpoint_pid)) if *endpoint_pid == pid
+                )
+            });
+        if !is_coproc {
+            return;
+        }
+
+        self.coproc_stdin_writers.remove(&pid);
+        self.coproc_stdout_readers.remove(&pid);
+
+        let endpoint_fds = self
+            .fd_table
+            .entries
+            .iter()
+            .filter_map(|(fd, entry)| {
+                let matches_read = matches!(
+                    entry.read.as_ref(),
+                    Some(FdReadEndpoint::CoprocStdout(endpoint_pid)) if *endpoint_pid == pid
+                );
+                let matches_write = matches!(
+                    entry.write.as_ref(),
+                    Some(FdWriteEndpoint::CoprocStdin(endpoint_pid)) if *endpoint_pid == pid
+                );
+                (matches_read || matches_write).then_some(*fd)
+            })
+            .collect::<Vec<_>>();
+        for fd in endpoint_fds {
+            self.fd_table.close(fd);
+            self.env_vars.remove(&fd_stdin_key(fd));
+            self.env_vars.remove(&fd_stdin_offset_key(fd));
+            self.env_vars.remove(&fd_dynamic_input_key(fd));
+            self.env_vars.remove(&fd_output_key(fd));
+            self.env_vars.remove(&fd_output_process_substitution_key(fd));
+            self.env_vars.insert(fd_closed_key(fd), "1".to_string());
+        }
+        let coproc_names = self
+            .env_vars
+            .iter()
+            .filter_map(|(key, value)| {
+                key.strip_suffix("_PID")
+                    .filter(|_| value == &pid.to_string())
+                    .map(str::to_string)
+            })
+            .collect::<Vec<_>>();
+        for name in coproc_names {
+            self.env_vars.remove(&name);
+            self.env_vars.remove(&format!("{name}_PID"));
+            unmark_env_name(&mut self.env_vars, ARRAY_VARS, &name);
+        }
+
+        let coproc_prefix = format!("{FD_COPROC_STDIN_TARGET_PREFIX}{pid}");
+        self.env_vars.retain(|key, value| {
+            !((key.starts_with(FD_STDIN_PREFIX) || key.starts_with(FD_OUTPUT_PREFIX))
+                && value == &coproc_prefix)
+        });
+    }
+
+    fn forget_background_runtime(&mut self, pid: u32) {
         self.background_children.remove(&pid);
         self.background_jobs.remove(&pid);
         self.background_job_order.retain(|job_pid| *job_pid != pid);
@@ -313,24 +394,45 @@ impl Executor {
         self.fd_table.close(pid);
     }
 
+    fn forget_background_job_tracking(&mut self, pid: u32) {
+        self.forget_background_runtime(pid);
+        self.job_table.remove_job_by_pid(pid);
+    }
+
     fn wait_for_background_pid(
         &mut self,
         pid: u32,
         retain_for_explicit_wait: bool,
     ) -> Result<Option<i32>, ExecuteError> {
-        if let Some(status) = self.background_statuses.remove(&pid) {
-            self.forget_background_job_tracking(pid);
+        if let Some(status) = self
+            .job_table
+            .completed_statuses
+            .get(&pid)
+            .copied()
+        {
+            self.join_coproc_stderr_forwarder(pid)?;
+            if retain_for_explicit_wait {
+                self.job_table.remove_job_by_pid_preserve_status(pid);
+                self.forget_background_runtime(pid);
+            } else {
+                self.job_table.wait_pid(pid);
+                self.forget_background_job_tracking(pid);
+            }
             return Ok(Some(status));
         }
         let Some(mut child) = self.background_children.remove(&pid) else {
             return Ok(None);
         };
         let status = child.wait()?.code().unwrap_or(1);
+        self.join_coproc_stderr_forwarder(pid)?;
         self.job_table.mark_completed(pid, status);
         if retain_for_explicit_wait {
-            self.background_statuses.insert(pid, status);
+            self.job_table.remove_job_by_pid_preserve_status(pid);
+            self.forget_background_runtime(pid);
+        } else {
+            self.job_table.wait_pid(pid);
+            self.forget_background_job_tracking(pid);
         }
-        self.forget_background_job_tracking(pid);
         Ok(Some(status))
     }
 
@@ -347,8 +449,10 @@ impl Executor {
             let mut status = 0;
             for job in requested_jobs {
                 if let Some(pid) = self.resolve_background_job(job) {
-                    if let Some(source) = self.background_jobs.get(&pid) {
-                        selected.push((self.background_job_number(pid), pid, source.clone()));
+                    if let Some(job_id) = self.job_table.pid_to_job.get(&pid).copied() {
+                        if let Some(entry) = self.job_table.jobs.get(&job_id) {
+                            selected.push((self.background_job_number(pid), pid, entry.command.clone()));
+                        }
                     }
                 } else {
                     writeln!(
@@ -365,13 +469,16 @@ impl Executor {
     }
 
     fn ordered_background_jobs(&self) -> Vec<(usize, u32, String)> {
-        self.background_job_order
-            .iter()
+        self.job_table
+            .jobs
+            .values()
+            .filter(|job| job.background)
             .enumerate()
-            .filter_map(|(index, pid)| {
-                self.background_jobs
-                    .get(pid)
-                    .map(|source| (index + 1, *pid, source.clone()))
+            .filter_map(|(index, job)| {
+                job.pids
+                    .last()
+                    .copied()
+                    .map(|pid| (index + 1, pid, job.command.clone()))
             })
             .collect()
     }
@@ -383,20 +490,20 @@ impl Executor {
     ) -> String {
         let mut output = String::new();
         for (job_number, pid, source) in jobs {
-            let state = self
+            let state_text = self
                 .job_table
                 .pid_to_job
                 .get(&pid)
                 .and_then(|job_id| self.job_table.jobs.get(job_id))
-                .and_then(|job| {
-                    (job.state == crate::jobs::ProcessState::Completed)
-                        .then_some(job.exit_status.unwrap_or(1))
-                });
-            let state_text = match state {
-                Some(0) => "Done".to_string(),
-                Some(status) => format!("Exit {status}"),
-                None => "Running".to_string(),
-            };
+                .map(|job| match job.state {
+                    crate::jobs::ProcessState::Running => "Running".to_string(),
+                    crate::jobs::ProcessState::Stopped => "Stopped".to_string(),
+                    crate::jobs::ProcessState::Completed => match job.exit_status.unwrap_or(1) {
+                        0 => "Done".to_string(),
+                        status => format!("Exit {status}"),
+                    },
+                })
+                .unwrap_or_else(|| "Unknown".to_string());
             if options.pids_only {
                 output.push_str(&format!("{pid}\n"));
             } else if options.long {
@@ -436,7 +543,9 @@ impl Executor {
                 self.coproc_stdout_readers.clear();
                 for pid in pids {
                     self.fd_table.close(pid);
+                    self.job_table.remove_job_by_pid(pid);
                 }
+                self.job_table.clear_jobs();
                 0
             }
             crate::builtins::disown::DisownAction::Current => {
@@ -461,6 +570,7 @@ impl Executor {
                         self.coproc_stdin_writers.remove(&pid);
                         self.coproc_stdout_readers.remove(&pid);
                         self.fd_table.close(pid);
+                        self.job_table.remove_job_by_pid(pid);
                     } else {
                         writeln!(
                             stderr,
@@ -492,41 +602,26 @@ impl Executor {
         self.coproc_stdin_writers.remove(&pid);
         self.coproc_stdout_readers.remove(&pid);
         self.fd_table.close(pid);
+        self.job_table.remove_job_by_pid(pid);
         true
     }
 
     pub(in crate::executor) fn resolve_background_job(&self, job: &str) -> Option<u32> {
-        if let Some(number) = job.strip_prefix('%') {
-            return self.resolve_background_job_number(number);
+        if job.starts_with('%') {
+            let job_id = self.job_table.resolve_jobspec(job)?;
+            return self.job_table.jobs.get(&job_id)?.pids.last().copied();
         }
-
-        job.parse::<u32>().ok().filter(|pid| {
-            self.background_children.contains_key(pid)
-                || self.background_jobs.contains_key(pid)
-                || self.background_statuses.contains_key(pid)
-        })
-    }
-
-    fn resolve_background_job_number(&self, number: &str) -> Option<u32> {
-        let index = match number {
-            "" | "+" | "%" => 1,
-            _ => number.parse::<usize>().ok()?,
-        };
-        if index == 0 {
-            return None;
-        }
-
-        self.background_job_order
-            .iter()
-            .copied()
-            .filter(|pid| self.background_jobs.contains_key(pid))
-            .nth(index - 1)
+        let pid = job.parse::<u32>().ok()?;
+        (self.job_table.pid_to_job.contains_key(&pid)
+            || self.job_table.completed_statuses.contains_key(&pid))
+            .then_some(pid)
     }
 
     fn background_job_number(&self, pid: u32) -> usize {
-        self.background_job_order
-            .iter()
-            .position(|job_pid| *job_pid == pid)
+        self.job_table
+            .pid_to_job
+            .get(&pid)
+            .and_then(|job_id| self.job_table.jobs.keys().position(|candidate| candidate == job_id))
             .map(|index| index + 1)
             .unwrap_or(1)
     }
@@ -546,7 +641,7 @@ impl Executor {
         let status = match action {
             crate::builtins::fg_bg::FgBgAction::Complete(status) => status,
             crate::builtins::fg_bg::FgBgAction::Jobs(jobs) => {
-                if self.background_jobs.is_empty() && self.background_children.is_empty() {
+                if !self.job_table.jobs.values().any(|job| job.background) {
                     crate::builtins::fg_bg::write_no_job_control(
                         builtin,
                         &self.diagnostic_prefix(),
@@ -595,6 +690,8 @@ impl Executor {
         self.fd_table.close(pid);
         let status = child.wait()?.code().unwrap_or(1);
         self.job_table.mark_completed(pid, status);
+        let status = self.job_table.wait_pid(pid).unwrap_or(status);
+        self.job_table.remove_job_by_pid(pid);
         Ok(status)
     }
 
@@ -613,7 +710,15 @@ impl Executor {
 
         let mut status = 0;
         for job in requested {
-            if self.resolve_requested_background_job(job).is_none() {
+            if let Some(pid) = self.resolve_requested_background_job(job) {
+                self.job_table.mark_running(pid);
+                if let Some(job_id) = self.job_table.pid_to_job.get(&pid).copied() {
+                    if let Some(entry) = self.job_table.jobs.get_mut(&job_id) {
+                        entry.background = true;
+                        entry.foreground = false;
+                    }
+                }
+            } else {
                 self.write_job_not_found("bg", job, stderr)?;
                 status = 1;
             }
@@ -629,9 +734,8 @@ impl Executor {
     }
 
     fn current_background_pid(&self) -> Option<u32> {
-        let pid = self.last_background_pid?;
-        (self.background_children.contains_key(&pid) || self.background_jobs.contains_key(&pid))
-            .then_some(pid)
+        let job_id = self.job_table.current_job()?;
+        self.job_table.jobs.get(&job_id)?.pids.last().copied()
     }
 
     fn write_job_not_found(
@@ -714,9 +818,11 @@ impl Executor {
         let mut stderr = Vec::new();
         let function_names: Vec<String> = self.functions.keys().cloned().collect();
         let job_names: Vec<String> = self
-            .background_job_order
-            .iter()
-            .filter_map(|pid| self.background_jobs.get(pid).cloned())
+            .job_table
+            .jobs
+            .values()
+            .filter(|job| job.background)
+            .map(|job| job.command.clone())
             .collect();
         let status = crate::builtins::complete::execute_with_io(
             builtin,

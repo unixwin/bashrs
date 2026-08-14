@@ -6,6 +6,8 @@
 use std::collections::{BTreeMap, HashMap};
 use std::io::{self, Write};
 
+use crate::shell::VariableStore;
+
 mod escape;
 mod float;
 mod identifier;
@@ -81,6 +83,21 @@ where
     W: Write,
     E: Write,
 {
+    execute_with_io_and_store(args, env_vars, None, stdout, stderr)
+}
+
+pub(crate) fn execute_with_io_and_store<'a, I, W, E>(
+    args: I,
+    env_vars: &mut HashMap<String, String>,
+    mut variables: Option<&mut VariableStore>,
+    stdout: &mut W,
+    stderr: &mut E,
+) -> io::Result<i32>
+where
+    I: IntoIterator<Item = &'a str>,
+    W: Write,
+    E: Write,
+{
     let args: Vec<&str> = args.into_iter().collect();
     let mut output_var = None;
     let mut index = 0;
@@ -146,7 +163,12 @@ where
 
     let rendered = render(format, &args[index + 1..], env_vars);
     if let Some(name) = output_var {
-        assign_printf_output(env_vars, name, rendered.output);
+        assign_printf_output(
+            env_vars,
+            name,
+            rendered.output,
+            variables.as_deref_mut(),
+        );
     } else {
         stdout.write_all(rendered.output.as_bytes())?;
     }
@@ -168,11 +190,22 @@ fn valid_printf_array_target(name: &str, env_vars: &HashMap<String, String>) -> 
     resolve_printf_indexed_subscript(env_vars, base, subscript).is_some()
 }
 
-fn assign_printf_output(env_vars: &mut HashMap<String, String>, name: &str, output: String) {
+fn assign_printf_output(
+    env_vars: &mut HashMap<String, String>,
+    name: &str,
+    output: String,
+    mut variables: Option<&mut VariableStore>,
+) {
     if let Some((base, subscript)) = parse_printf_array_target(name) {
         if is_marked(env_vars, "__RUBASH_ASSOC_VARS", base) {
+            if let Some(store) = variables.as_deref_mut() {
+                let _ = store.set_associative_element(base, subscript, output.clone());
+            }
             assign_printf_assoc_element(env_vars, base, subscript, output);
         } else if let Some(index) = resolve_printf_indexed_subscript(env_vars, base, subscript) {
+            if let Some(store) = variables.as_deref_mut() {
+                let _ = store.set_indexed_element(base, index as i64, output.clone());
+            }
             assign_printf_indexed_element(env_vars, base, index, output);
         } else {
             env_vars.insert(name.to_string(), output);
@@ -180,6 +213,9 @@ fn assign_printf_output(env_vars: &mut HashMap<String, String>, name: &str, outp
         return;
     }
 
+    if let Some(store) = variables.as_deref_mut() {
+        let _ = store.set_scalar(name, output.clone());
+    }
     env_vars.insert(name.to_string(), output);
 }
 

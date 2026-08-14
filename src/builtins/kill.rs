@@ -224,6 +224,10 @@ pub fn list_first_signal_for_sed() -> &'static str {
     "SIGHUP"
 }
 
+pub fn signal_number_for_spec(value: &str) -> Option<i32> {
+    signal_number_from_spec(value)
+}
+
 pub fn translate_signal(value: &str) -> Option<&'static str> {
     if value == "0" {
         return Some("EXIT");
@@ -341,9 +345,18 @@ fn deliver_rubash_signal(pid: u32, signal: i32) -> io::Result<bool> {
     if !signal_marker_path(pid).is_file() {
         return Ok(false);
     }
-    // SIGKILL is not trappable.  Even for another Rubash process that has a
-    // signal mailbox, it must fall through to the native process terminator.
-    if signal == 9 {
+    #[cfg(windows)]
+    if pid != std::process::id()
+        && std::env::var("__RUBASH_SHELL_PID")
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+            != Some(pid)
+    {
+        return Ok(false);
+    }
+    // SIGKILL is not trappable. STOP/TSTP/CONT must use the native Windows
+    // process-state backend rather than a mailbox event.
+    if matches!(signal, 9 | 17 | 18 | 19) {
         return Ok(false);
     }
     if !process_exists(pid) {
@@ -380,11 +393,51 @@ fn signal_process(pid: u32, signal: i32) -> Result<(), &'static str> {
     use windows_sys::Win32::Foundation::{
         CloseHandle, GetLastError, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, STILL_ACTIVE,
     };
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Thread32First, Thread32Next, THREADENTRY32, TH32CS_SNAPTHREAD,
+    };
     use windows_sys::Win32::System::Threading::{
-        GetExitCodeProcess, OpenProcess, TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-        PROCESS_TERMINATE,
+        GetExitCodeProcess, OpenProcess, OpenThread, ResumeThread, SuspendThread,
+        TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION, THREAD_SUSPEND_RESUME,
     };
 
+    if signal == 17 || signal == 18 || signal == 19 {
+        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+        if snapshot == -1isize as _ {
+            return Err("Cannot enumerate process threads");
+        }
+        let mut entry = THREADENTRY32 {
+            dwSize: std::mem::size_of::<THREADENTRY32>() as u32,
+            ..unsafe { std::mem::zeroed() }
+        };
+        let mut found = false;
+        let mut result = unsafe { Thread32First(snapshot, &mut entry) } != 0;
+        while result {
+            if entry.th32OwnerProcessID == pid {
+                found = true;
+                let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID) };
+                if thread.is_null() {
+                    unsafe { CloseHandle(snapshot) };
+                    return Err("Cannot open process thread");
+                }
+                let failed = if signal == 19 {
+                    unsafe { ResumeThread(thread) == u32::MAX }
+                } else {
+                    unsafe { SuspendThread(thread) == u32::MAX }
+                };
+                unsafe { CloseHandle(thread) };
+                if failed {
+                    unsafe { CloseHandle(snapshot) };
+                    return Err("Failed to change process state");
+                }
+            }
+            result = unsafe { Thread32Next(snapshot, &mut entry) } != 0;
+        }
+        unsafe { CloseHandle(snapshot) };
+        return if found { Ok(()) } else { Err("No such process") };
+    }
+
+    use windows_sys::Win32::System::Threading::PROCESS_TERMINATE;
     let access = if signal == 0 {
         PROCESS_QUERY_LIMITED_INFORMATION
     } else {
@@ -407,21 +460,15 @@ fn signal_process(pid: u32, signal: i32) -> Result<(), &'static str> {
             GetExitCodeProcess(handle, &mut exit_code) != 0 && exit_code == STILL_ACTIVE as u32
         };
         if !process_is_active {
-            unsafe {
-                CloseHandle(handle);
-            }
+            unsafe { CloseHandle(handle) };
             return Err("No such process");
         }
-    } else if unsafe { TerminateProcess(handle, 1) == 0 } {
-        unsafe {
-            CloseHandle(handle);
-        }
+    } else if unsafe { TerminateProcess(handle, (128 + signal) as u32) == 0 } {
+        unsafe { CloseHandle(handle) };
         return Err("Failed to terminate process");
     }
 
-    unsafe {
-        CloseHandle(handle);
-    }
+    unsafe { CloseHandle(handle) };
     Ok(())
 }
 

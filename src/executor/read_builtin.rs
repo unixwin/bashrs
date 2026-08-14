@@ -1674,9 +1674,26 @@ impl Executor {
             }
         }
 
+        if read_fd.is_none() {
+            if let Some(fd) = redirected_input_fd(self, cmd) {
+                if !self.read_fd_is_available(cmd, fd) {
+                    let _ = writeln!(
+                        &mut stderr,
+                        "{}{fd}: Bad file descriptor",
+                        self.diagnostic_prefix()
+                    );
+                    return self.finish_read_error(cmd, &stderr, 1);
+                }
+            }
+        }
+
         if timeout_zero {
             let status = self.read_timeout_zero_status(cmd, read_fd);
             if let Some(name) = array_name {
+                let _ = self
+                    .shell_state
+                    .variables
+                    .replace_indexed_array(&name, std::iter::empty::<String>());
                 self.env_vars.insert(name.clone(), read_array_storage(&[]));
                 mark_env_name(&mut self.env_vars, "__RUBASH_ARRAY_VARS", &name);
                 return if invalid_name {
@@ -1707,12 +1724,16 @@ impl Executor {
 
         if let Some(name) = array_name {
             if char_limit == Some(0) {
+                let _ = self
+                    .shell_state
+                    .variables
+                    .replace_indexed_array(&name, std::iter::empty::<String>());
                 self.env_vars.insert(name.clone(), read_array_storage(&[]));
                 mark_env_name(&mut self.env_vars, "__RUBASH_ARRAY_VARS", &name);
                 return 0;
             }
 
-            let value = if let Some(line) =
+            let (value, typed_values) = if let Some(line) =
                 self.read_input_for_command(cmd, read_fd, delimiter, char_limit, exact_char_limit)
             {
                 let values = if raw {
@@ -1723,13 +1744,19 @@ impl Executor {
                         self.env_vars.get("IFS").map(String::as_str),
                     )
                 };
-                read_array_storage(&values)
+                (read_array_storage(&values), Some(values))
             } else {
                 // TODO(builtins/read.def/redir.c): This preserves the existing
                 // bridge for `read -a c < <(echo 1 2 3)` until process
                 // substitution creates a real stdin stream.
-                "(1 2 3)".to_string()
+                ("(1 2 3)".to_string(), None)
             };
+            if let Some(values) = typed_values {
+                let _ = self
+                    .shell_state
+                    .variables
+                    .replace_indexed_array(&name, values);
+            }
             self.env_vars.insert(name.clone(), value);
             mark_env_name(&mut self.env_vars, "__RUBASH_ARRAY_VARS", &name);
             return if invalid_name {
@@ -1769,7 +1796,7 @@ impl Executor {
                     scalar_field_count,
                 );
                 0
-            } else if command_closes_stdin(cmd) || self.env_vars.contains_key(&fd_closed_key(0)) {
+            } else if command_closes_stdin(cmd) || self.fd_table.is_closed(0) {
                 self.assign_read_scalar_names(&scalar_names, "", raw);
                 let _ = writeln!(
                     &mut stderr,
@@ -1820,7 +1847,7 @@ impl Executor {
         {
             return true;
         }
-        if self.env_vars.contains_key(&fd_stdin_key(fd)) {
+        if self.fd_table.is_open_for_read(fd) {
             return true;
         }
         if cmd
@@ -1838,11 +1865,13 @@ impl Executor {
 
     fn read_timeout_zero_status(&self, cmd: &CommandNode, read_fd: Option<u32>) -> i32 {
         if let Some(fd) = read_fd {
-            let input_key = fd_stdin_key(fd);
-            if let Some(input) = self.env_vars.get(&input_key) {
-                if input == FD_PROCESS_STDIN_TARGET {
-                    return 1;
-                }
+            if matches!(
+                self.fd_table.read_endpoint(fd),
+                Some(FdReadEndpoint::InheritedProcessStdin)
+            ) {
+                return 1;
+            }
+            if self.fd_table.is_open_for_read(fd) {
                 return 0;
             }
             if cmd
@@ -1861,7 +1890,7 @@ impl Executor {
             return 1;
         }
 
-        if command_closes_stdin(cmd) || self.env_vars.contains_key(&fd_closed_key(0)) {
+        if command_closes_stdin(cmd) || self.fd_table.is_closed(0) {
             return 1;
         }
         if cmd.redirect_in.as_ref().is_some_and(|redirect| {
@@ -1878,7 +1907,14 @@ impl Executor {
             return 0;
         }
         if self.stdin_string_for_command(cmd).is_some()
-            || self.env_vars.contains_key(&fd_stdin_key(0))
+            || matches!(
+                self.fd_table.read_endpoint(0),
+                Some(
+                    FdReadEndpoint::Text(_)
+                        | FdReadEndpoint::ProcessSubstitution(_)
+                        | FdReadEndpoint::CoprocStdout(_)
+                )
+            )
             || self.env_vars.contains_key(FUNCTION_STDIN)
         {
             return 0;
@@ -1928,4 +1964,14 @@ fn command_redirects_stdin(cmd: &CommandNode) -> bool {
     cmd.redirect_in
         .as_ref()
         .is_some_and(|redirect| redirect.fd.unwrap_or(0) == 0)
+}
+
+fn redirected_input_fd(executor: &Executor, cmd: &CommandNode) -> Option<u32> {
+    let redirect = cmd.redirect_in.as_ref()?;
+    if !redirect.operator.contains('&') {
+        return None;
+    }
+    let target = executor.expand_word(&redirect.target);
+    let target = target.strip_prefix('&').unwrap_or(&target);
+    (target != "-").then(|| target.parse::<u32>().ok()).flatten()
 }

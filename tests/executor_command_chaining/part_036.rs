@@ -607,3 +607,26 @@ fn test_history_invalid_option_returns_usage() {
     let _ = fs::remove_file(error_path);
     let _ = fs::remove_file(status_path);
 }
+
+#[test]
+fn test_kill_stop_continue_preserves_job_lifecycle() {
+    let output_path = "target/rubash-kill-stop-jobs-pid.txt";
+    let status_path = "target/rubash-kill-stop-status.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!(
+        "while true; do sleep 1; done & pid=$!; kill -STOP $pid; jobs -p %1 > {output_path}; kill -CONT $pid; kill -9 $pid; wait $pid; echo $? > {status_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert!(fs::read_to_string(output_path).unwrap().trim().parse::<u32>().is_ok());
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "137\n");
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(status_path);
+}

@@ -86,7 +86,7 @@ impl Executor {
                 || operand
                     .parse::<u32>()
                     .ok()
-                    .is_some_and(|pid| self.background_children.contains_key(&pid))
+                    .is_some_and(|pid| self.job_table.pid_to_job.contains_key(&pid))
         });
         if !should_handle {
             let mut stderr = Vec::new();
@@ -137,17 +137,32 @@ impl Executor {
                 continue;
             }
 
-            if let Some(mut child) = self.background_children.remove(&pid) {
-                if child.kill().is_err() {
-                    status = 1;
-                }
-                let _ = child.wait();
+            let signal_args = vec![format!("-{}", request.signal), pid.to_string()];
+            let mut signal_stderr = Vec::new();
+            let signal_status = crate::builtins::kill::execute_with_io(
+                &signal_args,
+                &mut std::io::sink(),
+                &mut signal_stderr,
+            )?;
+            if signal_status != 0 {
+                status = signal_status;
+                stderr.extend(signal_stderr);
+                continue;
             }
-            self.background_jobs.remove(&pid);
-            self.background_job_order.retain(|job_pid| *job_pid != pid);
-            self.coproc_stdin_writers.remove(&pid);
-            self.coproc_stdout_readers.remove(&pid);
-            self.fd_table.close(pid);
+            if request.signal == 19 {
+                self.job_table.mark_running(pid);
+            } else if matches!(request.signal, 17 | 18) {
+                self.job_table.mark_stopped(pid);
+            } else if operand.starts_with('%') {
+                self.job_table.mark_completed(pid, 128 + request.signal);
+                self.background_jobs.remove(&pid);
+                self.background_job_order.retain(|job_pid| *job_pid != pid);
+                self.coproc_stdin_writers.remove(&pid);
+                self.coproc_stdout_readers.remove(&pid);
+                self.fd_table.close(pid);
+                self.job_table.remove_job_by_pid(pid);
+            }
+            continue;
         }
 
         self.write_buffered_builtin_output(cmd, &[], &stderr)?;
@@ -246,11 +261,13 @@ fn process_exists(_pid: u32) -> bool {
 
 struct KillRequest {
     operands: Vec<String>,
+    signal: i32,
     check_only: bool,
 }
 
 fn kill_request(words: &[String]) -> Option<KillRequest> {
     let mut index = 0;
+    let mut signal = 15;
     let mut check_only = false;
     while let Some(word) = words.get(index) {
         if word == "--" {
@@ -267,7 +284,11 @@ fn kill_request(words: &[String]) -> Option<KillRequest> {
             {
                 return None;
             }
-            check_only |= words.get(index + 1).is_some_and(|signal| signal == "0");
+            let Some(sigspec) = words.get(index + 1) else {
+                return None;
+            };
+            signal = crate::builtins::kill::signal_number_for_spec(sigspec)?;
+            check_only |= signal == 0;
             index += 2;
             continue;
         }
@@ -277,7 +298,8 @@ fn kill_request(words: &[String]) -> Option<KillRequest> {
             {
                 return None;
             }
-            check_only |= word == "-0";
+            signal = crate::builtins::kill::signal_number_for_spec(word.trim_start_matches('-'))?;
+            check_only |= signal == 0;
             index += 1;
             continue;
         }
@@ -286,6 +308,7 @@ fn kill_request(words: &[String]) -> Option<KillRequest> {
 
     Some(KillRequest {
         operands: words[index..].to_vec(),
+        signal,
         check_only,
     })
 }

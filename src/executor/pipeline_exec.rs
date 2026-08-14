@@ -350,6 +350,7 @@ impl Executor {
     ) -> Result<Option<Vec<(String, String, i32)>>, ExecuteError> {
         if commands.len() < 2
             || self.stderr_capture.is_some()
+            || self.stdout_capture.is_some()
             || commands.iter().enumerate().any(|(index, command)| {
                 command.time_command.is_some()
                     || command.brace_group.is_some()
@@ -399,6 +400,9 @@ impl Executor {
         }
 
         let mut processes = Vec::with_capacity(commands.len());
+        let capture_intermediate_stderr =
+            self.fd_table.write_endpoint(2) == Some(FdWriteEndpoint::Stdout);
+        let mut intermediate_stderr = Vec::new();
         for (index, (program, args)) in specs.iter().enumerate() {
             let (mut process, _) = external_command_for_named_program(
                 program,
@@ -421,11 +425,24 @@ impl Executor {
                 process.stdout(stdio_from_transferred_handle(
                     write.take().expect("pipeline writer already transferred"),
                 ));
+                if capture_intermediate_stderr {
+                    process.stderr(Stdio::piped());
+                }
             } else {
-                process.stdout(Stdio::piped()).stderr(Stdio::piped());
+                process.stdout(Stdio::piped());
+                process.stderr(Stdio::piped());
             }
 
-            let child = process.spawn().map_err(ExecuteError::IoError)?;
+            let mut child = process.spawn().map_err(ExecuteError::IoError)?;
+            if capture_intermediate_stderr && index + 1 < commands.len() {
+                if let Some(mut stderr) = child.stderr.take() {
+                    intermediate_stderr.push(std::thread::spawn(move || {
+                        let mut output = Vec::new();
+                        stderr.read_to_end(&mut output)?;
+                        Ok::<_, std::io::Error>(output)
+                    }));
+                }
+            }
             processes.push(child);
         }
 
@@ -451,6 +468,14 @@ impl Executor {
             results.push((String::new(), String::new(), status.code().unwrap_or(1)));
         }
         results.reverse();
+        for reader in intermediate_stderr {
+            let output = reader
+                .join()
+                .map_err(|_| ExecuteError::IoError(std::io::Error::other("pipeline stderr reader panicked")))??;
+            if capture_intermediate_stderr {
+                self.write_default_stdout(&output)?;
+            }
+        }
         self.write_pipeline_output(commands[commands.len() - 1], &results.last().unwrap().0)?;
         if let Some((_, stderr, _)) = results.last() {
             if !stderr.is_empty() {
@@ -473,6 +498,7 @@ impl Executor {
     ) -> Result<Option<Vec<(String, String, i32)>>, ExecuteError> {
         if commands.len() < 2
             || self.stderr_capture.is_some()
+            || self.stdout_capture.is_some()
             || commands.iter().enumerate().any(|(index, command)| {
                 command.time_command.is_some()
                     || command.brace_group.is_some()
@@ -515,6 +541,9 @@ impl Executor {
         }
 
         let mut processes: Vec<std::process::Child> = Vec::with_capacity(commands.len());
+        let capture_intermediate_stderr =
+            self.fd_table.write_endpoint(2) == Some(FdWriteEndpoint::Stdout);
+        let mut intermediate_stderr = Vec::new();
         let mut previous_stdout: Option<std::process::ChildStdout> = None;
         let mut first_stdin: Option<std::process::ChildStdin> = None;
 
@@ -537,10 +566,21 @@ impl Executor {
                 process.stdout(Stdio::piped());
             } else {
                 process.stdout(Stdio::piped());
+            }
+            if capture_intermediate_stderr || index + 1 == commands.len() {
                 process.stderr(Stdio::piped());
             }
 
             let mut child = process.spawn().map_err(ExecuteError::IoError)?;
+            if capture_intermediate_stderr && index + 1 < commands.len() {
+                if let Some(mut stderr) = child.stderr.take() {
+                    intermediate_stderr.push(std::thread::spawn(move || {
+                        let mut output = Vec::new();
+                        stderr.read_to_end(&mut output)?;
+                        Ok::<_, std::io::Error>(output)
+                    }));
+                }
+            }
             if index == 0 {
                 first_stdin = child.stdin.take();
             }
@@ -574,6 +614,14 @@ impl Executor {
             results.push((String::new(), String::new(), status.code().unwrap_or(1)));
         }
         results.reverse();
+        for reader in intermediate_stderr {
+            let output = reader
+                .join()
+                .map_err(|_| ExecuteError::IoError(std::io::Error::other("pipeline stderr reader panicked")))??;
+            if capture_intermediate_stderr {
+                self.write_default_stdout(&output)?;
+            }
+        }
         self.write_pipeline_output(commands[commands.len() - 1], &results.last().unwrap().0)?;
         if let Some((_, stderr, _)) = results.last() {
             if !stderr.is_empty() {

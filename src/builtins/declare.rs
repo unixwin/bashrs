@@ -20,6 +20,8 @@ use attrs::{apply_declare_attrs, DeclareOptions};
 use diagnostic::diagnostic_prefix;
 use marks::marked_vars;
 use names::{declare_base_name, nameref_self_reference, valid_declare_name};
+use storage::{indexed_array_entries, parse_assoc_words};
+use crate::shell::VariableStore;
 
 const EXECUTION_SUCCESS: i32 = 0;
 const EXECUTION_FAILURE: i32 = 1;
@@ -34,6 +36,36 @@ const NAMEREF_VARS: &str = "__RUBASH_NAMEREF_VARS";
 const DECLARED_UNSET_VARS: &str = "__RUBASH_DECLARED_UNSET_VARS";
 const COMPOUND_ASSIGNMENT_MARKER: char = '\x1e';
 const EX_USAGE: i32 = 2;
+
+/// Synchronize indexed declarations into the typed variable owner after the
+/// legacy builtin path has applied its attribute and encoding rules.
+pub(crate) fn sync_typed_assignments(
+    args: &[String],
+    variables: &HashMap<String, String>,
+    store: &mut VariableStore,
+) {
+    let arrays = marked_vars(variables, ARRAY_VARS);
+    let assocs = marked_vars(variables, ASSOC_VARS);
+    for arg in args {
+        let Some((raw_name, _)) = arg.split_once('=') else {
+            continue;
+        };
+        let name = raw_name.strip_suffix('+').unwrap_or(raw_name);
+        let Some(base) = declare_base_name(name) else {
+            continue;
+        };
+        let Some(value) = variables.get(base) else {
+            continue;
+        };
+        if arrays.contains(base) {
+            let entries = indexed_array_entries(value);
+            let values = entries.into_iter().map(|(_, value)| value);
+            let _ = store.replace_indexed_array(base, values);
+        } else if assocs.contains(base) {
+            let _ = store.replace_associative_array(base, parse_assoc_words(value));
+        }
+    }
+}
 
 pub fn execute(args: &[String], variables: &mut HashMap<String, String>) -> io::Result<i32> {
     let mut stdout = crate::executor::GlobalStdout;

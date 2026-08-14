@@ -27,30 +27,37 @@ impl Executor {
 
     pub(in crate::executor) fn open_output_fd_append(&self, target: &str) -> io::Result<File> {
         let fd = redirect_target_fd(target)
-            .and_then(|fd| self.env_vars.get(&fd_output_key(fd)))
-            .cloned();
-        let Some(path) = fd else {
-            return Err(io::Error::new(
-                io::ErrorKind::NotFound,
-                "bad file descriptor",
-            ));
-        };
-        if matches!(path.as_str(), FD_STDOUT_TARGET | FD_STDERR_TARGET) {
-            return Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                "stdio file descriptor",
-            ));
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "bad file descriptor"))?;
+        if self.fd_table.is_closed(fd) {
+            return Err(io::Error::new(io::ErrorKind::NotFound, "bad file descriptor"));
         }
-        if is_null_device(&path) {
+        let endpoint = self
+            .fd_table
+            .output_endpoint(fd)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, "fd is not writable"))?;
+        let path = match endpoint {
+            FdWriteEndpoint::File(path) => path,
+            FdWriteEndpoint::ProcessSubstitution { path, .. } => path,
+            FdWriteEndpoint::Stdout | FdWriteEndpoint::Stderr => {
+                return Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "stdio file descriptor",
+                ));
+            }
+            FdWriteEndpoint::CoprocStdin(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "coprocess file descriptor",
+                ));
+            }
+        };
+        if is_null_device(&path.to_string_lossy()) {
             return OpenOptions::new()
                 .write(true)
                 .append(true)
                 .open(shell_path_to_windows("/dev/null", &self.env_vars));
         }
-        OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(shell_path_to_windows(&path, &self.env_vars))
+        OpenOptions::new().create(true).append(true).open(path)
     }
 
     pub(in crate::executor) fn write_output_fd_redirect(
@@ -61,36 +68,27 @@ impl Executor {
         let Some(fd) = redirect_target_fd(target) else {
             return Ok(false);
         };
-        if let Some(writer) = self.coproc_stdin_writers.get_mut(&fd) {
-            writer.write_all(output)?;
-            return Ok(true);
+        if self.fd_table.is_closed(fd) {
+            return Ok(false);
         }
-        let Some(fd_target) = self.env_vars.get(&fd_output_key(fd)).cloned() else {
+        let Some(endpoint) = self.fd_table.output_endpoint(fd) else {
             return Ok(false);
         };
-        match fd_target.as_str() {
-            FD_STDOUT_TARGET => write_stdout_bytes(output)?,
-            FD_STDERR_TARGET => write_stderr_bytes(output)?,
-            target if target.starts_with(FD_COPROC_STDIN_TARGET_PREFIX) => {
-                let Some(source_fd) = target
-                    .strip_prefix(FD_COPROC_STDIN_TARGET_PREFIX)
-                    .and_then(|fd| fd.parse::<u32>().ok())
-                else {
-                    return Ok(false);
-                };
-                let Some(writer) = self.coproc_stdin_writers.get_mut(&source_fd) else {
+        match endpoint {
+            FdWriteEndpoint::Stdout => write_stdout_bytes(output)?,
+            FdWriteEndpoint::Stderr => write_stderr_bytes(output)?,
+            FdWriteEndpoint::CoprocStdin(pid) => {
+                let Some(writer) = self.coproc_stdin_writers.get_mut(&pid) else {
                     return Ok(false);
                 };
                 writer.write_all(output)?;
             }
-            path => {
-                if is_null_device(path) {
-                    return Ok(true);
-                }
-                let mut file = OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(shell_path_to_windows(path, &self.env_vars))?;
+            FdWriteEndpoint::File(path) => {
+                let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+                file.write_all(output)?;
+            }
+            FdWriteEndpoint::ProcessSubstitution { path, .. } => {
+                let mut file = OpenOptions::new().create(true).append(true).open(path)?;
                 file.write_all(output)?;
             }
         }
@@ -101,27 +99,21 @@ impl Executor {
         if redirect_target_fd(target).map_or(false, |fd| matches!(self.fd_table.output_endpoint(fd), Some(FdWriteEndpoint::Stdout))) {
             return true;
         }
-        redirect_target_fd(target)
-            .and_then(|fd| self.env_vars.get(&fd_output_key(fd)))
-            .is_some_and(|target| target == FD_STDOUT_TARGET)
+        false
     }
 
     pub(in crate::executor) fn output_fd_redirects_to_stderr(&self, target: &str) -> bool {
         if redirect_target_fd(target).map_or(false, |fd| matches!(self.fd_table.output_endpoint(fd), Some(FdWriteEndpoint::Stderr))) {
             return true;
         }
-        redirect_target_fd(target)
-            .and_then(|fd| self.env_vars.get(&fd_output_key(fd)))
-            .is_some_and(|target| target == FD_STDERR_TARGET)
+        false
     }
 
     pub(in crate::executor) fn input_fd_redirects_to_process_stdin(&self, target: &str) -> bool {
         if redirect_target_fd(target).map_or(false, |fd| matches!(self.fd_table.entries.get(&fd).and_then(|entry| entry.read.as_ref()), Some(FdReadEndpoint::InheritedProcessStdin))) {
             return true;
         }
-        redirect_target_fd(target)
-            .and_then(|fd| self.env_vars.get(&fd_stdin_key(fd)))
-            .is_some_and(|target| target == FD_PROCESS_STDIN_TARGET)
+        false
     }
 
     pub(in crate::executor) fn write_default_stdout(
@@ -139,34 +131,7 @@ impl Executor {
             return Ok(());
         }
 
-        if self.env_vars.contains_key(&fd_closed_key(1)) {
-            return Ok(());
-        }
-
-        if let Some(target) = self.env_vars.get(&fd_output_key(1)).cloned() {
-            if target == FD_STDOUT_TARGET {
-                write_stdout_bytes(output)?;
-                return Ok(());
-            }
-            if target == FD_STDERR_TARGET {
-                write_stderr_bytes(output)?;
-                return Ok(());
-            }
-            if let Some(fd) = coproc_stdin_target_fd(&target) {
-                if let Some(writer) = self.coproc_stdin_writers.get_mut(&fd) {
-                    writer.write_all(output)?;
-                }
-                return Ok(());
-            }
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            file.write_all(output)?;
-            return Ok(());
-        }
-
-        write_stdout_bytes(output)?;
+        self.write_fd_endpoint(1, output)?;
         Ok(())
     }
 
@@ -174,52 +139,45 @@ impl Executor {
         &mut self,
         output: &[u8],
     ) -> Result<(), ExecuteError> {
-        if self.env_vars.contains_key(&fd_closed_key(2)) {
-            return Ok(());
-        }
-
-        if let Some(target) = self.env_vars.get(&fd_output_key(2)).cloned() {
-            if target == FD_STDOUT_TARGET {
-                write_stdout_bytes(output)?;
-                return Ok(());
-            }
-            if target == FD_STDERR_TARGET {
-                write_stderr_bytes(output)?;
-                return Ok(());
-            }
-            if is_null_device(&target) {
-                return Ok(());
-            }
-            if let Some(fd) = coproc_stdin_target_fd(&target) {
-                if let Some(writer) = self.coproc_stdin_writers.get_mut(&fd) {
-                    writer.write_all(output)?;
-                }
-                return Ok(());
-            }
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            file.write_all(output)?;
-            return Ok(());
-        }
-
         if let Some(capture) = &mut self.stderr_capture {
             capture.write_all(output)?;
             return Ok(());
         }
-
-        write_stderr_bytes(output)?;
+        self.write_fd_endpoint(2, output)?;
         Ok(())
     }
 
     pub(in crate::executor) fn has_output_fd_target(&self, target: &str) -> bool {
         redirect_target_fd(target)
-            .map(|fd| {
-                self.env_vars.contains_key(&fd_output_key(fd))
-                    || self.coproc_stdin_writers.contains_key(&fd)
-            })
-            .unwrap_or(false)
+            .is_some_and(|fd| !self.fd_table.is_closed(fd) && self.fd_table.output_endpoint(fd).is_some())
+    }
+
+    fn write_fd_endpoint(&mut self, fd: u32, output: &[u8]) -> Result<(), ExecuteError> {
+        if self.fd_table.is_closed(fd) {
+            return Ok(());
+        }
+        let Some(endpoint) = self.fd_table.output_endpoint(fd) else {
+            return Ok(());
+        };
+        match endpoint {
+            FdWriteEndpoint::Stdout => write_stdout_bytes(output)?,
+            FdWriteEndpoint::Stderr => write_stderr_bytes(output)?,
+            FdWriteEndpoint::CoprocStdin(pid) => {
+                let Some(writer) = self.coproc_stdin_writers.get_mut(&pid) else {
+                    return Err(io::Error::new(io::ErrorKind::BrokenPipe, "coprocess input is closed").into());
+                };
+                writer.write_all(output)?;
+            }
+            FdWriteEndpoint::File(path) => {
+                let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+                file.write_all(output)?;
+            }
+            FdWriteEndpoint::ProcessSubstitution { path, .. } => {
+                let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+                file.write_all(output)?;
+            }
+        }
+        Ok(())
     }
 
     pub(in crate::executor) fn apply_simple_set_flags(&mut self, args: &[String]) -> bool {
@@ -622,11 +580,6 @@ fn trace_stdio_write(
     result
 }
 
-fn coproc_stdin_target_fd(target: &str) -> Option<u32> {
-    target
-        .strip_prefix(FD_COPROC_STDIN_TARGET_PREFIX)
-        .and_then(|fd| fd.parse::<u32>().ok())
-}
 
 #[cfg(windows)]
 mod windows_raw_stdio {

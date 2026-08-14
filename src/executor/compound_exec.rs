@@ -1,5 +1,45 @@
 use super::*;
 
+enum CoprocStderrForwardTarget {
+    Stdout,
+    Stderr,
+    File(PathBuf),
+    Discard,
+    CoprocStdin(std::io::PipeWriter),
+}
+
+fn forward_coproc_stderr(
+    mut stderr: std::process::ChildStderr,
+    mut target: CoprocStderrForwardTarget,
+) -> Result<(), std::io::Error> {
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let count = stderr.read(&mut buffer)?;
+        if count == 0 {
+            return Ok(());
+        }
+        match &mut target {
+            CoprocStderrForwardTarget::Stdout => {
+                std::io::stdout().write_all(&buffer[..count])?;
+                std::io::stdout().flush()?;
+            }
+            CoprocStderrForwardTarget::Stderr => {
+                std::io::stderr().write_all(&buffer[..count])?;
+                std::io::stderr().flush()?;
+            }
+            CoprocStderrForwardTarget::File(path) => {
+                let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+                file.write_all(&buffer[..count])?;
+            }
+            CoprocStderrForwardTarget::Discard => {}
+            CoprocStderrForwardTarget::CoprocStdin(writer) => {
+                writer.write_all(&buffer[..count])?;
+                writer.flush()?;
+            }
+        }
+    }
+}
+
 impl Executor {
     pub(in crate::executor) fn execute_inverted_ast_command(
         &mut self,
@@ -424,26 +464,24 @@ impl Executor {
             let (Some(fd), Some(body)) = (redirect.fd, redirect.body.clone()) else {
                 continue;
             };
-            let input_key = fd_stdin_key(fd);
-            let offset_key = fd_stdin_offset_key(fd);
             // A loop's numbered heredoc is still an ordinary unquoted
-            // heredoc.  Keep its expansion rules identical to the command's
+            // heredoc. Keep its expansion rules identical to the command's
             // stdin heredoc, including parameter and command substitutions.
             let body = self.expand_heredoc_body(&body);
-            saved_fd_inputs.push((
-                input_key.clone(),
-                self.env_vars.get(&input_key).cloned(),
-                offset_key.clone(),
-                self.env_vars.get(&offset_key).cloned(),
-            ));
-            self.env_vars.insert(input_key, body);
-            self.env_vars.insert(offset_key, "0".to_string());
+            saved_fd_inputs.push((fd, self.fd_table.entries.get(&fd).cloned()));
+            self.fd_table.open_input(fd, FdReadEndpoint::text(&body), true);
         }
 
         let result = f(self);
-        for (input_key, old_input, offset_key, old_offset) in saved_fd_inputs {
-            restore_optional_env_var(&mut self.env_vars, &input_key, old_input);
-            restore_optional_env_var(&mut self.env_vars, &offset_key, old_offset);
+        for (fd, old_entry) in saved_fd_inputs {
+            match old_entry {
+                Some(entry) => {
+                    self.fd_table.entries.insert(fd, entry);
+                }
+                None => {
+                    self.fd_table.entries.remove(&fd);
+                }
+            }
         }
         result
     }
@@ -580,15 +618,28 @@ impl Executor {
         {
             child.stdin(stdin_reader);
             child.stdout(stdout_writer);
-            child.stderr(Stdio::inherit());
+            let coproc_stderr_target = self.coproc_stderr_forward_target();
+            if coproc_stderr_target.is_some() {
+                child.stderr(Stdio::piped());
+            } else {
+                child.stderr(Stdio::inherit());
+            }
             self.apply_coproc_redirects(cmd, &mut child)?;
 
             match child.spawn() {
-                Ok(child_proc) => {
+                Ok(mut child_proc) => {
                     // Rubash does not expose real coproc file descriptors yet,
                     // but keep the parent ends until after spawn so stdio uses
                     // the correct pipe direction on all hosts.
                     let pid = child_proc.id();
+                    if let Some(target) = coproc_stderr_target {
+                        if let Some(stderr) = child_proc.stderr.take() {
+                            let forwarder = std::thread::spawn(|| {
+                                forward_coproc_stderr(stderr, target)
+                            });
+                            self.coproc_stderr_forwarders.insert(pid, forwarder);
+                        }
+                    }
                     self.background_children.insert(pid, child_proc);
                     let job_id = self.job_table.register_process(pid, bash_command_source_text(cmd), true);
                     self.background_jobs
@@ -596,13 +647,15 @@ impl Executor {
                     self.background_job_order.push(pid);
                     self.coproc_stdin_writers.insert(pid, stdin_writer);
                     self.coproc_stdout_readers.insert(pid, stdout_reader);
+                    let coproc_read_fd = self.fd_table.allocate_dynamic();
                     self.fd_table.open_input(
-                        pid,
+                        coproc_read_fd,
                         FdReadEndpoint::CoprocStdout(pid),
                         true,
                     );
+                    let coproc_write_fd = self.fd_table.allocate_dynamic();
                     self.fd_table.open_output(
-                        pid,
+                        coproc_write_fd,
                         FdWriteEndpoint::CoprocStdin(pid),
                         true,
                     );
@@ -613,11 +666,10 @@ impl Executor {
                     self.env_vars.insert(stdin_key, "pipe".to_string());
                     self.env_vars.insert(stdout_key, "pipe".to_string());
 
-                    // Windows has no shell-visible POSIX fd for this pipe.
-                    // Use the child PID as a stable virtual descriptor so a
-                    // named coprocess can be distinguished from other live
-                    // coprocesses when `${NAME[0]}` is redirected to `read`.
-                    let array_value = format!("({} {})", pid, pid);
+                    // Windows has no inherited POSIX fd for this pipe. Expose
+                    // two shell-owned virtual descriptors instead; the PID
+                    // remains job identity, not the observable fd value.
+                    let array_value = format!("({coproc_read_fd} {coproc_write_fd})");
                     self.env_vars.insert(array_name.clone(), array_value);
                     mark_env_name(&mut self.env_vars, "__RUBASH_ARRAY_VARS", &array_name);
                     self.env_vars
@@ -635,6 +687,26 @@ impl Executor {
         }
 
         Ok(())
+    }
+
+    fn coproc_stderr_forward_target(&mut self) -> Option<CoprocStderrForwardTarget> {
+        if self.fd_table.is_closed(2) {
+            return Some(CoprocStderrForwardTarget::Discard);
+        }
+
+        match self.fd_table.write_endpoint(2)? {
+            FdWriteEndpoint::Stdout => Some(CoprocStderrForwardTarget::Stdout),
+            FdWriteEndpoint::Stderr => Some(CoprocStderrForwardTarget::Stderr),
+            FdWriteEndpoint::File(path) => Some(CoprocStderrForwardTarget::File(path)),
+            FdWriteEndpoint::ProcessSubstitution { path, .. } => {
+                Some(CoprocStderrForwardTarget::File(path))
+            }
+            FdWriteEndpoint::CoprocStdin(pid) => self
+                .coproc_stdin_writers
+                .get(&pid)
+                .and_then(|writer| writer.try_clone().ok())
+                .map(CoprocStderrForwardTarget::CoprocStdin),
+        }
     }
 
     fn apply_coproc_redirects(
