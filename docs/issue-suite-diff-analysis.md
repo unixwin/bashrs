@@ -1278,3 +1278,25 @@ Verification:
 - alias-focused executor tests (74 passed)
 - `cargo test --test executor_tests command_chaining::part_071` (14 passed)
 - focused CLI regressions for default/enabled aliases and fatal arithmetic
+
+### 2026-08-14 parameter substring boundaries
+
+Parameter substring expansion had two remaining Bash differences in the
+`var-op-slice` family. A negative offset whose magnitude exceeds the value
+length now produces an empty expansion instead of clamping to the first
+character. Negative lengths retain Bash's valid "stop before the end" behavior,
+but an effective end below zero is rejected during the existing parameter
+expansion preflight with status 1 and `substring expression < 0`.
+
+The shared scalar and positional substring helpers now use checked negative
+offset arithmetic, so `${v: -4}` for `v=abc` is empty while `${v: -3}` is
+`abc`. The error check is based on the resolved value length and does not turn
+`${v: -4: -1}` into an error; an already out-of-range start expands empty as in
+Bash. Array negative-length behavior remains owned by the existing array slice
+validation.
+
+Verification:
+
+- `cargo test --test executor_tests test_parameter_substring_` (7 passed)
+- new boundary regressions for negative offset and invalid negative length
+- existing array and positional substring regressions remain covered

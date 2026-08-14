@@ -174,18 +174,27 @@ impl Executor {
                     return Some((name.to_string(), message, 127));
                 }
             }
-            if let Some((name, _, Some(length))) = self.parse_parameter_substring(inner) {
-                if length < 0
-                    && name
+            if let Some((name, offset, Some(length))) = self.parse_parameter_substring(inner) {
+                if length < 0 {
+                    let is_array_slice = name
                         .strip_suffix("[@]")
                         .or_else(|| name.strip_suffix("[*]"))
-                        .is_some()
-                {
-                    return Some((
-                        length.to_string(),
-                        "substring expression < 0".to_string(),
-                        1,
-                    ));
+                        .is_some();
+                    let is_invalid = is_array_slice
+                        || self.parameter_error_value(name).is_some_and(|value| {
+                            parameter_substring_has_negative_result(
+                                value.chars().count(),
+                                offset,
+                                length,
+                            )
+                        });
+                    if is_invalid {
+                        return Some((
+                            length.to_string(),
+                            "substring expression < 0".to_string(),
+                            1,
+                        ));
+                    }
                 }
             }
             rest = &after_start[end + 1..];

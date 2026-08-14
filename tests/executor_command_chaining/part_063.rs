@@ -297,6 +297,47 @@ fn test_parameter_substring_supports_negative_offset() {
 }
 
 #[test]
+fn test_parameter_substring_negative_offset_beyond_value_is_empty() {
+    let output_path = "target/rubash-param-substring-negative-boundary-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "v=abc; printf '<%s> <%s> <%s> <%s>\\n' \"${{v: -4}}\" \"${{v: -3}}\" \"${{v: -2}}\" \"${{v: -4: -1}}\" > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "<> <abc> <bc> <>\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_parameter_substring_negative_length_reports_invalid_end() {
+    let output_path = "target/rubash-param-substring-negative-length-boundary-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "v=abc; printf 'valid<%s>\\n' \"${{v:1:-1}}\" > {output_path}; printf 'invalid<%s>\\n' \"${{v:1:-4}}\" >> {output_path}; echo after >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(matches!(result, Err(ExecuteError::ExitCode(1))));
+    assert_eq!(executor.last_exit_code(), 1);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "valid<b>\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_parameter_substring_accepts_arithmetic_offset() {
     let output_path = "target/rubash-param-substring-arith-output.txt";
     let _ = fs::remove_file(output_path);

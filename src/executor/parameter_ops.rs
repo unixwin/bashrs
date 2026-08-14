@@ -352,20 +352,46 @@ pub(in crate::executor) fn parameter_substring(
     length: Option<isize>,
 ) -> String {
     let char_count = value.chars().count();
-    let start = if offset < 0 {
-        char_count.saturating_sub(offset.unsigned_abs())
-    } else {
-        offset as usize
+    let Some(start) = parameter_substring_start(char_count, offset) else {
+        return String::new();
     };
     let take = match length {
-        Some(length) if length < 0 => char_count
-            .saturating_sub(start)
-            .saturating_sub(length.unsigned_abs()),
+        Some(length) if length < 0 => {
+            let remaining = char_count.saturating_sub(start);
+            remaining.saturating_sub(length.unsigned_abs())
+        }
         Some(length) => usize::try_from(length).unwrap_or(usize::MAX),
         None => usize::MAX,
     };
 
     value.chars().skip(start).take(take).collect()
+}
+
+pub(in crate::executor) fn parameter_substring_start(
+    char_count: usize,
+    offset: isize,
+) -> Option<usize> {
+    if offset < 0 {
+        char_count.checked_sub(offset.unsigned_abs())
+    } else {
+        usize::try_from(offset)
+            .ok()
+            .filter(|start| *start <= char_count)
+    }
+}
+
+pub(in crate::executor) fn parameter_substring_has_negative_result(
+    char_count: usize,
+    offset: isize,
+    length: isize,
+) -> bool {
+    if length >= 0 {
+        return false;
+    }
+    let Some(start) = parameter_substring_start(char_count, offset) else {
+        return false;
+    };
+    (char_count as i128) - (start as i128) + (length as i128) < 0
 }
 
 pub(in crate::executor) fn positional_parameter_substring(
@@ -374,7 +400,10 @@ pub(in crate::executor) fn positional_parameter_substring(
     length: Option<isize>,
 ) -> Vec<String> {
     let start = if offset < 0 {
-        params.len().saturating_sub(offset.unsigned_abs())
+        params
+            .len()
+            .checked_sub(offset.unsigned_abs())
+            .unwrap_or(params.len())
     } else {
         (offset as usize).saturating_sub(1)
     };
