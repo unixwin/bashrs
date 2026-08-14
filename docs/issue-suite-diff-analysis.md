@@ -180,6 +180,20 @@ primitive-level comparison even though the checked-in `.right` runner reports
 
 ## Executive Summary
 
+### 2026-08-14 ambiguous redirect after unquoted expansion
+
+Unquoted parameter expansion in a redirection target now follows Bash's
+ambiguous-redirect rule. For example, `target="a b"; echo hi > $target`
+previously created a file literally named `a b`; it now reports
+`a b: ambiguous redirect`, returns status 1, and does not create the file.
+The check runs at the common materialized-command boundary so shell builtins,
+external commands, and compound commands share the same behavior. Quoted
+targets such as `> "$target"` remain valid.
+
+Verification: `cargo test --test cli_tests fd_redirects` (12 passed),
+`cargo test --test cli_tests -- --nocapture` (150 passed), and the Bash
+`run-redir` slice (1/1).
+
 ### 2026-08-13 wait -n completed-status retention
 
 `wait -n` now retains the exit status it reaps so a later explicit `wait PID`

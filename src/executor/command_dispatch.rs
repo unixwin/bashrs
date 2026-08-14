@@ -17,7 +17,11 @@ impl Executor {
             eprintln!("{prefix}{text}");
         }
 
-        let result = self.execute_prepared_command(cmd);
+        let result = if self.reject_ambiguous_redirects(cmd)? {
+            Ok(())
+        } else {
+            self.execute_prepared_command(cmd)
+        };
         self.finish_process_substitutions(process_substitution_files)?;
         self.finish_assignment_output_process_substitutions_for_command(cmd)?;
         if cmd.background && result.is_ok() {

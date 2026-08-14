@@ -24,6 +24,46 @@ struct OutputFdState {
 }
 
 impl Executor {
+    pub(in crate::executor) fn reject_ambiguous_redirects(
+        &mut self,
+        cmd: &CommandNode,
+    ) -> Result<bool, ExecuteError> {
+        let mut redirects = cmd.redirects.iter();
+        let mut candidates = Vec::new();
+        candidates.extend(redirects.by_ref());
+        for redirect in [
+            cmd.redirect_in.as_ref(),
+            cmd.redirect_out.as_ref(),
+            cmd.append.as_ref(),
+            cmd.redirect_err.as_ref(),
+            cmd.redirect_err_append.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if !candidates.iter().any(|candidate| *candidate == redirect) {
+                candidates.push(redirect);
+            }
+        }
+
+        for redirect in candidates {
+            let target = self.expand_word(&redirect.target);
+            if redirect_target_is_ambiguous(&redirect.target_metadata.raw, &target) {
+                let mut stderr = Vec::new();
+                writeln!(
+                    &mut stderr,
+                    "{}{target}: ambiguous redirect",
+                    self.diagnostic_prefix()
+                )?;
+                self.write_default_stderr(&stderr)?;
+                self.exit_code = 1;
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
     pub(in crate::executor) fn command_output_redirect_fails(
         &mut self,
         cmd: &CommandNode,

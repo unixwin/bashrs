@@ -240,6 +240,24 @@ fn c_external_command_reports_ambiguous_stderr_fd_redirect() {
 }
 
 #[test]
+fn c_builtin_command_reports_ambiguous_redirect_after_unquoted_expansion() {
+    let _ = fs::remove_file("a b");
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("target='a b'; echo hi > $target; printf 'status:%s\\n' \"$?\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(stream_text(&output.stdout), "status:1\n");
+    assert_eq!(
+        stream_text(&output.stderr),
+        "rubash: a b: ambiguous redirect\n"
+    );
+    assert!(!Path::new("a b").exists());
+}
+
+#[test]
 fn c_external_combined_redirect_preserves_stderr_first_output() {
     let bin_dir = external_fd_copy_bin_dir();
     let script_path = helper_path(&bin_dir, "emitboth");

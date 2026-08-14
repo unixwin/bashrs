@@ -39,6 +39,38 @@ pub(in crate::executor) fn redirect_target_fd_and_move(target: &str) -> Option<(
         .flatten()
 }
 
+pub(in crate::executor) fn redirect_target_is_ambiguous(raw: &str, expanded: &str) -> bool {
+    if !expanded.chars().any(char::is_whitespace) {
+        return false;
+    }
+
+    let mut single_quoted = false;
+    let mut double_quoted = false;
+    let mut escaped = false;
+    let mut has_unquoted_expansion = false;
+
+    for ch in raw.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' && !single_quoted {
+            escaped = true;
+            continue;
+        }
+        match ch {
+            '\'' if !double_quoted => single_quoted = !single_quoted,
+            '"' if !single_quoted => double_quoted = !double_quoted,
+            '$' if !single_quoted && !double_quoted => {
+                has_unquoted_expansion = true;
+            }
+            _ => {}
+        }
+    }
+
+    has_unquoted_expansion
+}
+
 pub(in crate::executor) fn stdio_output_target(fd: u32) -> Option<&'static str> {
     match fd {
         1 => Some(FD_STDOUT_TARGET),
