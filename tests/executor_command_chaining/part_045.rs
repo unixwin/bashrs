@@ -28,6 +28,38 @@ fn test_type_long_all_option_reports_all_matches() {
 }
 
 #[test]
+fn test_debug_trap_preserves_function_line_and_skips_on_status_two() {
+    let trap_log = "target/rubash-debug-trap-line-output.txt";
+    let value_path = "target/rubash-debug-trap-skip-output.txt";
+    let _ = fs::remove_file(trap_log);
+    let _ = fs::remove_file(value_path);
+    let input = format!(
+        "shopt -s extdebug\n\
+         print_trap() {{\n\
+           printf '%s:%s\\n' \"$1\" \"$LINENO\" >> {trap_log}\n\
+           if [[ $debug_exit == 2 ]]; then debug_exit=0; return 2; fi\n\
+         }}\n\
+         debug_exit=0\n\
+         trap 'print_trap $LINENO' DEBUG\n\
+         value=one\n\
+         debug_exit=2\n\
+         value=two\n\
+         printf 'value:%s\\n' \"$value\" > {value_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    assert!(executor.execute_ast(&ast).is_ok());
+    assert_eq!(fs::read_to_string(value_path).unwrap(), "value:one\n");
+    let trap_lines = fs::read_to_string(trap_log).unwrap();
+    assert!(!trap_lines.is_empty());
+    assert!(trap_lines.lines().all(|line| line.ends_with(":4")));
+    let _ = fs::remove_file(trap_log);
+    let _ = fs::remove_file(value_path);
+}
+
+#[test]
 fn test_trap_p_redirects_saved_exit_trap() {
     let output_path = "target/rubash-trap-p-redirect-output.txt";
     let _ = fs::remove_file(output_path);

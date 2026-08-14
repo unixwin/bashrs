@@ -53,7 +53,7 @@ impl Executor {
             let target = self.expand_word(&redirect.target);
             let invalid_fd_target = target.starts_with('&')
                 && !is_closed_redirect_target(&target)
-                && redirect_target_fd(&target).is_none();
+                && redirect_target_fd_and_move(&target).is_none();
             if invalid_fd_target
                 || redirect_target_is_ambiguous(&redirect.target_metadata.raw, &target)
             {

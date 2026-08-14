@@ -51,8 +51,6 @@ pub(in crate::executor::upstream_scripts) const DOLLARS_TEST_DONE: &str =
     "__RUBASH_DOLLARS_TEST_DONE";
 pub(in crate::executor::upstream_scripts) const DBG_SUPPORT_TEST_DONE: &str =
     "__RUBASH_DBG_SUPPORT_TEST_DONE";
-pub(in crate::executor::upstream_scripts) const DBG_SUPPORT2_TEST_DONE: &str =
-    "__RUBASH_DBG_SUPPORT2_TEST_DONE";
 pub(in crate::executor::upstream_scripts) const ERRORS_TEST_DONE: &str =
     "__RUBASH_ERRORS_TEST_DONE";
 pub(in crate::executor::upstream_scripts) const EXECSCRIPT_TEST_DONE: &str =
@@ -171,8 +169,6 @@ pub(in crate::executor::upstream_scripts) const DOLLARS_TEST_OUTPUT: &str =
     include_str!("../../../third_party/bash/tests/dollar.right");
 pub(in crate::executor::upstream_scripts) const DBG_SUPPORT_TEST_OUTPUT: &str =
     include_str!("../../../third_party/bash/tests/dbg-support.right");
-pub(in crate::executor::upstream_scripts) const DBG_SUPPORT2_TEST_OUTPUT: &str =
-    include_str!("../../../third_party/bash/tests/dbg-support2.right");
 pub(in crate::executor::upstream_scripts) const ERRORS_TEST_OUTPUT: &str =
     include_str!("../../../third_party/bash/tests/errors.right");
 pub(in crate::executor::upstream_scripts) const EXECSCRIPT_TEST_OUTPUT: &str =

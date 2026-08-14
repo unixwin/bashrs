@@ -418,6 +418,7 @@ impl Executor {
             return_trap_running: false,
             signal_trap_running: false,
             debug_trap_command: None,
+            debug_trap_function_line: None,
             last_command_substitution_status: Cell::new(None),
             stdout_capture: None,
             stderr_capture: None,

@@ -3,10 +3,18 @@ use super::*;
 impl Executor {
     /// Execute an AST
     pub fn execute_command(&mut self, cmd: &CommandNode) -> Result<(), ExecuteError> {
-        // While a DEBUG trap action runs, LINENO must keep pointing at the
-        // about-to-run command that triggered the trap (dbg-support2.tests
-        // `print_trap $LINENO`); the action's own commands must not move it.
-        if !self.debug_trap_running {
+        // Set the source line for every command, including commands inside a
+        // DEBUG trap function. The trap action expands its call-site `$LINENO`
+        // before entering that function, while the function body must see its
+        // own source line (dbg-support2.tests).
+        if self.debug_trap_running && self.function_depth > 0 {
+            if let Some(line) = self.debug_trap_function_line {
+                self.env_vars
+                    .insert("__RUBASH_CURRENT_LINE".to_string(), line.to_string());
+            } else {
+                self.set_current_line(cmd);
+            }
+        } else {
             self.set_current_line(cmd);
         }
         self.set_current_command(cmd);

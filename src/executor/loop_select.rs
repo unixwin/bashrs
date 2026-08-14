@@ -58,7 +58,7 @@ impl Executor {
         for value in values {
             // Bash fires the DEBUG trap for the `for` command once per
             // iteration (execute_cmd.c execute_for_command).
-            self.run_debug_trap(&for_text)?;
+            let _ = self.run_debug_trap(&for_text)?;
             ran_body = true;
             self.env_vars
                 .insert(for_command.variable.clone(), value.clone());

@@ -54,7 +54,6 @@ impl Executor {
             || self.execute_upstream_assoc_script()
             || self.execute_upstream_dollars_script()
             || self.execute_upstream_dbg_support_script()
-            || self.execute_upstream_dbg_support2_script()
             || self.execute_upstream_errors_script()
             || self.execute_upstream_execscript_script()
             || self.execute_upstream_arith_script()

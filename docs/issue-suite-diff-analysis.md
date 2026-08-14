@@ -1378,3 +1378,28 @@ regressions:
 
 Verification: `cargo test --test executor_tests -- --test-threads=1` reports
 1523 passed and 0 failed.
+
+### 2026-08-14 DEBUG trap source locations and skip status
+
+Direct execution of GNU Bash `dbg-support2.tests` exposed two real DEBUG trap
+contracts that the old `upstream_scripts` output bridge hid. A DEBUG trap
+action must expand the triggering command's `LINENO`, while a function called
+by that action must see its own body line. Returning status 2 from the DEBUG
+trap must also skip the command about to run. Rubash previously froze the
+function body at the call-site line and ignored the skip status.
+
+The executor now propagates the DEBUG trap result to the command loop, and the
+parser restores relative source lines for inline function bodies. The
+`dbg-support2.tests` output now matches GNU Bash byte-for-byte; the matching
+artifacts are `target/bash-dbg-support2.actual` and
+`target/rubash-dbg-support2.actual`. The dedicated upstream output bridge for
+`dbg-support2.tests` was removed. The upstream `.right` runner still reports a
+failure for this test because its checked-in `.right` expects stale line
+numbers and output; direct GNU Bash execution is the authoritative comparison.
+
+Verification:
+
+- `cargo test --test executor_tests command_chaining::part_045`: 14/14.
+- `cargo test --lib`: 173/173.
+- GNU Bash/Rubash `third_party/bash/tests/dbg-support2.tests`: byte-for-byte
+  match.

@@ -266,20 +266,4 @@ impl Executor {
         true
     }
 
-    pub(super) fn execute_upstream_dbg_support2_script(&mut self) -> bool {
-        if self.env_vars.contains_key(DBG_SUPPORT2_TEST_DONE)
-            || !self
-                .env_vars
-                .get("__RUBASH_SCRIPT_NAME")
-                .is_some_and(|script| script.ends_with("dbg-support2.tests"))
-        {
-            return false;
-        }
-
-        print!("{}", DBG_SUPPORT2_TEST_OUTPUT.replace("\r\n", "\n"));
-        self.env_vars
-            .insert(DBG_SUPPORT2_TEST_DONE.to_string(), "1".to_string());
-        self.exit_code = 0;
-        true
-    }
 }

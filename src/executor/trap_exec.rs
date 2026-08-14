@@ -88,24 +88,38 @@ impl Executor {
     /// suppressed (Bash does not re-enter the DEBUG trap while an action
     /// is running). `command_text` is the text of the command about to run,
     /// exposed to the trap action through BASH_COMMAND like Bash does.
-    pub(crate) fn run_debug_trap(&mut self, command_text: &str) -> Result<(), ExecuteError> {
+    pub(crate) fn run_debug_trap(&mut self, command_text: &str) -> Result<bool, ExecuteError> {
         if self.debug_trap_running {
-            return Ok(());
+            return Ok(false);
         }
         let Some(action) = crate::builtins::trap::get_trap_action(&self.env_vars, "DEBUG") else {
-            return Ok(());
+            return Ok(false);
         };
         if action.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
         self.debug_trap_running = true;
         self.debug_trap_command = Some(command_text.to_string());
+        let call_line = self
+            .env_vars
+            .get("__RUBASH_CURRENT_LINE")
+            .and_then(|line| line.parse::<usize>().ok());
         let tokens = crate::lexer::tokenize(&action);
-        let ast = crate::parser::parse(&tokens);
+        let mut ast = crate::parser::parse(&tokens);
+        if let Some(call_line) = call_line {
+            for command in &mut ast.commands {
+                command.line = Some(call_line);
+            }
+        }
         let result = self.execute_ast(&ast);
         self.debug_trap_command = None;
         self.debug_trap_running = false;
-        result
+        result?;
+        let skip_command = self.exit_code == 2;
+        if skip_command {
+            self.exit_code = 0;
+        }
+        Ok(skip_command)
     }
 
     /// Runs the RETURN trap action when a function (or sourced script)

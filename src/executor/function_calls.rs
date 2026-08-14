@@ -137,7 +137,16 @@ impl Executor {
         self.local_var_scopes.push(HashMap::new());
         self.local_attr_scopes.push(HashMap::new());
         self.function_depth += 1;
+        let old_debug_trap_function_line = self.debug_trap_function_line;
+        if self.debug_trap_running {
+            self.debug_trap_function_line = body
+                .commands
+                .first()
+                .and_then(|command| command.line)
+                .map(|line| line.saturating_add(1));
+        }
         let result = self.execute_ast_inner(body_ast);
+        self.debug_trap_function_line = old_debug_trap_function_line;
         self.run_function_return_trap()?;
         {
             self.function_depth -= 1;

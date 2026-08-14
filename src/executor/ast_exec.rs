@@ -79,7 +79,10 @@ impl Executor {
                 // inside the DEBUG trap action (dbg-support2.tests).
                 self.set_current_line(command);
                 let command_text = self.xtrace_command_text(command);
-                self.run_debug_trap(&command_text)?;
+                if self.run_debug_trap(&command_text)? {
+                    index += 1;
+                    continue;
+                }
             }
 
             if let Some(next_index) = self.execute_time_prefixed_command_sequence(ast, index)? {
