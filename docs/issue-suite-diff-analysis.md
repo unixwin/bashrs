@@ -190,7 +190,12 @@ The check runs at the common materialized-command boundary so shell builtins,
 external commands, and compound commands share the same behavior. Quoted
 targets such as `> "$target"` remain valid.
 
-Verification: `cargo test --test cli_tests fd_redirects` (12 passed),
+The same validation now rejects invalid expanded fd operands such as
+`fd=-1; exec <&$fd`, reporting `-1: ambiguous redirect` instead of trying to
+open `&-1` as a filesystem path. This closes two concrete `redir.tests` fd
+diagnostic cases in the shared redirection boundary.
+
+Verification: `cargo test --test cli_tests fd_redirects` (13 passed),
 `cargo test --test cli_tests -- --nocapture` (150 passed), and the Bash
 `run-redir` slice (1/1).
 

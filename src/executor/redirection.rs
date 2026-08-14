@@ -48,11 +48,17 @@ impl Executor {
 
         for redirect in candidates {
             let target = self.expand_word(&redirect.target);
-            if redirect_target_is_ambiguous(&redirect.target_metadata.raw, &target) {
+            let invalid_fd_target = target.starts_with('&')
+                && !is_closed_redirect_target(&target)
+                && redirect_target_fd(&target).is_none();
+            if invalid_fd_target
+                || redirect_target_is_ambiguous(&redirect.target_metadata.raw, &target)
+            {
+                let diagnostic_target = target.strip_prefix('&').unwrap_or(&target);
                 let mut stderr = Vec::new();
                 writeln!(
                     &mut stderr,
-                    "{}{target}: ambiguous redirect",
+                    "{}{diagnostic_target}: ambiguous redirect",
                     self.diagnostic_prefix()
                 )?;
                 self.write_default_stderr(&stderr)?;
