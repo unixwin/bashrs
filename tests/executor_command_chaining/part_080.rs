@@ -1287,6 +1287,49 @@ fn test_exec_dynamic_input_fd_move_closes_source_and_reuses_slot() {
 }
 
 #[test]
+fn test_exec_dynamic_fd_array_element_keeps_input_and_output_owners() {
+    let input_path = "target/rubash-dynamic-array-fd-input.txt";
+    let output_path = "target/rubash-dynamic-array-fd-output.txt";
+    fs::write(input_path, "array-input\n").unwrap();
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "exec {{fd[0]}}<{input_path}; read -r value <&${{fd[0]}}; \
+         exec {{fd[1]}}>{output_path}; printf '%s\\n' \"$value\" >&${{fd[1]}}; \
+         exec {{fd[0]}}<&-; exec {{fd[1]}}>&-"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "array-input\n");
+    let _ = fs::remove_file(input_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_read_heredoc_overrides_earlier_input_fd_redirect() {
+    let output_path = "target/rubash-read-heredoc-overrides-fd.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "exec {{fd}}<<<from-fd; read -r value <&$fd <<EOF\nfrom-heredoc\nEOF\n         printf '%s\\n' \"$value\" > {output_path}; exec {{fd}}<&-"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "from-heredoc\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_exec_dynamic_fd_here_string_persists_for_external_command() {
     let output_path = "target/rubash-dynamic-fd-here-string-output.txt";
     let _ = fs::remove_file(output_path);

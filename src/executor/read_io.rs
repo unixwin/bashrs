@@ -20,6 +20,19 @@ impl Executor {
         char_limit: Option<usize>,
         exact_char_limit: bool,
     ) -> Option<String> {
+        // An unnumbered heredoc is the last stdin redirect, so it overrides
+        // an earlier `<&fd`. An explicit `read -u N` still owns the input fd.
+        if read_fd.is_none() {
+            if let Some(heredoc) = &cmd.heredoc {
+                return Some(trim_read_input(
+                    self.expand_heredoc_body(heredoc),
+                    delimiter,
+                    char_limit,
+                    exact_char_limit,
+                ));
+            }
+        }
+
         if let Some(fd) = read_fd {
             if let Some(line) =
                 self.read_redirected_fd(cmd, fd, delimiter, char_limit, exact_char_limit)

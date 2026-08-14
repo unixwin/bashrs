@@ -1149,3 +1149,36 @@ The remaining FD gate is ordered redirect parity and arbitrary non-text
 endpoints such as process substitution. This slice does not remove the
 `upstream_scripts` coproc bridge or claim closure of the official Bash
 `.tests` actual-output differences.
+
+### 2026-08-14 Indexed dynamic-fd and ordered heredoc slice
+
+Direct execution of GNU `vredir5.sub` and `vredir7.sub` exposed two real
+semantic gaps that the `.right` runner did not isolate. Dynamic-fd names such
+as `{fd[0]}` were rejected by the scalar-only name parser and, when accepted
+as text, would have been written under the literal `fd[0]` environment key
+instead of the indexed-array storage. The executor now validates numeric
+indexed dynamic-fd names, updates the existing array storage, and reads the
+stored element when closing the fd.
+
+The same probes showed that `read line <&$stdin <<EOF` must use the final
+unnumbered heredoc as stdin. `read_input_for_command` now applies that
+precedence only when no explicit `read -u N` fd was selected, preserving the
+explicit-fd case.
+
+Direct GNU/Rubash observations:
+
+- `vredir5.sub`: both produce `12 10`, two `a` lines, and the `swizzle`
+  function listing after this fix.
+- `vredir7.sub`: the indexed `{fd[0]}` / `{fd[1]}` form now produces the same
+  content and no longer raises a missing-file error.
+- `vredir8.sub`: `/dev/tty` is unavailable in the non-interactive Windows test
+  host; this remains a host-owned diagnostic boundary, while the subsequent
+  closed-fd checks remain covered by the existing focused tests.
+
+Verification:
+
+- `cargo test --test executor_tests command_chaining::part_080`: 152/152.
+- `cargo test --test cli_tests c_command_`: 38/38.
+- `run-redir` and `run-vredir`: PASS 0; raw logs remain under
+  `target/bash-upstream-tests/logs/`.
+- `git diff --check`: passed.

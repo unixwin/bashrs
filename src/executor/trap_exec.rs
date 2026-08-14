@@ -723,7 +723,7 @@ impl Executor {
                 return Ok(None);
             };
             let fd = self.allocate_dynamic_fd();
-            self.env_vars.insert(name.to_string(), fd.to_string());
+            self.set_dynamic_fd_variable(name, fd);
             self.set_fd_input_text(fd, input, true);
             return Ok(Some(0));
         }
@@ -737,7 +737,7 @@ impl Executor {
 
             if let Some((source_fd, move_source)) = redirect_target_fd_and_move(&target) {
                 let fd = self.allocate_dynamic_fd();
-                self.env_vars.insert(name.to_string(), fd.to_string());
+                self.set_dynamic_fd_variable(name, fd);
                 self.copy_persistent_input_fd(fd, source_fd);
                 if move_source {
                     self.close_persistent_fd(source_fd)?;
@@ -751,7 +751,7 @@ impl Executor {
             {
                 if let Some(input) = self.process_substitution_output(source) {
                     let fd = self.allocate_dynamic_fd();
-                    self.env_vars.insert(name.to_string(), fd.to_string());
+                    self.set_dynamic_fd_variable(name, fd);
                     self.fd_table.open_input(fd, FdReadEndpoint::process_substitution(&input), true);
                     self.set_fd_input_text(fd, input, true);
                     return Ok(Some(0));
@@ -768,7 +768,7 @@ impl Executor {
             }
             let input = fs::read_to_string(path)?;
             let fd = self.allocate_dynamic_fd();
-            self.env_vars.insert(name.to_string(), fd.to_string());
+            self.set_dynamic_fd_variable(name, fd);
             self.set_fd_input_text(fd, input, true);
             if redirect.operator == "<>" {
                 self.set_fd_output_file(fd, target, true);
@@ -784,7 +784,7 @@ impl Executor {
             }
 
             let fd = self.allocate_dynamic_fd();
-            self.env_vars.insert(name.to_string(), fd.to_string());
+            self.set_dynamic_fd_variable(name, fd);
             if let Some((source_fd, move_source)) = redirect_target_fd_and_move(&target) {
                 self.copy_persistent_output_fd(fd, source_fd);
                 if move_source {
@@ -800,7 +800,7 @@ impl Executor {
             return Ok(Some(0));
         }
 
-        if let Some(redirect) = &cmd.append {
+            if let Some(redirect) = &cmd.append {
             let target = self.expand_word(&redirect.target);
             if is_closed_redirect_target(&target) {
                 self.close_dynamic_fd(name)?;
@@ -808,14 +808,14 @@ impl Executor {
             }
             let fd = self.allocate_dynamic_fd();
             if self.open_persistent_output_process_substitution(fd, &target)? {
-                self.env_vars.insert(name.to_string(), fd.to_string());
+                self.set_dynamic_fd_variable(name, fd);
                 return Ok(Some(0));
             }
             OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(shell_path_to_windows(&target, &self.env_vars))?;
-            self.env_vars.insert(name.to_string(), fd.to_string());
+            self.set_dynamic_fd_variable(name, fd);
             self.set_fd_output_file(fd, target, true);
             return Ok(Some(0));
         }
@@ -914,14 +914,30 @@ impl Executor {
     }
 
     fn close_dynamic_fd(&mut self, name: &str) -> Result<(), ExecuteError> {
-        if let Some(fd) = self
-            .env_vars
-            .get(name)
-            .and_then(|value| value.parse::<u32>().ok())
-        {
+        if let Some(fd) = self.dynamic_fd_variable_value(name) {
             self.close_persistent_fd(fd)?;
         }
         Ok(())
+    }
+
+    fn dynamic_fd_variable_value(&self, name: &str) -> Option<u32> {
+        self.env_vars
+            .get(name)
+            .and_then(|value| value.parse::<u32>().ok())
+            .or_else(|| self.array_element_parameter_value(name)?.parse::<u32>().ok())
+    }
+
+    fn set_dynamic_fd_variable(&mut self, name: &str, fd: u32) {
+        if let Some((array_name, index)) = parse_array_numeric_subscript(name) {
+            let current = self.env_vars.get(array_name).cloned().unwrap_or_default();
+            let mut entries = indexed_array_entries(&current);
+            entries.insert(index, fd.to_string());
+            self.env_vars
+                .insert(array_name.to_string(), format_indexed_array_storage(entries));
+            mark_env_name(&mut self.env_vars, ARRAY_VARS, array_name);
+        } else {
+            self.env_vars.insert(name.to_string(), fd.to_string());
+        }
     }
 
     pub(in crate::executor) fn execute_exec_command(
@@ -978,6 +994,11 @@ fn exec_has_only_redirects(cmd: &CommandNode) -> bool {
 
 fn dynamic_fd_var_name(word: &str) -> Option<&str> {
     let name = word.strip_prefix('{')?.strip_suffix('}')?;
+    if let Some((array_name, index)) = parse_array_subscript(name) {
+        if is_shell_name(array_name) && index.parse::<usize>().is_ok() {
+            return Some(name);
+        }
+    }
     let mut chars = name.chars();
     let first = chars.next()?;
     if !(first == '_' || first.is_ascii_alphabetic()) {
