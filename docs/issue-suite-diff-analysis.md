@@ -1246,3 +1246,15 @@ Verification:
 - the 26-case differential probe now has no semantic differences; its only
   remaining mismatch is the expected Windows path/diagnostic prefix in
   `case-16-glob`.
+
+### 2026-08-14 loop-control status correction
+
+The earlier `break`/`continue` status note was based on an Oil-suite
+expectation rather than the current GNU Bash behavior. Direct Bash 5.2 probes
+show that an out-of-loop `break` or `continue` prints the diagnostic but leaves
+`$?` at 0 when the command list continues. Rubash now matches that behavior in
+`src/executor/pwd_loop_builtins.rs`; the prior status-128 regression tests were
+corrected accordingly.
+
+Verification: `cargo test --test executor_tests part_050` and direct Bash/Rubash
+probes for `break`, `continue`, and their numeric operands.

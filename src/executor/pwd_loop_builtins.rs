@@ -109,10 +109,10 @@ impl Executor {
                 kind.name()
             )?;
             self.write_buffered_builtin_output(cmd, &[], &stderr)?;
-            // Bash reports an out-of-loop break/continue as a command error
-            // with status 128, but continues the surrounding command list
-            // unless errexit applies.
-            self.exit_code = 128;
+            // Bash emits the diagnostic but leaves the command status at zero
+            // when an out-of-loop break/continue is followed by another
+            // command in the same list.
+            self.exit_code = 0;
             return Ok(());
         }
 
