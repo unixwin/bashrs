@@ -104,6 +104,10 @@ impl Executor {
     }
 
     pub(crate) fn expand_aliases(&self, words: &[String]) -> Vec<String> {
+        if !self.alias_expansion_enabled() {
+            return words.to_vec();
+        }
+
         let mut expanded = Vec::new();
         let mut expand_next = true;
 
@@ -135,6 +139,10 @@ impl Executor {
         words: &[String],
         raws: &[Option<&str>],
     ) -> Vec<String> {
+        if !self.alias_expansion_enabled() {
+            return words.to_vec();
+        }
+
         let mut expanded = Vec::new();
         let mut expand_next = true;
 
@@ -162,6 +170,10 @@ impl Executor {
         &self,
         words: &[String],
     ) -> Vec<String> {
+        if !self.alias_expansion_enabled() {
+            return words.to_vec();
+        }
+
         // TODO(parse.y/alias.c): In POSIX mode Bash does not alias reserved
         // words. This keeps just enough parser-state awareness for alias7.sub.
         let mut expanded = Vec::new();
@@ -186,6 +198,10 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<bool, ExecuteError> {
+        if !self.alias_expansion_enabled() {
+            return Ok(false);
+        }
+
         // TODO(parse.y/alias.c): GNU Bash pushes alias text back into the
         // parser input stream (`alias_expand_token` + `push_string`). This
         // reparses complex alias values at command position so aliases that

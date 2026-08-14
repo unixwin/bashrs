@@ -339,16 +339,16 @@ fn arithmetic_errors_in_assignment_abort_the_script() {
 }
 
 #[test]
-fn arithmetic_expansion_error_only_fails_the_current_command() {
+fn arithmetic_expansion_error_aborts_the_shell() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
-        .arg("echo $((2#44)); echo after")
+        .arg("echo $((1/0)); echo after")
         .output()
         .expect("run rubash");
 
-    assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "after\n");
-    assert!(String::from_utf8_lossy(&output.stderr).contains("value too great for base"));
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("division by 0"));
 }
 
 #[test]

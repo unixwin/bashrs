@@ -180,7 +180,7 @@ fn test_arithmetic_expansion_rejects_invalid_octal_literal() {
 
     let result = executor.execute_ast(&ast);
 
-    assert!(result.is_ok());
+    assert!(result.is_err());
     assert_eq!(executor.last_exit_code(), 1);
     assert!(!std::path::Path::new(output_path).exists());
     let _ = std::fs::remove_file(output_path);
@@ -197,7 +197,7 @@ fn test_arithmetic_expansion_rejects_invalid_based_literal() {
 
     let result = executor.execute_ast(&ast);
 
-    assert!(result.is_ok());
+    assert!(result.is_err());
     assert_eq!(executor.last_exit_code(), 1);
     assert!(!std::path::Path::new(output_path).exists());
     let _ = std::fs::remove_file(output_path);

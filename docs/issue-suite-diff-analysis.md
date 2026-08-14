@@ -1258,3 +1258,23 @@ corrected accordingly.
 
 Verification: `cargo test --test executor_tests part_050` and direct Bash/Rubash
 probes for `break`, `continue`, and their numeric operands.
+
+### 2026-08-14 alias option gating and fatal arithmetic expansions
+
+Two direct Bash 5.2 probes exposed stale compatibility assumptions. Non-
+interactive shells leave `expand_aliases` off by default, so defining `ll` and
+then invoking it must report command-not-found; Rubash's central alias
+expansion paths now all honor the shopt state. With `shopt -s expand_aliases`,
+the same alias still expands.
+
+Arithmetic expansion errors such as `$((1/0))`, invalid octal literals, and
+invalid base literals are fatal expansion errors in this Bash mode. Rubash
+previously skipped only the failing command and continued the list; the command
+execution boundary now returns status 1 and stops the shell. Arithmetic command
+errors such as `(( '1' ))` retain their separate recoverable behavior.
+
+Verification:
+
+- alias-focused executor tests (74 passed)
+- `cargo test --test executor_tests command_chaining::part_071` (14 passed)
+- focused CLI regressions for default/enabled aliases and fatal arithmetic

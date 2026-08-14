@@ -123,22 +123,14 @@ impl Executor {
             .collect();
         let cmd = self.apply_alias_expansion_after_word_expansion(expanded, &original_raws);
 
-        // Arithmetic expansion errors are reported during word expansion.
-        // The failing command itself must not be dispatched (Bash returns 1),
-        // while the AST-level marker remains set so the command-list walker
-        // can apply Bash's follow-up command suppression semantics.
+        // Arithmetic expansion errors are fatal expansion errors in Bash. The
+        // failing command is not dispatched and the surrounding command list
+        // must stop, including when it is followed by `||` or `&&`.
         if self.arithmetic_expansion_error.get() {
             self.arithmetic_expansion_error.set(false);
-            if self
-                .env_vars
-                .remove("__RUBASH_ARITH_NOUNSET_ERROR")
-                .is_some()
-            {
-                self.exit_code = 1;
-                return Err(ExecuteError::ExitCode(1));
-            }
+            self.env_vars.remove("__RUBASH_ARITH_NOUNSET_ERROR");
             self.exit_code = 1;
-            return Ok(());
+            return Err(ExecuteError::ExitCode(1));
         }
 
         if self.execute_alias_expanded_syntax(&cmd)? {
