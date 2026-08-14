@@ -88,6 +88,39 @@ fn c_command_writes_to_named_coproc_stdin_fd() {
 }
 
 #[test]
+fn c_command_external_reads_named_coproc_stdout_through_array_fd() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "coproc PRODUCER { printf 'external-read\\n'; }; \
+             cat <&\"${PRODUCER[0]}\"",
+        )
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "external-read\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn c_command_external_writes_named_coproc_stdin_through_array_fd() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "coproc CONSUMER { read -r value; printf 'external-write:%s\\n' \"$value\"; }; \
+             printf 'payload\\n' >&\"${CONSUMER[1]}\"; \
+             read -r result <&\"${CONSUMER[0]}\"; printf '%s\\n' \"$result\"",
+        )
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "external-write:payload\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn c_command_closing_coproc_stdin_fd_unblocks_reader() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

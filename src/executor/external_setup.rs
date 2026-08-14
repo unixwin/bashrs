@@ -87,7 +87,7 @@ fn dynamic_fd_word(word: &str) -> Option<&str> {
 
 impl Executor {
     pub(in crate::executor) fn apply_external_stdin_redirect(
-        &self,
+        &mut self,
         cmd: &CommandNode,
         process: &mut Command,
     ) -> Result<(), ExecuteError> {
@@ -95,6 +95,26 @@ impl Executor {
             process.stdin(Stdio::piped());
         } else if let Some(ref redirect) = cmd.redirect_in {
             let target = self.expand_word(&redirect.target);
+            if redirect.fd.unwrap_or(0) == 0 {
+                if let Some(fd) = redirect_target_fd(&target) {
+                    if let Some(FdReadEndpoint::CoprocStdout(pid)) =
+                        self.fd_table.read_endpoint(fd)
+                    {
+                        let reader = self
+                            .coproc_stdout_readers
+                            .get(&pid)
+                            .ok_or_else(|| {
+                                io::Error::new(
+                                    io::ErrorKind::BrokenPipe,
+                                    "coprocess output is closed",
+                                )
+                            })?
+                            .try_clone()?;
+                        process.stdin(Stdio::from(reader));
+                        return Ok(());
+                    }
+                }
+            }
             if is_closed_redirect_target(&target) {
                 if redirect.fd.unwrap_or(0) == 0 {
                     process.stdin(Stdio::null());
@@ -624,6 +644,9 @@ impl Executor {
             return None;
         }
         let input = self.env_vars.get(&fd_stdin_key(fd))?;
+        if input == FD_PROCESS_STDIN_TARGET {
+            return None;
+        }
         let offset = self
             .env_vars
             .get(&fd_stdin_offset_key(fd))

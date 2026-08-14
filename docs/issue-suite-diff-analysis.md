@@ -1121,3 +1121,31 @@ The upstream runner's `results.tsv` is single-run state and was last written
 by `run-vredir`; retain the two log paths above as the durable evidence for
 both bounded invocations. The official Bash `.tests` actual-output gap and
 the remaining `upstream_scripts` bridge are unchanged.
+
+### 2026-08-14 Coproc external-child materialization
+
+The next FD boundary is now covered for coprocess endpoints. When an external
+command uses `cat <&"${NAME[0]}"`, child setup clones the registered coproc
+stdout reader from the `FdTable`; when a command uses
+`... >&"${NAME[1]}"`, it clones the registered coproc stdin writer. The
+compatibility environment descriptors remain an adapter for shell builtins and
+legacy paths, but are no longer the source of truth for these child redirects.
+
+Completion, `wait`, `fg`, `kill`, `disown`, and `ulimit` cleanup paths now close
+the corresponding virtual fd-table entry together with the Windows pipe maps.
+This prevents a completed or detached coprocess PID from remaining a usable
+virtual descriptor.
+
+Focused verification:
+
+- `cargo test --test cli_tests c_command_`: 38/38 passed, including external
+  coproc stdout and stdin regressions.
+- The existing coproc builtin/read regressions remain passing; the external
+  tests exercise the child-materialization boundary rather than only the
+  builtin pipe adapter.
+- `git diff --check`: passed.
+
+The remaining FD gate is ordered redirect parity and arbitrary non-text
+endpoints such as process substitution. This slice does not remove the
+`upstream_scripts` coproc bridge or claim closure of the official Bash
+`.tests` actual-output differences.

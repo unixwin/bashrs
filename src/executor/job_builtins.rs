@@ -183,9 +183,10 @@ impl Executor {
 
         if cmd.words.len() == 1 && !self.background_children.is_empty() {
             let mut status = 0;
-            for (_, mut child) in std::mem::take(&mut self.background_children) {
+            for (pid, mut child) in std::mem::take(&mut self.background_children) {
                 let wait_status = child.wait()?;
                 status = wait_status.code().unwrap_or(1);
+                self.fd_table.close(pid);
             }
             self.background_jobs.clear();
             self.background_job_order.clear();
@@ -294,6 +295,7 @@ impl Executor {
         }
         self.coproc_stdin_writers.remove(&pid);
         self.coproc_stdout_readers.remove(&pid);
+        self.fd_table.close(pid);
         Ok(Some(status))
     }
 
@@ -374,11 +376,20 @@ impl Executor {
         let status = match action {
             crate::builtins::disown::DisownAction::Complete(status) => status,
             crate::builtins::disown::DisownAction::All => {
+                let pids: Vec<u32> = self
+                    .background_jobs
+                    .keys()
+                    .copied()
+                    .chain(self.background_children.keys().copied())
+                    .collect();
                 self.background_children.clear();
                 self.background_jobs.clear();
                 self.background_job_order.clear();
                 self.coproc_stdin_writers.clear();
                 self.coproc_stdout_readers.clear();
+                for pid in pids {
+                    self.fd_table.close(pid);
+                }
                 0
             }
             crate::builtins::disown::DisownAction::Current => {
@@ -402,6 +413,7 @@ impl Executor {
                         self.background_job_order.retain(|job_pid| *job_pid != pid);
                         self.coproc_stdin_writers.remove(&pid);
                         self.coproc_stdout_readers.remove(&pid);
+                        self.fd_table.close(pid);
                     } else {
                         writeln!(
                             stderr,
@@ -432,6 +444,7 @@ impl Executor {
         self.background_job_order.retain(|job_pid| *job_pid != pid);
         self.coproc_stdin_writers.remove(&pid);
         self.coproc_stdout_readers.remove(&pid);
+        self.fd_table.close(pid);
         true
     }
 
@@ -524,6 +537,7 @@ impl Executor {
             self.background_job_order.retain(|job_pid| *job_pid != pid);
             self.coproc_stdin_writers.remove(&pid);
             self.coproc_stdout_readers.remove(&pid);
+            self.fd_table.close(pid);
             self.write_job_not_found("fg", job, stderr)?;
             return Ok(1);
         };
@@ -531,6 +545,7 @@ impl Executor {
         self.background_job_order.retain(|job_pid| *job_pid != pid);
         self.coproc_stdin_writers.remove(&pid);
         self.coproc_stdout_readers.remove(&pid);
+        self.fd_table.close(pid);
         let status = child.wait()?.code().unwrap_or(1);
         self.job_table.mark_completed(pid, status);
         Ok(status)

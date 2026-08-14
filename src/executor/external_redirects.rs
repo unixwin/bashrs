@@ -2,7 +2,7 @@ use super::*;
 
 impl Executor {
     pub(in crate::executor) fn apply_external_redirects(
-        &self,
+        &mut self,
         cmd: &CommandNode,
         process: &mut Command,
     ) -> Result<(), ExecuteError> {
@@ -59,19 +59,35 @@ impl Executor {
     }
 
     fn apply_external_stdout_redirect(
-        &self,
+        &mut self,
         cmd: &CommandNode,
         process: &mut Command,
     ) -> Result<(), ExecuteError> {
         let mut redirected = false;
         if let Some(ref redirect) = cmd.redirect_out {
             let target = self.expand_word(&redirect.target);
+            if let Some(fd) = redirect_target_fd(&target) {
+                if self.apply_external_coproc_output(process, fd, true)? {
+                    redirected = true;
+                }
+            }
+            if redirected {
+                return Ok(());
+            }
             self.apply_external_stdout_target(process, &target, redirect.clobber)?;
             redirected = true;
         }
 
         if let Some(ref redirect) = cmd.append {
             let target = self.expand_word(&redirect.target);
+            if let Some(fd) = redirect_target_fd(&target) {
+                if self.apply_external_coproc_output(process, fd, true)? {
+                    redirected = true;
+                }
+            }
+            if redirected {
+                return Ok(());
+            }
             if is_closed_redirect_target(&target) {
                 process.stdout(Stdio::null());
             } else if redirect_target_fd(&target) == Some(2)
@@ -119,7 +135,7 @@ impl Executor {
     }
 
     fn apply_external_stdout_target(
-        &self,
+        &mut self,
         process: &mut Command,
         target: &str,
         clobber: bool,
@@ -141,13 +157,21 @@ impl Executor {
     }
 
     fn apply_external_stderr_redirect(
-        &self,
+        &mut self,
         cmd: &CommandNode,
         process: &mut Command,
     ) -> Result<(), ExecuteError> {
         let mut redirected = false;
         if let Some(ref redirect) = cmd.redirect_err {
             let target = self.expand_word(&redirect.target);
+            if let Some(fd) = redirect_target_fd(&target) {
+                if self.apply_external_coproc_output(process, fd, false)? {
+                    redirected = true;
+                }
+            }
+            if redirected {
+                return Ok(());
+            }
             if is_closed_redirect_target(&target) {
                 process.stderr(Stdio::null());
             } else if redirect_target_fd(&target) == Some(1)
@@ -166,6 +190,14 @@ impl Executor {
 
         if let Some(ref redirect) = cmd.redirect_err_append {
             let target = self.expand_word(&redirect.target);
+            if let Some(fd) = redirect_target_fd(&target) {
+                if self.apply_external_coproc_output(process, fd, false)? {
+                    redirected = true;
+                }
+            }
+            if redirected {
+                return Ok(());
+            }
             if is_closed_redirect_target(&target) {
                 process.stderr(Stdio::null());
             } else if redirect_target_fd(&target) == Some(1)
@@ -208,6 +240,30 @@ impl Executor {
         }
 
         Ok(())
+    }
+
+    fn apply_external_coproc_output(
+        &mut self,
+        process: &mut Command,
+        fd: u32,
+        stdout: bool,
+    ) -> Result<bool, ExecuteError> {
+        let Some(FdWriteEndpoint::CoprocStdin(pid)) = self.fd_table.write_endpoint(fd) else {
+            return Ok(false);
+        };
+        let writer = self
+            .coproc_stdin_writers
+            .get(&pid)
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::BrokenPipe, "coprocess input is closed")
+            })?
+            .try_clone()?;
+        if stdout {
+            process.stdout(Stdio::from(writer));
+        } else {
+            process.stderr(Stdio::from(writer));
+        }
+        Ok(true)
     }
 
     pub(in crate::executor) fn write_external_fd_copy_output(

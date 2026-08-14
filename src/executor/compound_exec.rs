@@ -596,6 +596,16 @@ impl Executor {
                     self.background_job_order.push(pid);
                     self.coproc_stdin_writers.insert(pid, stdin_writer);
                     self.coproc_stdout_readers.insert(pid, stdout_reader);
+                    self.fd_table.open_input(
+                        pid,
+                        FdReadEndpoint::CoprocStdout(pid),
+                        true,
+                    );
+                    self.fd_table.open_output(
+                        pid,
+                        FdWriteEndpoint::CoprocStdin(pid),
+                        true,
+                    );
                     self.job_table.attach_coproc_endpoint(job_id, pid);
                     // Store the file descriptors in env for COPROC array
                     let stdin_key = format!("__RUBASH_COPROC_STDIN_{}", pid);
