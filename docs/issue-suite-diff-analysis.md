@@ -1228,3 +1228,21 @@ Verification:
 
 - `cargo test --test cli_tests fd_redirects -- --nocapture` (14 passed)
 - `scripts/run-bash-upstream-tests.sh run-redir` (1/1 passed)
+
+### 2026-08-14 IFS whitespace delimiter collapsing
+
+The focused Bash comparison `value="a  b"; IFS=" "; printf '<%s>\\n' $value`
+found an extra empty field in Rubash. `field_split_values_with_ifs` treated a
+custom whitespace IFS like a non-whitespace delimiter, although Bash collapses
+runs of IFS whitespace. The fix in `src/executor/arrays.rs` collapses only
+characters that are actually present in a whitespace-only IFS, preserving
+ordinary spaces when `IFS=$'\\n'` is used.
+
+Verification:
+
+- `cargo test --lib field_split` (4 passed)
+- `cargo test --test cli_tests custom_space_ifs_does_not_create_empty_fields`
+  (1 passed)
+- the 26-case differential probe now has no semantic differences; its only
+  remaining mismatch is the expected Windows path/diagnostic prefix in
+  `case-16-glob`.

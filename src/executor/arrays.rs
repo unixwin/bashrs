@@ -54,11 +54,29 @@ pub(super) fn field_split_values_with_ifs(value: &str, ifs: Option<&str>) -> Vec
         return vec![value.to_string()];
     }
 
-    // Only the actual default IFS collapses all shell whitespace.  A custom
-    // whitespace-only IFS (for example `IFS=$'\n'`) is a delimiter set, so
-    // spaces must remain part of fields.
+    // IFS whitespace delimiters collapse runs of the same delimiter class,
+    // but whitespace not present in IFS remains part of the field.  Thus
+    // `IFS=" "` collapses repeated spaces while `IFS=$'\n'` preserves spaces.
     if ifs == " \t\n" {
         return value.split_whitespace().map(str::to_string).collect();
+    }
+
+    if ifs.chars().all(char::is_whitespace) {
+        let mut fields = Vec::new();
+        let mut current = String::new();
+        for ch in value.chars() {
+            if ifs.contains(ch) {
+                if !current.is_empty() {
+                    fields.push(std::mem::take(&mut current));
+                }
+            } else {
+                current.push(ch);
+            }
+        }
+        if !current.is_empty() {
+            fields.push(current);
+        }
+        return fields;
     }
 
     // Non-whitespace IFS: every separator produces a field. Bash keeps empty
@@ -104,6 +122,22 @@ mod field_split_tests {
         assert_eq!(
             field_split_values_with_ifs("a b\na c", Some(" \t\n")),
             vec!["a", "b", "a", "c"]
+        );
+    }
+
+    #[test]
+    fn custom_space_ifs_collapses_repeated_spaces() {
+        assert_eq!(
+            field_split_values_with_ifs("a  b", Some(" ")),
+            vec!["a", "b"]
+        );
+    }
+
+    #[test]
+    fn custom_newline_ifs_keeps_spaces_in_fields() {
+        assert_eq!(
+            field_split_values_with_ifs("a  b\nc  d", Some("\n")),
+            vec!["a  b", "c  d"]
         );
     }
 }

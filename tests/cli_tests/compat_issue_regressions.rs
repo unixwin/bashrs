@@ -23,3 +23,16 @@ echo "${v%"${v#?}"}"
     );
     assert!(String::from_utf8_lossy(&output.stderr).is_empty());
 }
+
+#[test]
+fn custom_space_ifs_does_not_create_empty_fields() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"value="a  b"; IFS=" "; printf '<%s>\n' $value"#)
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<a>\n<b>\n");
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
