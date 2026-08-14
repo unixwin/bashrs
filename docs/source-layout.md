@@ -52,10 +52,6 @@ src/
   executor/
     mod.rs
     fd_table.rs
-    command.rs
-    eval.rs
-    hash.rs
-    hashlib.rs
     redirection.rs
     pipeline.rs
     path.rs
@@ -68,15 +64,12 @@ src/
     export.rs
     unset.rs
     test.rs
-    common.rs
-    getopt.rs
+    # Builtin implementations live here only when they own behavior.
 
   jobs/
     mod.rs
     table.rs
-    jobs.rs
-    signals.rs
-    trap.rs
+    # Job state is owned by table.rs; trap execution is in executor/trap_exec.rs.
 
   input/
     mod.rs
@@ -119,7 +112,7 @@ their presence does not mean every caller has migrated. See
 
 ## Create Now
 
-- `src/parser/ast.rs`: command AST, control-flow nodes, and shell syntax data
+- `src/parser/nodes.rs`: command AST, control-flow nodes, and shell syntax data
   structures.
 - `src/expand/`: word expansion, parameter expansion, command substitution,
   tilde expansion, brace expansion, quote removal, glob/pathname expansion.

@@ -38,6 +38,25 @@ inventory. A duplicate-owner candidate is not automatically complete: the
 replacement owner still needs behavior and suite evidence before it can be
 marked `real`.
 
+### Manually Confirmed Placeholder Exceptions
+
+The following zero-code or low-code files are intentionally retained. A
+`cloc --by-file` row is not enough evidence for deletion:
+
+| Files | Classification | Reason |
+|---|---|---|
+| `src/executor/upstream_scripts/data.rs` | active structural module | Re-exports the upstream handler data modules used by the bridge. |
+| `src/builtins/printf/identifier.rs` | real helper | Contains the active `valid_identifier` implementation used by printf. |
+| `src/shell/mod.rs`, `src/shell/arrays/mod.rs`, `src/expand/mod.rs`, `src/expand/tilde/mod.rs`, `src/jobs/mod.rs` | active structural modules | Declare or re-export active semantic owners. |
+| `src/complete/*`, `src/history/*`, `src/input/*` | deferred/host-owned | Interactive completion, history, readline, and termcap are outside the current noninteractive migration kernel. |
+| `src/locale/*` | deferred/host-owned | GNU gettext and locale portability is host/environment work, not a Rubash semantic kernel. |
+| `src/sys/*` | host-owned/deferred | GNU portability headers and POSIX helper shims are replaced selectively by Rust/std/Windows facilities. |
+| `src/jobs/signals.rs`, `src/jobs/siglist.rs` | host-owned/deferred | Windows process/event delivery is owned by the host backend and the active builtin/trap owners; no standalone POSIX signal-table port is planned. |
+
+These files must remain listed as deferred or host-owned until a replacement
+owner and test gate exist. They must not be promoted to `real` merely because
+the path exists.
+
 This map keeps Rubash implementation work traceable to GNU Bash 5.3 sources
 without forcing a file-for-file port. The `Status` column describes whether the
 Rubash module should exist now or later.
@@ -70,22 +89,22 @@ needed.
 | GNU Bash source | Rubash module | Status | Notes |
 |---|---|---:|---|
 | `parse.y`, `parser.h`, `y.tab.c`, `y.tab.h` | `src/parser/` | Now | Parser grammar reference only; do not mirror generated `y.tab.*`. |
-| `command.h`, `make_cmd.c`, `copy_cmd.c`, `dispose_cmd.c`, `print_cmd.c` | `src/parser/ast.rs` | Now | Rust AST should model command semantics, not C allocation helpers. |
+| `command.h`, `make_cmd.c`, `copy_cmd.c`, `dispose_cmd.c`, `print_cmd.c` | `src/parser/nodes.rs`, `src/parser/parse_loop.rs` | Now | Rust AST and parser lifecycle are owned by active parser modules, not GNU-named allocation helpers. |
 | `subst.c`, `subst.h` | `src/expand/parameter.rs`, `src/expand/command.rs` | Now | Parameter, command, arithmetic, quote removal, and word expansion logic. |
 | `braces.c`, `bracecomp.c` | `src/expand/braces.rs` | Now | Brace expansion can be implemented independently and tested early. |
-| `pathexp.c`, `lib/glob/glob.c`, `lib/glob/strmatch.c` | `src/expand/pathname.rs` | Now | Pathname expansion and shell pattern matching. |
-| `lib/tilde/tilde.c` | `src/expand/tilde.rs` | Now | Needed by `cd`, assignments, and word expansion. |
-| `execute_cmd.c`, `execute_cmd.h`, `eval.c` | `src/executor/command.rs` | Now | Main command execution flow. Keep high-level orchestration here. |
+| `pathexp.c`, `lib/glob/glob.c`, `lib/glob/strmatch.c` | `src/executor/glob.rs`, `src/parser/pathname_pattern.rs` | Now | Pathname expansion and shell pattern matching use one active executor owner plus parser metadata. |
+| `lib/tilde/tilde.c` | `src/expand/tilde/tilde.rs` | Now | Needed by `cd`, assignments, and word expansion. |
+| `execute_cmd.c`, `execute_cmd.h`, `eval.c` | `src/executor/command_execute.rs`, `src/executor/compound_exec.rs`, `src/executor/pipeline_exec.rs` | Now | Main command execution is distributed across dispatch, compound execution, and pipeline owners. `src/executor/command.rs` is not an active module. |
 | `redir.c`, `redir.h` | `src/executor/redirection.rs` | Now | File descriptor and redirect semantics. |
-| `findcmd.c`, `hashcmd.c`, `hashlib.c` | `src/executor/path.rs` or `src/shell/hash.rs` | Later | Command lookup and hashing after basic execution works. |
+| `findcmd.c`, `hashcmd.c`, `hashlib.c` | `src/executor/path.rs`, `src/builtins/hash.rs` | Later | Command lookup and builtin hash behavior are separate owners. |
 | `variables.c`, `variables.h` | `src/shell/variables.rs` | Now | Shell variables, exported environment, special parameters. |
-| `flags.c`, `shell.c`, `shell.h` | `src/shell/options.rs`, `src/shell/status.rs` | Now | Shell options, invocation mode, exit status, runtime state. |
-| `builtins/*.def`, `builtins/common.c` | `src/builtins/` | Now | Implement per builtin where useful, but group small builtins pragmatically. |
+| `flags.c`, `shell.c`, `shell.h` | `src/executor/shell_options.rs`, `src/shell/state.rs` | Now | Shell options and shared runtime state have separate active owners. |
+| `builtins/*.def`, `builtins/common.c` | `src/builtins/` plus distributed executor owners | Now | Keep builtin-facing behavior in `src/builtins`; execution-heavy families such as `getopts`, `mapfile`, `read`, `let`, `break`, and `return` are owned by executor modules listed in the inventory. `common.c` is shared GNU support, not a standalone Rust module. |
 | `test.c`, `builtins/test.def` | `src/builtins/test.rs` | Now | `test` and `[` behavior should share one implementation. |
-| `alias.c`, `alias.h`, `builtins/alias.def` | `src/shell/alias.rs` | Later | Needs parser/input integration before it is useful. |
-| `array.c`, `array2.c`, `arrayfunc.c`, `assoc.c` | `src/shell/arrays.rs` | Later | Add after scalar variables and parameter expansion are stable. |
-| `jobs.c`, `nojobs.c`, `jobs.h` | `src/jobs/` | Later | Requires process groups, terminal control, and signal semantics. |
-| `trap.c`, `sig.c`, `siglist.c` | `src/jobs/signals.rs` or `src/shell/signals.rs` | Later | Implement with job control or script traps, not before. |
+| `alias.c`, `alias.h`, `builtins/alias.def` | `src/executor/alias_*.rs`, `src/builtins/alias.rs` | Later | Alias expansion and the builtin interface are separate active owners. |
+| `array.c`, `array2.c`, `arrayfunc.c`, `assoc.c` | `src/shell/variables.rs`, `src/shell/arrays/`, `src/executor/arrays.rs` | Later | Keep typed storage and command execution ownership separate; do not create GNU-named shell placeholder files. |
+| `jobs.c`, `nojobs.c`, `jobs.h` | `src/jobs/table.rs`, `src/executor/job_builtins.rs` | Later | Job state is a Windows-compatible semantic table; POSIX process-group helpers are not standalone Rust owners. |
+| `trap.c`, `sig.c`, `siglist.c` | `src/builtins/trap.rs`, `src/executor/trap_exec.rs`; host-owned signal delivery | Later | Trap behavior and host signal delivery are separate contracts. |
 | `input.c`, `bashline.c`, `lib/readline/*` | `src/input/` or external line editor | Later | Prefer crate-backed line editing before considering Bash readline parity. |
 | `pcomplete.c`, `pcomplib.c`, `builtins/complete.def` | `src/complete/` | Later | Depends on readline/input and shell metadata. |
 | `bashhist.c`, `lib/readline/history.c` | `src/history.rs` | Later | Interactive-only feature. |

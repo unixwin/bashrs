@@ -40,15 +40,15 @@ This appendix assigns each implementation-shaped GNU Bash source file to a Rubas
 | `CWRU/misc/open-files.c` | `skip: build/support/example tool` |
 | `CWRU/misc/sigs.c` | `skip: build/support/example tool` |
 | `CWRU/misc/sigstat.c` | `skip: build/support/example tool` |
-| `alias.c` | `src/shell/alias.rs` |
-| `alias.h` | `src/shell/alias.rs` |
-| `array.c` | `src/shell/arrays/indexed.rs` |
-| `array.h` | `src/shell/arrays/indexed.rs` |
-| `array2.c` | `src/shell/arrays/indexed_extra.rs` |
-| `arrayfunc.c` | `src/shell/arrays/functions.rs` |
-| `arrayfunc.h` | `src/shell/arrays/functions.rs` |
-| `assoc.c` | `src/shell/arrays/assoc.rs` |
-| `assoc.h` | `src/shell/arrays/assoc.rs` |
+| `alias.c` | `src/executor/alias_*.rs` |
+| `alias.h` | `src/executor/alias_*.rs` |
+| `array.c` | `src/shell/variables.rs`; `src/executor/arrays.rs` |
+| `array.h` | `src/shell/variables.rs`; `src/executor/arrays.rs` |
+| `array2.c` | `src/shell/variables.rs`; `src/executor/arrays.rs` |
+| `arrayfunc.c` | `src/shell/variables.rs`; `src/executor/arrays.rs` |
+| `arrayfunc.h` | `src/shell/variables.rs`; `src/executor/arrays.rs` |
+| `assoc.c` | `src/shell/variables.rs`; `src/executor/arrays.rs` |
+| `assoc.h` | `src/shell/variables.rs`; `src/executor/arrays.rs` |
 | `bashansi.h` | `src/sys/compat.rs` |
 | `bashhist.c` | `src/history/bashhist.rs` |
 | `bashhist.h` | `src/history/bashhist.rs` |
@@ -57,50 +57,50 @@ This appendix assigns each implementation-shaped GNU Bash source file to a Rubas
 | `bashline.c` | `src/input/bashline.rs` |
 | `bashline.h` | `src/input/bashline.rs` |
 | `bashtypes.h` | `src/sys/compat.rs` |
-| `bracecomp.c` | `src/expand/bracecomp.rs` |
+| `bracecomp.c` | `src/expand/braces.rs` |
 | `braces.c` | `src/expand/braces.rs` |
 | `builtins.h` | `src/sys/compat.rs` |
 | `builtins/alias.def` | `src/builtins/alias.rs` |
-| `builtins/bashgetopt.c` | `src/builtins/getopt.rs` |
-| `builtins/bashgetopt.h` | `src/builtins/getopt.rs` |
+| `builtins/bashgetopt.c` | `skip: shared builtin option parsing; consumers are distributed across executor dispatchers` |
+| `builtins/bashgetopt.h` | `skip: shared builtin option parsing; consumers are distributed across executor dispatchers` |
 | `builtins/bind.def` | `src/builtins/bind.rs` |
-| `builtins/break.def` | `src/builtins/break.rs` |
-| `builtins/builtin.def` | `src/builtins/builtin.rs` |
+| `builtins/break.def` | `src/executor/pwd_loop_builtins.rs` |
+| `builtins/builtin.def` | `src/executor/builtin_direct_command.rs` |
 | `builtins/caller.def` | `src/builtins/caller.rs` |
 | `builtins/cd.def` | `src/builtins/cd.rs`, `src/builtins/pwd.rs` |
 | `builtins/colon.def` | `src/builtins/colon.rs` |
 | `builtins/command.def` | `src/builtins/command.rs` |
-| `builtins/common.c` | `src/builtins/common.rs` |
-| `builtins/common.h` | `src/builtins/common.rs` |
+| `builtins/common.c` | `skip: shared builtin support helpers; no standalone Rust owner` |
+| `builtins/common.h` | `skip: shared builtin support helpers; no standalone Rust owner` |
 | `builtins/complete.def` | `src/builtins/complete.rs` |
 | `builtins/declare.def` | `src/builtins/declare.rs` |
 | `builtins/echo.def` | `src/builtins/echo.rs` |
 | `builtins/enable.def` | `src/builtins/enable.rs` |
 | `builtins/eval.def` | `src/builtins/eval.rs` |
-| `builtins/evalfile.c` | `src/builtins/evalfile.rs` |
-| `builtins/evalstring.c` | `src/builtins/evalstring.rs` |
+| `builtins/evalfile.c` | `src/builtins/source/;src/executor/command_substitution.rs` |
+| `builtins/evalstring.c` | `src/builtins/eval.rs;src/executor/command_execute.rs` |
 | `builtins/exec.def` | `src/builtins/exec.rs` |
 | `builtins/exit.def` | `src/builtins/exit.rs` |
 | `builtins/fc.def` | `src/builtins/fc.rs` |
 | `builtins/fg_bg.def` | `src/builtins/fg_bg.rs` |
-| `builtins/gen-helpfiles.c` | `src/builtins/support.rs` |
-| `builtins/getopt.c` | `src/builtins/getopt.rs` |
-| `builtins/getopt.h` | `src/builtins/getopt.rs` |
-| `builtins/getopts.def` | `src/builtins/getopts.rs` |
+| `builtins/gen-helpfiles.c` | `skip: build-time GNU support utility` |
+| `builtins/getopt.c` | `skip: shared builtin option parsing; consumers are distributed across executor dispatchers` |
+| `builtins/getopt.h` | `skip: shared builtin option parsing; consumers are distributed across executor dispatchers` |
+| `builtins/getopts.def` | `src/executor/getopts_enable.rs` |
 | `builtins/hash.def` | `src/builtins/hash.rs` |
 | `builtins/help.def` | `src/builtins/help.rs` |
 | `builtins/history.def` | `src/builtins/history.rs` |
 | `builtins/jobs.def` | `src/builtins/jobs.rs` |
 | `builtins/kill.def` | `src/builtins/kill.rs` |
-| `builtins/let.def` | `src/builtins/let.rs` |
-| `builtins/mapfile.def` | `src/builtins/mapfile.rs` |
-| `builtins/mkbuiltins.c` | `src/builtins/support.rs` |
+| `builtins/let.def` | `src/executor/arithmetic_aliases.rs` |
+| `builtins/mapfile.def` | `src/executor/mapfile_builtin.rs` |
+| `builtins/mkbuiltins.c` | `skip: build-time GNU support utility` |
 | `builtins/printf.def` | `src/builtins/printf.rs` |
-| `builtins/psize.c` | `src/builtins/support.rs` |
+| `builtins/psize.c` | `skip: build-time GNU support utility` |
 | `builtins/pushd.def` | `src/builtins/pushd.rs` |
-| `builtins/read.def` | `src/builtins/read.rs` |
-| `builtins/reserved.def` | `src/builtins/reserved.rs` |
-| `builtins/return.def` | `src/builtins/return.rs` |
+| `builtins/read.def` | `src/executor/read_builtin.rs` |
+| `builtins/reserved.def` | `src/parser/;src/executor/support_names.rs` |
+| `builtins/return.def` | `src/executor/pwd_loop_builtins.rs` |
 | `builtins/set.def` | `src/builtins/set.rs` |
 | `builtins/setattr.def` | `src/builtins/setattr.rs` |
 | `builtins/shift.def` | `src/builtins/shift.rs` |
@@ -114,16 +114,16 @@ This appendix assigns each implementation-shaped GNU Bash source file to a Rubas
 | `builtins/ulimit.def` | `src/builtins/ulimit.rs` |
 | `builtins/umask.def` | `src/builtins/umask.rs` |
 | `builtins/wait.def` | `src/builtins/wait.rs` |
-| `command.h` | `src/parser/ast.rs` |
+| `command.h` | `src/parser/nodes.rs`; `src/parser/parse_loop.rs` |
 | `config-bot.h` | `src/sys/compat.rs` |
 | `config-top.h` | `src/sys/compat.rs` |
 | `conftypes.h` | `src/sys/compat.rs` |
-| `copy_cmd.c` | `src/parser/copy.rs` |
-| `dispose_cmd.c` | `src/parser/dispose.rs` |
-| `dispose_cmd.h` | `src/parser/dispose.rs` |
-| `error.c` | `src/shell/error.rs` |
-| `error.h` | `src/shell/error.rs` |
-| `eval.c` | `src/executor/eval.rs` |
+| `copy_cmd.c` | `src/parser/nodes.rs`; `src/parser/parse_loop.rs` |
+| `dispose_cmd.c` | `src/parser/nodes.rs`; `src/parser/parse_loop.rs` |
+| `dispose_cmd.h` | `src/parser/nodes.rs`; `src/parser/parse_loop.rs` |
+| `error.c` | `needs-owner-review: diagnostics are distributed across executor owners` |
+| `error.h` | `needs-owner-review: diagnostics are distributed across executor owners` |
+| `eval.c` | `src/builtins/eval.rs`; `src/executor/command_execute.rs` |
 | `examples/loadables/accept.c` | `skip: build/support/example tool` |
 | `examples/loadables/asort.c` | `skip: build/support/example tool` |
 | `examples/loadables/basename.c` | `skip: build/support/example tool` |
@@ -174,20 +174,20 @@ This appendix assigns each implementation-shaped GNU Bash source file to a Rubas
 | `examples/loadables/uname.c` | `skip: build/support/example tool` |
 | `examples/loadables/unlink.c` | `skip: build/support/example tool` |
 | `examples/loadables/whoami.c` | `skip: build/support/example tool` |
-| `execute_cmd.c` | `src/executor/command.rs` |
-| `execute_cmd.h` | `src/executor/command.rs` |
-| `expr.c` | `src/expand/arithmetic.rs` |
+| `execute_cmd.c` | `src/executor/command_execute.rs`; `src/executor/compound_exec.rs`; `src/executor/pipeline_exec.rs` |
+| `execute_cmd.h` | `src/executor/command_execute.rs`; `src/executor/compound_exec.rs`; `src/executor/pipeline_exec.rs` |
+| `expr.c` | `src/executor/arithmetic/` |
 | `externs.h` | `src/sys/compat.rs` |
 | `findcmd.c` | `src/executor/path.rs` |
 | `findcmd.h` | `src/executor/path.rs` |
-| `flags.c` | `src/shell/options.rs` |
-| `flags.h` | `src/shell/options.rs` |
+| `flags.c` | `src/executor/shell_options.rs` |
+| `flags.h` | `src/executor/shell_options.rs` |
 | `general.c` | `src/shell/general.rs` |
 | `general.h` | `src/shell/general.rs` |
-| `hashcmd.c` | `src/executor/hash.rs` |
-| `hashcmd.h` | `src/executor/hash.rs` |
-| `hashlib.c` | `src/executor/hashlib.rs` |
-| `hashlib.h` | `src/executor/hashlib.rs` |
+| `hashcmd.c` | `src/builtins/hash.rs`; `src/executor/path.rs` |
+| `hashcmd.h` | `src/builtins/hash.rs`; `src/executor/path.rs` |
+| `hashlib.c` | `src/builtins/hash.rs`; `src/executor/path.rs` |
+| `hashlib.h` | `src/builtins/hash.rs`; `src/executor/path.rs` |
 | `include/ansi_stdlib.h` | `src/sys/include.rs` |
 | `include/chartypes.h` | `src/sys/include.rs` |
 | `include/filecntl.h` | `src/sys/include.rs` |
@@ -215,19 +215,19 @@ This appendix assigns each implementation-shaped GNU Bash source file to a Rubas
 | `include/unlocked-io.h` | `src/sys/include.rs` |
 | `input.c` | `src/input/input.rs` |
 | `input.h` | `src/input/input.rs` |
-| `jobs.c` | `src/jobs/jobs.rs` |
-| `jobs.h` | `src/jobs/jobs.rs` |
-| `lib/glob/collsyms.h` | `src/expand/glob/collsyms.rs` |
-| `lib/glob/glob.c` | `src/expand/glob/glob.rs` |
-| `lib/glob/glob.h` | `src/expand/glob/glob.rs` |
-| `lib/glob/glob_loop.c` | `src/expand/glob/glob_loop.rs` |
-| `lib/glob/gm_loop.c` | `src/expand/glob/gm_loop.rs` |
-| `lib/glob/gmisc.c` | `src/expand/glob/gmisc.rs` |
-| `lib/glob/sm_loop.c` | `src/expand/glob/sm_loop.rs` |
-| `lib/glob/smatch.c` | `src/expand/glob/smatch.rs` |
-| `lib/glob/strmatch.c` | `src/expand/glob/strmatch.rs` |
-| `lib/glob/strmatch.h` | `src/expand/glob/strmatch.rs` |
-| `lib/glob/xmbsrtowcs.c` | `src/expand/glob/xmbsrtowcs.rs` |
+| `jobs.c` | `src/jobs/table.rs`; `src/executor/job_builtins.rs` |
+| `jobs.h` | `src/jobs/table.rs`; `src/executor/job_builtins.rs` |
+| `lib/glob/collsyms.h` | `src/executor/glob.rs` |
+| `lib/glob/glob.c` | `src/executor/glob.rs` |
+| `lib/glob/glob.h` | `src/executor/glob.rs` |
+| `lib/glob/glob_loop.c` | `src/executor/glob.rs` |
+| `lib/glob/gm_loop.c` | `src/executor/glob.rs` |
+| `lib/glob/gmisc.c` | `src/executor/glob.rs` |
+| `lib/glob/sm_loop.c` | `src/executor/glob.rs` |
+| `lib/glob/smatch.c` | `src/executor/glob.rs` |
+| `lib/glob/strmatch.c` | `src/executor/glob.rs` |
+| `lib/glob/strmatch.h` | `src/executor/glob.rs` |
+| `lib/glob/xmbsrtowcs.c` | `src/executor/glob.rs` |
 | `lib/intl/arg-nonnull.h` | `src/locale/intl/arg_nonnull.rs` |
 | `lib/intl/attribute.h` | `src/locale/intl/attribute.rs` |
 | `lib/intl/bindtextdom.c` | `src/locale/intl/bindtextdom.rs` |
@@ -467,26 +467,26 @@ This appendix assigns each implementation-shaped GNU Bash source file to a Rubas
 | `lib/termcap/termcap.h` | `src/input/termcap.rs` |
 | `lib/termcap/tparam.c` | `src/input/termcap.rs` |
 | `lib/termcap/version.c` | `src/input/termcap.rs` |
-| `lib/tilde/shell.c` | `src/expand/tilde/shell.rs` |
+| `lib/tilde/shell.c` | `src/expand/tilde/tilde.rs` |
 | `lib/tilde/tilde.c` | `src/expand/tilde/tilde.rs` |
 | `lib/tilde/tilde.h` | `src/expand/tilde/tilde.rs` |
 | `list.c` | `src/shell/list.rs` |
 | `locale.c` | `src/locale/mod.rs` |
 | `mailcheck.c` | `src/shell/mailcheck.rs` |
 | `mailcheck.h` | `src/shell/mailcheck.rs` |
-| `make_cmd.c` | `src/parser/make.rs` |
-| `make_cmd.h` | `src/parser/make.rs` |
-| `mksyntax.c` | `src/lexer/syntax_table.rs` |
-| `nojobs.c` | `src/jobs/nojobs.rs` |
-| `parse.y` | `src/parser/grammar.rs` |
+| `make_cmd.c` | `src/parser/nodes.rs`; `src/parser/parse_loop.rs` |
+| `make_cmd.h` | `src/parser/nodes.rs`; `src/parser/parse_loop.rs` |
+| `mksyntax.c` | `src/lexer/classification.rs`; `src/lexer/scanner.rs` |
+| `nojobs.c` | `src/jobs/table.rs`; host-owned process backend |
+| `parse.y` | `src/parser/mod.rs`; `src/parser/parse_loop.rs` |
 | `parser.h` | `src/parser/mod.rs` |
 | `patchlevel.h` | `src/shell/version.rs` |
-| `pathexp.c` | `src/expand/pathname.rs` |
-| `pathexp.h` | `src/expand/pathname.rs` |
+| `pathexp.c` | `src/executor/glob.rs`; `src/parser/pathname_pattern.rs` |
+| `pathexp.h` | `src/executor/glob.rs`; `src/parser/pathname_pattern.rs` |
 | `pcomplete.c` | `src/complete/pcomplete.rs` |
 | `pcomplete.h` | `src/complete/pcomplete.rs` |
 | `pcomplib.c` | `src/complete/pcomplib.rs` |
-| `print_cmd.c` | `src/parser/print.rs` |
+| `print_cmd.c` | `src/parser/nodes.rs`; `src/parser/parse_loop.rs` |
 | `quit.h` | `src/shell/quit.rs` |
 | `redir.c` | `src/executor/redirection.rs` |
 | `redir.h` | `src/executor/redirection.rs` |
@@ -494,10 +494,10 @@ This appendix assigns each implementation-shaped GNU Bash source file to a Rubas
 | `shell.h` | `src/shell/runtime.rs` |
 | `sig.c` | `src/jobs/signals.rs` |
 | `sig.h` | `src/jobs/signals.rs` |
-| `siglist.c` | `src/jobs/siglist.rs` |
-| `siglist.h` | `src/jobs/siglist.rs` |
+| `siglist.c` | `host-owned: Windows process/event delivery` |
+| `siglist.h` | `host-owned: Windows process/event delivery` |
 | `stringlib.c` | `src/sys/stringlib.rs` |
-| `subst.c` | `src/expand/word.rs` |
+| `subst.c` | `src/executor/expand_word.rs`; `src/executor/parameter_*.rs` |
 | `subst.h` | `src/expand/mod.rs` |
 | `support/bashversion.c` | `skip: build/support/example tool` |
 | `support/man2html.c` | `skip: build/support/example tool` |
@@ -508,11 +508,11 @@ This appendix assigns each implementation-shaped GNU Bash source file to a Rubas
 | `support/signames.c` | `skip: build/support/example tool` |
 | `support/xcase.c` | `skip: build/support/example tool` |
 | `support/zecho.c` | `skip: build/support/example tool` |
-| `syntax.h` | `src/lexer/syntax.rs` |
+| `syntax.h` | `src/lexer/classification.rs`; `src/lexer/scanner.rs` |
 | `test.c` | `src/builtins/test.rs` |
 | `test.h` | `src/builtins/test.rs` |
-| `trap.c` | `src/jobs/trap.rs` |
-| `trap.h` | `src/jobs/trap.rs` |
+| `trap.c` | `src/builtins/trap.rs`; `src/executor/trap_exec.rs` |
+| `trap.h` | `src/builtins/trap.rs`; `src/executor/trap_exec.rs` |
 | `unwind_prot.c` | `src/shell/unwind.rs` |
 | `unwind_prot.h` | `src/shell/unwind.rs` |
 | `variables.c` | `src/shell/variables.rs` |

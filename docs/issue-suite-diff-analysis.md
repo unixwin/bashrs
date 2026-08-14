@@ -404,12 +404,12 @@ High-signal Bash actual-output families:
 | Family | Representative files | Likely implementation area |
 |---|---|---|
 | Syntax error acceptance | `parser`, `cond`, `errors`, `glob-bracket`, `arith-for`, `array` | `src/parser/*`, conditional/arithmetic/array grammar, parse error propagation |
-| Arithmetic diagnostics/status | `arith`, `arith-for`, `cond`, `quotearray`, `new-exp` | `src/executor/arithmetic/*`, `src/expand/arithmetic.rs`, `src/builtins/let.rs` |
+| Arithmetic diagnostics/status | `arith`, `arith-for`, `cond`, `quotearray`, `new-exp` | `src/executor/arithmetic/*`, `src/executor/arithmetic_aliases.rs` |
 | Heredoc / command substitution | `heredoc`, `comsub-eof`, `comsub-posix`, `exportfunc` | `src/lexer/heredoc*.rs`, `src/parser/command_substitution.rs`, `src/executor/command_substitution*.rs` |
 | Redirection / fd semantics | `redir`, `vredir`, `coproc`, `procsub`, `read` | `src/executor/redirection.rs`, `src/executor/external_redirects.rs`, `src/executor/builtin_redirects.rs`, `src/sys/sh/zmapfd.rs` |
-| Alias/hash semantics | `alias`, `errors`, `history` | `src/shell/alias.rs`, `src/builtins/alias.rs`, `src/builtins/hash.rs`, `src/executor/alias_*.rs` |
+| Alias/hash semantics | `alias`, `errors`, `history` | `src/builtins/alias.rs`, `src/builtins/hash.rs`, `src/executor/alias_*.rs` |
 | Word splitting / quoting / arrays | `ifs`, `nquote*`, `quotearray`, `rhs-exp`, `assoc`, `array` | `src/executor/expand_word.rs`, `src/executor/parameter_words.rs`, `src/shell/arrays/*` |
-| Glob/extglob/brace | `glob`, `globstar`, `extglob`, `braces` | `src/expand/glob/*`, `src/parser/extglob_pattern.rs`, `src/expand/braces.rs` |
+| Glob/extglob/brace | `glob`, `globstar`, `extglob`, `braces` | `src/executor/glob.rs`, `src/parser/extglob_pattern.rs`, `src/expand/braces.rs` |
 | Builtin option coverage | `complete`, `getopts`, `mapfile`, `read`, `shopt`, `trap`, `type`, `test`, `printf` | `src/builtins/*` |
 | Jobs/coproc/process substitution | `jobs`, `coproc`, `procsub`, `varenv` | `src/jobs/*`, `src/parser/coproc_command.rs`, `src/parser/process_substitution.rs`, executor pipe/fd handling |
 

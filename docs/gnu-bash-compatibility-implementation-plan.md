@@ -460,7 +460,7 @@ Implement:
 
 Primary modules:
 
-- `src/parser/grammar.rs`
+- `src/parser/mod.rs`, `src/parser/parse_loop.rs`
 - `src/parser/conditional_command.rs`
 - `src/parser/array_element_assignment.rs`
 - `src/parser/arithmetic_for.rs`
@@ -487,8 +487,8 @@ Implement:
 Primary modules:
 
 - `src/executor/arithmetic/*`
-- `src/expand/arithmetic.rs`
-- `src/builtins/let.rs`
+- `src/executor/arithmetic/*`
+- `src/executor/arithmetic_aliases.rs`
 
 Suite slices:
 
