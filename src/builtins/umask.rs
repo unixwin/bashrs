@@ -169,11 +169,13 @@ fn apply_symbolic_clause(
         who = 0o777;
     }
 
+    let mut has_operator = false;
     while index < chars.len() {
         let op = chars[index];
         if !matches!(op, '+' | '-' | '=') {
             return Err(SymbolicModeError::Operator(op));
         }
+        has_operator = true;
         index += 1;
 
         let start = index;
@@ -190,6 +192,10 @@ fn apply_symbolic_clause(
         }
     }
 
+    if !has_operator {
+        return Err(SymbolicModeError::Operator('\0'));
+    }
+
     Ok(allowed & 0o777)
 }
 
@@ -204,18 +210,9 @@ fn symbolic_permission_bits(
             'r' => bits |= expand_permission_to_who(0o444, who),
             'w' => bits |= expand_permission_to_who(0o222, who),
             'x' => bits |= expand_permission_to_who(0o111, who),
-            'X' => {
-                // Bash's umask parser applies X when the original mode has
-                // at least one execute bit available. This is the umask
-                // counterpart of chmod's conditional execute permission.
-                if allowed & 0o111 != 0 {
-                    bits |= expand_permission_to_who(0o111, who);
-                }
-            }
             'u' => bits |= copy_permission_class(allowed, 0o700, who),
             'g' => bits |= copy_permission_class(allowed, 0o070, who),
             'o' => bits |= copy_permission_class(allowed, 0o007, who),
-            's' | 't' => {}
             _ => return Err(SymbolicModeError::Character(*ch)),
         }
     }
@@ -310,16 +307,23 @@ mod tests {
     }
 
     #[test]
-    fn symbolic_mode_x_is_conditional_on_existing_execute_bits() {
-        let (status, stdout, stderr) = run("a+X", "022");
-        assert_eq!(status, EXECUTION_SUCCESS);
-        assert_eq!(stdout, "u=rwx,g=rx,o=rx\n");
-        assert!(stderr.is_empty());
+    fn symbolic_mode_rejects_chmod_only_permissions() {
+        for mode in ["a+X", "u+s", "u+t"] {
+            let (status, stdout, stderr) = run(mode, "022");
+            assert_eq!(status, EXECUTION_FAILURE);
+            assert!(stdout.is_empty());
+            assert!(stderr.contains("invalid symbolic mode character"));
+        }
+    }
 
-        let (status, stdout, stderr) = run("a+X", "000");
-        assert_eq!(status, EXECUTION_SUCCESS);
-        assert_eq!(stdout, "u=rwx,g=rwx,o=rwx\n");
-        assert!(stderr.is_empty());
+    #[test]
+    fn symbolic_mode_requires_an_operator() {
+        for mode in ["u", "g", "a", "u,g=o"] {
+            let (status, stdout, stderr) = run(mode, "022");
+            assert_eq!(status, EXECUTION_FAILURE);
+            assert!(stdout.is_empty());
+            assert!(stderr.contains("invalid symbolic mode operator"));
+        }
     }
 
     #[test]

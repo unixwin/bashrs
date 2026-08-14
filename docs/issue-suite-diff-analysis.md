@@ -1300,3 +1300,18 @@ Verification:
 - `cargo test --test executor_tests test_parameter_substring_` (7 passed)
 - new boundary regressions for negative offset and invalid negative length
 - existing array and positional substring regressions remain covered
+
+### 2026-08-14 umask symbolic-mode grammar
+
+GNU Bash's `umask` symbolic mode is narrower than `chmod`: every clause must
+contain an operator, and the permission characters are `r`, `w`, `x`, and the
+class-copy forms `u`, `g`, and `o`. Rubash previously accepted bare classes
+such as `umask u`, chmod-only `X`, and set-id/sticky permissions `s`/`t`.
+Those forms now return Bash-compatible invalid symbolic mode diagnostics and
+status 1. Valid class-copy clauses such as `g+u` and `o=u` remain supported.
+
+Regression coverage:
+
+- `cargo test --lib umask` (6 passed)
+- `cargo test --test executor_tests umask` (8 passed)
+- `cargo test --test cli_tests` (155 passed)
