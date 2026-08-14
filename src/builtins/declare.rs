@@ -67,6 +67,51 @@ pub(crate) fn sync_typed_assignments(
     }
 }
 
+/// Synchronize the final declare attribute markers into the typed variable owner.
+pub(crate) fn sync_typed_attributes(
+    args: &[String],
+    variables: &HashMap<String, String>,
+    store: &mut VariableStore,
+) {
+    let exported = marked_vars(variables, EXPORTED_VARS);
+    let readonly = marked_vars(variables, READONLY_VARS);
+    let arrays = marked_vars(variables, ARRAY_VARS);
+    let assocs = marked_vars(variables, ASSOC_VARS);
+    let integer = marked_vars(variables, INTEGER_VARS);
+    let uppercase = marked_vars(variables, UPPERCASE_VARS);
+    let lowercase = marked_vars(variables, LOWERCASE_VARS);
+    let namerefs = marked_vars(variables, NAMEREF_VARS);
+
+    for arg in args {
+        let raw_name = arg.split_once('=').map(|(name, _)| name).unwrap_or(arg);
+        let name = raw_name.strip_suffix('+').unwrap_or(raw_name);
+        let Some(base) = declare_base_name(name) else {
+            continue;
+        };
+        if store.get(base).is_none() {
+            let value = variables.get(base).cloned().unwrap_or_default();
+            let _ = store.set_scalar(base, value);
+        }
+        if arrays.contains(base) && !matches!(store.get(base).map(|v| &v.value), Some(crate::shell::ShellValue::IndexedArray(_))) {
+            let _ = store.replace_indexed_array(base, std::iter::empty::<String>());
+        } else if assocs.contains(base) && !matches!(store.get(base).map(|v| &v.value), Some(crate::shell::ShellValue::AssociativeArray(_))) {
+            let _ = store.replace_associative_array(base, std::iter::empty::<(String, String)>());
+        }
+        if let Some(variable) = store.get_mut(base) {
+            variable.exported = exported.contains(base);
+            variable.readonly = readonly.contains(base);
+            variable.integer = integer.contains(base);
+            variable.uppercase = uppercase.contains(base);
+            variable.lowercase = lowercase.contains(base);
+            variable.nameref = if namerefs.contains(base) {
+                arg.split_once('=').map(|(_, value)| value.to_string())
+            } else {
+                None
+            };
+        }
+    }
+}
+
 pub fn execute(args: &[String], variables: &mut HashMap<String, String>) -> io::Result<i32> {
     let mut stdout = crate::executor::GlobalStdout;
     let mut stderr = io::stderr();

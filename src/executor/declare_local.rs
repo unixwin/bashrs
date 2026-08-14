@@ -210,6 +210,11 @@ impl Executor {
                 &self.env_vars,
                 &mut self.shell_state.variables,
             );
+            crate::builtins::declare::sync_typed_attributes(
+                &args,
+                &self.env_vars,
+                &mut self.shell_state.variables,
+            );
             self.apply_posix_function_declare_unset_export(posix_function_export_unsets);
         }
         self.finish_global_declare_for_local_names(global_local_values);
