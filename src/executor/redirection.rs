@@ -220,6 +220,23 @@ impl Executor {
                 | crate::parser::RedirectKind::ClobberOutput => {
                     let fd = redirect.fd.unwrap_or(1);
                     let target = self.expand_word(&redirect.target);
+                    if let Some(source_fd) = redirect_target_fd(&target) {
+                        let Some(source_target) = state.fd_target(source_fd).cloned() else {
+                            self.write_bad_fd_redirect_diagnostic(state, source_fd)?;
+                            self.exit_code = 1;
+                            state.redirect_failed = true;
+                            return Ok(true);
+                        };
+                        if source_target == OutputTarget::Closed {
+                            self.write_bad_fd_redirect_diagnostic(state, source_fd)?;
+                            self.exit_code = 1;
+                            state.redirect_failed = true;
+                            return Ok(true);
+                        }
+                        state.fds.insert(fd, source_target);
+                        state.saw_output_redirect = true;
+                        continue;
+                    }
                     self.open_command_output_target(state, fd, &target, redirect)?;
                 }
                 crate::parser::RedirectKind::CombinedOutput

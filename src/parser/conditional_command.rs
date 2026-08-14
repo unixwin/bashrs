@@ -62,17 +62,34 @@ fn conditional_expression_is_invalid(args: &[&str]) -> bool {
         return true;
     }
 
+    // `!` is a conditional prefix, so validate the expression it negates
+    // rather than treating the prefix as an extra operand.
+    let mut expression = args;
+    while expression.first() == Some(&"!") {
+        expression = &expression[1..];
+    }
+    if expression.is_empty() {
+        return true;
+    }
+
+    if expression.len() == 2
+        && is_conditional_unary_operator(expression[0])
+        && matches!(expression[1], "&" | "<" | ">" | "]")
+    {
+        return true;
+    }
+
     // parse.y's conditional parser rejects shell operators and unmatched
     // delimiters as syntax errors. They must not fall through to the normal
     // false-status path used for a valid, non-matching condition.
-    args.iter().any(|arg| matches!(*arg, "&" | "<" | ">" | "]"))
-        || args.iter().filter(|arg| **arg == "(").count()
-            != args.iter().filter(|arg| **arg == ")").count()
-        || args.len() > 3
-            && !is_conditional_unary_operator(args[0])
-            && !is_conditional_binary_operator(args.get(1).copied().unwrap_or_default())
-            && !args.contains(&"||")
-            && !args.contains(&"&&")
+    expression.iter().any(|arg| matches!(*arg, "&" | "]"))
+        || expression.iter().filter(|arg| **arg == "(").count()
+            != expression.iter().filter(|arg| **arg == ")").count()
+        || expression.len() > 3
+            && !is_conditional_unary_operator(expression[0])
+            && !is_conditional_binary_operator(expression.get(1).copied().unwrap_or_default())
+            && !expression.contains(&"||")
+            && !expression.contains(&"&&")
 }
 
 fn collect_conditional_args(

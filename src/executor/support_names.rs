@@ -364,6 +364,21 @@ pub(in crate::executor) fn apply_stderr_append_redirect(
     commands: &mut [CommandNode],
     redirect: &Redirect,
 ) {
+    let redirect = if matches!(
+        redirect.kind,
+        crate::parser::RedirectKind::DuplicateOutput
+    ) && redirect_target_fd(&redirect.target).is_none()
+    {
+        let mut normalized = redirect.clone();
+        normalized.operator = "2>>".to_string();
+        normalized.kind = crate::parser::RedirectKind::Append;
+        normalized.append = true;
+        normalized.clobber = false;
+        normalized
+    } else {
+        redirect.clone()
+    };
+
     for command in commands {
         let inherits_stderr =
             command.redirect_err.is_none() && command.redirect_err_append.is_none();
@@ -382,57 +397,57 @@ pub(in crate::executor) fn apply_stderr_append_redirect(
             } else {
                 command.redirects.insert(0, redirect.clone());
             }
-            apply_inherited_stderr_to_stdout_fd_copy(command, redirect);
+            apply_inherited_stderr_to_stdout_fd_copy(command, &redirect);
         }
         if let Some(for_command) = &mut command.for_command {
-            apply_stderr_append_redirect(&mut for_command.body, redirect);
+            apply_stderr_append_redirect(&mut for_command.body, &redirect);
         }
         if let Some(pipeline_command) = &mut command.pipeline_command {
-            apply_stderr_append_redirect(&mut pipeline_command.stages, redirect);
+            apply_stderr_append_redirect(&mut pipeline_command.stages, &redirect);
         }
         if let Some(and_or_list) = &mut command.and_or_list {
-            apply_stderr_append_redirect(&mut and_or_list.commands, redirect);
+            apply_stderr_append_redirect(&mut and_or_list.commands, &redirect);
         }
         if let Some(time_command) = &mut command.time_command {
             apply_stderr_append_redirect(
                 std::slice::from_mut(time_command.command.as_mut()),
-                redirect,
+                &redirect,
             );
         }
         if let Some(background_command) = &mut command.background_command {
             apply_stderr_append_redirect(
                 std::slice::from_mut(background_command.command.as_mut()),
-                redirect,
+                &redirect,
             );
         }
         if let Some(inverted_command) = &mut command.inverted_command {
             apply_stderr_append_redirect(
                 std::slice::from_mut(inverted_command.command.as_mut()),
-                redirect,
+                &redirect,
             );
         }
         if let Some(if_command) = &mut command.if_command {
-            apply_stderr_append_redirect(&mut if_command.condition, redirect);
-            apply_stderr_append_redirect(&mut if_command.then_body, redirect);
+            apply_stderr_append_redirect(&mut if_command.condition, &redirect);
+            apply_stderr_append_redirect(&mut if_command.then_body, &redirect);
             for branch in &mut if_command.elif_branches {
-                apply_stderr_append_redirect(&mut branch.condition, redirect);
-                apply_stderr_append_redirect(&mut branch.body, redirect);
+                apply_stderr_append_redirect(&mut branch.condition, &redirect);
+                apply_stderr_append_redirect(&mut branch.body, &redirect);
             }
             if let Some(body) = &mut if_command.else_body {
-                apply_stderr_append_redirect(body, redirect);
+                apply_stderr_append_redirect(body, &redirect);
             }
         }
         if let Some(loop_command) = &mut command.loop_command {
-            apply_stderr_append_redirect(&mut loop_command.condition, redirect);
-            apply_stderr_append_redirect(&mut loop_command.body, redirect);
+            apply_stderr_append_redirect(&mut loop_command.condition, &redirect);
+            apply_stderr_append_redirect(&mut loop_command.body, &redirect);
         }
         if let Some(case_command) = &mut command.case_command {
             for clause in &mut case_command.clauses {
-                apply_stderr_append_redirect(&mut clause.body, redirect);
+                apply_stderr_append_redirect(&mut clause.body, &redirect);
             }
         }
         if let Some(brace_group) = &mut command.brace_group {
-            apply_stderr_append_redirect(&mut brace_group.body, redirect);
+            apply_stderr_append_redirect(&mut brace_group.body, &redirect);
         }
     }
 }

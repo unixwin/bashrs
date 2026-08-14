@@ -35,14 +35,14 @@ impl Executor {
 
         if let Some(redirect) = &cmd.redirect_out {
             let target = self.expand_word(&redirect.target);
-            if !is_closed_redirect_target(&target) && !self.has_output_fd_target(&target) {
+            if !is_closed_redirect_target(&target) && redirect_target_fd(&target).is_none() {
                 self.create_redirect_output(&target, redirect.clobber)?;
             }
         }
 
         if let Some(redirect) = &cmd.append {
             let target = self.expand_word(&redirect.target);
-            if !is_closed_redirect_target(&target) && !self.has_output_fd_target(&target) {
+            if !is_closed_redirect_target(&target) && redirect_target_fd(&target).is_none() {
                 self.open_output_fd_append(&target).or_else(|_| {
                     if is_null_device(&target) {
                         self.create_redirect_output(&target, true)
@@ -60,7 +60,7 @@ impl Executor {
             let target = self.expand_word(&redirect.target);
             if !is_closed_redirect_target(&target)
                 && !is_null_device(&target)
-                && !self.has_output_fd_target(&target)
+                && redirect_target_fd(&target).is_none()
             {
                 self.create_redirect_output(&target, redirect.clobber)?;
             }
@@ -68,7 +68,7 @@ impl Executor {
 
         if let Some(redirect) = &cmd.redirect_err_append {
             let target = self.expand_word(&redirect.target);
-            if !is_closed_redirect_target(&target) && !self.has_output_fd_target(&target) {
+            if !is_closed_redirect_target(&target) && redirect_target_fd(&target).is_none() {
                 OpenOptions::new()
                     .create(true)
                     .append(true)

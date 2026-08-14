@@ -142,51 +142,9 @@ impl Executor {
         }
 
         let index = index.trim_end_matches(']');
-        if index.trim().is_empty() {
-            eprintln!(
-                "{}{}: bad array subscript",
-                self.diagnostic_prefix(),
-                cmd.words[0]
-            );
-            self.exit_code = 1;
-            return true;
-        }
-        if index.trim() == "*" {
-            eprintln!(
-                "{}{}: cannot assign to non-numeric index",
-                self.diagnostic_prefix(),
-                cmd.words[0]
-            );
-            self.exit_code = 1;
-            return true;
-        }
         if value.starts_with('(') && value.ends_with(')') {
             eprintln!(
                 "{}{}: cannot assign list to array member",
-                self.diagnostic_prefix(),
-                cmd.words[0]
-            );
-            self.exit_code = 1;
-            return true;
-        }
-        let Some(computed_index) = eval_conditional_arith_value(index, &self.env_vars) else {
-            eprintln!(
-                "{}{}: bad array subscript",
-                self.diagnostic_prefix(),
-                cmd.words[0]
-            );
-            self.exit_code = 1;
-            return true;
-        };
-        if computed_index < 0
-            && resolve_indexed_array_subscript(
-                &self.env_vars.get(name).cloned().unwrap_or_default(),
-                computed_index,
-            )
-            .is_none()
-        {
-            eprintln!(
-                "{}{}: bad array subscript",
                 self.diagnostic_prefix(),
                 cmd.words[0]
             );
@@ -242,6 +200,49 @@ impl Executor {
             );
             self.env_vars.insert(name.to_string(), new_value);
             self.exit_code = 0;
+            return true;
+        }
+
+        if index.trim().is_empty() {
+            eprintln!(
+                "{}{}: bad array subscript",
+                self.diagnostic_prefix(),
+                cmd.words[0]
+            );
+            self.exit_code = 1;
+            return true;
+        }
+        if index.trim() == "*" {
+            eprintln!(
+                "{}{}: cannot assign to non-numeric index",
+                self.diagnostic_prefix(),
+                cmd.words[0]
+            );
+            self.exit_code = 1;
+            return true;
+        }
+        let Some(computed_index) = eval_conditional_arith_value(index, &self.env_vars) else {
+            eprintln!(
+                "{}{}: bad array subscript",
+                self.diagnostic_prefix(),
+                cmd.words[0]
+            );
+            self.exit_code = 1;
+            return true;
+        };
+        if computed_index < 0
+            && resolve_indexed_array_subscript(
+                &self.env_vars.get(name).cloned().unwrap_or_default(),
+                computed_index,
+            )
+            .is_none()
+        {
+            eprintln!(
+                "{}{}: bad array subscript",
+                self.diagnostic_prefix(),
+                cmd.words[0]
+            );
+            self.exit_code = 1;
             return true;
         }
 

@@ -1351,3 +1351,30 @@ state and returned status.
 
 Verification: the exec-focused executor slice (122 passed) and fd redirect
 regressions (14 passed).
+
+### 2026-08-14 executor residual compatibility slice
+
+The remaining 13 executor failures were traced to shared execution boundaries
+and are now covered by the existing `part_008`, `part_016`, `part_020`,
+`part_041`, `part_047`, `part_059`, `part_069`, `part_072`, and `part_080`
+regressions:
+
+- Special readonly variables (`UID`, `EUID`, `PPID`, `SHELLOPTS`, `BASHOPTS`,
+  and `BASH_VERSINFO`) report status 1 without aborting the surrounding
+  command list, while ordinary readonly assignments retain Bash's fatal
+  non-interactive behavior.
+- Associative-array assignment keys are expanded and quote-removed before
+  indexed-array arithmetic validation, allowing quoted keys, parameter keys,
+  and keys containing brackets or spaces.
+- Conditional string-order operators (`<`, `>`) and negated expressions are
+  accepted by the conditional grammar without weakening malformed-expression
+  checks.
+- Process-substitution input redirects update the ordered redirect list after
+  materialization, preventing the original `<(...)` word from being rejected
+  as an ambiguous redirect.
+- Compound/eval output propagation preserves fd copies through append-shaped
+  inherited redirects. Standard `&N` targets are handled as fd copies, and
+  `<>` on an empty-output builtin creates a read/write file as Bash does.
+
+Verification: `cargo test --test executor_tests -- --test-threads=1` reports
+1523 passed and 0 failed.

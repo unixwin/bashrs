@@ -28,6 +28,7 @@ pub(in crate::executor) fn redirect_target_fd(target: &str) -> Option<u32> {
 }
 
 pub(in crate::executor) fn redirect_target_fd_and_move(target: &str) -> Option<(u32, bool)> {
+    let target = target.trim_start_matches(['\x1b', '\x1d']);
     let fd = target.strip_prefix('&')?;
     let fd = fd.trim_matches(|ch| ch == '"' || ch == '\x1d');
     let (fd, move_fd) = fd

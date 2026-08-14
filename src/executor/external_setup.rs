@@ -206,7 +206,9 @@ impl Executor {
             {
                 if let Some(output) = self.process_substitution_output(source) {
                     let path = self.write_process_substitution_temp(&output)?;
+                    let old_target = redirect.target.clone();
                     redirect.target = shell_display_path(&path.to_string_lossy());
+                    redirect_target_rewrites.push((old_target, redirect.target.clone()));
                     files.inputs.push(path);
                 }
             }
