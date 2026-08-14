@@ -1339,3 +1339,15 @@ diagnostic stream was redirected. Status ownership now stays with the builtin;
 Verification includes the source, command-description, exec, and fd redirect
 executor slices, with source and command-description missing-file status
 regressions restored.
+
+### 2026-08-14 exec option diagnostics honor stderr redirects
+
+When `exec` had redirections but no command operand, Rubash correctly applied
+the persistent redirections before option parsing, but then used the direct
+stdio builtin entry point. Invalid options such as `-Z` and missing `-a`
+arguments therefore bypassed `2>`. That path now buffers `exec` diagnostics
+through the normal redirected builtin writer while retaining the persistent fd
+state and returned status.
+
+Verification: the exec-focused executor slice (122 passed) and fd redirect
+regressions (14 passed).

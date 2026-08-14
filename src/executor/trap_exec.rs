@@ -349,10 +349,16 @@ impl Executor {
         // emitted, but a stdout redirection remains in effect afterwards.
         if self.exec_has_no_command_operand_after_expansion(cmd) {
             self.execute_stdio_only_exec_redirect(cmd)?;
-            return Ok(crate::builtins::exec::execute(
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            let status = crate::builtins::exec::execute_with_io(
                 &cmd.words[1..],
                 &self.env_vars,
-            )?);
+                &mut stdout,
+                &mut stderr,
+            )?;
+            self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+            return Ok(status);
         }
 
         if let Some(redirect) = &cmd.redirect_out {
