@@ -96,7 +96,37 @@ impl Executor {
         state.fds.insert(1, OutputTarget::Stdout);
         state.fds.insert(2, OutputTarget::Stderr);
 
+        // FdTable is the semantic source of truth. The environment-key scan
+        // below remains only for descriptors whose old mutation path has not
+        // migrated yet.
+        for (fd, entry) in &self.fd_table.entries {
+            let target = if entry.closed || entry.write.is_none() {
+                OutputTarget::Closed
+            } else {
+                match entry.write.as_ref().expect("checked above") {
+                    FdWriteEndpoint::Stdout => OutputTarget::Stdout,
+                    FdWriteEndpoint::Stderr => OutputTarget::Stderr,
+                    FdWriteEndpoint::File(path) => {
+                        let path = shell_display_path(&path.to_string_lossy());
+                        if is_null_device(&path) {
+                            OutputTarget::Null
+                        } else {
+                            OutputTarget::Path(path)
+                        }
+                    }
+                    FdWriteEndpoint::CoprocStdin(pid) => OutputTarget::CoprocStdin(*pid),
+                    FdWriteEndpoint::ProcessSubstitution { path, .. } => {
+                        OutputTarget::Path(shell_display_path(&path.to_string_lossy()))
+                    }
+                }
+            };
+            state.fds.insert(*fd, target);
+        }
+
         for fd in [1, 2] {
+            if state.fds.contains_key(&fd) {
+                continue;
+            }
             if self.env_vars.contains_key(&fd_closed_key(fd)) {
                 state.fds.insert(fd, OutputTarget::Closed);
             } else if let Some(target) = self.env_vars.get(&fd_output_key(fd)) {
@@ -111,7 +141,10 @@ impl Executor {
             else {
                 continue;
             };
-            state.fds.insert(fd, output_target_from_persistent(value));
+            state
+                .fds
+                .entry(fd)
+                .or_insert_with(|| output_target_from_persistent(value));
         }
 
         for key in self.env_vars.keys() {
@@ -121,7 +154,7 @@ impl Executor {
             else {
                 continue;
             };
-            state.fds.insert(fd, OutputTarget::Closed);
+            state.fds.entry(fd).or_insert(OutputTarget::Closed);
         }
 
         state

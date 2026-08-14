@@ -286,6 +286,7 @@ impl Executor {
             return Ok(None);
         };
         let status = child.wait()?.code().unwrap_or(1);
+        self.job_table.mark_completed(pid, status);
         self.background_jobs.remove(&pid);
         self.background_job_order.retain(|job_pid| *job_pid != pid);
         if retain_for_explicit_wait {
@@ -531,6 +532,7 @@ impl Executor {
         self.coproc_stdin_writers.remove(&pid);
         self.coproc_stdout_readers.remove(&pid);
         let status = child.wait()?.code().unwrap_or(1);
+        self.job_table.mark_completed(pid, status);
         Ok(status)
     }
 

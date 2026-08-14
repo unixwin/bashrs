@@ -122,6 +122,9 @@ impl Executor {
             crate::builtins::kill::register_signal_mailbox(std::process::id()).is_ok();
 
         Self {
+            shell_state: ShellState::default(),
+            fd_table: FdTable::new(),
+            job_table: JobTable::default(),
             exit_code: 0,
             env_vars,
             aliases: HashMap::new(),

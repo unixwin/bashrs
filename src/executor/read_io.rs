@@ -237,6 +237,17 @@ impl Executor {
         char_limit: Option<usize>,
         exact_char_limit: bool,
     ) -> Option<String> {
+        if self.fd_table.is_open_for_read(fd) {
+            if let Some(line) = self.fd_table.read_text(fd, delimiter, char_limit, exact_char_limit) {
+                if let Some((_, offset)) = self.fd_table.input_snapshot(fd) {
+                    self.env_vars.insert(fd_stdin_offset_key(fd), offset.to_string());
+                }
+                return Some(trim_read_input(line, delimiter, char_limit, exact_char_limit));
+            }
+            if self.fd_table.is_closed(fd) {
+                return None;
+            }
+        }
         let input_key = fd_stdin_key(fd);
         let offset_key = fd_stdin_offset_key(fd);
         let input = self.env_vars.get(&input_key)?.clone();

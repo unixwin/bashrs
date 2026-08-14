@@ -5,6 +5,37 @@
 >
 > 2026-08-12 追加：最新本地套件运行、DIFF 形态、实现归因、rubash/winuxcmd/winuxsh 架构边界见
 > [`docs/issue-suite-diff-analysis.md`](issue-suite-diff-analysis.md)。
+>
+> 2026-08-14 续接基线：当前以 `docs/issue-suite-diff-analysis.md` 的
+> `Continuation Checkpoint` 和 `target/issue-suites/results/` 最新 raw 结果为准。
+> Bash actual-output 当前为 `15/83 PASS, 68 DIFF`；`.right` 上游 runner
+> 最新记录为 `86/87`，其中 `run-minimal` 是 exit-0 日志噪音。当前第一
+> 执行族为 GNU Bash `redir/vredir` 动态 fd、设备路径、fd 生命周期和
+> ordered redirect；不得用旧的 `14/83`、`87/87` 数字覆盖新的证据。
+
+## 2026-08-14 远程 Issue 与本地执行状态
+
+通过 `gh issue list --repo unixwin/rubash --state all --limit 30` 核对远程
+状态：兼容性批次 `#20` 到 `#26` 仍开放；`#28`（bashdb getopts_long）和
+`#31`（外部参数路径转换）已关闭。远程标题中的历史差异数字仍是问题
+背景，不覆盖本地最新 raw suite 结果。
+
+本轮已完成 `#25` Bash 官方重定向族的一个根因切片：dynamic `exec` fd
+move/close。Rust dynamic-fd focused tests 为 12/12，`part_080` 为
+146/149；GNU Bash upstream `.right` runner 的 `run-redir` 与 `run-vredir`
+均为 1/1、exit 0。该结果只证明当前 slice，不关闭任何远程 Issue；官方
+`.tests` actual-output、BusyBox、Oil、mksh 和 ksh93 仍按原计划执行。
+
+当前必须保留的 raw 路径：
+
+- `target/bash-upstream-tests/logs/run-redir.log`
+- `target/bash-upstream-tests/logs/run-vredir.log`
+- `target/bash-upstream-tests/results.tsv`（最后一次 focused invocation）
+- `target/issue-suites/results/native-bash-20260814-vredir/`
+
+下一次续接从 ordered stderr/`<>` 三个 Rust 失败和 native
+`vredir4/5/7/8` 的 primitive probe 开始；不要重新定位已经确认的
+external materialization 根因。
 
 ## 一、7 个 issue 概览（最终数字，与 ISSUE 评论一致）
 

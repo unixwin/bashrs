@@ -1093,7 +1093,7 @@ fn test_exec_dynamic_input_fd_reads_through_named_fd() {
     assert_eq!(fs::read_to_string(output_path).unwrap(), "alpha/beta/:1\n");
     assert!(fs::read_to_string(error_path)
         .unwrap()
-        .contains("invalid file descriptor specification"));
+        .contains("Bad file descriptor"));
     let _ = fs::remove_file(input_path);
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_file(error_path);
@@ -1194,6 +1194,28 @@ fn test_external_command_writes_dynamic_output_fd() {
 }
 
 #[test]
+fn test_external_command_uses_fd_table_for_persistent_stdout() {
+    let input_path = "target/rubash-external-persistent-stdout-input.txt";
+    let output_path = "target/rubash-external-persistent-stdout-output.txt";
+    fs::write(input_path, "from-persistent-stdout\n").unwrap();
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "exec > {output_path}; cat {input_path}; exec 1>&-"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "from-persistent-stdout\n");
+    let _ = fs::remove_file(input_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_exec_dynamic_read_write_fd_reads_and_writes() {
     let data_path = "target/rubash-dynamic-read-write-fd.txt";
     let output_path = "target/rubash-dynamic-read-write-fd-output.txt";
@@ -1214,6 +1236,53 @@ fn test_exec_dynamic_read_write_fd_reads_and_writes() {
     assert_eq!(fs::read_to_string(output_path).unwrap(), "alpha\n");
     assert_eq!(fs::read_to_string(data_path).unwrap(), "alpha\nbeta\n");
     let _ = fs::remove_file(data_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_exec_dynamic_input_fd_does_not_gain_output_side() {
+    let output_path = "target/rubash-dynamic-input-only-fd-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "exec {{fd}}<&0; echo bad >&$fd; printf 'write-status:%s\\n' \"$?\" > {output_path}; \\
+         printf 'after-status:%s\\n' \"$?\" >> {output_path}; exec {{fd}}<&-"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "write-status:1\nafter-status:0\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_exec_dynamic_input_fd_move_closes_source_and_reuses_slot() {
+    let output_path = "target/rubash-dynamic-input-fd-move-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "exec {{source}}<<<alpha; exec {{copy}}<&$source; \\
+         exec {{moved}}<&$source-; read -u $moved moved; \\
+         exec {{reused}}<<<beta; printf 'moved=%s source=%s reused=%s\\n' \"$moved\" \"$source\" \"$reused\" > {output_path}; \\
+         read -r closed <&$source; printf 'closed-status:%s\\n' \"$?\" >> {output_path}; \\
+         exec {{copy}}<&-; exec {{moved}}<&-"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "moved=alpha source=10 reused=10\nclosed-status:0\n"
+    );
     let _ = fs::remove_file(output_path);
 }
 

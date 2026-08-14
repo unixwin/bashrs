@@ -138,7 +138,7 @@ pub(super) fn assign_redirect_err_target(
             .or_else(|| command.redirect_out.clone())
         {
             command.redirect_err_append = Some(redirect_node_with_raw(
-                &tokens[index].value,
+                "2>>",
                 Some(2),
                 &redirect.target,
                 &redirect.target_metadata.raw,

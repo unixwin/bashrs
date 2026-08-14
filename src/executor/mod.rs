@@ -42,6 +42,7 @@ mod compound_exec;
 use compound_exec::*;
 mod declare_local;
 mod dynamic_arrays;
+mod fd_table;
 mod embedded_mutations;
 mod embedded_parameters;
 mod expand_braced_indices;
@@ -141,6 +142,9 @@ use read_helpers::*;
 use read_split::*;
 use redirect_inherit::*;
 use support_names::*;
+use fd_table::{FdReadEndpoint, FdTable, FdWriteEndpoint, MaterializedRead};
+use crate::jobs::JobTable;
+use crate::shell::state::ShellState;
 
 pub(crate) mod conditional;
 use conditional::{case_pattern_matches, case_pattern_matches_nocase, simple_grep_pattern_matches};
@@ -321,6 +325,9 @@ struct SavedGlobalDeclareLocal {
 /// Command executor
 #[derive(Debug)]
 pub struct Executor {
+    shell_state: ShellState,
+    fd_table: FdTable,
+    job_table: JobTable,
     exit_code: i32,
     env_vars: HashMap<String, String>,
     aliases: HashMap<String, Alias>,

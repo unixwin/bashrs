@@ -5,6 +5,145 @@
 > Goal: make rubash reach GNU Bash observable compatibility while staying usable
 > as the Bash syntax/execution library embedded by Winuxsh.
 
+## Migration Map Contract
+
+`docs/semantic-ownership.tsv` is the canonical v2 map. Every compatibility
+change records a GNU source family, observable contract, Rust owner, compile
+status, implementation status, suite evidence, and next gate there. Run
+`scripts/validate-semantic-map.sh` after changing an owner. The map permits
+many-to-one and one-to-many mappings; it does not treat file existence or an
+upstream output bridge as a completed implementation.
+
+## 2026-08-14 Kernel Slice
+
+Mapping v2, placeholder cleanup, `FdTable`, typed shell state, and `JobTable`
+are implemented as the first migration slice. The old environment descriptor
+keys remain an adapter until ordered output and all external child setup have
+migrated. Focused evidence and the remaining external-child fd migration gate
+are recorded in `docs/issue-suite-diff-analysis.md`; do not classify the passing
+`.right` runner as closure of the official `.tests` gap.
+
+## Continuation Checkpoint (2026-08-14)
+
+This section is the durable handoff for the next compatibility session. It is
+intentionally concrete: generated logs are evidence, while this section and
+`docs/issue-suite-diff-analysis.md` are the interpretation that must survive
+context changes.
+
+### Repository State
+
+- Repository: `D:/repo/rubash`
+- Branch: `master`, clean, synchronized with `origin/master`
+- HEAD: `55c5daf docs: update 0.3.0`
+- GNU Bash submodule: `b4608166` (`bash-5.3-16-gb4608166`)
+- Last known build: `target/debug/rubash.exe` rebuilt from HEAD
+- Before and after every bounded test turn, check for residual
+  `rubash.exe`, `bash.exe`, suite runners, and `cargo` processes.
+
+### Authoritative Baseline
+
+Use the newest raw result plus the newest dated entry in
+`docs/issue-suite-diff-analysis.md`. Do not use older summary numbers merely
+because they are repeated in `docs/bash-compat-issues.md` or in an Issue title.
+
+| Evidence | Current interpretation |
+|---|---|
+| Bash official `.tests` actual output | 83 files: 15 exact matches, 68 diffs; raw table: `target/issue-suites/results/bash-actual/results.tsv` |
+| Bash upstream `.right` runner | Latest documented aggregate: 86/87; `run-minimal` has exit-0 log noise. A focused run may overwrite `target/bash-upstream-tests/results.tsv`, so inspect the file before quoting it as an aggregate. |
+| Rust focused/lib tests | Latest documented focused lib result: 163 passed; rerun the affected focused tests after every code change. |
+| Oil / mksh / ksh93 / BusyBox | Large suites remain red; use them as secondary cross-suite evidence after a Bash-native root-cause slice is fixed. |
+
+### Active Root-Cause Slice
+
+The active slice is GNU Bash `redir`/`vredir`, with priority on dynamic file
+descriptors, device paths, descriptor lifetime, and diagnostics. The raw
+probe directory is
+`target/issue-suites/results/native-bash-20260814-vredir/`.
+
+Current evidence:
+
+- `vredir6.sub` matches Bash for the tested sequence; do not treat `ulimit -n`
+  as the root cause without a new reproduction.
+- `vredir4.sub`, `vredir5.sub`, `vredir7.sub`, and `vredir8.sub` still expose
+  dynamic-fd, ordered-redirection, array-fd, nameref, and closed-fd failures.
+- The likely semantic owner is Rubash's virtual fd state and redirection
+  application order, not an expected-output bridge.
+- GNU reference points are `third_party/bash/redir.c` (dynamic fd allocation,
+  duplication, close, undo) and `third_party/bash/tests/vredir*.sub`.
+- Rubash owners are `src/executor/redirection.rs`,
+  `src/executor/trap_exec.rs`, `src/executor/read_io.rs`,
+  `src/executor/read_redirected_fd.rs`, `src/executor/read_builtin.rs`,
+  `src/executor/external_setup.rs`, and `src/executor/types.rs`.
+
+### Required Continuation Order
+
+1. Read `third_party/bash/tests/vredir5.sub`, `vredir7.sub`, and `vredir8.sub`
+   alongside the relevant `redir.c` blocks.
+2. Run a small Bash/Rubash probe for each operation separately:
+   dynamic input fd, dynamic output fd, dup-and-close, ordered heredoc/input,
+   array element fd, nameref fd, and use-after-close diagnostics.
+3. Trace the Rust owner that applies each redirect. A dynamic input redirect
+   must not acquire an unrelated output state merely to make the fd readable.
+4. Add a focused regression under `tests/executor_command_chaining/` before
+   or with the semantic fix.
+5. Run the focused Rust test and bounded `run-redir`/`run-vredir` slices.
+6. Record exact commands, statuses, stdout/stderr artifact paths, and the
+   remaining failure classification in `docs/issue-suite-diff-analysis.md`.
+
+Do not start an unbounded full suite. Do not remove an
+`src/executor/upstream_scripts*` handler until its real semantic owner and a
+focused test cover the behavior.
+
+## Verified Checkpoint (2026-08-14)
+
+The first dynamic-fd move slice is now implemented and verified. The confirmed
+root cause was not `copy_persistent_input_fd`: before the builtin `exec` ran,
+`command_execute.rs` sent `exec {copy}<&$source` through
+`command_with_process_substitution_files`. That external-command preparation
+materialized the virtual source fd into a temporary file and advanced the
+source offset to EOF. The later `exec` copy therefore received an empty input.
+
+The fix keeps dynamic `exec {name}...` commands on the shell-owned execution
+path. The same slice also keeps GNU's `&N-` move form separate from ordinary
+`&N` parsing, copies only the input or output side selected by the operator,
+closes the source for move operations, and retains a closed dynamic fd's
+numeric variable value for later diagnostics and slot reuse.
+
+Verification completed:
+
+- `cargo test --test executor_tests command_chaining::part_080::test_exec_dynamic_`
+  passed 12/12.
+- `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`
+  passed 146/149. The three remaining failures are pre-existing ordered stderr
+  redirect / `<>` cases (`ambiguous redirect` and `Bad file descriptor`), not
+  dynamic-fd move failures.
+- `BASH_RUNNER=D:/Git/bin/bash.exe D:/Git/bin/bash.exe
+  scripts/run-bash-upstream-tests.sh run-redir` passed 1/1, exit 0.
+- The same command with `run-vredir` passed 1/1, exit 0.
+- The latest runner table is
+  `target/bash-upstream-tests/results.tsv`; individual logs are under
+  `target/bash-upstream-tests/logs/`. The native Bash probe corpus remains
+  under `target/issue-suites/results/native-bash-20260814-vredir/`.
+
+The runner writes one aggregate table per invocation, so the subsequent
+`run-vredir` invocation replaced the table's `run-redir` row. Preserve both
+commands and their individual log paths in durable notes when quoting this
+checkpoint.
+
+### Next Concrete Slice
+
+1. Keep the three `part_080` failures classified as a separate ordered-output
+   owner; reproduce each against GNU Bash before changing `redirection.rs`.
+2. Split `vredir4`, `vredir5`, `vredir7`, and `vredir8` into one primitive per
+   probe: ordered heredoc/input, array element fd, nameref fd, and
+   `varredir_close` diagnostics.
+3. For every new fd change, run the 12 dynamic-fd tests, the full bounded
+   `part_080` slice, and both `run-redir` and `run-vredir` with per-command
+   timeouts.
+4. Only after the fd slice is stable, select the next root-cause family from
+   the remote open Issues `#20`-`#26`; do not treat `.right` runner success as
+   closure of the official `.tests` actual-output gap.
+
 ## Current Architecture Reality
 
 Older docs map GNU Bash C files to Rust owner modules. That map is still useful

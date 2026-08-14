@@ -153,7 +153,13 @@ impl Executor {
             return Ok(());
         }
 
-        if !command_needs_process_substitution_materialization(&cmd) {
+        // `exec {fd}...` mutates the shell's persistent descriptor table.
+        // Do not materialize its input redirect through the external-command
+        // path: that would consume the source virtual fd before exec can
+        // duplicate or move it.
+        if is_dynamic_fd_exec_command(&cmd)
+            || !command_needs_process_substitution_materialization(&cmd)
+        {
             return self.execute_materialized_command(&cmd, ProcessSubstitutionFiles::default());
         }
 
@@ -161,6 +167,22 @@ impl Executor {
             self.command_with_process_substitution_files(&cmd)?;
         self.execute_materialized_command(&materialized_cmd, process_substitution_files)
     }
+}
+
+fn is_dynamic_fd_exec_command(cmd: &CommandNode) -> bool {
+    cmd.words.first().map(String::as_str) == Some("exec")
+        && cmd.words.get(1).is_some_and(|word| {
+            let Some(name) = word
+                .strip_prefix('{')
+                .and_then(|word| word.strip_suffix('}'))
+            else {
+                return false;
+            };
+            !name.is_empty()
+                && name
+                    .chars()
+                    .all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+        })
 }
 
 fn unterminated_extglob(raw: &str) -> bool {

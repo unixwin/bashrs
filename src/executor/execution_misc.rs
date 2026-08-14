@@ -24,10 +24,18 @@ pub(in crate::executor) fn is_closed_redirect_target(path: &str) -> bool {
 }
 
 pub(in crate::executor) fn redirect_target_fd(target: &str) -> Option<u32> {
+    redirect_target_fd_and_move(target).and_then(|(fd, move_fd)| (!move_fd).then_some(fd))
+}
+
+pub(in crate::executor) fn redirect_target_fd_and_move(target: &str) -> Option<(u32, bool)> {
     let fd = target.strip_prefix('&')?;
     let fd = fd.trim_matches(|ch| ch == '"' || ch == '\x1d');
+    let (fd, move_fd) = fd
+        .strip_suffix('-')
+        .map(|fd| (fd, true))
+        .unwrap_or((fd, false));
     (!fd.is_empty() && fd.chars().all(|ch| ch.is_ascii_digit()))
-        .then(|| fd.parse::<u32>().ok())
+        .then(|| fd.parse::<u32>().ok().map(|fd| (fd, move_fd)))
         .flatten()
 }
 

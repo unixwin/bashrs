@@ -1,2 +1,3 @@
-//! Module placeholder for `src/shell/arrays/mod.rs`.
+//! Array storage is defined by `shell::variables::ShellValue`.
 
+pub use crate::shell::variables::ShellValue;

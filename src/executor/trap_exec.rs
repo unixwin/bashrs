@@ -1,6 +1,26 @@
 use super::*;
 
 impl Executor {
+    fn set_fd_input_text(&mut self, fd: u32, input: String, dynamic: bool) {
+        self.fd_table.open_input(fd, FdReadEndpoint::text(&input), dynamic);
+        self.env_vars.insert(fd_stdin_key(fd), input);
+        self.env_vars.insert(fd_stdin_offset_key(fd), "0".to_string());
+        if dynamic {
+            self.env_vars.insert(fd_dynamic_input_key(fd), "1".to_string());
+        } else {
+            self.env_vars.remove(&fd_dynamic_input_key(fd));
+        }
+        self.env_vars.remove(&fd_closed_key(fd));
+    }
+
+    fn set_fd_output_file(&mut self, fd: u32, target: String, dynamic: bool) {
+        let path = shell_path_to_windows(&target, &self.env_vars);
+        self.fd_table.open_output(fd, FdWriteEndpoint::File(path), dynamic);
+        self.env_vars.remove(&fd_closed_key(fd));
+        self.env_vars.remove(&fd_output_process_substitution_key(fd));
+        self.env_vars.insert(fd_output_key(fd), target);
+    }
+
     pub(in crate::executor) fn execute_eval(
         &mut self,
         cmd: &CommandNode,
@@ -401,10 +421,7 @@ impl Executor {
                 return Ok(Some(0));
             }
             self.create_redirect_output(&target, redirect.clobber)?;
-            self.env_vars.remove(&fd_closed_key(fd));
-            self.env_vars
-                .remove(&fd_output_process_substitution_key(fd));
-            self.env_vars.insert(fd_output_key(fd), target);
+            self.set_fd_output_file(fd, target, fd >= 10);
             return Ok(Some(0));
         }
 
@@ -423,10 +440,7 @@ impl Executor {
                 .create(true)
                 .append(true)
                 .open(shell_path_to_windows(&target, &self.env_vars))?;
-            self.env_vars.remove(&fd_closed_key(fd));
-            self.env_vars
-                .remove(&fd_output_process_substitution_key(fd));
-            self.env_vars.insert(fd_output_key(fd), target);
+            self.set_fd_output_file(fd, target, fd >= 10);
             return Ok(Some(0));
         }
 
@@ -448,10 +462,7 @@ impl Executor {
             if !is_null_device(&target) {
                 self.create_redirect_output(&target, redirect.clobber)?;
             }
-            self.env_vars.remove(&fd_closed_key(fd));
-            self.env_vars
-                .remove(&fd_output_process_substitution_key(fd));
-            self.env_vars.insert(fd_output_key(fd), target);
+            self.set_fd_output_file(fd, target, fd >= 10);
             return Ok(Some(0));
         }
 
@@ -472,10 +483,7 @@ impl Executor {
                     .append(true)
                     .open(shell_path_to_windows(&target, &self.env_vars))?;
             }
-            self.env_vars.remove(&fd_closed_key(fd));
-            self.env_vars
-                .remove(&fd_output_process_substitution_key(fd));
-            self.env_vars.insert(fd_output_key(fd), target);
+            self.set_fd_output_file(fd, target, fd >= 10);
             return Ok(Some(0));
         }
 
@@ -497,14 +505,8 @@ impl Executor {
                 .and_then(|target| target.strip_suffix(')'))
             {
                 if let Some(input) = self.process_substitution_output(source) {
-                    self.env_vars.remove(&fd_closed_key(fd));
-                    self.env_vars.insert(fd_stdin_key(fd), input);
-                    self.env_vars
-                        .insert(fd_stdin_offset_key(fd), "0".to_string());
-                    if fd != 0 {
-                        self.env_vars
-                            .insert(fd_dynamic_input_key(fd), "1".to_string());
-                    }
+                    self.fd_table.open_input(fd, FdReadEndpoint::process_substitution(&input), fd != 0);
+                    self.set_fd_input_text(fd, input, fd != 0);
                     return Ok(Some(0));
                 }
             }
@@ -517,27 +519,16 @@ impl Executor {
                     .write(true)
                     .open(&path)?;
             }
-            let input = fs::read_to_string(path)?;
-            self.env_vars.remove(&fd_closed_key(fd));
-            self.env_vars.insert(fd_stdin_key(fd), input);
-            self.env_vars
-                .insert(fd_stdin_offset_key(fd), "0".to_string());
-            if fd != 0 {
-                self.env_vars
-                    .insert(fd_dynamic_input_key(fd), "1".to_string());
+            let input = fs::read_to_string(&path)?;
+            self.set_fd_input_text(fd, input, fd != 0);
+            if redirect.operator == "<>" {
+                self.fd_table.open_output(fd, FdWriteEndpoint::File(path), fd >= 10);
             }
             return Ok(Some(0));
         }
 
         if let Some((fd, input)) = self.exec_heredoc_fd_input(cmd) {
-            self.env_vars.remove(&fd_closed_key(fd));
-            self.env_vars.insert(fd_stdin_key(fd), input);
-            self.env_vars
-                .insert(fd_stdin_offset_key(fd), "0".to_string());
-            if fd != 0 {
-                self.env_vars
-                    .insert(fd_dynamic_input_key(fd), "1".to_string());
-            }
+            self.set_fd_input_text(fd, input, fd != 0);
             return Ok(Some(0));
         }
 
@@ -564,6 +555,42 @@ impl Executor {
     }
 
     fn copy_persistent_output_fd(&mut self, target_fd: u32, source_fd: u32) {
+        if self.fd_table.is_open_for_write(source_fd) {
+            if self.fd_table.dup_output(target_fd, source_fd).is_ok() {
+                match self.fd_table.output_endpoint(target_fd) {
+                    Some(FdWriteEndpoint::Stdout) => {
+                        self.env_vars.remove(&fd_closed_key(target_fd));
+                        self.env_vars.insert(fd_output_key(target_fd), FD_STDOUT_TARGET.to_string());
+                        self.env_vars.remove(&fd_output_process_substitution_key(target_fd));
+                    }
+                    Some(FdWriteEndpoint::Stderr) => {
+                        self.env_vars.remove(&fd_closed_key(target_fd));
+                        self.env_vars.insert(fd_output_key(target_fd), FD_STDERR_TARGET.to_string());
+                        self.env_vars.remove(&fd_output_process_substitution_key(target_fd));
+                    }
+                    Some(FdWriteEndpoint::File(path)) => {
+                        self.env_vars.remove(&fd_closed_key(target_fd));
+                        self.env_vars.insert(fd_output_key(target_fd), shell_display_path(&path.to_string_lossy()));
+                        self.env_vars.remove(&fd_output_process_substitution_key(target_fd));
+                    }
+                    Some(FdWriteEndpoint::CoprocStdin(pid)) => {
+                        self.env_vars.remove(&fd_closed_key(target_fd));
+                        self.env_vars.insert(fd_output_key(target_fd), format!("{FD_COPROC_STDIN_TARGET_PREFIX}{pid}"));
+                        self.env_vars.remove(&fd_output_process_substitution_key(target_fd));
+                    }
+                    Some(FdWriteEndpoint::ProcessSubstitution { path, command }) => {
+                        self.env_vars.remove(&fd_closed_key(target_fd));
+                        self.env_vars.insert(fd_output_key(target_fd), shell_display_path(&path.to_string_lossy()));
+                        self.env_vars.insert(fd_output_process_substitution_key(target_fd), command);
+                    }
+                    None => {}
+                }
+            } else {
+                let _ = self.close_persistent_output_fd(target_fd);
+                self.env_vars.insert(fd_closed_key(target_fd), "1".to_string());
+            }
+            return;
+        }
         if self.env_vars.contains_key(&fd_closed_key(source_fd)) {
             let _ = self.close_persistent_output_fd(target_fd);
             self.env_vars
@@ -615,6 +642,11 @@ impl Executor {
         };
 
         let path = self.empty_process_substitution_temp()?;
+        self.fd_table.open_output(
+            fd,
+            FdWriteEndpoint::ProcessSubstitution { path: path.clone(), command: source.to_string() },
+            fd >= 10,
+        );
         self.env_vars.remove(&fd_closed_key(fd));
         self.env_vars.insert(
             fd_output_key(fd),
@@ -627,6 +659,7 @@ impl Executor {
 
     fn close_persistent_output_fd(&mut self, fd: u32) -> Result<(), ExecuteError> {
         self.coproc_stdin_writers.remove(&fd);
+        self.fd_table.close_output(fd);
         let target = self.env_vars.remove(&fd_output_key(fd));
         let source = self
             .env_vars
@@ -642,9 +675,18 @@ impl Executor {
 
     fn close_persistent_input_fd(&mut self, fd: u32) {
         self.coproc_stdout_readers.remove(&fd);
+        self.fd_table.close_input(fd);
         self.env_vars.remove(&fd_stdin_key(fd));
         self.env_vars.remove(&fd_stdin_offset_key(fd));
         self.env_vars.remove(&fd_dynamic_input_key(fd));
+    }
+
+    fn close_persistent_fd(&mut self, fd: u32) -> Result<(), ExecuteError> {
+        self.close_persistent_output_fd(fd)?;
+        self.close_persistent_input_fd(fd);
+        self.fd_table.close(fd);
+        self.env_vars.insert(fd_closed_key(fd), "1".to_string());
+        Ok(())
     }
 
     pub(in crate::executor) fn execute_persistent_output_process_substitution(
@@ -682,27 +724,24 @@ impl Executor {
             };
             let fd = self.allocate_dynamic_fd();
             self.env_vars.insert(name.to_string(), fd.to_string());
-            self.env_vars.remove(&fd_closed_key(fd));
-            self.env_vars.insert(fd_stdin_key(fd), input);
-            self.env_vars
-                .insert(fd_stdin_offset_key(fd), "0".to_string());
-            self.env_vars
-                .insert(fd_dynamic_input_key(fd), "1".to_string());
+            self.set_fd_input_text(fd, input, true);
             return Ok(Some(0));
         }
 
         if let Some(redirect) = &cmd.redirect_in {
             let target = self.expand_word(&redirect.target);
             if is_closed_redirect_target(&target) {
-                self.close_dynamic_fd(name);
+                self.close_dynamic_fd(name)?;
                 return Ok(Some(0));
             }
 
-            if let Some(source_fd) = redirect_target_fd(&target) {
+            if let Some((source_fd, move_source)) = redirect_target_fd_and_move(&target) {
                 let fd = self.allocate_dynamic_fd();
                 self.env_vars.insert(name.to_string(), fd.to_string());
                 self.copy_persistent_input_fd(fd, source_fd);
-                self.copy_persistent_output_fd(fd, source_fd);
+                if move_source {
+                    self.close_persistent_fd(source_fd)?;
+                }
                 return Ok(Some(0));
             }
 
@@ -713,12 +752,8 @@ impl Executor {
                 if let Some(input) = self.process_substitution_output(source) {
                     let fd = self.allocate_dynamic_fd();
                     self.env_vars.insert(name.to_string(), fd.to_string());
-                    self.env_vars.remove(&fd_closed_key(fd));
-                    self.env_vars.insert(fd_stdin_key(fd), input);
-                    self.env_vars
-                        .insert(fd_stdin_offset_key(fd), "0".to_string());
-                    self.env_vars
-                        .insert(fd_dynamic_input_key(fd), "1".to_string());
+                    self.fd_table.open_input(fd, FdReadEndpoint::process_substitution(&input), true);
+                    self.set_fd_input_text(fd, input, true);
                     return Ok(Some(0));
                 }
             }
@@ -734,14 +769,9 @@ impl Executor {
             let input = fs::read_to_string(path)?;
             let fd = self.allocate_dynamic_fd();
             self.env_vars.insert(name.to_string(), fd.to_string());
-            self.env_vars.remove(&fd_closed_key(fd));
-            self.env_vars.insert(fd_stdin_key(fd), input);
-            self.env_vars
-                .insert(fd_stdin_offset_key(fd), "0".to_string());
-            self.env_vars
-                .insert(fd_dynamic_input_key(fd), "1".to_string());
+            self.set_fd_input_text(fd, input, true);
             if redirect.operator == "<>" {
-                self.env_vars.insert(fd_output_key(fd), target);
+                self.set_fd_output_file(fd, target, true);
             }
             return Ok(Some(0));
         }
@@ -749,31 +779,31 @@ impl Executor {
         if let Some(redirect) = &cmd.redirect_out {
             let target = self.expand_word(&redirect.target);
             if is_closed_redirect_target(&target) {
-                self.close_dynamic_fd(name);
+                self.close_dynamic_fd(name)?;
                 return Ok(Some(0));
             }
 
             let fd = self.allocate_dynamic_fd();
             self.env_vars.insert(name.to_string(), fd.to_string());
-            if let Some(source_fd) = redirect_target_fd(&target) {
+            if let Some((source_fd, move_source)) = redirect_target_fd_and_move(&target) {
                 self.copy_persistent_output_fd(fd, source_fd);
+                if move_source {
+                    self.close_persistent_fd(source_fd)?;
+                }
                 return Ok(Some(0));
             }
             if self.open_persistent_output_process_substitution(fd, &target)? {
                 return Ok(Some(0));
             }
             self.create_redirect_output(&target, redirect.clobber)?;
-            self.env_vars.remove(&fd_closed_key(fd));
-            self.env_vars
-                .remove(&fd_output_process_substitution_key(fd));
-            self.env_vars.insert(fd_output_key(fd), target);
+            self.set_fd_output_file(fd, target, true);
             return Ok(Some(0));
         }
 
         if let Some(redirect) = &cmd.append {
             let target = self.expand_word(&redirect.target);
             if is_closed_redirect_target(&target) {
-                self.close_dynamic_fd(name);
+                self.close_dynamic_fd(name)?;
                 return Ok(Some(0));
             }
             let fd = self.allocate_dynamic_fd();
@@ -786,10 +816,7 @@ impl Executor {
                 .append(true)
                 .open(shell_path_to_windows(&target, &self.env_vars))?;
             self.env_vars.insert(name.to_string(), fd.to_string());
-            self.env_vars.remove(&fd_closed_key(fd));
-            self.env_vars
-                .remove(&fd_output_process_substitution_key(fd));
-            self.env_vars.insert(fd_output_key(fd), target);
+            self.set_fd_output_file(fd, target, true);
             return Ok(Some(0));
         }
 
@@ -797,6 +824,40 @@ impl Executor {
     }
 
     fn copy_persistent_input_fd(&mut self, target_fd: u32, source_fd: u32) {
+        if self.fd_table.is_open_for_read(source_fd) {
+            if self.fd_table.dup_input(target_fd, source_fd).is_ok() {
+                match self.fd_table.entries.get(&target_fd).and_then(|entry| entry.read.clone()) {
+                    Some(FdReadEndpoint::InheritedProcessStdin) => {
+                        self.env_vars.insert(fd_stdin_key(target_fd), FD_PROCESS_STDIN_TARGET.to_string());
+                        self.env_vars.remove(&fd_stdin_offset_key(target_fd));
+                        self.env_vars.remove(&fd_dynamic_input_key(target_fd));
+                    }
+                    Some(FdReadEndpoint::Text(_)) | Some(FdReadEndpoint::ProcessSubstitution(_)) => {
+                        if let Some((input, offset)) = self.fd_table.input_snapshot(target_fd) {
+                            self.env_vars.insert(fd_stdin_key(target_fd), input);
+                            self.env_vars.insert(fd_stdin_offset_key(target_fd), offset.to_string());
+                            self.env_vars.insert(fd_dynamic_input_key(target_fd), "1".to_string());
+                        }
+                    }
+                    Some(FdReadEndpoint::File(path)) => {
+                        self.env_vars.insert(fd_stdin_key(target_fd), shell_display_path(&path.to_string_lossy()));
+                        self.env_vars.remove(&fd_stdin_offset_key(target_fd));
+                        self.env_vars.remove(&fd_dynamic_input_key(target_fd));
+                    }
+                    Some(FdReadEndpoint::CoprocStdout(pid)) => {
+                        self.env_vars.insert(fd_stdin_key(target_fd), format!("{FD_COPROC_STDIN_TARGET_PREFIX}{pid}"));
+                        self.env_vars.remove(&fd_stdin_offset_key(target_fd));
+                        self.env_vars.remove(&fd_dynamic_input_key(target_fd));
+                    }
+                    None => {}
+                }
+                self.env_vars.remove(&fd_closed_key(target_fd));
+            } else {
+                self.close_persistent_input_fd(target_fd);
+                self.env_vars.insert(fd_closed_key(target_fd), "1".to_string());
+            }
+            return;
+        }
         if self.env_vars.contains_key(&fd_closed_key(source_fd)) {
             self.env_vars.remove(&fd_stdin_key(target_fd));
             self.env_vars.remove(&fd_stdin_offset_key(target_fd));
@@ -848,26 +909,19 @@ impl Executor {
         self.env_vars.remove(&fd_closed_key(target_fd));
     }
 
-    fn allocate_dynamic_fd(&self) -> u32 {
-        (10..1024)
-            .find(|fd| {
-                !self.env_vars.contains_key(&fd_output_key(*fd))
-                    && !self.env_vars.contains_key(&fd_stdin_key(*fd))
-            })
-            .unwrap_or(10)
+    fn allocate_dynamic_fd(&mut self) -> u32 {
+        self.fd_table.allocate_dynamic()
     }
 
-    fn close_dynamic_fd(&mut self, name: &str) {
+    fn close_dynamic_fd(&mut self, name: &str) -> Result<(), ExecuteError> {
         if let Some(fd) = self
             .env_vars
             .get(name)
             .and_then(|value| value.parse::<u32>().ok())
         {
-            let _ = self.close_persistent_output_fd(fd);
-            self.close_persistent_input_fd(fd);
-            self.env_vars.remove(&fd_closed_key(fd));
+            self.close_persistent_fd(fd)?;
         }
-        self.env_vars.remove(name);
+        Ok(())
     }
 
     pub(in crate::executor) fn execute_exec_command(

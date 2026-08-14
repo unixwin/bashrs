@@ -23,7 +23,11 @@ impl Executor {
             let target = self.expand_word(&redirect.target);
             if is_closed_redirect_target(&target) {
             } else if redirect.append {
-                self.open_input_redirect(&target)?;
+                OpenOptions::new()
+                    .create(true)
+                    .read(true)
+                    .write(true)
+                    .open(shell_path_to_windows(&target, &self.env_vars))?;
             } else {
                 self.open_input_redirect(&target)?;
             }

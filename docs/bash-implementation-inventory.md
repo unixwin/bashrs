@@ -1,5 +1,36 @@
 # Bash Implementation Inventory
 
+The durable semantic classification is in `docs/semantic-ownership.tsv` and
+is validated by `scripts/validate-semantic-map.sh`. This appendix is a
+provenance index for locating GNU sources; its target paths do not by
+themselves claim that behavior is implemented.
+
+## Core Semantic Families
+
+| GNU source family | Semantic contract | Rust owner | Compile status | Implementation status | Suite evidence | Next gate |
+|---|---|---|---|---|---|---|
+| `redir.c`, `redir.h`, `tests/redir*.tests`, `tests/vredir*.sub` | Ordered redirections, dynamic descriptors, dup/move/close, heredoc precedence | `src/executor/fd_table.rs`; `src/executor/redirection.rs`; `src/executor/trap_exec.rs` | active | partial | `executor_tests::command_chaining::part_080`; `run-redir`; `run-vredir` | migrate external child setup and remove the fd env mirror |
+| `variables.c`, `subst.c`, `builtins/set.def` | Typed shell values, export view, positional/status state | `src/shell/state.rs`; `src/shell/variables.rs` | active | scaffold | `array`; `assoc`; `builtins`; Rust variable tests | route assignment and expansion reads through `VariableStore` |
+| `array.c`, `array2.c`, `arrayfunc.c`, `assoc.c` | Sparse indexed arrays, associative arrays, attributes, nameref | `src/shell/variables.rs`; `src/shell/arrays/` | active | scaffold | `array`; `assoc`; `nameref` | replace delimiter encoding in internal array mutations |
+| `jobs.c`, `nojobs.c`, `builtins/wait.def`, `tests/jobs.tests` | Job identity, completion retention, jobspec resolution, wait ordering | `src/jobs/table.rs`; `src/executor/job_builtins.rs` | active | partial | `run-jobs`; `trap`; focused wait tests | register pipelines and coprocess endpoints in `JobTable` |
+| `coproc_command.c`, `process_substitution.c`, `tests/coproc.tests`, `tests/procsub.tests` | Background endpoints and descriptor lifetime across coproc/procsub | `src/jobs/table.rs`; `src/executor/fd_table.rs`; `src/parser/coproc_command.rs` | active | bridge | `run-coproc`; `run-procsub` | remove upstream bridge after endpoint tests are green |
+| `lib/readline/*`, `input.c`, `tests/input*.tests` | Interactive line editing and history | `src/input/readline/`; host integration | unreferenced | deferred | interactive host tests | host/editor contract and noninteractive boundary |
+| `lib/intl/*`, locale sources | Locale and message catalog portability | host-owned | active | host-owned | environment-specific | document host locale contract |
+
+The map intentionally distinguishes `bridge` from `real`: an upstream output
+handler is not a semantic owner and must name the Rust owner that replaces it.
+
+## 2026-08-14 Placeholder Audit
+
+`sh scripts/audit-rust-placeholders.sh` currently reports 265 Rust files with
+`cloc` `Code=0`. All 265 are unreferenced by the active crate module tree:
+58 are old semantic-owner candidates whose behavior is now distributed across
+active modules, and 207 belong to completion, history, input/readline, locale,
+or portability helpers that are `host-owned` or `deferred`. These files are
+not implementation evidence and must not be promoted to `real` by filename
+mapping alone. The generated raw report is
+`target/rust-placeholder-audit.tsv`.
+
 This appendix assigns each implementation-shaped GNU Bash source file to a Rubash target module. It is an ownership map, not a claim that the C file has already been ported.
 
 | GNU Bash file | Rubash target |

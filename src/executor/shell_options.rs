@@ -98,18 +98,27 @@ impl Executor {
     }
 
     pub(in crate::executor) fn output_fd_redirects_to_stdout(&self, target: &str) -> bool {
+        if redirect_target_fd(target).map_or(false, |fd| matches!(self.fd_table.output_endpoint(fd), Some(FdWriteEndpoint::Stdout))) {
+            return true;
+        }
         redirect_target_fd(target)
             .and_then(|fd| self.env_vars.get(&fd_output_key(fd)))
             .is_some_and(|target| target == FD_STDOUT_TARGET)
     }
 
     pub(in crate::executor) fn output_fd_redirects_to_stderr(&self, target: &str) -> bool {
+        if redirect_target_fd(target).map_or(false, |fd| matches!(self.fd_table.output_endpoint(fd), Some(FdWriteEndpoint::Stderr))) {
+            return true;
+        }
         redirect_target_fd(target)
             .and_then(|fd| self.env_vars.get(&fd_output_key(fd)))
             .is_some_and(|target| target == FD_STDERR_TARGET)
     }
 
     pub(in crate::executor) fn input_fd_redirects_to_process_stdin(&self, target: &str) -> bool {
+        if redirect_target_fd(target).map_or(false, |fd| matches!(self.fd_table.entries.get(&fd).and_then(|entry| entry.read.as_ref()), Some(FdReadEndpoint::InheritedProcessStdin))) {
+            return true;
+        }
         redirect_target_fd(target)
             .and_then(|fd| self.env_vars.get(&fd_stdin_key(fd)))
             .is_some_and(|target| target == FD_PROCESS_STDIN_TARGET)

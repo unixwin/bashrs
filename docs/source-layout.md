@@ -41,6 +41,7 @@ src/
 
   shell/
     mod.rs
+    state.rs
     alias.rs
     arrays/
     options.rs
@@ -50,6 +51,7 @@ src/
 
   executor/
     mod.rs
+    fd_table.rs
     command.rs
     eval.rs
     hash.rs
@@ -71,6 +73,7 @@ src/
 
   jobs/
     mod.rs
+    table.rs
     jobs.rs
     signals.rs
     trap.rs
@@ -108,6 +111,11 @@ Current scaffold status:
 | Existing inventory owner target files | 308 |
 | Total `src/**/*.rs` files, including `mod.rs` and entrypoints | 325 |
 | Explicit skip categories | 3 |
+
+The current semantic kernels are `executor/fd_table.rs`, `shell/state.rs`,
+`shell/variables.rs`, and `jobs/table.rs`. They are owners with focused APIs;
+their presence does not mean every caller has migrated. See
+`docs/semantic-ownership.tsv` for the promotion gates.
 
 ## Create Now
 

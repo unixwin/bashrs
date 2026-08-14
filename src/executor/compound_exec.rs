@@ -37,6 +37,7 @@ impl Executor {
         let child = child.spawn()?;
         let pid = child.id();
         self.background_children.insert(pid, child);
+        self.job_table.register_process(pid, display_source.clone(), true);
         self.background_jobs.insert(pid, display_source);
         self.background_job_order.push(pid);
         self.last_background_pid = Some(pid);
@@ -589,11 +590,13 @@ impl Executor {
                     // the correct pipe direction on all hosts.
                     let pid = child_proc.id();
                     self.background_children.insert(pid, child_proc);
+                    let job_id = self.job_table.register_process(pid, bash_command_source_text(cmd), true);
                     self.background_jobs
                         .insert(pid, bash_command_source_text(cmd));
                     self.background_job_order.push(pid);
                     self.coproc_stdin_writers.insert(pid, stdin_writer);
                     self.coproc_stdout_readers.insert(pid, stdout_reader);
+                    self.job_table.attach_coproc_endpoint(job_id, pid);
                     // Store the file descriptors in env for COPROC array
                     let stdin_key = format!("__RUBASH_COPROC_STDIN_{}", pid);
                     let stdout_key = format!("__RUBASH_COPROC_STDOUT_{}", pid);

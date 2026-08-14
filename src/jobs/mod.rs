@@ -1,2 +1,5 @@
-//! Module placeholder for `src/jobs/mod.rs`.
+//! Job semantic owners.
 
+pub mod table;
+
+pub use table::{JobEntry, JobId, JobTable, ProcessState};

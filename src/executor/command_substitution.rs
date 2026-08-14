@@ -380,6 +380,9 @@ impl Executor {
 
     pub(in crate::executor) fn command_substitution_executor(&self) -> Executor {
         Executor {
+            shell_state: self.shell_state.clone(),
+            fd_table: self.fd_table.clone(),
+            job_table: self.job_table.clone(),
             exit_code: self.exit_code,
             env_vars: self.env_vars.clone(),
             aliases: self.aliases.clone(),

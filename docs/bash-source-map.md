@@ -1,5 +1,43 @@
 # Bash Source Map
 
+## Semantic Map v2
+
+The canonical migration map is `docs/semantic-ownership.tsv`. It records
+semantic ownership rather than pretending that one GNU C file has one Rust
+translation. Its columns are:
+
+| Column | Meaning |
+|---|---|
+| GNU source family | GNU C, `.def`, `.y`, or upstream test family |
+| Semantic contract | Observable Bash behavior owned by the family |
+| Rust owner | One or more Rust semantic owners, separated by `;` |
+| Compile status | `active`, `unreferenced`, or `missing` |
+| Implementation status | `real`, `partial`, `scaffold`, `bridge`, `deferred`, or `host-owned` |
+| Suite evidence | Rust and upstream test families that exercise the owner |
+| Next gate | Evidence required before the owner can be promoted |
+
+The map is checked by `scripts/validate-semantic-map.sh`. A target file's
+existence is not evidence of migration: `real` requires an active owner,
+non-placeholder implementation, and named test evidence. One GNU family may
+map to several owners, and several families may map to one semantic kernel.
+
+The older file-by-file inventory below remains provenance data. New migration
+work must update the v2 map first and may use the appendix for source lookup.
+
+## Placeholder Audit
+
+Run `scripts/audit-rust-placeholders.sh` to inspect Rust files that contain
+only GNU provenance comments. The report distinguishes files declared by the
+current module tree from unreferenced files, and separates host/deferred areas
+(`input`, `readline`, `locale`, `sys`, completion, and history) from old
+semantic-owner candidates.
+
+`Code=0` is not an implementation status. An unreferenced file is removable
+only after its provenance is represented in this map or the implementation
+inventory. A duplicate-owner candidate is not automatically complete: the
+replacement owner still needs behavior and suite evidence before it can be
+marked `real`.
+
 This map keeps Rubash implementation work traceable to GNU Bash 5.3 sources
 without forcing a file-for-file port. The `Status` column describes whether the
 Rubash module should exist now or later.

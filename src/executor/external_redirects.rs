@@ -93,7 +93,12 @@ impl Executor {
         }
 
         if !redirected {
-            if self.env_vars.contains_key(&fd_closed_key(1)) {
+            if self.fd_table.has_entry(1) && !self.fd_table.is_open_for_write(1) {
+                process.stdout(Stdio::null());
+            } else if let Some(FdWriteEndpoint::File(path)) = self.fd_table.write_endpoint(1) {
+                let file = OpenOptions::new().create(true).append(true).open(path)?;
+                process.stdout(Stdio::from(file));
+            } else if self.env_vars.contains_key(&fd_closed_key(1)) {
                 process.stdout(Stdio::null());
             } else if let Some(target) = self.env_vars.get(&fd_output_key(1)) {
                 if is_null_device(target) {
@@ -182,7 +187,12 @@ impl Executor {
         }
 
         if !redirected {
-            if self.env_vars.contains_key(&fd_closed_key(2)) {
+            if self.fd_table.has_entry(2) && !self.fd_table.is_open_for_write(2) {
+                process.stderr(Stdio::null());
+            } else if let Some(FdWriteEndpoint::File(path)) = self.fd_table.write_endpoint(2) {
+                let file = OpenOptions::new().create(true).append(true).open(path)?;
+                process.stderr(Stdio::from(file));
+            } else if self.env_vars.contains_key(&fd_closed_key(2)) {
                 process.stderr(Stdio::null());
             } else if let Some(target) = self.env_vars.get(&fd_output_key(2)) {
                 if is_null_device(target) {

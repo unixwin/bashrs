@@ -116,7 +116,10 @@ impl Executor {
             if redirect.fd.unwrap_or(0) == 0 {
                 process.stdin(Stdio::from(file));
             }
-        } else if self.env_vars.contains_key(&fd_closed_key(0)) {
+        } else if self.fd_table.is_closed(0)
+            || (self.fd_table.has_entry(0) && !self.fd_table.is_open_for_read(0))
+            || self.env_vars.contains_key(&fd_closed_key(0))
+        {
             process.stdin(Stdio::null());
         }
 
@@ -190,11 +193,31 @@ impl Executor {
             if redirect.fd.unwrap_or(0) == 0 {
                 let target = self.expand_word(&redirect.target);
                 if let Some(fd) = redirect_target_fd(&target) {
-                    if self.env_vars.contains_key(&fd_dynamic_input_key(fd)) {
+                    if self.fd_table.is_open_for_read(fd) {
                         if let Some(input) = self.virtual_fd_stdin_remaining(fd) {
                             let path = self.write_process_substitution_temp(&input)?;
+                            let input_len = self.virtual_fd_stdin_len(fd);
+                            self.fd_table.consume_all_text(fd);
                             self.env_vars
-                                .insert(fd_stdin_offset_key(fd), self.virtual_fd_stdin_len(fd));
+                                .insert(fd_stdin_offset_key(fd), input_len);
+                            redirect.target = shell_display_path(&path.to_string_lossy());
+                            files.inputs.push(path);
+                        } else if let Some(MaterializedRead::File(path)) = self
+                            .fd_table
+                            .materialize_for_child()
+                            .get(&fd)
+                            .and_then(|materialized| materialized.read.clone())
+                        {
+                            redirect.target = shell_display_path(&path.to_string_lossy());
+                        }
+                    } else if !self.fd_table.has_entry(fd)
+                        && self.env_vars.contains_key(&fd_dynamic_input_key(fd))
+                    {
+                        if let Some(input) = self.virtual_fd_stdin_remaining(fd) {
+                            let path = self.write_process_substitution_temp(&input)?;
+                            let input_len = self.virtual_fd_stdin_len(fd);
+                            self.env_vars
+                                .insert(fd_stdin_offset_key(fd), input_len);
                             redirect.target = shell_display_path(&path.to_string_lossy());
                             files.inputs.push(path);
                         }
@@ -429,15 +452,17 @@ impl Executor {
         if rewritten.redirect_in.is_some()
             || rewritten.heredoc.is_some()
             || rewritten.here_string.is_some()
-            || !self.env_vars.contains_key(&fd_stdin_key(0))
+            || self.virtual_fd_stdin_remaining(0).is_none()
         {
             return Ok(());
         }
 
         let input = self.virtual_fd_stdin_remaining(0).unwrap_or_default();
         let path = self.write_process_substitution_temp(&input)?;
+        let input_len = self.virtual_fd_stdin_len(0);
+        self.fd_table.consume_all_text(0);
         self.env_vars
-            .insert(fd_stdin_offset_key(0), self.virtual_fd_stdin_len(0));
+            .insert(fd_stdin_offset_key(0), input_len);
         let target = shell_display_path(&path.to_string_lossy());
         rewritten.redirect_in = Some(Redirect {
             fd: Some(0),
@@ -587,6 +612,17 @@ impl Executor {
     }
 
     pub(in crate::executor) fn virtual_fd_stdin_remaining(&self, fd: u32) -> Option<String> {
+        if let Some(input) = self.fd_table.materialized_text_input(fd) {
+            return Some(input);
+        }
+        if self.fd_table.has_entry(fd)
+            && !matches!(
+                self.fd_table.read_endpoint(fd),
+                Some(FdReadEndpoint::InheritedProcessStdin)
+            )
+        {
+            return None;
+        }
         let input = self.env_vars.get(&fd_stdin_key(fd))?;
         let offset = self
             .env_vars
@@ -597,6 +633,9 @@ impl Executor {
     }
 
     fn virtual_fd_stdin_len(&self, fd: u32) -> String {
+        if let Some((input, _)) = self.fd_table.input_snapshot(fd) {
+            return input.len().to_string();
+        }
         self.env_vars
             .get(&fd_stdin_key(fd))
             .map(|input| input.len().to_string())

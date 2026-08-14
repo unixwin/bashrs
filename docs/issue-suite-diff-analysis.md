@@ -10,6 +10,174 @@ tracked summary used to decide what to fix and where.
 The concrete implementation playbook for future agents is
 [`docs/gnu-bash-compatibility-implementation-plan.md`](gnu-bash-compatibility-implementation-plan.md).
 
+## Continuation Checkpoint (2026-08-14)
+
+This is the current durable handoff. The worktree was clean at the checkpoint:
+`master` and `origin/master` both pointed to `55c5daf`, with Bash submodule
+`b4608166` (`bash-5.3-16`). No source or test change was made during the
+read-only status review; the next code change must begin from the native Bash
+`redir`/`vredir` slice below.
+
+### Evidence Rules
+
+- Raw command output belongs under `target/issue-suites/results/`.
+- This document records interpretation, root cause, and durable counts.
+- The newest dated entry wins when this document, an older summary, and a
+  remote Issue title disagree.
+- `.right` runner success is not proof of current Bash behavior; compare the
+  official `.tests` body against GNU Bash actual output as well.
+- A suite result is not complete evidence until its runner setup, exit code,
+  stdout, stderr, and timeout behavior are recorded.
+
+### Active Native Bash Slice: `vredir`
+
+Raw evidence is under
+`target/issue-suites/results/native-bash-20260814-vredir/`.
+
+| Test | Current observation | Next action |
+|---|---|---|
+| `vredir4.sub` | Dynamic fd plus closed fd, nameref, and invalid descriptor behavior differs | Split into one operation per probe; trace virtual fd lifetime |
+| `vredir5.sub` | Ordered input redirect followed by heredoc fails in Rubash | Verify left-to-right redirect application and heredoc precedence |
+| `vredir6.sub` | Current minimal sequence matches (`ok 1`, then `10`) | Keep as regression; do not change `ulimit` speculatively |
+| `vredir7.sub` | Array dynamic fd variant fails | Recheck array element expansion and dynamic-fd close state |
+| `vredir8.sub` | `varredir_close`/closed dynamic output diagnostics differ | Trace descriptor ownership and close timing |
+
+GNU reference: `third_party/bash/redir.c` and
+`third_party/bash/tests/vredir*.sub`. Rubash owners:
+`src/executor/redirection.rs`, `src/executor/trap_exec.rs`,
+`src/executor/read_io.rs`, `src/executor/read_redirected_fd.rs`,
+`src/executor/read_builtin.rs`, `src/executor/external_setup.rs`, and
+`src/executor/types.rs`.
+
+The working hypothesis is a virtual fd state/lifetime and ordered-redirection
+problem. It must be confirmed with a minimal reproducer before editing; do not
+fix these failures by changing expected output or by adding another upstream
+script bridge.
+
+### Next Turn Contract
+
+1. Establish Bash and Rubash output for each primitive in `vredir5`, `vredir7`,
+   and `vredir8` separately.
+2. Read the matching GNU `redir.c` paths for allocation, `F_DUPFD`, close,
+   undo, and `varredir_close`.
+3. Implement one root-cause fix in the fd/redirection owner and add one Rust
+   regression in `tests/executor_command_chaining/`.
+4. Run the focused Rust test, then bounded `run-redir` and `run-vredir`.
+5. Append a dated result entry here containing command, status, artifacts,
+   root-cause conclusion, and remaining failures.
+6. Check for stuck `rubash.exe`, `bash.exe`, suite, and Cargo processes before
+   ending the turn.
+
+This contract is intentionally narrower than the final compatibility goal,
+but it does not redefine that goal: it is the next verified root-cause step.
+
+## 2026-08-14 Semantic Kernel Migration Slice
+
+The semantic map v2 and first kernel owners are now present. The canonical map
+is `docs/semantic-ownership.tsv`, checked by
+`scripts/validate-semantic-map.sh`; the former file-by-file inventory remains
+provenance only. Unreferenced placeholder module files were removed, while
+`upstream_scripts` was preserved.
+
+The follow-up placeholder audit found 265 additional comment-only Rust files
+outside the active module tree. It classified 58 as duplicate-owner candidates
+and 207 as host/deferred. No file was deleted in that audit; the raw report is
+`target/rust-placeholder-audit.tsv` and the disposition rule is documented in
+`docs/bash-source-map.md`.
+
+`src/executor/fd_table.rs` now owns shell-visible read/write capabilities,
+dynamic slot allocation, dup/move/close state, shared text input offsets, and
+child materialization. `Executor` keeps the old environment keys as a
+compatibility mirror. `src/shell/state.rs` and `src/shell/variables.rs` add
+typed shell state and export serialization, and `src/jobs/table.rs` owns job
+identity, jobspec resolution, completion retention, and coprocess endpoint
+metadata. Background/coprocess registration and completion marking now feed
+that table.
+
+Evidence from the bounded verification turn:
+
+| Command | Result | Raw evidence |
+|---|---|---|
+| `cargo check` | pass | command output |
+| `cargo test --lib fd_table` | 3/3 pass | command output |
+| `cargo test --test executor_tests command_chaining::part_080::test_exec_dynamic_` | 12/12 pass | command output |
+| `cargo test --test executor_tests command_chaining::part_080` | 149/149 pass | command output; ordered stderr copy regression closed |
+| `cargo test --lib` | 169/170 pass | command output; existing Windows bare-drive path assertion |
+| `run-redir` | 1/1 pass | `target/bash-upstream-tests/logs/run-redir.log` |
+| `run-vredir` | 1/1 pass | `target/bash-upstream-tests/logs/run-vredir.log` |
+| `run-coproc`, `run-procsub`, `run-jobs` | 1/1 each | corresponding `target/bash-upstream-tests/logs/` files |
+
+The ordered stderr-copy failures are closed by correcting the parser's
+internal inherited-stderr redirect: a path inherited from `2>&1` is represented
+as an append redirect rather than as a duplicate-fd redirect. Ordered output
+state now reads `FdTable` first, with the environment keys retained only as a
+compatibility fallback. The next fd gate is external child materialization and
+removal of that fallback mirror; `<>` and the native `vredir4/5/7/8` probes
+remain separate gates.
+
+## 2026-08-14 Ordered Output Migration
+
+The current bounded verification is:
+
+| Command | Result |
+|---|---|
+| `cargo test --test executor_tests command_chaining::part_080 -- --nocapture` | 149/149 |
+| `BASH_RUNNER=D:/Git/bin/bash.exe D:/Git/bin/bash.exe scripts/run-bash-upstream-tests.sh run-redir` | 1/1 |
+| `BASH_RUNNER=D:/Git/bin/bash.exe D:/Git/bin/bash.exe scripts/run-bash-upstream-tests.sh run-vredir` | 1/1 |
+
+The Rust owner changes are in `src/parser/redirect_assign.rs` and
+`src/executor/redirection.rs`. The parser keeps the original `2>&1` ordered
+redirect but uses a concrete append node when propagating the already-resolved
+stdout path into a compound command. `command_output_fd_state` now starts from
+`FdTable` capabilities and only consults legacy fd environment keys for
+unmigrated state.
+
+## 2026-08-14 Dynamic FD Move Verification
+
+The active `redir`/`vredir` slice now has a confirmed root cause and a focused
+semantic fix. `exec {copy}<&$source` was being treated as an external-command
+redirect before the `exec` builtin ran. `command_with_process_substitution_files`
+materialized the source virtual fd and advanced its offset to EOF. This made a
+following `exec {moved}<&$source-` copy an empty remainder even though Bash
+duplicates the source input and only then closes the source.
+
+The fix is in the command execution/fd owner boundary:
+
+- `src/executor/command_execute.rs` keeps dynamic `exec {name}...` on the
+  shell-owned path.
+- `src/executor/execution_misc.rs` recognizes `&N-` only through the dedicated
+  move-aware helper; ordinary redirect classification still accepts only `&N`.
+- `src/executor/trap_exec.rs` copies only the input/output side selected by the
+  operator, closes move sources, preserves closed dynamic variable values, and
+  allows the freed slot to be reused.
+- `tests/executor_command_chaining/part_080.rs` covers input-only state and
+  input move/close/reuse behavior.
+
+Evidence:
+
+| Command | Result | Raw evidence |
+|---|---|---|
+| `cargo test --test executor_tests command_chaining::part_080::test_exec_dynamic_ -- --nocapture` | 12/12 passed | Cargo output; generated test files are cleaned by the test |
+| `cargo test --test executor_tests command_chaining::part_080 -- --nocapture` | 146/149 passed | Cargo output; remaining 3 are ordered stderr/`<>` failures |
+| `BASH_RUNNER=D:/Git/bin/bash.exe D:/Git/bin/bash.exe scripts/run-bash-upstream-tests.sh run-redir` | 1/1, exit 0 | `target/bash-upstream-tests/logs/run-redir.log` |
+| `BASH_RUNNER=D:/Git/bin/bash.exe D:/Git/bin/bash.exe scripts/run-bash-upstream-tests.sh run-vredir` | 1/1, exit 0 | `target/bash-upstream-tests/logs/run-vredir.log` and latest `results.tsv` |
+
+The runner's `target/bash-upstream-tests/results.tsv` is overwritten by the
+next focused invocation; the two log files are the durable raw evidence for
+the two commands. The broader native probe artifacts remain in
+`target/issue-suites/results/native-bash-20260814-vredir/`.
+
+The closed-fd diagnostic probe also established the current Bash-version
+boundary: GNU Bash 5.2 prints `read error: 10: Bad file descriptor`, while
+Rubash prints `read: 10: invalid file descriptor: Bad file descriptor`. The
+Rust regression now asserts the shared Bash error class rather than the old
+Rubash-specific `invalid file descriptor specification` text.
+
+Remaining work is explicitly separate: `part_080` still has three failures in
+ordered stderr copies and read-write `<>` handling. `vredir4/5/7/8` still need
+primitive-level comparison even though the checked-in `.right` runner reports
+1/1. No issue is closed by this slice.
+
 ## Executive Summary
 
 ### 2026-08-13 wait -n completed-status retention
@@ -920,3 +1088,36 @@ Verification:
 - `scripts/run-bash-upstream-tests.sh run-shopt` (1/1 passed via existing bridge)
 - renamed `shopt.tests` Bash/Rubash comparison still differs, so the `shopt`
   upstream bridge remains in place.
+
+### 2026-08-14 FD table external-child setup slice
+
+The virtual FD table is now preferred when external child setup resolves
+persistent input descriptors. Text-backed dynamic fds are materialized from
+the table, file-backed read endpoints are passed as their resolved path, and
+the old `FD_STDIN_*` environment keys are used only when no table entry exists
+or when the inherited/function-stdin adapter is active. External default
+stdout/stderr setup also honors table-backed file endpoints and closed
+descriptors; stdout/stderr, coproc, and process-substitution adapters remain
+in their existing compatibility paths.
+
+This slice was driven by `vredir5.sub`, `vredir7.sub`, and `vredir8.sub`.
+It does not claim that the child receives arbitrary numbered Windows handles;
+that remains the next materialization gate for coproc and non-text endpoints.
+
+Verification:
+
+- `cargo check` passed; only the known scaffold warnings remain.
+- dynamic-fd focused tests: 12/12 passed.
+- `cargo test --test executor_tests command_chaining::part_080`: 149/149
+  passed before the new regression; the added persistent-stdout regression
+  also passed (the slice is now 150 tests).
+- `run-redir`: 1/1 passed; raw log:
+  `target/bash-upstream-tests/logs/run-redir.log`.
+- `run-vredir`: 1/1 passed; raw log:
+  `target/bash-upstream-tests/logs/run-vredir.log`.
+- semantic map validation, placeholder audit, and `git diff --check` passed.
+
+The upstream runner's `results.tsv` is single-run state and was last written
+by `run-vredir`; retain the two log paths above as the durable evidence for
+both bounded invocations. The official Bash `.tests` actual-output gap and
+the remaining `upstream_scripts` bridge are unchanged.

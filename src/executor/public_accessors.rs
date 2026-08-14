@@ -5,8 +5,17 @@ impl Executor {
         self.exit_code
     }
 
+    pub fn shell_state(&self) -> &crate::shell::ShellState {
+        &self.shell_state
+    }
+
+    pub fn shell_state_mut(&mut self) -> &mut crate::shell::ShellState {
+        &mut self.shell_state
+    }
+
     pub(crate) fn set_exit_code(&mut self, exit_code: i32) {
         self.exit_code = exit_code;
+        self.shell_state.set_exit_code(exit_code);
     }
 
     pub fn set_external_file_builtins_enabled(&mut self, enabled: bool) {
@@ -215,6 +224,7 @@ impl Executor {
     }
 
     pub fn set_positional_params(&mut self, positional_params: Vec<String>) {
+        self.shell_state.positional.set(positional_params.clone());
         self.positional_params = positional_params;
     }
 
@@ -253,6 +263,7 @@ impl Executor {
         if self.pipestatus.is_empty() {
             self.pipestatus.push(0);
         }
+        self.shell_state.set_pipestatus(self.pipestatus.clone());
     }
 
     pub(in crate::executor) fn pipestatus_values(&self) -> Vec<String> {
