@@ -160,6 +160,7 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<(), ExecuteError> {
+        self.exit_code = 0;
         // TODO(redir.c/execute_cmd.c/builtins/echo.def): Generalize builtin
         // redirection. This covers upstream source tests that create sourced
         // files with `echo ... > file`.

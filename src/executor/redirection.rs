@@ -119,7 +119,6 @@ impl Executor {
 
         state.write_to_fd(self, 1, stdout)?;
         state.write_to_fd(self, 2, stderr)?;
-        self.exit_code = 0;
         Ok(true)
     }
 

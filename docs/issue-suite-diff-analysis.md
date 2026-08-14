@@ -1327,3 +1327,15 @@ continuing to validate ordinary file and fd redirects.
 This removed the common failure behind the mapfile/readarray here-string
 cluster in the integration suite. Verification: mapfile 25/25, readarray
 12/12, and fd redirect regressions 14/14.
+
+### 2026-08-14 preserve builtin status while writing redirected output
+
+The ordered output writer was resetting `exit_code` to zero after successfully
+writing redirected stdout/stderr. That erased failure statuses already
+computed by builtins such as `source`, `command -V`, and `exec` whenever their
+diagnostic stream was redirected. Status ownership now stays with the builtin;
+`echo` explicitly records its own successful status before writing output.
+
+Verification includes the source, command-description, exec, and fd redirect
+executor slices, with source and command-description missing-file status
+regressions restored.
