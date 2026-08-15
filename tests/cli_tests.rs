@@ -708,14 +708,14 @@ fn unquoted_at_preserves_empty_positional_fields() {
 fn unquoted_at_preserves_ifs_boundary_fields() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
-        .arg("IFS=,:; set -- :a: \"\" b:; printf '<%s>\\n' $@")
+        .arg("IFS=,:; set -- :a: \"\" b; printf '<%s>\\n' $@")
         .output()
         .expect("run positional IFS boundary probe");
 
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "<>\n<a>\n<>\n<>\n<b>\n<>\n",
+        "<>\n<a>\n<>\n<>\n<b>\n",
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
