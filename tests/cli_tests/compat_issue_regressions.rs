@@ -1,6 +1,22 @@
 use std::process::Command;
 
 #[test]
+fn escaped_brace_expansion_preserves_literal_suffix() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"echo {x,y,\{a,b,c}}"#)
+        .output()
+        .expect("run escaped brace expansion");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "x} y} {a} b} c}\n",
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn malformed_script_preserves_valid_prefix_before_status_two() {
     let script = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/malformed_parameter_prefix.sh");
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))

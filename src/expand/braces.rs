@@ -271,6 +271,14 @@ mod tests {
     }
 
     #[test]
+    fn test_nested_escaped_brace_preserves_literal_suffix() {
+        assert_eq!(
+            expand_braces(r"{x,y,\{a,b,c}}"),
+            vec![r"x}", r"y}", r"\{a}", r"b}", r"c}"],
+        );
+    }
+
+    #[test]
     fn test_no_brace() {
         assert_eq!(expand_braces("hello"), vec!["hello"]);
     }

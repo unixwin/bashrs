@@ -334,6 +334,10 @@ impl<'a> Lexer<'a> {
                     comment_start = false;
                     depth -= 1;
                     if depth == 0 {
+                        if self.peek() == Some('}') {
+                            depth = 1;
+                            continue;
+                        }
                         if !saw_top_level_whitespace {
                             break;
                         }

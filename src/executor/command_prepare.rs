@@ -487,7 +487,15 @@ pub(in crate::executor) fn expand_braces_with_optional_raw(
         }
     }
 
-    crate::expand::braces::expand_braces(word)
+    let braced = crate::expand::braces::expand_braces(word);
+    if braced.len() > 1 {
+        braced
+            .into_iter()
+            .map(|word| crate::lexer::remove_shell_quotes(&word))
+            .collect()
+    } else {
+        braced
+    }
 }
 
 pub(in crate::executor) fn raw_word_suppresses_pathname_expansion(
