@@ -24,9 +24,9 @@ impl Executor {
 
     /// Configure the native directory that backs the shell-visible `/` root.
     ///
-    /// This is a path namespace adapter, not a POSIX runtime. Logical paths
-    /// such as `/bin/tool` and `/etc/config` resolve below this directory;
-    /// Windows-native paths and shell file-descriptor semantics remain native.
+    /// This is a path spelling adapter, not a POSIX runtime: the configured
+    /// directory itself contains the real `bin`, `usr/bin`, `etc`, and `tmp`
+    /// directories used by the shell.
     pub fn set_shell_root(&mut self, root: impl AsRef<std::path::Path>) {
         let value = root.as_ref().to_string_lossy().into_owned();
         self.env_vars
@@ -36,7 +36,7 @@ impl Executor {
     }
 
     /// Configure the native WinuxCmd dispatcher used for shell commands that
-    /// are not backed by a file in the logical root.
+    /// are not backed by a file in the configured installation root.
     pub fn set_winuxcmd_path(&mut self, path: impl AsRef<std::path::Path>) {
         let path = path.as_ref();
         self.env_vars.insert(
@@ -44,13 +44,12 @@ impl Executor {
             path.to_string_lossy().into_owned(),
         );
         self.mark_exported("WINUXCMD_PATH");
-        if let Some(parent) = path.parent() {
-            self.env_vars.insert(
-                "WINUXCMD_HOME".to_string(),
-                parent.to_string_lossy().into_owned(),
-            );
-            self.mark_exported("WINUXCMD_HOME");
-        }
+        let installation_root = crate::executor::path::winuxcmd_installation_root_from_path(path);
+        self.env_vars.insert(
+            "WINUXCMD_HOME".to_string(),
+            installation_root.to_string_lossy().into_owned(),
+        );
+        self.mark_exported("WINUXCMD_HOME");
     }
 
     /// Resolve a shell-visible path using the executor's current namespace.
@@ -70,8 +69,8 @@ impl Executor {
     }
 
     /// Resolve one shell PATH entry into native directories for a Windows
-    /// child. Logical command directories may need both their root-backed
-    /// directory and the selected WinuxCmd provider directory.
+    /// child. Logical command directories resolve to their real backing
+    /// directory below the configured shell root.
     pub fn resolve_shell_path_process_entries_from_env(
         path: &str,
         env_vars: &std::collections::HashMap<String, String>,

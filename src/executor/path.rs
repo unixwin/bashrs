@@ -4,7 +4,7 @@
 // - findcmd.c
 // - findcmd.h
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -17,10 +17,6 @@ pub(crate) fn shell_path_entries(path: &str) -> Vec<String> {
 }
 
 /// A directory entry in the shell namespace.
-///
-/// Logical command directories can contain both files from the configured
-/// shell root and files supplied by the selected WinuxCmd provider. Callers
-/// must use this view instead of enumerating the backing directory directly.
 #[derive(Debug, Clone)]
 pub(crate) struct ShellDirectoryEntry {
     pub(crate) name: String,
@@ -29,15 +25,13 @@ pub(crate) struct ShellDirectoryEntry {
     pub(crate) is_file: bool,
 }
 
-/// Enumerate a shell-visible directory, including the WinuxCmd command view
-/// for `/bin`, `/usr/bin`, and `/usr/local/bin` on Windows.
+/// Enumerate a shell-visible directory from its real Windows backing path.
 pub(crate) fn shell_directory_entries(
     path: &str,
     env_vars: &HashMap<String, String>,
 ) -> io::Result<Vec<ShellDirectoryEntry>> {
     let physical_dir = shell_path_to_windows(path, env_vars);
     let mut entries = Vec::new();
-    let mut names = HashSet::new();
     let mut physical_error = None;
 
     match fs::read_dir(&physical_dir) {
@@ -45,9 +39,7 @@ pub(crate) fn shell_directory_entries(
             for entry in directory {
                 let entry = entry?;
                 let name = entry.file_name().to_string_lossy().into_owned();
-                let key = name.to_ascii_lowercase();
                 let file_type = entry.file_type()?;
-                names.insert(key);
                 entries.push(ShellDirectoryEntry {
                     name,
                     path: entry.path(),
@@ -57,29 +49,6 @@ pub(crate) fn shell_directory_entries(
             }
         }
         Err(error) => physical_error = Some(error),
-    }
-
-    #[cfg(windows)]
-    if let Some(provider_dir) = winuxcmd_provider_directory_for_logical(path, env_vars) {
-        if let Ok(directory) = fs::read_dir(provider_dir) {
-            for entry in directory.flatten() {
-                let name = entry.file_name().to_string_lossy().into_owned();
-                let key = name.to_ascii_lowercase();
-                if names.contains(&key) || !is_provider_command_file(&entry.path()) {
-                    continue;
-                }
-                let Ok(file_type) = entry.file_type() else {
-                    continue;
-                };
-                names.insert(key);
-                entries.push(ShellDirectoryEntry {
-                    name,
-                    path: entry.path(),
-                    is_dir: file_type.is_dir(),
-                    is_file: file_type.is_file(),
-                });
-            }
-        }
     }
 
     if entries.is_empty() {
@@ -102,10 +71,6 @@ pub fn find_user_command(name: &str, env_vars: &HashMap<String, String>) -> Opti
             return Some(found);
         }
         #[cfg(windows)]
-        if let Some(found) = find_winuxcmd_provider_command(name, env_vars) {
-            return Some(found);
-        }
-        #[cfg(windows)]
         if let Some(found) = find_winuxcmd_absolute_command(name, env_vars) {
             return Some(found);
         }
@@ -115,10 +80,6 @@ pub fn find_user_command(name: &str, env_vars: &HashMap<String, String>) -> Opti
     for dir in split_shell_path(env_vars.get("PATH").map(String::as_str).unwrap_or_default()) {
         let candidate = shell_path_to_windows(&dir, env_vars).join(name);
         if let Some(found) = executable_candidate(&candidate, env_vars) {
-            return Some(found);
-        }
-        #[cfg(windows)]
-        if let Some(found) = find_winuxcmd_path_entry_command(&dir, name, env_vars) {
             return Some(found);
         }
     }
@@ -290,147 +251,21 @@ fn find_winuxcmd_absolute_command(
     winuxcmd_has_command(&dispatcher, &command_name, env_vars).then_some(dispatcher)
 }
 
-#[cfg(windows)]
-fn find_winuxcmd_provider_command(
-    name: &str,
-    env_vars: &HashMap<String, String>,
-) -> Option<PathBuf> {
-    let (directory, command_name) = logical_bin_path_parts(name)?;
-    find_winuxcmd_provider(&command_name, Some(&directory), env_vars)
-}
-
-#[cfg(windows)]
-fn find_winuxcmd_path_entry_command(
-    directory: &str,
-    name: &str,
-    env_vars: &HashMap<String, String>,
-) -> Option<PathBuf> {
-    let normalized = directory.replace('\\', "/");
-    let normalized = normalized.trim_end_matches('/');
-    if !matches!(normalized, "/bin" | "/usr/bin" | "/usr/local/bin") {
-        return None;
-    }
-    find_winuxcmd_provider(name, Some(normalized), env_vars)
-}
-
-#[cfg(windows)]
-fn find_winuxcmd_provider(
-    name: &str,
-    logical_directory: Option<&str>,
-    env_vars: &HashMap<String, String>,
-) -> Option<PathBuf> {
-    let home = winuxcmd_provider_home(env_vars)?;
-    let file_name = if name.to_ascii_lowercase().ends_with(".exe") {
-        name.to_string()
-    } else {
-        format!("{name}.exe")
-    };
-    let mut relative_directories = Vec::new();
-    if let Some(directory) = logical_directory {
-        let directory = directory.trim_matches('/');
-        if !directory.is_empty() {
-            relative_directories.push(directory.to_string());
-        }
-    }
-    relative_directories.push(String::new());
-    for directory in ["bin", "usr/bin", "usr/local/bin"] {
-        if !relative_directories.iter().any(|entry| entry == directory) {
-            relative_directories.push(directory.to_string());
-        }
-    }
-
-    relative_directories.into_iter().find_map(|directory| {
-        let candidate = if directory.is_empty() {
-            home.join(&file_name)
-        } else {
-            home.join(directory).join(&file_name)
-        };
-        executable_candidate(&candidate, env_vars)
-    })
-}
-
-#[cfg(windows)]
-fn winuxcmd_provider_home(env_vars: &HashMap<String, String>) -> Option<PathBuf> {
-    let home = env_vars
-        .get("WINUXCMD_HOME")
-        .or_else(|| env_vars.get("WINUXCMD_PATH"))
-        .map(|value| shell_path_to_windows(value, env_vars))?;
-    if home.is_file() {
-        home.parent().map(Path::to_path_buf)
-    } else {
-        Some(home)
-    }
-}
-
-#[cfg(windows)]
-fn winuxcmd_provider_directory_for_logical(
-    logical_path: &str,
-    env_vars: &HashMap<String, String>,
-) -> Option<PathBuf> {
-    let logical_directory = logical_bin_directory(logical_path)?;
-    let home = winuxcmd_provider_home(env_vars)?;
-    let nested = home.join(logical_directory.trim_start_matches('/'));
-    if nested.is_dir() {
-        Some(nested)
-    } else {
-        // The installed WinuxCmd/WPM layout is currently flat. The provider
-        // root is used as a command-only view; `.wpm` is never emitted because
-        // directory enumeration accepts executable files only.
-        Some(home)
-    }
-}
-
-#[cfg(windows)]
-fn is_provider_command_file(path: &Path) -> bool {
-    if !path.is_file() {
-        return false;
-    }
-    path.extension().is_none_or(|extension| {
-        matches!(
-            extension.to_string_lossy().to_ascii_lowercase().as_str(),
-            "exe" | "com" | "bat" | "cmd" | "ps1"
-        )
-    })
-}
-
-fn logical_bin_directory(path: &str) -> Option<&'static str> {
-    let normalized = path.replace('\\', "/");
-    match normalized.trim_end_matches('/') {
-        "/bin" => Some("/bin"),
-        "/usr/bin" => Some("/usr/bin"),
-        "/usr/local/bin" => Some("/usr/local/bin"),
-        _ => None,
-    }
-}
-
-/// Return the native directories a Windows child should receive for one shell
-/// PATH entry. A logical command directory needs both its writable backing
-/// directory and the selected provider directory; native child processes do
-/// not understand the logical overlay themselves.
+/// Return the native directory a Windows child should receive for one shell
+/// PATH entry. Logical command directories are real directories below the
+/// configured shell root, so no provider directory needs to be appended.
 pub(crate) fn shell_path_process_entries(
     path: &str,
     env_vars: &HashMap<String, String>,
 ) -> Vec<PathBuf> {
     let physical = shell_path_to_windows(path, env_vars);
-    #[cfg(windows)]
-    if logical_bin_directory(path).is_some() {
-        let mut entries = vec![physical];
-        if let Some(provider) = winuxcmd_provider_directory_for_logical(path, env_vars) {
-            if !entries.iter().any(|entry| entry == &provider) {
-                entries.push(provider);
-            }
-        }
-        return entries;
-    }
     vec![physical]
 }
 
 /// Materialize a shell PATH for a native child process.
 ///
-/// The shell may keep logical command directories in `PATH`, but a Windows
-/// child needs the root-backed directory and the selected provider directory
-/// as separate native entries. This is the PATH equivalent of the filesystem
-/// overlay used by command lookup.
+/// Logical shell PATH entries are converted to their real Windows directories
+/// before a native child process is started.
 pub(crate) fn shell_path_to_process(path: &str, env_vars: &HashMap<String, String>) -> String {
     let separator = if cfg!(windows) { ';' } else { ':' };
     shell_path_entries(path)
@@ -439,22 +274,6 @@ pub(crate) fn shell_path_to_process(path: &str, env_vars: &HashMap<String, Strin
         .map(|entry| entry.to_string_lossy().replace('/', "\\"))
         .collect::<Vec<_>>()
         .join(&separator.to_string())
-}
-
-#[cfg(windows)]
-fn logical_bin_path_parts(name: &str) -> Option<(String, String)> {
-    let normalized = name.replace('\\', "/");
-    let directory = ["/bin/", "/usr/bin/", "/usr/local/bin/"]
-        .into_iter()
-        .find(|prefix| normalized.starts_with(prefix))?;
-    let rest = normalized.strip_prefix(directory)?;
-    if rest.is_empty() || rest.contains('/') || rest.contains('\\') {
-        return None;
-    }
-    Some((
-        directory.trim_end_matches('/').to_string(),
-        rest.to_string(),
-    ))
 }
 
 #[cfg(windows)]
@@ -741,12 +560,7 @@ pub(crate) fn shell_path_to_windows_for_lookup(
     env_vars: &HashMap<String, String>,
 ) -> PathBuf {
     let mapped = shell_path_to_windows(path, env_vars);
-    if mapped.exists() {
-        return mapped;
-    }
-
-    #[cfg(windows)]
-    if let Some(found) = find_winuxcmd_provider_command(path, env_vars) {
+    if let Some(found) = executable_candidate(&mapped, env_vars) {
         return found;
     }
 
@@ -789,6 +603,36 @@ fn configured_shell_root(env_vars: &HashMap<String, String>) -> Option<PathBuf> 
 
 pub(crate) fn shell_root_configured(env_vars: &HashMap<String, String>) -> bool {
     configured_shell_root(env_vars).is_some()
+}
+
+/// Return the real installation root for a WinuxCmd executable or bin
+/// directory. New installations place the executable in `usr/bin`; legacy
+/// flat installations continue to use the executable's parent directory.
+pub(crate) fn winuxcmd_installation_root_from_path(path: &Path) -> PathBuf {
+    let is_executable = path.file_name().is_some_and(|name| {
+        let name = name.to_string_lossy();
+        name.eq_ignore_ascii_case("winuxcmd.exe") || name.eq_ignore_ascii_case("winuxcmd")
+    });
+    let mut directory = if is_executable || path.is_file() {
+        path.parent().unwrap_or(path).to_path_buf()
+    } else {
+        path.to_path_buf()
+    };
+
+    let is_usr_bin = directory
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("bin"))
+        && directory
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("usr"));
+    if is_usr_bin {
+        if let Some(root) = directory.parent().and_then(Path::parent) {
+            directory = root.to_path_buf();
+        }
+    }
+
+    directory
 }
 
 fn map_logical_path(normalized: &str, root: &Path) -> Option<PathBuf> {
@@ -1046,21 +890,19 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn windows_logical_bin_paths_use_selected_winuxcmd_links_without_copying() {
-        let root = std::env::temp_dir().join("rubash-logical-bin-provider");
+    fn windows_real_installation_tree_resolves_commands_without_provider_overlay() {
+        let root = std::env::temp_dir().join("rubash-real-winuxcmd-tree");
         let _ = fs::remove_dir_all(&root);
-        let shell_root = root.join("root");
-        let winuxcmd_home = root.join("winuxcmd");
+        let shell_root = root.join("winuxcmd");
+        fs::create_dir_all(shell_root.join("bin")).unwrap();
         fs::create_dir_all(shell_root.join("usr").join("bin")).unwrap();
-        fs::create_dir_all(&winuxcmd_home).unwrap();
-        fs::create_dir_all(winuxcmd_home.join("usr").join("bin")).unwrap();
 
-        let dispatcher = winuxcmd_home.join("winuxcmd.exe");
-        let link = winuxcmd_home.join("ls.exe");
-        let nested_provider = winuxcmd_home.join("usr").join("bin").join("awk.exe");
+        let dispatcher = shell_root.join("usr").join("bin").join("winuxcmd.exe");
+        let bin_command = shell_root.join("bin").join("ls.exe");
+        let usr_command = shell_root.join("usr").join("bin").join("awk.exe");
         fs::write(&dispatcher, b"").unwrap();
-        fs::write(&link, b"").unwrap();
-        fs::write(&nested_provider, b"").unwrap();
+        fs::write(&bin_command, b"").unwrap();
+        fs::write(&usr_command, b"").unwrap();
 
         let mut env_vars = HashMap::new();
         env_vars.insert(
@@ -1073,36 +915,38 @@ mod tests {
         );
         env_vars.insert(
             "WINUXCMD_HOME".to_string(),
-            winuxcmd_home.to_string_lossy().to_string(),
+            shell_root.to_string_lossy().to_string(),
         );
 
+        assert_eq!(find_user_command("/usr/bin/ls", &env_vars), None);
         assert_eq!(
-            find_user_command("/usr/bin/ls", &env_vars),
-            Some(link.clone())
+            find_user_command("/bin/ls", &env_vars),
+            Some(bin_command.clone())
         );
-        assert_eq!(shell_path_to_windows_for_lookup("/bin/ls", &env_vars), link);
         assert_eq!(
             shell_path_to_windows_for_lookup("/usr/bin/awk", &env_vars),
-            nested_provider
+            usr_command
         );
-        assert!(!shell_root.join("usr").join("bin").join("ls.exe").exists());
+        assert_eq!(
+            find_user_command("/usr/bin/awk", &env_vars),
+            Some(shell_root.join("usr").join("bin").join("awk.exe"))
+        );
 
         let _ = fs::remove_dir_all(root);
     }
 
     #[cfg(windows)]
     #[test]
-    fn windows_logical_bin_directory_view_excludes_wpm_state() {
-        let root = std::env::temp_dir().join("rubash-logical-bin-directory-view");
+    fn windows_real_bin_directory_view_excludes_wpm_state() {
+        let root = std::env::temp_dir().join("rubash-real-bin-directory-view");
         let _ = fs::remove_dir_all(&root);
-        let shell_root = root.join("root");
-        let winuxcmd_home = root.join("winuxcmd");
+        let shell_root = root.join("winuxcmd");
         fs::create_dir_all(shell_root.join("usr").join("bin")).unwrap();
-        fs::create_dir_all(winuxcmd_home.join(".wpm").join("cache")).unwrap();
+        fs::create_dir_all(shell_root.join(".wpm").join("cache")).unwrap();
         fs::write(shell_root.join("usr").join("bin").join("local.exe"), b"").unwrap();
-        fs::write(winuxcmd_home.join("ls.exe"), b"").unwrap();
-        fs::write(winuxcmd_home.join("wpm.exe"), b"").unwrap();
-        fs::write(winuxcmd_home.join(".wpm").join("cache").join("jq.exe"), b"").unwrap();
+        fs::write(shell_root.join("usr").join("bin").join("ls.exe"), b"").unwrap();
+        fs::write(shell_root.join("usr").join("bin").join("wpm.exe"), b"").unwrap();
+        fs::write(shell_root.join(".wpm").join("cache").join("jq.exe"), b"").unwrap();
 
         let mut env_vars = HashMap::new();
         env_vars.insert(
@@ -1111,7 +955,7 @@ mod tests {
         );
         env_vars.insert(
             "WINUXCMD_HOME".to_string(),
-            winuxcmd_home.to_string_lossy().to_string(),
+            shell_root.to_string_lossy().to_string(),
         );
 
         let entries = shell_directory_entries("/usr/bin", &env_vars).unwrap();
@@ -1130,31 +974,38 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn windows_logical_path_process_entries_include_root_and_provider() {
-        let root = std::env::temp_dir().join("rubash-logical-path-process-entries");
+    fn windows_real_path_process_entries_use_only_backing_directory() {
+        let root = std::env::temp_dir().join("rubash-real-path-process-entries");
         let _ = fs::remove_dir_all(&root);
-        let shell_root = root.join("root");
-        let winuxcmd_home = root.join("winuxcmd");
+        let shell_root = root.join("winuxcmd");
         fs::create_dir_all(shell_root.join("usr").join("bin")).unwrap();
-        fs::create_dir_all(&winuxcmd_home).unwrap();
 
         let mut env_vars = HashMap::new();
         env_vars.insert(
             "WINUXSH_ROOT".to_string(),
             shell_root.to_string_lossy().to_string(),
         );
-        env_vars.insert(
-            "WINUXCMD_HOME".to_string(),
-            winuxcmd_home.to_string_lossy().to_string(),
-        );
-
         let entries = shell_path_process_entries("/usr/bin", &env_vars);
-        assert_eq!(
-            entries,
-            vec![shell_root.join("usr").join("bin"), winuxcmd_home]
-        );
+        assert_eq!(entries, vec![shell_root.join("usr").join("bin")]);
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn winuxcmd_installation_root_is_derived_from_canonical_and_legacy_paths() {
+        let root = std::env::temp_dir().join("rubash-winuxcmd-installation-root");
+        assert_eq!(
+            winuxcmd_installation_root_from_path(&root.join("usr/bin/winuxcmd.exe")),
+            root
+        );
+        assert_eq!(
+            winuxcmd_installation_root_from_path(&root.join("usr/bin")),
+            root
+        );
+        assert_eq!(
+            winuxcmd_installation_root_from_path(&root.join("winuxcmd.exe")),
+            root
+        );
     }
 
     #[test]
