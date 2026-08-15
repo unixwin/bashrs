@@ -68,6 +68,46 @@ fn split_ifs_whitespace(value: &str, ifs: &str) -> Vec<String> {
     fields
 }
 
+fn split_mixed_ifs(value: &str, ifs: &str) -> Vec<String> {
+    let chars = value.chars().collect::<Vec<_>>();
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut index = 0;
+
+    while index < chars.len() {
+        let ch = chars[index];
+        if !ifs.contains(ch) {
+            current.push(ch);
+            index += 1;
+            continue;
+        }
+
+        if is_ifs_whitespace(ch) {
+            while index < chars.len() && ifs.contains(chars[index]) && is_ifs_whitespace(chars[index]) {
+                index += 1;
+            }
+            if index < chars.len() && !is_ifs_whitespace(chars[index]) && ifs.contains(chars[index]) {
+                continue;
+            }
+            if !current.is_empty() {
+                fields.push(std::mem::take(&mut current));
+            }
+            continue;
+        }
+
+        fields.push(std::mem::take(&mut current));
+        index += 1;
+        while index < chars.len() && ifs.contains(chars[index]) && is_ifs_whitespace(chars[index]) {
+            index += 1;
+        }
+    }
+
+    if !current.is_empty() {
+        fields.push(current);
+    }
+    fields
+}
+
 pub(super) fn field_split_values_with_ifs(value: &str, ifs: Option<&str>) -> Vec<String> {
     let Some(ifs) = ifs else {
         return split_ifs_whitespace(value, " \t\n");
@@ -84,6 +124,17 @@ pub(super) fn field_split_values_with_ifs(value: &str, ifs: Option<&str>) -> Vec
 
     if ifs.chars().all(is_ifs_whitespace) {
         return split_ifs_whitespace(value, ifs);
+    }
+
+    if ifs.chars().any(is_ifs_whitespace) {
+        let mut fields = split_mixed_ifs(value, ifs);
+        while fields.first().is_some_and(|field| field.is_empty()) {
+            fields.remove(0);
+        }
+        while fields.last().is_some_and(|field| field.is_empty()) {
+            fields.pop();
+        }
+        return fields;
     }
 
     // Non-whitespace IFS: every separator produces a field. Bash keeps empty
@@ -116,20 +167,33 @@ pub(super) fn field_split_positional_values_with_ifs(
     values: Vec<String>,
     ifs: Option<&str>,
 ) -> Vec<String> {
+    let value_count = values.len();
     values
         .into_iter()
-        .flat_map(|value| {
-            if value.is_empty() {
-                vec![value]
-            } else if ifs.is_some_and(|ifs| ifs.chars().any(|ch| !ch.is_whitespace())) {
-                let ifs = ifs.expect("checked above");
-                value
-                    .split(|ch| ifs.contains(ch))
-                    .map(str::to_string)
-                    .collect()
+        .enumerate()
+        .flat_map(|(index, value)| {
+            let is_last = index + 1 == value_count;
+            let mut fields = if value.is_empty() {
+                if is_last {
+                    Vec::new()
+                } else {
+                    vec![value]
+                }
+            } else if let Some(ifs) = ifs.filter(|ifs| ifs.chars().any(|ch| !ch.is_whitespace())) {
+                if ifs.chars().any(is_ifs_whitespace) {
+                    split_mixed_ifs(&value, ifs)
+                } else {
+                    value.split(|ch| ifs.contains(ch)).map(str::to_string).collect()
+                }
             } else {
                 field_split_values_with_ifs(&value, ifs)
+            };
+            if is_last {
+                while fields.last().is_some_and(|field| field.is_empty()) {
+                    fields.pop();
+                }
             }
+            fields
         })
         .collect()
 }
