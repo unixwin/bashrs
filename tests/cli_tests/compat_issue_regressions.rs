@@ -134,3 +134,29 @@ fn arithmetic_assignment_error_continues_without_errexit() {
     assert!(String::from_utf8_lossy(&output.stderr)
         .contains("attempted assignment to non-variable"));
 }
+
+#[test]
+fn arithmetic_conditional_requires_false_branch_expression() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("echo $((4 ? 20 : )); echo after")
+        .output()
+        .expect("run empty arithmetic conditional probe");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("syntax error"));
+}
+
+#[test]
+fn arithmetic_logical_short_circuit_still_parses_bare_assignment() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("B=9; echo $((0 && B=42)); echo after")
+        .output()
+        .expect("run arithmetic short-circuit assignment probe");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert!(!String::from_utf8_lossy(&output.stderr).is_empty());
+}

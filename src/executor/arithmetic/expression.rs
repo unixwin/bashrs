@@ -100,7 +100,14 @@ impl ConditionalArithParser<'_> {
             self.skip_arithmetic_conditional_branch(&[",", ")", ":"]);
             return None;
         }
+        let false_start = self.pos;
         self.skip_arithmetic_conditional_branch(&[",", ")", ":"]);
+        if self.input[false_start..self.pos]
+            .iter()
+            .all(|byte| byte.is_ascii_whitespace())
+        {
+            return None;
+        }
         Some(true_value)
     }
 
@@ -110,6 +117,10 @@ impl ConditionalArithParser<'_> {
             self.skip_ws();
             if !self.consume("||") {
                 return Some(left);
+            }
+            self.skip_ws();
+            if self.assignment_lvalue_is_next() {
+                return None;
             }
             if left != 0 {
                 self.skip_arithmetic_rhs(&["||", ",", "?", ":", ")"]);
@@ -127,6 +138,10 @@ impl ConditionalArithParser<'_> {
             self.skip_ws();
             if !self.consume("&&") {
                 return Some(left);
+            }
+            self.skip_ws();
+            if self.assignment_lvalue_is_next() {
+                return None;
             }
             if left == 0 {
                 self.skip_arithmetic_rhs(&["&&", "||", ",", "?", ":", ")"]);
