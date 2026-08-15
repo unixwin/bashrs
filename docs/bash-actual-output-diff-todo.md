@@ -8,7 +8,9 @@
 This is the per-test TODO ledger for the GNU Bash `.tests` actual-output
 comparison. It is intentionally separate from the higher-level compatibility
 plan. A row below is not considered closed merely because a related `.right`
-runner reports PASS.
+runner reports PASS. The required remediation phase order is recorded in
+`docs/actual-output-diff-remediation-plan.md`; later phases must not start before
+the current phase gate is closed.
 
 ## Snapshot
 
