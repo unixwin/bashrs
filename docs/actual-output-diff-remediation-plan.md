@@ -1,7 +1,7 @@
 # Actual-Output DIFF Remediation Plan
 
 Status: ordered execution plan
-Baseline checkpoint: 3cf9a7e
+Baseline checkpoint: 2c96b50
 Source: target/issue-suites/results/bash-actual/results.tsv
 
 Rule: execute phases strictly in order. A later phase cannot start while an earlier phase has an unresolved gate.
@@ -88,3 +88,10 @@ Run the full bounded suite from a clean tree, create a new dated result director
 - Host/runner failures are documented, not disguised as shell behavior.
 - A failed gate stops the plan at that phase.
 - The next phase starts only after the current phase is explicitly complete.
+
+## Execution Status
+
+- Phase 0: complete at checkpoint 2c96b50.
+- Phase 1: complete for host/runner classification; evidence is in `docs/actual-output-phase1-host-classification.md`.
+- Next permitted phase: Phase 2, set-e and ERR suppression.
+- Phases 3-8 remain blocked until Phase 2 closes.
