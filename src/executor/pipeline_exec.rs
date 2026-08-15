@@ -302,14 +302,14 @@ impl Executor {
                 (if last_stage && self.lastpipe_enabled() {
                     Some(self.execute_lastpipe_stage(stage, &input)?)
                 } else if last_stage || preserve_compound_errexit {
-                    self.execute_pipeline_stage(stage, &input)?
+                    self.execute_pipeline_stage(stage, &input, preserve_compound_errexit && !last_stage)?
                 } else {
                     // Non-final pipeline stages never trigger errexit (bash
                     // manual: "any command in a pipeline but the last");
                     // `{ false; echo foo; } | cat` still prints foo
                     // (set-e1.sub "after brace pipeline").
                     self.with_errexit_suppressed(|executor| {
-                        executor.execute_pipeline_stage(stage, &input)
+                        executor.execute_pipeline_stage(stage, &input, false)
                     })?
                 })
             else {
@@ -665,11 +665,12 @@ impl Executor {
         &mut self,
         command: &CommandNode,
         input: &str,
+        force_compound_errexit: bool,
     ) -> Result<Option<(String, String, i32)>, ExecuteError> {
         if let Some(time_command) = &command.time_command {
             let started = time_command_started();
             let Some((output, stderr, status)) =
-                self.execute_pipeline_stage(&time_command.command, input)?
+                self.execute_pipeline_stage(&time_command.command, input, force_compound_errexit)?
             else {
                 return Ok(None);
             };
@@ -684,7 +685,7 @@ impl Executor {
 
         if command_is_compound_pipeline_stage(command) {
             return self
-                .execute_compound_pipeline_stage(command, input)
+                .execute_compound_pipeline_stage(command, input, force_compound_errexit)
                 .map(Some);
         }
 
@@ -692,7 +693,7 @@ impl Executor {
         let command = &expanded;
         let Some(name) = command.words.first().map(String::as_str) else {
             return self
-                .execute_compound_pipeline_stage(command, input)
+                .execute_compound_pipeline_stage(command, input, force_compound_errexit)
                 .map(Some);
         };
 
@@ -791,7 +792,7 @@ impl Executor {
                 }
             }
             _ => {
-                if let Some(output) = self.execute_function_pipeline_stage(command, input)? {
+                if let Some(output) = self.execute_function_pipeline_stage(command, input, force_compound_errexit)? {
                     Ok(Some(output))
                 } else {
                     if let Some(output) = self.execute_builtin_pipeline_stage(command, input)? {

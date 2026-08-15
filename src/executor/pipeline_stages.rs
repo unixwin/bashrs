@@ -42,12 +42,15 @@ impl Executor {
         &mut self,
         command: &CommandNode,
         input: &str,
+        force_compound_errexit: bool,
     ) -> Result<(String, String, i32), ExecuteError> {
         let saved_dir = env::current_dir().ok();
         let mut subshell = self.command_substitution_executor();
         // Compound pipeline stages keep Bash's child-list errexit semantics;
         // the caller handles the stage status at the pipeline boundary.
-        subshell.suppress_errexit = 0;
+        if force_compound_errexit {
+            subshell.suppress_errexit = 0;
+        }
         subshell
             .env_vars
             .insert(FUNCTION_STDIN.to_string(), input.to_string());
@@ -92,6 +95,7 @@ impl Executor {
         &mut self,
         command: &CommandNode,
         input: &str,
+        force_compound_errexit: bool,
     ) -> Result<Option<(String, String, i32)>, ExecuteError> {
         let Some(name) = command.words.first() else {
             return Ok(Some((String::new(), String::new(), 0)));
@@ -114,7 +118,11 @@ impl Executor {
         let saved_dir = env::current_dir().ok();
         let mut subshell = self.command_substitution_executor();
         // Function pipeline stages are compound command bodies for errexit.
-        subshell.suppress_errexit = 0;
+        if force_compound_errexit {
+            if force_compound_errexit {
+            subshell.suppress_errexit = 0;
+        }
+        }
         subshell
             .env_vars
             .insert(FUNCTION_STDIN.to_string(), input.to_string());
