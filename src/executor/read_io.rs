@@ -131,18 +131,18 @@ impl Executor {
             ));
         }
 
+        // If FUNCTION_STDIN is set (from heredoc or redirect), only read from it.
+        // Do NOT fall through to process stdin - that would block on the terminal.
+        if self.env_vars.contains_key(FUNCTION_STDIN) {
+            return self.read_function_stdin(delimiter, char_limit, exact_char_limit);
+        }
+
         if let Some(line) = self.read_virtual_fd_stdin(0, delimiter, char_limit, exact_char_limit) {
             return Some(line);
         }
 
         if self.fd_table.is_closed(0) {
             return None;
-        }
-
-        // If FUNCTION_STDIN is set (from heredoc or redirect), only read from it.
-        // Do NOT fall through to process stdin - that would block on the terminal.
-        if self.env_vars.contains_key(FUNCTION_STDIN) {
-            return self.read_function_stdin(delimiter, char_limit, exact_char_limit);
         }
 
         self.read_function_stdin(delimiter, char_limit, exact_char_limit)

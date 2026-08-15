@@ -2045,6 +2045,37 @@ fn wait_for_child_exit(child: &mut Child, timeout: Duration) -> bool {
 }
 
 #[test]
+fn while_read_redirect_wins_over_inherited_process_stdin() {
+    let input_path = Path::new("target/rubash-while-read-open-parent-stdin.txt");
+    fs::create_dir_all("target").unwrap();
+    fs::write(input_path, "alpha\nbeta\n").unwrap();
+    let shell_input_path = shell_test_path(input_path);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(format!(
+            "while IFS= read -r file; do printf '<%s>\\n' \"$file\"; done < {shell_input_path}"
+        ))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run rubash");
+    let open_parent_stdin = child.stdin.take().unwrap();
+
+    assert!(
+        wait_for_child_exit(&mut child, Duration::from_secs(3)),
+        "while/read consumed inherited process stdin instead of redirected file"
+    );
+    drop(open_parent_stdin);
+    let output = child.wait_with_output().expect("wait rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<alpha>\n<beta>\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    let _ = fs::remove_file(input_path);
+}
+
+#[test]
 fn c_command_external_uses_persistent_fd_copied_from_stdin() {
     let rubash = shell_test_path(Path::new(env!("CARGO_BIN_EXE_rubash")));
     let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
