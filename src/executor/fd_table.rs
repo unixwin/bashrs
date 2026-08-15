@@ -17,6 +17,7 @@ pub(crate) struct TextInput {
 #[derive(Debug, Clone)]
 pub(crate) enum FdReadEndpoint {
     Text(Rc<RefCell<TextInput>>),
+    #[allow(dead_code)]
     File(PathBuf),
     InheritedProcessStdin,
     ProcessSubstitution(Rc<RefCell<TextInput>>),
@@ -174,12 +175,14 @@ impl FdTable {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub(crate) fn move_input(&mut self, target: u32, source: u32) -> Result<(), FdError> {
         self.dup_input(target, source)?;
         self.close(source);
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub(crate) fn move_output(&mut self, target: u32, source: u32) -> Result<(), FdError> {
         self.dup_output(target, source)?;
         self.close(source);

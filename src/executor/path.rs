@@ -138,6 +138,7 @@ pub fn should_run_with_shell(path: &Path) -> bool {
     }
 }
 
+#[allow(dead_code)]
 pub fn external_command_for_program(
     program: &Path,
     args: &[String],
@@ -206,7 +207,13 @@ pub fn external_command_for_named_program(
     let mut command = Command::new(program);
     if is_winuxcmd_dispatcher(program) {
         if let Some(command_name) = command_name {
-            command.arg(dispatcher_command_name(command_name));
+            let dispatch_name = dispatcher_command_name(command_name);
+            if !matches!(
+                dispatch_name.to_ascii_lowercase().as_str(),
+                "winuxcmd" | "winuxcmd.exe"
+            ) {
+                command.arg(dispatch_name);
+            }
         }
     }
     command.args(&native_args);
@@ -1270,6 +1277,27 @@ mod tests {
 
         assert!(!used_shell);
         assert_eq!(args, vec!["head", "-3000", "input.txt"]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_dispatcher_does_not_re_dispatch_itself() {
+        let env_vars = HashMap::new();
+        for command_name in ["winuxcmd", "winuxcmd.exe", r"C:\tools\winuxcmd.exe"] {
+            let (command, used_shell) = external_command_for_named_program(
+                Path::new(r"C:\tools\winuxcmd.exe"),
+                Some(command_name),
+                &["--version".to_string()],
+                &env_vars,
+            );
+            let args = command
+                .get_args()
+                .map(|arg| arg.to_string_lossy().to_string())
+                .collect::<Vec<_>>();
+
+            assert!(!used_shell);
+            assert_eq!(args, vec!["--version"], "command name: {command_name}");
+        }
     }
 
     #[cfg(windows)]
