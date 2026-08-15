@@ -1,7 +1,7 @@
 # Actual-Output DIFF Remediation Plan
 
 Status: ordered execution plan
-Baseline checkpoint: 1638c6d
+Baseline checkpoint: 041860b
 Source: target/issue-suites/results/bash-actual/results.tsv
 
 Rule: execute phases strictly in order. A later phase cannot start while an earlier phase has an unresolved gate.
