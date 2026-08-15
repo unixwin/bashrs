@@ -147,7 +147,9 @@ impl Executor {
                 1
             };
             self.exit_code = status;
-            if self.arithmetic_nonfatal_error.replace(false) {
+            let script_mode_nonfatal = self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
+                && (!self.errexit_enabled() || !self.errexit_is_active());
+            if self.arithmetic_nonfatal_error.replace(false) || script_mode_nonfatal {
                 return Ok(());
             }
             return Err(ExecuteError::ExitCode(status));

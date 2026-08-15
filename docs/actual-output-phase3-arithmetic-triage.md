@@ -1,6 +1,6 @@
 # Phase 3 Arithmetic Triage
 
-Current checkpoint: 77453d8
+Current checkpoint: d150188
 Raw artifact: target/issue-suites/results/native-bash-phase3-arith/
 GNU owner: third_party/bash/expr.c
 Rubash semantic owners: src/executor/arithmetic/, src/executor/command_execute.rs, src/executor/command_prepare.rs
@@ -27,6 +27,14 @@ Focused native probes match GNU for:
 - multi-command arithmetic error status.
 
 The 20 Phase 2 set-e probes remain green and are not part of this phase.
+
+## New Native Findings
+
+GNU Bash treats arithmetic expansion errors differently depending on the entry mode. When the same fixture is read from a script file, errors such as invalid bases and division by zero report status 1 and the script continues; the same echo arithmetic error followed by echo after passed with -c exits before after. The implementation now preserves this script-mode behavior while retaining the existing -c fatal regression and the existing errexit gate.
+
+The focused regression arithmetic_assignment_error_continues_without_errexit covers the first native mismatch: an assignment expansion with an attempted assignment to a non-variable returns status 1, does not install the assignment, and permits the next command in script mode. The arithmetic-focused suite is 13/13 green.
+
+The full native fixture was rerun as copy.tests to bypass the bridge. Bash and Rubash both return rc=1. Replacing line 191, ((echo abc; echo def;); echo ghi), with : allows both executions to reach the end; this isolates that stop to parser/AST handling and routes it to the ordered parser phase. With that line bypassed, one evaluator mismatch remains: GNU suppresses output for A=4 + ; echo arithmetic expansion, while Rubash emits 20; this remains a Phase 3 arithmetic evaluator candidate.
 
 ## Remaining Phase 3 Work
 
