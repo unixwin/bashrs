@@ -27,6 +27,9 @@ pub(super) fn parse_arithmetic_command(
         && is_keyword(tokens, start + 1, "(")
         && tokens[start + 1].column == tokens[start].column + tokens[start].raw.len()
     {
+        if !has_arithmetic_command_closer(tokens, start + 2) {
+            return None;
+        }
         i = start + 2;
     } else {
         return None;
@@ -107,6 +110,13 @@ pub(super) fn parse_arithmetic_command(
     command.line = tokens.get(start).map(|token| token.position);
     set_arithmetic_command_words(&mut command, parts.join(" "));
     Some(finish_arithmetic_command(command, tokens, i))
+}
+
+pub(super) fn has_arithmetic_command_closer(tokens: &[Token], start: usize) -> bool {
+    tokens[start..]
+        .windows(2)
+        .any(|pair| pair[0].value == ")" && pair[1].value == ")")
+        || tokens[start..].iter().any(|token| token.value == "))")
 }
 
 fn arithmetic_token_value(token: &Token) -> String {

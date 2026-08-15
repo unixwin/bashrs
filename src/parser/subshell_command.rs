@@ -10,6 +10,7 @@ pub(super) fn parse_subshell_command(
     }
     if is_keyword(tokens, start + 1, "(")
         && tokens[start + 1].column == tokens[start].column + tokens[start].raw.len()
+        && has_arithmetic_command_closer(tokens, start + 2)
     {
         return None;
     }

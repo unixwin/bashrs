@@ -160,3 +160,15 @@ fn arithmetic_logical_short_circuit_still_parses_bare_assignment() {
     assert_eq!(String::from_utf8_lossy(&output.stdout), "");
     assert!(!String::from_utf8_lossy(&output.stderr).is_empty());
 }
+
+#[test]
+fn separated_double_parentheses_parse_as_nested_subshells() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("((echo abc; echo def;); echo ghi); echo after")
+        .output()
+        .expect("run nested subshell disambiguation probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "abc\ndef\nghi\nafter\n");
+}
