@@ -1,4 +1,5 @@
 use super::*;
+use crate::executor::path::shell_directory_entries;
 
 impl Executor {
     /// Expands a command-substitution argument word. When the word was
@@ -443,13 +444,11 @@ impl Executor {
             .rsplit_once('/')
             .map(|(dir, pattern)| (if dir.is_empty() { "/" } else { dir }, pattern))
             .unwrap_or((".", normalized.as_str()));
-        let dir_path = shell_path_to_windows(dir, &self.env_vars);
-        let mut matches = fs::read_dir(dir_path)
+        let mut matches = shell_directory_entries(dir, &self.env_vars)
             .ok()?
-            .filter_map(Result::ok)
+            .into_iter()
             .filter_map(|entry| {
-                let name = entry.file_name().to_string_lossy().to_string();
-                case_pattern_matches(pattern, &name).then(|| entry.path())
+                case_pattern_matches(pattern, &entry.name).then_some(entry.path)
             })
             .collect::<Vec<_>>();
         matches.sort();

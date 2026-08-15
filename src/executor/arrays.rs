@@ -105,6 +105,28 @@ pub(super) fn field_split_array_values_with_ifs(
         .collect()
 }
 
+pub(super) fn field_split_positional_values_with_ifs(
+    values: Vec<String>,
+    ifs: Option<&str>,
+) -> Vec<String> {
+    values
+        .into_iter()
+        .flat_map(|value| {
+            if value.is_empty() {
+                vec![value]
+            } else if ifs.is_some_and(|ifs| ifs.chars().any(|ch| !ch.is_whitespace())) {
+                let ifs = ifs.expect("checked above");
+                value
+                    .split(|ch| ifs.contains(ch))
+                    .map(str::to_string)
+                    .collect()
+            } else {
+                field_split_values_with_ifs(&value, ifs)
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod field_split_tests {
     use super::field_split_values_with_ifs;

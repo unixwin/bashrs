@@ -213,7 +213,7 @@ impl Executor {
                     }
                     FdWriteEndpoint::CoprocStdin(pid) => OutputTarget::CoprocStdin(*pid),
                     FdWriteEndpoint::ProcessSubstitution { path, .. } => {
-                        OutputTarget::Path(shell_display_path(&path.to_string_lossy()))
+                        OutputTarget::Path(path.to_string_lossy().into_owned())
                     }
                 }
             };
@@ -237,13 +237,13 @@ impl Executor {
                     let target = self.expand_word(&redirect.target);
                     if let Some(source_fd) = redirect_target_fd(&target) {
                         let Some(source_target) = state.fd_target(source_fd).cloned() else {
-                            self.write_bad_fd_redirect_diagnostic(state, &redirect.target)?;
+                            self.write_bad_fd_redirect_diagnostic(state, &redirect.target_metadata.raw)?;
                             self.exit_code = 1;
                             state.redirect_failed = true;
                             return Ok(true);
                         };
                         if source_target == OutputTarget::Closed {
-                            self.write_bad_fd_redirect_diagnostic(state, &redirect.target)?;
+                            self.write_bad_fd_redirect_diagnostic(state, &redirect.target_metadata.raw)?;
                             self.exit_code = 1;
                             state.redirect_failed = true;
                             return Ok(true);
@@ -271,13 +271,13 @@ impl Executor {
                     }
                     if let Some(source_fd) = redirect_target_fd(&target) {
                         let Some(source_target) = state.fd_target(source_fd).cloned() else {
-                            self.write_bad_fd_redirect_diagnostic(state, &redirect.target)?;
+                            self.write_bad_fd_redirect_diagnostic(state, &redirect.target_metadata.raw)?;
                             self.exit_code = 1;
                             state.redirect_failed = true;
                             return Ok(true);
                         };
                         if source_target == OutputTarget::Closed {
-                            self.write_bad_fd_redirect_diagnostic(state, &redirect.target)?;
+                            self.write_bad_fd_redirect_diagnostic(state, &redirect.target_metadata.raw)?;
                             self.exit_code = 1;
                             state.redirect_failed = true;
                             return Ok(true);

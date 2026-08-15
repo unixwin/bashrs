@@ -3,9 +3,10 @@
 //! GNU Bash source ownership:
 //! - builtins/cd.def (`pwd_builtin`)
 
+use std::collections::HashMap;
 use std::env;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const EXECUTION_SUCCESS: i32 = 0;
 const EXECUTION_FAILURE: i32 = 1;
@@ -26,6 +27,21 @@ pub fn execute(args: &[String]) -> io::Result<i32> {
 
 pub(crate) fn execute_with_io<'a, I, W, E>(
     args: I,
+    stdout: &mut W,
+    stderr: &mut E,
+) -> io::Result<i32>
+where
+    I: IntoIterator<Item = &'a str>,
+    W: Write,
+    E: Write,
+{
+    let env_vars = env::vars().collect::<HashMap<_, _>>();
+    execute_with_env_and_io(args, &env_vars, stdout, stderr)
+}
+
+pub(crate) fn execute_with_env_and_io<'a, I, W, E>(
+    args: I,
+    env_vars: &HashMap<String, String>,
     stdout: &mut W,
     stderr: &mut E,
 ) -> io::Result<i32>
@@ -58,7 +74,7 @@ where
         }
     }
 
-    let Some(directory) = current_directory(mode)? else {
+    let Some(directory) = current_directory(mode, env_vars)? else {
         return Ok(EXECUTION_FAILURE);
     };
 
@@ -66,17 +82,14 @@ where
     Ok(EXECUTION_SUCCESS)
 }
 
-fn current_directory(mode: Mode) -> io::Result<Option<String>> {
+fn current_directory(
+    mode: Mode,
+    env_vars: &HashMap<String, String>,
+) -> io::Result<Option<String>> {
     let physical = env::current_dir()?;
 
-    if mode == Mode::Physical {
-        if let Some(logical) = windows_posix_bridge_pwd() {
-            return Ok(Some(logical));
-        }
-    }
-
     if mode == Mode::Logical {
-        if let Some(logical) = logical_pwd_if_current(&physical) {
+        if let Some(logical) = logical_pwd_if_current(&physical, env_vars) {
             return Ok(Some(logical));
         }
     }
@@ -84,23 +97,19 @@ fn current_directory(mode: Mode) -> io::Result<Option<String>> {
     Ok(Some(shell_display_path(&physical)))
 }
 
-fn windows_posix_bridge_pwd() -> Option<String> {
-    if !cfg!(windows) {
-        return None;
-    }
-
-    let logical = env::var("PWD").ok()?;
-    matches!(logical.as_str(), "/" | "/bin" | "/etc" | "/tmp" | "/usr").then_some(logical)
-}
-
-fn logical_pwd_if_current(physical: &Path) -> Option<String> {
-    let logical = env::var("PWD").ok()?;
+fn logical_pwd_if_current(
+    physical: &Path,
+    env_vars: &HashMap<String, String>,
+) -> Option<String> {
+    let logical = env_vars.get("PWD")?.clone();
 
     if !(logical.starts_with('/') || Path::new(&logical).is_absolute()) {
         return None;
     }
 
-    let logical_physical = logical_to_physical(&logical).canonicalize().ok()?;
+    let logical_physical = crate::executor::path::shell_path_to_windows(&logical, env_vars)
+        .canonicalize()
+        .ok()?;
     let current_physical = physical.canonicalize().ok()?;
 
     if logical_physical == current_physical {
@@ -109,36 +118,6 @@ fn logical_pwd_if_current(physical: &Path) -> Option<String> {
     } else {
         None
     }
-}
-
-fn logical_to_physical(path: &str) -> PathBuf {
-    if cfg!(windows) {
-        if let Some(rest) = path.strip_prefix("/tmp/") {
-            if let Some(tmpdir) = env::var_os("TMPDIR") {
-                return PathBuf::from(tmpdir).join(rest);
-            }
-        }
-
-        if path == "/tmp" {
-            if let Some(tmpdir) = env::var_os("TMPDIR") {
-                return PathBuf::from(tmpdir);
-            }
-        }
-
-        let bytes = path.as_bytes();
-        if bytes.len() >= 3
-            && bytes[0] == b'/'
-            && bytes[2] == b'/'
-            && bytes[1].is_ascii_alphabetic()
-        {
-            let drive = bytes[1] as char;
-            return PathBuf::from(
-                format!("{}:\\{}", drive.to_ascii_uppercase(), &path[3..]).replace('/', "\\"),
-            );
-        }
-    }
-
-    PathBuf::from(path)
 }
 
 fn shell_display_path(path: &Path) -> String {
@@ -197,17 +176,40 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn physical_mode_reports_posix_bridge_pwd() {
+    fn physical_mode_reports_physical_cwd() {
         let old_pwd = env::var_os("PWD");
         env::set_var("PWD", "/usr");
+        let expected = shell_display_path(&env::current_dir().unwrap());
 
         let (_, stdout, _) = run(&["-P"]);
 
-        assert_eq!(stdout, "/usr\n");
+        assert_eq!(stdout, format!("{expected}\n"));
         match old_pwd {
             Some(value) => env::set_var("PWD", value),
             None => env::remove_var("PWD"),
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn logical_mode_resolves_pwd_against_executor_shell_root() {
+        let root = env::temp_dir().join("rubash-pwd-logical-root");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("tmp")).unwrap();
+
+        let mut env_vars = HashMap::new();
+        env_vars.insert("PWD".to_string(), "/tmp".to_string());
+        env_vars.insert(
+            "WINUXSH_ROOT".to_string(),
+            root.to_string_lossy().to_string(),
+        );
+
+        assert_eq!(
+            logical_pwd_if_current(&root.join("tmp"), &env_vars),
+            Some("/tmp".to_string())
+        );
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[cfg(windows)]

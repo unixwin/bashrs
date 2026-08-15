@@ -13,6 +13,8 @@ mod fd_redirects;
 mod scripts;
 #[path = "cli_tests/compat_issue_regressions.rs"]
 mod compat_issue_regressions;
+#[path = "cli_tests/process_substitution.rs"]
+mod process_substitution;
 
 fn shell_test_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
@@ -594,6 +596,19 @@ fn prefix_assignments_reach_env_builtin_pipeline() {
 }
 
 #[test]
+fn pipeline_pipefail_triggers_errexit_on_failure() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("set -e -o pipefail; false | true; echo after")
+        .output()
+        .expect("run rubash");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn pipeline_statuses_match_bash_for_pipefail() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
@@ -633,6 +648,67 @@ fn heredoc_removes_unquoted_backslash_newline_like_bash() {
 
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), "onetwo\n");
+}
+
+#[test]
+fn unquoted_at_preserves_empty_positional_fields() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("IFS=,:; set -- a \"\" b; printf '<%s>\\n' $@")
+        .output()
+        .expect("run empty positional field probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<a>\n<>\n<b>\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn unquoted_at_preserves_ifs_boundary_fields() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("IFS=,:; set -- :a: \"\" b:; printf '<%s>\\n' $@")
+        .output()
+        .expect("run positional IFS boundary probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "<>\n<a>\n<>\n<>\n<b>\n<>\n",
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn parameter_replacement_matches_escaped_slash_pattern() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("x=a/b/c; printf '<%s>\\n' \"${x//\\//-}\"")
+        .output()
+        .expect("run escaped slash replacement probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<a-b-c>\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn large_heredoc_preserves_all_lines() {
+    let body = "payload\n".repeat(20_000);
+    let script = format!(
+        "mapfile -t lines <<'EOF'\n{body}EOF\nprintf '%s\n' \"${{#lines[@]}}\""
+    );
+    let script_path = "target/rubash-large-heredoc-script.sh";
+    fs::write(script_path, script).expect("write large heredoc probe");
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg(script_path)
+        .output()
+        .expect("run large heredoc probe");
+    let _ = fs::remove_file(script_path);
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "20000\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
 #[test]
@@ -793,6 +869,26 @@ fn malformed_pipeline_and_if_are_syntax_errors() {
         );
         assert!(String::from_utf8_lossy(&output.stderr).contains("syntax error"));
     }
+}
+
+#[test]
+fn brace_groups_require_a_command_terminator_before_close() {
+    for command in ["{ : }", "{ }"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+            .arg("-c")
+            .arg(command)
+            .output()
+            .expect("run rubash");
+        assert_eq!(output.status.code(), Some(2), "command: {command}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("syntax error"));
+    }
+
+    let valid = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("{ :; }")
+        .output()
+        .expect("run rubash");
+    assert!(valid.status.success());
 }
 
 #[test]
@@ -1088,6 +1184,20 @@ fn declare_quoted_array_element_assignment_targets_index_zero() {
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), "declare -a a=([0]=\"14\")\n");
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn malformed_parameter_expansions_return_status_two() {
+    for script in ["echo ${x", "echo ${x/foo", "echo ${x:?"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+            .arg("-c")
+            .arg(script)
+            .output()
+            .expect("run malformed parameter expansion");
+
+        assert_eq!(output.status.code(), Some(2), "script: {script}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("unexpected EOF"));
+    }
 }
 
 #[test]

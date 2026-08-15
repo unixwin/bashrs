@@ -92,7 +92,12 @@ impl Executor {
             }
         }
 
-        crate::builtins::pwd::execute_with_io(args.iter().map(String::as_str), stdout, stderr)
+        crate::builtins::pwd::execute_with_env_and_io(
+            args.iter().map(String::as_str),
+            &self.env_vars,
+            stdout,
+            stderr,
+        )
     }
 
     pub(in crate::executor) fn execute_loop_control(

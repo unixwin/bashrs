@@ -407,6 +407,9 @@ impl Executor {
     }
 
     pub(in crate::executor) fn child_env_value(&self, name: &str, value: &str) -> String {
+        if cfg!(windows) && name.eq_ignore_ascii_case("PATH") {
+            return shell_path_to_process(value, &self.env_vars);
+        }
         if cfg!(windows) && name == "TMPDIR" {
             return shell_display_path(
                 &shell_path_to_windows(value, &self.env_vars)

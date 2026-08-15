@@ -147,7 +147,11 @@ impl Executor {
         while let Some(start) = rest.find("${") {
             let after_start = &rest[start + 2..];
             let Some(end) = matching_parameter_brace(after_start) else {
-                return None;
+                return Some((
+                    "${".to_string() + after_start + "}",
+                    "unexpected EOF while looking for matching `}'".to_string(),
+                    2,
+                ));
             };
             let inner = &after_start[..end];
             if let Some((name, message, require_non_empty)) = parse_parameter_error_operator(inner)

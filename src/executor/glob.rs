@@ -1,9 +1,8 @@
 //! Pathname expansion (globbing) for command words.
 
-use std::fs;
 use std::path::Path;
 
-use crate::executor::path::shell_path_to_windows;
+use crate::executor::path::{shell_directory_entries, shell_path_to_windows};
 
 pub(crate) enum PathnameExpansion {
     Matches(Vec<String>),
@@ -97,15 +96,15 @@ pub(crate) fn pathname_expand_word(
         None => (".".to_string(), word.as_ref()),
     };
     let include_dotfiles = dotglob || pattern.starts_with('.');
-    let entries = match fs::read_dir(shell_path_to_windows(&dir_path, env_vars)) {
-        Ok(rd) => rd,
+    let entries = match shell_directory_entries(&dir_path, env_vars) {
+        Ok(entries) => entries,
         Err(_) => return unmatched_expansion(word, nullglob, failglob),
     };
     let mut names = synthetic_dot_names(pattern, globskipdots);
     names.extend(
         entries
-            .filter_map(Result::ok)
-            .filter_map(|entry| entry.file_name().into_string().ok()),
+            .into_iter()
+            .map(|entry| entry.name),
     );
     let mut matches: Vec<String> = names
         .into_iter()
@@ -166,7 +165,7 @@ fn pathname_expand_segments(
                 } else {
                     prefix.as_str()
                 };
-                let entries = match fs::read_dir(shell_path_to_windows(dir, env_vars)) {
+                let entries = match shell_directory_entries(dir, env_vars) {
                     Ok(entries) => entries,
                     Err(_) => continue,
                 };
@@ -174,8 +173,8 @@ fn pathname_expand_segments(
                 let mut names = synthetic_dot_names(part, globskipdots);
                 names.extend(
                     entries
-                        .filter_map(Result::ok)
-                        .filter_map(|entry| entry.file_name().into_string().ok()),
+                        .into_iter()
+                        .map(|entry| entry.name),
                 );
                 for name in names {
                     if !include_dotfiles && name.starts_with('.') {
@@ -279,6 +278,7 @@ fn globstar_expand(
         nocaseglob,
         dotglob,
         globskipdots,
+        env_vars,
     );
 
     if matches.is_empty() {
@@ -306,23 +306,28 @@ fn collect_globstar_matches(
     nocaseglob: bool,
     dotglob: bool,
     globskipdots: bool,
+    env_vars: &std::collections::HashMap<String, String>,
 ) {
-    let entries = match fs::read_dir(physical_dir) {
-        Ok(rd) => rd,
+    let entries = match shell_directory_entries(logical_dir, env_vars) {
+        Ok(entries) => entries,
         Err(_) => return,
     };
     let mut names = synthetic_dot_names(suffix, globskipdots);
     names.extend(
         entries
-            .filter_map(Result::ok)
-            .filter_map(|entry| entry.file_name().into_string().ok()),
+            .iter()
+            .map(|entry| entry.name.clone()),
     );
     let include_dotfiles = dotglob || suffix.starts_with('.');
     for name in names {
         if name.starts_with('.') && !include_dotfiles {
             continue;
         }
-        let physical_path = physical_dir.join(&name);
+        let physical_path = entries
+            .iter()
+            .find(|entry| entry.name == name)
+            .map(|entry| entry.path.clone())
+            .unwrap_or_else(|| physical_dir.join(&name));
         let logical_path = join_path_segment(logical_dir, &name);
         if physical_path.is_dir() {
             let matched = if nocaseglob {
@@ -342,6 +347,7 @@ fn collect_globstar_matches(
                     nocaseglob,
                     dotglob,
                     globskipdots,
+                    env_vars,
                 );
             }
         } else {

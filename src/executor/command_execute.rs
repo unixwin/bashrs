@@ -137,9 +137,13 @@ impl Executor {
         // must stop, including when it is followed by `||` or `&&`.
         if self.arithmetic_expansion_error.get() {
             self.arithmetic_expansion_error.set(false);
-            self.env_vars.remove("__RUBASH_ARITH_NOUNSET_ERROR");
-            self.exit_code = 1;
-            return Err(ExecuteError::ExitCode(1));
+            let status = if self.env_vars.remove("__RUBASH_ARITH_NOUNSET_ERROR").is_some() {
+                127
+            } else {
+                1
+            };
+            self.exit_code = status;
+            return Err(ExecuteError::ExitCode(status));
         }
 
         if self.execute_alias_expanded_syntax(&cmd)? {

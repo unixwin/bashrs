@@ -6,7 +6,9 @@
 use std::collections::{BTreeSet, HashMap};
 use std::io::{self, Write};
 
-use crate::executor::path::{shell_path_entries, shell_path_to_windows};
+use crate::executor::path::{
+    shell_directory_entries, shell_path_entries,
+};
 
 use crate::builtins::alias::Alias;
 
@@ -507,20 +509,16 @@ fn path_completion_candidates(
     env_vars: &HashMap<String, String>,
 ) -> Vec<String> {
     let (search_dir, display_prefix) = path_completion_base(word);
-    let Ok(entries) = std::fs::read_dir(shell_path_to_windows(search_dir, env_vars)) else {
+    let Ok(entries) = shell_directory_entries(search_dir, env_vars) else {
         return Vec::new();
     };
 
     let mut candidates = Vec::new();
-    for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        if matches!(kind, PathCompletionKind::Directory) && !file_type.is_dir() {
+    for entry in entries {
+        if matches!(kind, PathCompletionKind::Directory) && !entry.is_dir {
             continue;
         }
-        let name = entry.file_name().to_string_lossy().into_owned();
-        candidates.push(format!("{display_prefix}{name}"));
+        candidates.push(format!("{display_prefix}{}", entry.name));
     }
     candidates.sort();
     candidates
@@ -693,15 +691,12 @@ fn path_command_completion_candidates(env_vars: &HashMap<String, String>) -> Vec
 
     let mut candidates = Vec::new();
     for dir in shell_path_entries(path_value) {
-        let Ok(entries) = std::fs::read_dir(shell_path_to_windows(&dir, env_vars)) else {
+        let Ok(entries) = shell_directory_entries(&dir, env_vars) else {
             continue;
         };
-        for entry in entries.flatten() {
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-            if file_type.is_file() {
-                candidates.push(entry.file_name().to_string_lossy().into_owned());
+        for entry in entries {
+            if entry.is_file {
+                candidates.push(entry.name);
             }
         }
     }

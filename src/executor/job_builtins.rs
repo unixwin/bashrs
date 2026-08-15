@@ -174,7 +174,9 @@ impl Executor {
     ) -> Result<i32, ExecuteError> {
         self.refresh_background_jobs()?;
         if let Some((pid, wait_var)) = self.wait_any_background_request(cmd) {
-            if let Some(status) = self.wait_for_background_pid(pid, true)? {
+            // wait -n consumes the selected completion; explicit waits retain
+            // it so a repeated wait for the same pid returns the same status.
+            if let Some(status) = self.wait_for_background_pid(pid, false)? {
                 if let Some(wait_var) = wait_var {
                     self.apply_shell_assignment(&wait_var, pid.to_string());
                 }
@@ -216,12 +218,12 @@ impl Executor {
 
         if cmd.words.len() == 2 {
             if let Some(pid) = self.resolve_background_job(&cmd.words[1]) {
-                if let Some(status) = self.wait_for_background_pid(pid, false)? {
+                if let Some(status) = self.wait_for_background_pid(pid, true)? {
                     self.write_buffered_builtin_output(cmd, &[], &[])?;
                     return Ok(status);
                 }
             } else if let Ok(pid) = cmd.words[1].parse::<u32>() {
-                if let Some(status) = self.wait_for_background_pid(pid, false)? {
+                if let Some(status) = self.wait_for_background_pid(pid, true)? {
                     self.write_buffered_builtin_output(cmd, &[], &[])?;
                     return Ok(status);
                 }
@@ -256,7 +258,7 @@ impl Executor {
                     write_wait_operand_error(&operand, &self.diagnostic_prefix(), &mut stderr)?;
                 continue;
             };
-            if let Some(wait_status) = self.wait_for_background_pid(pid, false)? {
+            if let Some(wait_status) = self.wait_for_background_pid(pid, true)? {
                 status = wait_status;
             } else {
                 status =
@@ -394,15 +396,10 @@ impl Executor {
         self.fd_table.close(pid);
     }
 
-    fn forget_background_job_tracking(&mut self, pid: u32) {
-        self.forget_background_runtime(pid);
-        self.job_table.remove_job_by_pid(pid);
-    }
-
     fn wait_for_background_pid(
         &mut self,
         pid: u32,
-        retain_for_explicit_wait: bool,
+        _retain_for_explicit_wait: bool,
     ) -> Result<Option<i32>, ExecuteError> {
         if let Some(status) = self
             .job_table
@@ -411,13 +408,10 @@ impl Executor {
             .copied()
         {
             self.join_coproc_stderr_forwarder(pid)?;
-            if retain_for_explicit_wait {
-                self.job_table.remove_job_by_pid_preserve_status(pid);
-                self.forget_background_runtime(pid);
-            } else {
-                self.job_table.wait_pid(pid);
-                self.forget_background_job_tracking(pid);
-            }
+            // Waiting consumes the jobs-table entry, but the completed status
+            // remains available for a later explicit wait of the same PID.
+            self.job_table.remove_job_by_pid_preserve_status(pid);
+            self.forget_background_runtime(pid);
             return Ok(Some(status));
         }
         let Some(mut child) = self.background_children.remove(&pid) else {
@@ -426,13 +420,10 @@ impl Executor {
         let status = child.wait()?.code().unwrap_or(1);
         self.join_coproc_stderr_forwarder(pid)?;
         self.job_table.mark_completed(pid, status);
-        if retain_for_explicit_wait {
-            self.job_table.remove_job_by_pid_preserve_status(pid);
-            self.forget_background_runtime(pid);
-        } else {
-            self.job_table.wait_pid(pid);
-            self.forget_background_job_tracking(pid);
-        }
+        // Remove the visible job after any wait, while retaining the exit
+        // status for repeated explicit PID waits.
+        self.job_table.remove_job_by_pid_preserve_status(pid);
+        self.forget_background_runtime(pid);
         Ok(Some(status))
     }
 

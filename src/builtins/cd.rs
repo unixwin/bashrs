@@ -11,6 +11,7 @@ use paths::{
     logical_destination_display, set_shell_env, shell_display_path, shell_var,
     starts_with_dot_component,
 };
+use crate::expand::tilde::tilde::home_value;
 use std::env;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -174,7 +175,12 @@ where
     W: Write,
 {
     match operand {
-        None => match shell_var(env_vars, "HOME") {
+        None => match if cfg!(windows) {
+            let home = home_value(env_vars);
+            (!home.is_empty()).then_some(home)
+        } else {
+            shell_var(env_vars, "HOME")
+        } {
             Some(home) => Ok(Some(Target {
                 path: filesystem_path_for_display(&home, env_vars),
                 display: None,

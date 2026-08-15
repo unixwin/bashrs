@@ -38,6 +38,23 @@ fn custom_space_ifs_does_not_create_empty_fields() {
 }
 
 #[test]
+fn arithmetic_nounset_errors_exit_127_like_bash() {
+    for command in [
+        "set -u; ((missing + 1))",
+        r#"set -u; printf '%s\n' "$((missing + 1))""#,
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+            .arg("-c")
+            .arg(command)
+            .output()
+            .expect("run rubash");
+
+        assert_eq!(output.status.code(), Some(127), "command: {command}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("missing: unbound variable"));
+    }
+}
+
+#[test]
 fn aliases_stay_disabled_in_noninteractive_shells_by_default() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

@@ -95,8 +95,13 @@ impl Executor {
                 // the current command list in Bash. Do not install a partial
                 // assignment or let the AST walker skip only the next
                 // command as if this were an ordinary word expansion.
-                self.exit_code = 1;
-                return Err(ExecuteError::ExitCode(1));
+                let status = if self.env_vars.remove("__RUBASH_ARITH_NOUNSET_ERROR").is_some() {
+                    127
+                } else {
+                    1
+                };
+                self.exit_code = status;
+                return Err(ExecuteError::ExitCode(status));
             }
             if let Some(substitution_status) = substitution_status {
                 status = substitution_status;
@@ -256,7 +261,7 @@ impl Executor {
         // Unquoted `$@` expands to one word per positional parameter
         // (quoted `"$@"` is handled by quoted_positional_at_word_values_with_raw).
         if word == "$@" && !raw_word_is_quoted(raw) {
-            return field_split_array_values_with_ifs(
+            return field_split_positional_values_with_ifs(
                 self.positional_params.clone(),
                 self.env_vars.get("IFS").map(String::as_str),
             );
@@ -267,7 +272,7 @@ impl Executor {
             if self.word_is_unquoted_positional_modified_list_expansion(word)
                 || self.word_is_unquoted_positional_list_expansion(word)
             {
-                return field_split_array_values_with_ifs(
+                return field_split_positional_values_with_ifs(
                     values,
                     self.env_vars.get("IFS").map(String::as_str),
                 );

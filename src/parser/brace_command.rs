@@ -11,11 +11,17 @@ pub(super) fn parse_brace_group_command(
         && token.value.ends_with('}')
         && token.value.len() >= 2
     {
-        let inner = token
-            .value
-            .trim_start_matches('{')
-            .trim_end_matches('}')
-            .trim();
+        let inner_source = token.value.trim_start_matches('{').trim_end_matches('}');
+        let terminator_source = inner_source.trim_end_matches([' ', '\t']);
+        if !terminator_source.ends_with(';') && !terminator_source.ends_with('\n') {
+            let mut command = CommandNode::new();
+            command.assignments.insert(
+                "__RUBASH_PARSE_ERROR__".to_string(),
+                "unexpected token `}'".to_string(),
+            );
+            return Some((command, start + 1));
+        }
+        let inner = inner_source.trim();
         let body_tokens = crate::lexer::tokenize(inner);
         let mut command = CommandNode::new();
         command.line = Some(token.position);
@@ -33,7 +39,14 @@ pub(super) fn parse_brace_group_command(
         return None;
     }
 
-    let i = matching_brace_group_end(tokens, start)?;
+    let Some(i) = matching_brace_group_end(tokens, start) else {
+        let mut command = CommandNode::new();
+        command.assignments.insert(
+            "__RUBASH_PARSE_ERROR__".to_string(),
+            "unexpected token `}'".to_string(),
+        );
+        return Some((command, tokens.len()));
+    };
 
     let mut command = CommandNode::new();
     command.line = tokens.get(start).map(|token| token.position);

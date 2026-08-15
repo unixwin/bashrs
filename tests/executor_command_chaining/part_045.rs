@@ -60,6 +60,37 @@ fn test_debug_trap_preserves_function_line_and_skips_on_status_two() {
 }
 
 #[test]
+fn test_err_trap_requires_errtrace_inside_functions() {
+    let output_path = "target/rubash-err-trap-function-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "trap 'echo ERR >> {output_path}' ERR; f() {{ false; echo inside >> {output_path}; }}; f; echo after >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+    assert!(executor.execute_ast(&ast).is_ok());
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "inside\nafter\n"
+    );
+    let _ = fs::remove_file(output_path);
+
+    let input = format!(
+        "set -E; trap 'echo ERR >> {output_path}' ERR; f() {{ false; echo inside >> {output_path}; }}; f; echo after >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+    assert!(executor.execute_ast(&ast).is_ok());
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "ERR\ninside\nafter\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_trap_p_redirects_saved_exit_trap() {
     let output_path = "target/rubash-trap-p-redirect-output.txt";
     let _ = fs::remove_file(output_path);

@@ -423,13 +423,32 @@ pub(in crate::executor) fn parse_parameter_replacement(
     name: &str,
 ) -> Option<(&str, &str, &str, bool)> {
     if let Some((var_name, rest)) = name.split_once("//") {
-        let (pattern, replacement) = rest.split_once('/').unwrap_or((rest, ""));
+        let (pattern, replacement) =
+            split_unescaped_parameter_separator(rest).unwrap_or((rest, ""));
         return Some((var_name, pattern, replacement, true));
     }
 
-    let (var_name, rest) = name.split_once('/')?;
-    let (pattern, replacement) = rest.split_once('/').unwrap_or((rest, ""));
+    let (var_name, rest) = split_unescaped_parameter_separator(name)?;
+    let (pattern, replacement) = split_unescaped_parameter_separator(rest).unwrap_or((rest, ""));
     Some((var_name, pattern, replacement, false))
+}
+
+fn split_unescaped_parameter_separator(value: &str) -> Option<(&str, &str)> {
+    let mut escaped = false;
+    for (index, ch) in value.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == '/' {
+            return Some((&value[..index], &value[index + 1..]));
+        }
+    }
+    None
 }
 
 #[cfg(test)]

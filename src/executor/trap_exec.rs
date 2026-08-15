@@ -436,6 +436,23 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<Option<i32>, ExecuteError> {
+        // Fd-prefixed redirects retain the raw process-substitution target.
+        for redirect in &cmd.redirects {
+            let target = &redirect.target;
+            let fd = redirect.fd.unwrap_or(1);
+            match redirect.kind {
+                crate::parser::RedirectKind::Output
+                | crate::parser::RedirectKind::Append
+                | crate::parser::RedirectKind::ClobberOutput
+                    if target.starts_with(">(") && target.ends_with(')') =>
+                {
+                    self.open_persistent_output_process_substitution(fd, target)?;
+                    return Ok(Some(0));
+                }
+                _ => {}
+            }
+        }
+
         if let Some(redirect) = &cmd.redirect_out {
             let target = self.expand_word(&redirect.target);
             let fd = redirect.fd.unwrap_or(1);
@@ -699,7 +716,7 @@ impl Executor {
         self.env_vars.remove(&fd_closed_key(fd));
         self.env_vars.insert(
             fd_output_key(fd),
-            shell_display_path(&path.to_string_lossy()),
+            path.to_string_lossy().into_owned(),
         );
         self.env_vars
             .insert(fd_output_process_substitution_key(fd), source.to_string());

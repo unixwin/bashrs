@@ -27,6 +27,22 @@ fn exec_keeps_output_process_substitution(words: &[String], redirect: &Redirect)
 pub(in crate::executor) fn command_needs_process_substitution_materialization(
     cmd: &CommandNode,
 ) -> bool {
+    // Persistent fd-prefixed output substitutions are opened by the exec
+    // builtin and must retain their backing file across later commands.
+    if cmd.words.first().map(String::as_str) == Some("exec")
+        && cmd.redirects.iter().any(|redirect| {
+            matches!(
+                redirect.kind,
+                crate::parser::RedirectKind::Output
+                    | crate::parser::RedirectKind::Append
+                    | crate::parser::RedirectKind::ClobberOutput
+            ) && redirect.target.starts_with(">(")
+                && redirect.target.ends_with(')')
+        })
+    {
+        return false;
+    }
+
     if cmd.redirects.is_empty()
         && cmd.redirect_in.is_none()
         && cmd.redirect_out.is_none()

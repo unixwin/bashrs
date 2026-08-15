@@ -236,7 +236,7 @@ fn virtual_device_test(op: &str, operand: &str) -> Option<bool> {
 }
 
 fn test_path(operand: &str, env_vars: &HashMap<String, String>) -> std::path::PathBuf {
-    crate::executor::path::shell_path_to_windows(operand, env_vars)
+    crate::executor::path::shell_path_to_windows_for_lookup(operand, env_vars)
 }
 
 fn marked_vars(env_vars: &HashMap<String, String>, key: &str) -> Vec<String> {

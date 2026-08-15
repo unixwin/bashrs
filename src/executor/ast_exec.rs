@@ -235,6 +235,13 @@ impl Executor {
                 if command.inverted {
                     self.exit_code = invert_exit_status(self.exit_code);
                 }
+                if self.errexit_enabled()
+                    && self.errexit_is_active()
+                    && self.exit_code != 0
+                    && !command.inverted
+                {
+                    return Err(ExecuteError::ExitCode(self.exit_code));
+                }
                 if let Some(next_index) = self.skip_and_or_rhs(ast, index) {
                     index = next_index;
                 } else {
@@ -364,6 +371,10 @@ impl Executor {
                 && !command.inverted
                 && command.and_or().is_none()
                 && self.suppress_errexit == 0
+                // ERR traps are not inherited by functions unless errtrace
+                // (-E) is enabled (execute_cmd.c / trap.c).
+                && (self.function_depth == 0
+                    || crate::builtins::set::shell_option_enabled(&self.env_vars, "errtrace"))
             {
                 if let Some(action) = crate::builtins::trap::get_trap_action(&self.env_vars, "ERR")
                 {

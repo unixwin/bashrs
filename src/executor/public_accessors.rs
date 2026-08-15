@@ -34,15 +34,25 @@ impl Executor {
             value.clone(),
         );
         self.env_vars.insert("WINUXSH_ROOT".to_string(), value);
+        self.mark_exported("WINUXSH_ROOT");
     }
 
     /// Configure the native WinuxCmd dispatcher used for shell commands that
     /// are not backed by a file in the logical root.
     pub fn set_winuxcmd_path(&mut self, path: impl AsRef<std::path::Path>) {
+        let path = path.as_ref();
         self.env_vars.insert(
             "WINUXCMD_PATH".to_string(),
-            path.as_ref().to_string_lossy().into_owned(),
+            path.to_string_lossy().into_owned(),
         );
+        self.mark_exported("WINUXCMD_PATH");
+        if let Some(parent) = path.parent() {
+            self.env_vars.insert(
+                "WINUXCMD_HOME".to_string(),
+                parent.to_string_lossy().into_owned(),
+            );
+            self.mark_exported("WINUXCMD_HOME");
+        }
     }
 
     /// Resolve a shell-visible path using the executor's current namespace.
@@ -59,6 +69,16 @@ impl Executor {
         env_vars: &std::collections::HashMap<String, String>,
     ) -> std::path::PathBuf {
         crate::executor::path::resolve_shell_path_from_env(path, env_vars)
+    }
+
+    /// Resolve one shell PATH entry into native directories for a Windows
+    /// child. Logical command directories may need both their root-backed
+    /// directory and the selected WinuxCmd provider directory.
+    pub fn resolve_shell_path_process_entries_from_env(
+        path: &str,
+        env_vars: &std::collections::HashMap<String, String>,
+    ) -> Vec<std::path::PathBuf> {
+        crate::executor::path::shell_path_process_entries(path, env_vars)
     }
 
     pub fn set_host_external_command_handler<F>(&mut self, handler: F)

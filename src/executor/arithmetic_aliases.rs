@@ -66,7 +66,11 @@ impl Executor {
             Some(_) => 0,
             None => {
                 self.report_arithmetic_error(expression);
-                1
+                if self.env_vars.remove("__RUBASH_ARITH_NOUNSET_ERROR").is_some() {
+                    127
+                } else {
+                    1
+                }
             }
         }
     }

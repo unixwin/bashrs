@@ -15,6 +15,15 @@ the host implementation.
 | Root creation, session configuration, terminal, and temporary directory policy | Winuxsh |
 | Shell file descriptors and `/dev/fd` semantics | Rubash fd table, using WinuxCmd handle capabilities when needed |
 
+The selected WinuxCmd installation is a separate native command provider. Its
+directory contains `winuxcmd.exe`, `wpm.exe`, command links such as `cat.exe`
+and `ls.exe`, and WPM-installed native command files such as `jq.exe`. It is
+not copied below the logical root.
+
+On Windows, `~` is the same user directory selected by PowerShell: Winuxsh
+uses `USERPROFILE` as the authoritative value. `HOME` is normalized for child
+process compatibility, but it is not a second home namespace.
+
 Winuxsh should create or select a private backing directory and expose it as
 `WINUXSH_ROOT` before constructing Rubash. A typical layout is:
 
@@ -56,6 +65,40 @@ There is no lookup of MSYS, Git Bash, WSL, or another compatible shell.
 
 When a root is configured, `command -p` uses the logical standard path:
 `/usr/local/bin:/usr/bin:/bin`. The normal `PATH` remains caller-controlled.
+
+On Windows, the three logical command directories have a read/execute
+provider overlay. Rubash checks the backing root first, then the selected
+WinuxCmd installation directory. This makes `/usr/bin/ls`, `/bin/cat`, and
+commands added later by WPM resolve to installed native command files without
+creating duplicate files in the root. WPM's `.wpm/cache`, `.wpm/staging`,
+`.wpm/backup`, and index files remain private installation state and are never
+part of `/`, `/usr/bin`, or shell glob results.
+
+The backing directories are real directories. `/etc`, `/var`, and `/tmp` are
+ordinary Windows directories below the logical root, while `/dev` is a
+capability namespace and is not created as a normal directory.
+
+The provider lookup accepts both the current flat installation layout and a
+future provider layout containing `bin/`, `usr/bin/`, or `usr/local/bin/`.
+The logical directory selects its matching provider subdirectory first, then
+falls back to the flat layout. This is lookup policy, not filesystem
+synchronization.
+
+WPM package mappings are relative to the WinuxCmd installation root. The
+current official index installs command files at the provider root, so a
+downloaded `jq.exe` becomes `<winuxcmd>/jq.exe`; a future mapping such as
+`usr/bin/tool.exe` remains below the provider's matching logical directory.
+Package installation first tries a Windows hardlink and falls back to a copy
+when that is necessary. `wpm links rebuild` is different: it rebuilds the
+core command links with hardlinks and reports failures rather than silently
+switching to symlinks. Neither operation writes `.wpm` into the logical root.
+
+For native child processes, Rubash materializes each logical command PATH
+entry as two Windows entries: the corresponding root backing directory and
+the selected provider directory. The shell session selects one exact
+`winuxcmd.exe` through `WINUXCMD_PATH`; stale WinuxCmd provider directories
+are removed from the session PATH so command links and dispatcher cannot be
+mixed across installations.
 
 ## WinuxCmd dispatch
 

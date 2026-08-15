@@ -216,6 +216,16 @@ pub(super) fn matching_brace_group_end(tokens: &[Token], start: usize) -> Option
         if is_boundary_keyword(tokens, index, "{") {
             depth += 1;
         } else if is_boundary_keyword(tokens, index, "}") {
+            // GNU parse.y requires a command terminator before a brace-group
+            // close. `{ command }` is malformed; `{ command; }` and a
+            // physical newline before `}` are valid.
+            let has_terminator = index > start + 1
+                && tokens
+                    .get(index - 1)
+                    .is_some_and(|token| token.kind == TokenKind::Semicolon);
+            if !has_terminator {
+                return None;
+            }
             depth -= 1;
             if depth == 0 {
                 return Some(index);

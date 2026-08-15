@@ -9,18 +9,20 @@ use std::collections::HashMap;
 pub const QUOTED_ASSIGNMENT_VALUE: char = '\x1c';
 
 pub fn home_value(env_vars: &HashMap<String, String>) -> String {
-    env_vars
-        .get("HOME")
-        .filter(|v| !v.is_empty())
-        .cloned()
-        .or_else(|| std::env::var("HOME").ok().filter(|v| !v.is_empty()))
-        .or_else(|| {
+    #[cfg(windows)]
+    let names = ["USERPROFILE", "HOME"];
+    #[cfg(not(windows))]
+    let names = ["HOME", "USERPROFILE"];
+
+    names
+        .into_iter()
+        .find_map(|name| {
             env_vars
-                .get("USERPROFILE")
+                .get(name)
+                .filter(|value| !value.is_empty())
                 .cloned()
-                .filter(|v| !v.is_empty())
+                .or_else(|| std::env::var(name).ok().filter(|value| !value.is_empty()))
         })
-        .or_else(|| std::env::var("USERPROFILE").ok().filter(|v| !v.is_empty()))
         .unwrap_or_default()
 }
 
@@ -115,6 +117,18 @@ fn expand_tilde_segment(segment: &str, home: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_home_value_matches_userprofile_before_home() {
+        let env_vars = HashMap::from([
+            ("HOME".to_string(), "C:/from-home".to_string()),
+            ("USERPROFILE".to_string(), "C:/from-userprofile".to_string()),
+        ]);
+
+        assert_eq!(home_value(&env_vars), "C:/from-userprofile");
+    }
 
     #[test]
     fn assignment_tilde_candidate_detects_only_expandable_segments() {

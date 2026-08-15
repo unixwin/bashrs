@@ -1,9 +1,9 @@
 # Bash Actual-Output DIFF TODO Ledger
 
-> Snapshot date: 2026-08-13 14:02:08
+> Snapshot date: 2026-08-15 12:40:15 CST
 > Repository: `D:/repo/rubash`
 > Source result: `target/issue-suites/results/bash-actual/results.tsv`
-> Current repository HEAD at review time: `88f72fc`
+> Current repository HEAD at review time: `88f72fc` (working tree had uncommitted changes)
 
 This is the per-test TODO ledger for the GNU Bash `.tests` actual-output
 comparison. It is intentionally separate from the higher-level compatibility
@@ -15,7 +15,7 @@ runner reports PASS.
 The stored snapshot contains 83 Bash test files:
 
 ```text
-TOTAL=83 PASS=15 DIFF=68
+TOTAL=83 PASS=12 DIFF=71
 ```
 
 The 68 DIFF rows are grouped by the recorded exit-code pair:
@@ -41,8 +41,9 @@ only the first 120 lines of each stdout diff. Therefore:
 - `results.tsv` is a snapshot, not a history database;
 - stderr differences are diagnostic evidence but are not currently part of the
   PASS/DIFF predicate;
-- the snapshot predates the current `88f72fc` HEAD and must be refreshed
-  before claiming that a TODO is fixed.
+- this snapshot was refreshed against the dirty working tree at `88f72fc`; it is
+  not a clean-commit baseline and must not be used as a release compatibility
+  score until host/path and upstream-bridge classifications are separated.
 
 Before closing any row, record a new artifact directory with the tested
 commit, for example:
@@ -427,9 +428,9 @@ Status labels used below:
 | `nquote3` | `127/0` | isolate first: environment/command lookup may mask quoting behavior | [ ] Same isolation procedure; add a focused quoting regression only after a reproducible semantic mismatch. |
 | `nquote4` | `127/0` | isolate first: environment/command lookup may mask quoting behavior | [ ] Same isolation procedure; distinguish path conversion from quote semantics. |
 | `nquote5` | `0/0` | semantic lead: advanced quote/expansion interaction | [ ] Extract the first mismatch and compare quote removal, arrays, and command substitution independently. |
-| `parser` | `2/0` | semantic lead: permissive grammar and rc=2 propagation | [ ] Enumerate each malformed construct still accepted by Rubash; add parser tests and preserve valid newline cases. |
+| `parser` | `2/0` | partial semantic fix: malformed parameter expansion now returns rc=2; remaining grammar differences are concentrated in parser fixture edge cases | [x] Add unmatched `${...` rc=2 regression. [ ] Enumerate remaining malformed compound-command cases and preserve valid newline forms. |
 | `posix2` | `9/0` | isolate first: termination/status mismatch | [ ] Reproduce with process tracing and timeout cleanup; determine whether the status comes from a host process, test harness, or Rubash. |
-| `posixexp` | `2/0` | semantic lead: POSIX expansion/parser error status | [ ] Split invalid syntax from valid POSIX expansion; align diagnostics and rc=2 propagation. |
+| `posixexp` | `2/0` | partial semantic fix: unterminated `${...` now reports syntax status 2; valid POSIX expansion and RHS/IFS behavior remain open | [x] Cover `${x`, `${x/foo`, and `${x:?` rc=2. [ ] Split remaining invalid syntax from valid POSIX expansion. |
 | `posixpipe` | `0/0` | semantic lead: pipeline stdin/fd lifecycle and POSIX status | [ ] Compare pipeline member status, `PIPESTATUS`, `pipefail`, and stdin closure in a minimal fixture. |
 | `printf` | `2/0` | semantic lead: builtin format/argument parsing and status | [ ] Separate invalid format, missing argument, numeric conversion, and escape behavior; add builtin tests. |
 | `procsub` | `124/0` | semantic lead plus host boundary: process-substitution fd and path lifecycle | [ ] Run each `<(...)`/`>(...)` primitive with timeout; verify endpoint ownership, child completion, path translation, and cleanup. |
@@ -439,7 +440,7 @@ Status labels used below:
 | `redir` | `124/0` | semantic lead plus host boundary: ordered redirection and fd lifetime | [ ] Split ordered dup/close, `/dev/null`, dynamic fd, heredoc, and external-child cases; fix the shared fd owner and add regressions. |
 | `rhs-exp` | `0/0` | semantic lead: parameter substitution RHS expansion and quote rules | [ ] Extract pattern replacement, backslash, empty RHS, and command-substitution cases; add parameter-expansion tests. |
 | `rsh` | `0/0` | host/path boundary candidate: restricted-shell invocation and command lookup | [ ] Reproduce with identical PATH and working directory; separate restricted-shell semantics from Windows command availability. |
-| `set-e` | `0/0` | semantic lead: errexit suppression and status propagation | [ ] Compare pipelines, conditionals, command substitutions, functions, and subshell contexts; add one regression per suppression rule. |
+| `set-e` | `0/0` | partial semantic fix: pipeline status propagation now honors `pipefail` under `errexit`; conditional, command-substitution, function, and subshell suppression still require coverage | [x] Add a regression for `set -e -o pipefail; false | true`. [ ] Compare remaining suppression rules and ERR-trap interactions. |
 | `set-x` | `0/0` | semantic lead: tracing output and command expansion state | [ ] Compare PS4, quoting, redirections, functions, and command substitutions; define whether stderr trace output is in the contract. |
 | `shopt` | `0/0` | native probes pass; remaining `set +o igncr` listing is Windows CRLF/input-policy output | [ ] Keep the upstream bridge until shopt option mutation/query parity is covered; record `igncr` as host-owned unless a native CRLF parser-input contract is added. |
 | `test` | `0/0` | semantic lead: test expression parsing, operators, and status | [ ] Extract string, numeric, file, and compound expression differences; add builtin tests without hardcoding output. |
