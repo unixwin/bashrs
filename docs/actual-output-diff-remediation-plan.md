@@ -1,7 +1,7 @@
 # Actual-Output DIFF Remediation Plan
 
 Status: ordered execution plan
-Baseline checkpoint: edf90c1
+Baseline checkpoint: 1a37d2f
 Source: target/issue-suites/results/bash-actual/results.tsv
 
 Rule: execute phases strictly in order. A later phase cannot start while an earlier phase has an unresolved gate.
@@ -94,5 +94,6 @@ Run the full bounded suite from a clean tree, create a new dated result director
 - Phase 0: complete at checkpoint 2c96b50.
 - Phase 1: complete for host/runner classification; evidence is in `docs/actual-output-phase1-host-classification.md`.
 - Phase 2: complete; evidence is in `docs/actual-output-phase2-set-e-evidence.md`.
-- Next permitted phase: Phase 3, arithmetic evaluator and status.
-- Phases 4-8 remain blocked until Phase 3 closes.
+- Phase 3: complete at checkpoint 1a37d2f; evidence is in `docs/actual-output-phase3-arithmetic-triage.md`. Native arithmetic stdout/status gate passed; diagnostic-only differences route to Phase 7, and malformed command line 191 routes to Phase 4.
+- Next permitted phase: Phase 4, parser and POSIX expansion.
+- Phases 5-8 remain blocked until Phase 4 closes.

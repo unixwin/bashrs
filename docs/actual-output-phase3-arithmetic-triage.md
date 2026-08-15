@@ -1,6 +1,6 @@
 # Phase 3 Arithmetic Triage
 
-Current checkpoint: d150188
+Current checkpoint: 1a37d2f
 Raw artifact: target/issue-suites/results/native-bash-phase3-arith/
 GNU owner: third_party/bash/expr.c
 Rubash semantic owners: src/executor/arithmetic/, src/executor/command_execute.rs, src/executor/command_prepare.rs
@@ -34,7 +34,7 @@ GNU Bash treats arithmetic expansion errors differently depending on the entry m
 
 The focused regression arithmetic_assignment_error_continues_without_errexit covers the first native mismatch: an assignment expansion with an attempted assignment to a non-variable returns status 1, does not install the assignment, and permits the next command in script mode. The arithmetic-focused suite is 13/13 green.
 
-The full native fixture was rerun as copy.tests to bypass the bridge. Bash and Rubash both return rc=1. Replacing line 191, ((echo abc; echo def;); echo ghi), with : allows both executions to reach the end; this isolates that stop to parser/AST handling and routes it to the ordered parser phase. With that line bypassed, one evaluator mismatch remains: GNU suppresses output for A=4 + ; echo arithmetic expansion, while Rubash emits 20; this remains a Phase 3 arithmetic evaluator candidate.
+The full native fixture was rerun as copy.tests to bypass the bridge. Bash and Rubash both return rc=1. Replacing line 191, ((echo abc; echo def;); echo ghi), with : allows both executions to reach the end; this isolates that stop to parser/AST handling and routes it to the ordered parser phase. The arithmetic parser now rejects empty conditional false branches and bare assignments after logical &&/|| even when the branch is short-circuited. The native copy-no191 fixture now has identical GNU/RUBASH stdout (301 lines) and identical final status 1/1. Remaining stderr differences are diagnostic text/channel only. The removed line 191 remains isolated to parser/AST handling for Phase 4.
 
 ## Remaining Phase 3 Work
 
