@@ -166,6 +166,7 @@ impl Executor {
             debug_trap_command: None,
             debug_trap_function_line: None,
             arithmetic_expansion_error: Cell::new(false),
+            arithmetic_nonfatal_error: Cell::new(false),
             last_command_substitution_status: Cell::new(None),
             stdout_capture: None,
             stderr_capture: None,

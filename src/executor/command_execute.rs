@@ -147,6 +147,9 @@ impl Executor {
                 1
             };
             self.exit_code = status;
+            if self.arithmetic_nonfatal_error.replace(false) {
+                return Ok(());
+            }
             return Err(ExecuteError::ExitCode(status));
         }
 

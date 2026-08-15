@@ -142,6 +142,9 @@ impl Executor {
                                         "{expression}: syntax error in expression (error token is \"{expression}\")"
                                     )
                                 });
+                                if message.contains("attempted assignment to non-variable") {
+                                    self.arithmetic_nonfatal_error.set(true);
+                                }
                                 eprintln!("{}: {message}", self.diagnostic_prefix());
                             }
                         }

@@ -120,3 +120,17 @@ fn inherit_errexit_aborts_command_substitution_body() {
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(String::from_utf8_lossy(&output.stdout), "");
 }
+
+#[test]
+fn arithmetic_assignment_error_continues_without_errexit() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("declare -i x=2; y=$((1 ? 20 : x+=2)); echo after:$? y:$y x:$x")
+        .output()
+        .expect("run nonfatal arithmetic assignment probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "after:1 y: x:2\n");
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("attempted assignment to non-variable"));
+}

@@ -207,14 +207,18 @@ impl Executor {
             }
             // Bash reports arithmetic expansion errors (floating point,
             // negative exponent, division by zero, ...) on stderr instead of
-            // silently producing nothing.
+            // silently producing nothing. Assignment-to-non-variable is a
+            // command failure, but the surrounding script continues without -e.
+            let message = crate::executor::arithmetic::arithmetic_error_message(&expression)
+                .unwrap_or_else(|| {
+                    format!(
+                        "{expression}: syntax error in expression (error token is \"{expression}\")"
+                    )
+                });
+            if message.contains("attempted assignment to non-variable") {
+                self.arithmetic_nonfatal_error.set(true);
+            }
             if !self.arithmetic_expansion_error.replace(true) {
-                let message = crate::executor::arithmetic::arithmetic_error_message(&expression)
-                    .unwrap_or_else(|| {
-                        format!(
-                            "{expression}: syntax error in expression (error token is \"{expression}\")"
-                        )
-                    });
                 eprintln!("{}{}", self.diagnostic_prefix(), message);
             }
         }

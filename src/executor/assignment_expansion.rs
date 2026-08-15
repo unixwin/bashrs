@@ -89,8 +89,15 @@ impl Executor {
             .and_then(|rest| rest.strip_suffix("))"))
             .filter(|expression| !expression.contains("${"))
         {
-            let value = self.eval_arithmetic_command_value(expression)?.to_string();
-            return Some(self.expand_assignment_tilde_if_needed(value));
+            let Some(value) = self.eval_arithmetic_command_value(expression) else {
+                if crate::executor::arithmetic::arithmetic_error_message(expression)
+                    .is_some_and(|message| message.contains("attempted assignment to non-variable"))
+                {
+                    self.arithmetic_nonfatal_error.set(true);
+                }
+                return None;
+            };
+            return Some(self.expand_assignment_tilde_if_needed(value.to_string()));
         }
 
         let parameter = value.strip_prefix('$')?;

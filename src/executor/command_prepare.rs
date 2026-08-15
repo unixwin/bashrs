@@ -95,7 +95,7 @@ impl Executor {
                 // the current command list in Bash. Do not install a partial
                 // assignment or let the AST walker skip only the next
                 // command as if this were an ordinary word expansion.
-                let status = if self
+                let failure_status = if self
                     .env_vars
                     .remove("__RUBASH_ARITH_NOUNSET_ERROR")
                     .is_some()
@@ -104,8 +104,12 @@ impl Executor {
                 } else {
                     1
                 };
-                self.exit_code = status;
-                return Err(ExecuteError::ExitCode(status));
+                self.exit_code = failure_status;
+                if self.arithmetic_nonfatal_error.replace(false) {
+                    status = failure_status;
+                    continue;
+                }
+                return Err(ExecuteError::ExitCode(failure_status));
             }
             if let Some(substitution_status) = substitution_status {
                 status = substitution_status;
