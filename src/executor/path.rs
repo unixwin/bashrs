@@ -669,6 +669,8 @@ fn map_logical_path(normalized: &str, root: &Path) -> Option<PathBuf> {
 mod tests {
     use super::*;
     #[cfg(windows)]
+    use std::collections::HashSet;
+    #[cfg(windows)]
     use std::fs;
 
     #[cfg(not(windows))]
