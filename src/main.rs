@@ -504,6 +504,12 @@ fn run_source(executor: &mut Executor, input: &str, interactive: bool) -> i32 {
     // substitution balance is checked: parentheses in a heredoc body are
     // literal data, not shell syntax.
     if !interactive && has_unclosed_input_syntax(input) && !input.contains("<<") {
+        let source = input.trim_end_matches('\n');
+        if let Some((prefix, _)) = source.rsplit_once('\n') {
+            if !prefix.trim().is_empty() {
+                let _ = run_source(executor, prefix, interactive);
+            }
+        }
         eprintln!("rubash: syntax error: unexpected end of file");
         return 2;
     }

@@ -47,4 +47,4 @@ Validation:
 - parser regression: passed;
 - git diff --check: passed.
 
-The brace fixture still has separate brace-expansion stdout differences and remains outside this narrow parser/parameter gate. Additional Phase 4 validation passed: parser_tests 350/350, malformed CLI regressions 5/5, and parameter CLI regressions 5/5. Phase 4 remains in progress while the remaining POSIX expansion slices are classified; Phase 5 and later remain locked.
+The brace fixture still has separate brace-expansion stdout differences and remains outside this narrow parser/parameter gate. Additional Phase 4 validation passed: parser_tests 350/350, malformed CLI regressions 5/5, and parameter CLI regressions 5/5. A clean multiline POSIX probe now matches GNU: the valid prefix prints a, b, a b, both shells return status 2 for the malformed final expansion, and Rubash emits one syntax diagnostic. The batch precheck now replays only the complete prefix before returning status 2; single-line malformed expansion behavior remains unchanged. Phase 4 remains in progress while the remaining POSIX expansion slices are classified; Phase 5 and later remain locked.
