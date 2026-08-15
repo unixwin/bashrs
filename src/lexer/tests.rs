@@ -1,6 +1,14 @@
 use super::*;
 
 #[test]
+fn test_parameter_pattern_quotes_stay_in_one_word() {
+    let input = r##"echo "${a#'$('}"##;
+    let tokens = tokenize(input);
+    let expected = "$".to_string() + "{a#'$('}";
+    assert_eq!(tokens[1].value, expected);
+}
+
+#[test]
 fn test_tokenize_simple() {
     let tokens = tokenize("ls -la");
     assert!(tokens.len() >= 2);

@@ -120,6 +120,8 @@ pub(crate) fn has_unclosed_command_substitution(input: &str) -> bool {
     let mut comment_start = true;
     let mut in_comment = false;
     let mut case_depth = 0usize;
+    let mut parameter_depth = 0usize;
+    let mut parameter_single = false;
     let mut word = String::new();
     let mut word_boundary = true;
     let mut current_word_boundary = true;
@@ -184,6 +186,11 @@ pub(crate) fn has_unclosed_command_substitution(input: &str) -> bool {
             index += 2;
             continue;
         }
+        if ch == '\'' && parameter_depth > 0 && !ansi_single {
+            parameter_single = !parameter_single;
+            index += 1;
+            continue;
+        }
         if ch == '\'' && !double {
             single = !single;
             comment_start = false;
@@ -206,7 +213,18 @@ pub(crate) fn has_unclosed_command_substitution(input: &str) -> bool {
             index += 1;
             continue;
         }
-        if ch == '$' && chars.get(index + 1) == Some(&'(') {
+        if ch == '$' && chars.get(index + 1) == Some(&'{') && !single && !ansi_single && !parameter_single {
+            parameter_depth += 1;
+            index += 2;
+            continue;
+        }
+        if ch == '}' && parameter_depth > 0 {
+            parameter_depth = parameter_depth.saturating_sub(1);
+            parameter_single = false;
+            index += 1;
+            continue;
+        }
+        if ch == '$' && chars.get(index + 1) == Some(&'(') && !parameter_single {
             if chars.get(index + 2) == Some(&'(') {
                 if skip_arithmetic_substitution(&chars, index + 3).is_none() {
                     return true;

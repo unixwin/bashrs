@@ -1,6 +1,6 @@
 # Phase 4 Parser Triage
 
-Current checkpoint: 9d82f0d plus working parser fix
+Current checkpoint: 8e13124 plus working parameter scanner fix
 GNU owner: third_party/bash/parse.y
 Rubash owners: src/parser/arithmetic_command.rs, src/parser/subshell_command.rs
 
@@ -27,4 +27,24 @@ Validation:
 - cargo check: passed;
 - git diff --check: passed.
 
-Phase 4 remains in progress. The full native arithmetic fixture still has a separate later status/diagnostic interaction after this parser point; it must be isolated before the parser phase gate closes. Phase 5 and later remain locked.
+
+## Parameter Pattern Quote Probe
+
+GNU parse/substitution handling treats the single-quoted pattern in these forms as literal pattern text rather than a command substitution:
+
+    echo parameter-pattern-prefix
+    echo parameter-pattern-default
+    echo parameter-pattern-alternate
+
+Rubash's pre-parser command-substitution balance checker previously counted the literal dollar-parenthesis inside the parameter pattern and returned status 2 before parsing. The checker now tracks nested parameter depth and pattern quote state. The braced lexer scanner uses the same quote distinction so nested substitutions are not consumed from a single-quoted pattern.
+
+Validation:
+
+- parameter probe reached expansion execution after the fix;
+- lexer regression: test_parameter_pattern_quotes_stay_in_one_word;
+- lexer tests: 10/10;
+- brace fixture status: GNU/RUBASH 0/0 after the fix;
+- parser regression: passed;
+- git diff --check: passed.
+
+The brace fixture still has separate brace-expansion stdout differences and remains outside this narrow parser/parameter gate. Phase 4 remains in progress; Phase 5 and later remain locked.
