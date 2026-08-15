@@ -1,6 +1,19 @@
 use std::process::Command;
 
 #[test]
+fn malformed_script_preserves_valid_prefix_before_status_two() {
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/malformed_parameter_prefix.sh");
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg(script)
+        .output()
+        .expect("run multiline malformed expansion fixture");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "a\nb\na b\n");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unexpected end of file"));
+}
+
+#[test]
 fn nested_parameter_pattern_removal_keeps_argument_boundaries() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
