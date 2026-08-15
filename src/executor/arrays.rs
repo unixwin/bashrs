@@ -46,37 +46,44 @@ pub(super) fn append_scalar_value(current: &str, value: &str) -> String {
     output
 }
 
+fn is_ifs_whitespace(ch: char) -> bool {
+    matches!(ch, ' ' | '\t' | '\n')
+}
+
+fn split_ifs_whitespace(value: &str, ifs: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    for ch in value.chars() {
+        if ifs.contains(ch) {
+            if !current.is_empty() {
+                fields.push(std::mem::take(&mut current));
+            }
+        } else {
+            current.push(ch);
+        }
+    }
+    if !current.is_empty() {
+        fields.push(current);
+    }
+    fields
+}
+
 pub(super) fn field_split_values_with_ifs(value: &str, ifs: Option<&str>) -> Vec<String> {
     let Some(ifs) = ifs else {
-        return value.split_whitespace().map(str::to_string).collect();
+        return split_ifs_whitespace(value, " \t\n");
     };
     if ifs.is_empty() {
         return vec![value.to_string()];
     }
 
-    // IFS whitespace delimiters collapse runs of the same delimiter class,
-    // but whitespace not present in IFS remains part of the field.  Thus
-    // `IFS=" "` collapses repeated spaces while `IFS=$'\n'` preserves spaces.
+    // Bash defines IFS whitespace narrowly as space, tab, and newline.
+    // Other Unicode whitespace remains data unless explicitly listed in IFS.
     if ifs == " \t\n" {
-        return value.split_whitespace().map(str::to_string).collect();
+        return split_ifs_whitespace(value, ifs);
     }
 
-    if ifs.chars().all(char::is_whitespace) {
-        let mut fields = Vec::new();
-        let mut current = String::new();
-        for ch in value.chars() {
-            if ifs.contains(ch) {
-                if !current.is_empty() {
-                    fields.push(std::mem::take(&mut current));
-                }
-            } else {
-                current.push(ch);
-            }
-        }
-        if !current.is_empty() {
-            fields.push(current);
-        }
-        return fields;
+    if ifs.chars().all(is_ifs_whitespace) {
+        return split_ifs_whitespace(value, ifs);
     }
 
     // Non-whitespace IFS: every separator produces a field. Bash keeps empty
@@ -160,6 +167,26 @@ mod field_split_tests {
         assert_eq!(
             field_split_values_with_ifs("a  b\nc  d", Some("\n")),
             vec!["a  b", "c  d"]
+        );
+    }
+
+    #[test]
+    fn default_ifs_does_not_split_vertical_tab_or_form_feed() {
+        assert_eq!(
+            field_split_values_with_ifs("a\x0bb\x0cc", None),
+            vec!["a\x0bb\x0cc"]
+        );
+        assert_eq!(
+            field_split_values_with_ifs("a\x0bb\x0cc", Some(" \t\n")),
+            vec!["a\x0bb\x0cc"]
+        );
+    }
+
+    #[test]
+    fn default_ifs_does_not_split_non_ascii_whitespace() {
+        assert_eq!(
+            field_split_values_with_ifs("a\u{00a0}b\u{2003}c", None),
+            vec!["a\u{00a0}b\u{2003}c"]
         );
     }
 }
