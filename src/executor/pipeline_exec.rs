@@ -302,7 +302,11 @@ impl Executor {
                 (if last_stage && self.lastpipe_enabled() {
                     Some(self.execute_lastpipe_stage(stage, &input)?)
                 } else if last_stage || preserve_compound_errexit {
-                    self.execute_pipeline_stage(stage, &input, preserve_compound_errexit && !last_stage)?
+                    self.execute_pipeline_stage(
+                        stage,
+                        &input,
+                        preserve_compound_errexit && !last_stage,
+                    )?
                 } else {
                     // Non-final pipeline stages never trigger errexit (bash
                     // manual: "any command in a pipeline but the last");
@@ -792,7 +796,9 @@ impl Executor {
                 }
             }
             _ => {
-                if let Some(output) = self.execute_function_pipeline_stage(command, input, force_compound_errexit)? {
+                if let Some(output) =
+                    self.execute_function_pipeline_stage(command, input, force_compound_errexit)?
+                {
                     Ok(Some(output))
                 } else {
                     if let Some(output) = self.execute_builtin_pipeline_stage(command, input)? {

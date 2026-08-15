@@ -17,86 +17,92 @@ pub(in crate::executor) fn case_pattern_matches_at_with_case(
     w_index: usize,
     nocase: bool,
 ) -> bool {
-    if p_index == pattern.len() {
-        return w_index == word.len();
+    // Keep the wildcard backtracking iterative. A recursive `*` matcher uses
+    // one stack frame per input character; ordinary Windows PATH values are
+    // long enough to exhaust the process stack during a valid `case` test.
+    let mut pattern_index = p_index;
+    let mut word_index = w_index;
+    let mut star_pattern_index = None;
+    let mut star_word_index = word_index;
+
+    while word_index < word.len() {
+        if pattern_index < pattern.len() {
+            if pattern[pattern_index] == '*' {
+                star_pattern_index = Some(pattern_index);
+                star_word_index = word_index;
+                pattern_index += 1;
+                continue;
+            }
+
+            let (matched, next_pattern_index) =
+                case_pattern_atom_matches(pattern, pattern_index, word[word_index], nocase);
+            if matched {
+                pattern_index = next_pattern_index;
+                word_index += 1;
+                continue;
+            }
+        }
+
+        let Some(star_index) = star_pattern_index else {
+            return false;
+        };
+        star_word_index += 1;
+        word_index = star_word_index;
+        pattern_index = star_index + 1;
     }
 
-    match pattern[p_index] {
-        '\x18' => {
-            w_index < word.len()
-                && word[w_index] == '\\'
-                && case_pattern_matches_at_with_case(
-                    pattern,
-                    p_index + 1,
-                    word,
-                    w_index + 1,
-                    nocase,
-                )
-        }
-        '*' => {
-            case_pattern_matches_at_with_case(pattern, p_index + 1, word, w_index, nocase)
-                || (w_index < word.len()
-                    && case_pattern_matches_at_with_case(
-                        pattern,
-                        p_index,
-                        word,
-                        w_index + 1,
-                        nocase,
-                    ))
-        }
-        '?' => {
-            w_index < word.len()
-                && case_pattern_matches_at_with_case(
-                    pattern,
-                    p_index + 1,
-                    word,
-                    w_index + 1,
-                    nocase,
-                )
-        }
-        '[' => {
-            let Some((matches_class, next_index)) = case_bracket_expression_matches_with_case(
-                pattern,
-                p_index,
-                word.get(w_index).copied(),
-                nocase,
-            ) else {
-                return w_index < word.len()
-                    && chars_match(pattern[p_index], word[w_index], nocase)
-                    && case_pattern_matches_at_with_case(
-                        pattern,
-                        p_index + 1,
-                        word,
-                        w_index + 1,
-                        nocase,
-                    );
-            };
+    while pattern_index < pattern.len() && pattern[pattern_index] == '*' {
+        pattern_index += 1;
+    }
 
-            matches_class
-                && case_pattern_matches_at_with_case(pattern, next_index, word, w_index + 1, nocase)
+    pattern_index == pattern.len()
+}
+
+fn case_pattern_atom_matches(
+    pattern: &[char],
+    pattern_index: usize,
+    candidate: char,
+    nocase: bool,
+) -> (bool, usize) {
+    match pattern[pattern_index] {
+        '\x18' => (candidate == '\\', pattern_index + 1),
+        '?' => (true, pattern_index + 1),
+        '[' => {
+            if let Some((matched, next_index)) = case_bracket_expression_matches_with_case(
+                pattern,
+                pattern_index,
+                Some(candidate),
+                nocase,
+            ) {
+                (matched, next_index)
+            } else {
+                (chars_match('[', candidate, nocase), pattern_index + 1)
+            }
         }
-        '\\' if p_index + 1 < pattern.len() => {
-            w_index < word.len()
-                && chars_match(pattern[p_index + 1], word[w_index], nocase)
-                && case_pattern_matches_at_with_case(
-                    pattern,
-                    p_index + 2,
-                    word,
-                    w_index + 1,
-                    nocase,
-                )
-        }
-        literal => {
-            w_index < word.len()
-                && chars_match(literal, word[w_index], nocase)
-                && case_pattern_matches_at_with_case(
-                    pattern,
-                    p_index + 1,
-                    word,
-                    w_index + 1,
-                    nocase,
-                )
-        }
+        '\\' if pattern_index + 1 < pattern.len() => (
+            chars_match(pattern[pattern_index + 1], candidate, nocase),
+            pattern_index + 2,
+        ),
+        literal => (chars_match(literal, candidate, nocase), pattern_index + 1),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{case_pattern_matches, case_pattern_matches_nocase};
+
+    #[test]
+    fn wildcard_matching_handles_long_words_without_recursion() {
+        let word = "x".repeat(32 * 1024);
+
+        assert!(case_pattern_matches("*x*", &word));
+        assert!(!case_pattern_matches("*missing*", &word));
+    }
+
+    #[test]
+    fn wildcard_matching_backtracks_after_a_partial_literal_match() {
+        assert!(case_pattern_matches("*ab", "aab"));
+        assert!(case_pattern_matches_nocase("*foo*", "PATH_FOO_VALUE"));
     }
 }
 

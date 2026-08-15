@@ -402,8 +402,12 @@ fn invalid_based_literal(expression: &str) -> Option<(String, &'static str)> {
         };
         return Some((token.to_string(), error.message()));
     }
-    invalid_octal_literal(expression)
-        .map(|token| (token, ArithmeticLiteralError::ValueTooGreatForBase.message()))
+    invalid_octal_literal(expression).map(|token| {
+        (
+            token,
+            ArithmeticLiteralError::ValueTooGreatForBase.message(),
+        )
+    })
 }
 
 pub(super) fn arithmetic_division_by_zero_token(expression: &str) -> Option<&'static str> {

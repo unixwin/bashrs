@@ -152,9 +152,19 @@ pub fn external_command_for_named_program(
     args: &[String],
     env_vars: &HashMap<String, String>,
 ) -> (Command, bool) {
+    // Native command processors own slash-prefixed switches such as `/C`.
+    // Do not reinterpret those switches as paths under Winuxsh's logical
+    // shell root; doing so starts cmd.exe without its command string.
+    let preserve_native_args = is_windows_command_processor(program);
     let native_args = args
         .iter()
-        .map(|arg| external_argument_path(arg, env_vars))
+        .map(|arg| {
+            if preserve_native_args {
+                arg.clone()
+            } else {
+                external_argument_path(arg, env_vars)
+            }
+        })
         .collect::<Vec<_>>();
 
     if is_windows_powershell_script(program) {
@@ -291,6 +301,13 @@ fn logical_bin_command_name(name: &str) -> Option<String> {
 
 fn external_argument_path(arg: &str, env_vars: &HashMap<String, String>) -> String {
     if cfg!(windows) {
+        // A leading backslash is a valid native argument spelling (and is
+        // commonly used by utilities for escape sequences such as `\\n`).
+        // Only slash-prefixed shell paths belong to the logical root; treating
+        // `\\n` as `/n` changes data arguments into paths under WINUXSH_ROOT.
+        if arg.starts_with('\\') {
+            return arg.to_string();
+        }
         let normalized = arg.replace('\\', "/");
         let drive_path = normalized.len() >= 3
             && normalized.as_bytes()[0] == b'/'
@@ -388,6 +405,14 @@ fn windows_command_processor() -> PathBuf {
     std::env::var_os("ComSpec")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32\cmd.exe"))
+}
+
+fn is_windows_command_processor(path: &Path) -> bool {
+    cfg!(windows)
+        && path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case("cmd.exe"))
 }
 
 fn cmd_compatible_windows_path(path: &Path) -> PathBuf {
@@ -1020,6 +1045,25 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn windows_cmd_switches_are_not_mapped_into_shell_root() {
+        let mut env_vars = HashMap::new();
+        env_vars.insert(
+            "WINUXSH_ROOT".to_string(),
+            std::env::temp_dir().to_string_lossy().to_string(),
+        );
+        let program = PathBuf::from(r"C:\Windows\System32\cmd.exe");
+        let args = vec!["/C".to_string(), "echo child".to_string()];
+        let (command, _) =
+            external_command_for_named_program(&program, Some("cmd.exe"), &args, &env_vars);
+        let actual = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(actual, args);
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn windows_find_user_command_prefers_native_wrapper_before_extensionless_script() {
         let bin_dir = std::env::temp_dir().join("rubash-native-wrapper-before-script");
         let _ = fs::remove_dir_all(&bin_dir);
@@ -1183,6 +1227,30 @@ mod tests {
 
         assert!(!used_shell);
         assert_eq!(args, vec!["/h/not-a-real-pathspec".to_string()]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_external_arguments_preserve_leading_backslash_data() {
+        let root = std::env::temp_dir().join("rubash-preserve-backslash-argument");
+        let mut env_vars = HashMap::new();
+        env_vars.insert(
+            "WINUXSH_ROOT".to_string(),
+            root.to_string_lossy().to_string(),
+        );
+
+        let (command, used_shell) = external_command_for_program(
+            &PathBuf::from("tr.exe"),
+            &[" ".to_string(), r"\n".to_string()],
+            &env_vars,
+        );
+        let args = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(!used_shell);
+        assert_eq!(args, vec![" ".to_string(), r"\n".to_string()]);
     }
 
     #[cfg(windows)]

@@ -418,7 +418,8 @@ impl Executor {
         // POSIX mode is the exception: `set -o posix; z=$(false;echo posix)`
         // exits (set-e1.sub), so keep errexit active there.
         let posix_mode = self.env_vars.get("__RUBASH_POSIX_MODE").map(String::as_str) == Some("1");
-        let inherit_errexit = crate::builtins::shopt::option_enabled(&self.env_vars, "inherit_errexit");
+        let inherit_errexit =
+            crate::builtins::shopt::option_enabled(&self.env_vars, "inherit_errexit");
         let result = if posix_mode || inherit_errexit {
             self.execute_ast(&ast)
         } else {

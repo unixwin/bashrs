@@ -9,23 +9,26 @@ fn escaped_brace_expansion_preserves_literal_suffix() {
         .expect("run escaped brace expansion");
 
     assert!(output.status.success());
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        "x} y} {a} b} c}\n",
-    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "x} y} {a} b} c}\n",);
     assert!(String::from_utf8_lossy(&output.stderr).is_empty());
 }
 
 #[test]
 fn quoted_parameter_assignment_preserves_escaped_space_for_equals() {
-    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/parameter_assignment_escaped_space.sh");
+    let script = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/parameter_assignment_escaped_space.sh"
+    );
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg(script)
         .output()
         .expect("run parameter assignment escape probe");
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "<a\\ b> <x> <a\\ b> \n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "<a\\ b> <x> <a\\ b> \n"
+    );
     assert!(String::from_utf8_lossy(&output.stderr).is_empty());
 }
 
@@ -38,13 +41,19 @@ fn quoted_parameter_pattern_braces_match_bash() {
         .expect("run quoted parameter pattern probe");
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "foo*bar\nfoo*bar\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "foo*bar\nfoo*bar\n"
+    );
     assert!(String::from_utf8_lossy(&output.stderr).is_empty());
 }
 
 #[test]
 fn malformed_script_preserves_valid_prefix_before_status_two() {
-    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/malformed_parameter_prefix.sh");
+    let script = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/malformed_parameter_prefix.sh"
+    );
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg(script)
         .output()
@@ -160,7 +169,10 @@ fn arithmetic_invalid_octal_reports_bash_base_diagnostic() {
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(String::from_utf8_lossy(&output.stdout), "");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("value too great for base"), "stderr: {stderr}");
+    assert!(
+        stderr.contains("value too great for base"),
+        "stderr: {stderr}"
+    );
     assert!(stderr.contains("error token is \"08\""), "stderr: {stderr}");
 }
 
@@ -186,8 +198,9 @@ fn arithmetic_assignment_error_continues_without_errexit() {
 
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(String::from_utf8_lossy(&output.stdout), "after:1 y: x:2\n");
-    assert!(String::from_utf8_lossy(&output.stderr)
-        .contains("attempted assignment to non-variable"));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("attempted assignment to non-variable")
+    );
 }
 
 #[test]
@@ -225,5 +238,8 @@ fn separated_double_parentheses_parse_as_nested_subshells() {
         .expect("run nested subshell disambiguation probe");
 
     assert_eq!(output.status.code(), Some(0));
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "abc\ndef\nghi\nafter\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "abc\ndef\nghi\nafter\n"
+    );
 }

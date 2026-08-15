@@ -120,8 +120,8 @@ impl Executor {
         // Function pipeline stages are compound command bodies for errexit.
         if force_compound_errexit {
             if force_compound_errexit {
-            subshell.suppress_errexit = 0;
-        }
+                subshell.suppress_errexit = 0;
+            }
         }
         subshell
             .env_vars

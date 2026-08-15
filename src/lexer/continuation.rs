@@ -213,7 +213,12 @@ pub(crate) fn has_unclosed_command_substitution(input: &str) -> bool {
             index += 1;
             continue;
         }
-        if ch == '$' && chars.get(index + 1) == Some(&'{') && !single && !ansi_single && !parameter_single {
+        if ch == '$'
+            && chars.get(index + 1) == Some(&'{')
+            && !single
+            && !ansi_single
+            && !parameter_single
+        {
             parameter_depth += 1;
             index += 2;
             continue;
