@@ -47,4 +47,4 @@ Validation:
 - parser regression: passed;
 - git diff --check: passed.
 
-The brace fixture still has separate brace-expansion stdout differences and remains outside this narrow parser/parameter gate. Phase 4 remains in progress; Phase 5 and later remain locked.
+The brace fixture still has separate brace-expansion stdout differences and remains outside this narrow parser/parameter gate. Additional Phase 4 validation passed: parser_tests 350/350, malformed CLI regressions 5/5, and parameter CLI regressions 5/5. Phase 4 remains in progress while the remaining POSIX expansion slices are classified; Phase 5 and later remain locked.
