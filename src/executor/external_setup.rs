@@ -113,8 +113,7 @@ impl Executor {
             let target = self.expand_word(&redirect.target);
             if redirect.fd.unwrap_or(0) == 0 {
                 if let Some(fd) = redirect_target_fd(&target) {
-                    if let Some(FdReadEndpoint::CoprocStdout(pid)) =
-                        self.fd_table.read_endpoint(fd)
+                    if let Some(FdReadEndpoint::CoprocStdout(pid)) = self.fd_table.read_endpoint(fd)
                     {
                         let reader = self
                             .coproc_stdout_readers
@@ -235,8 +234,7 @@ impl Executor {
                             let path = self.write_process_substitution_temp(&input)?;
                             let input_len = self.virtual_fd_stdin_len(fd);
                             self.fd_table.consume_all_text(fd);
-                            self.env_vars
-                                .insert(fd_stdin_offset_key(fd), input_len);
+                            self.env_vars.insert(fd_stdin_offset_key(fd), input_len);
                             redirect.target = shell_display_path(&path.to_string_lossy());
                             files.inputs.push(path);
                         } else if let Some(MaterializedRead::File(path)) = self
@@ -487,8 +485,7 @@ impl Executor {
         let path = self.write_process_substitution_temp(&input)?;
         let input_len = self.virtual_fd_stdin_len(0);
         self.fd_table.consume_all_text(0);
-        self.env_vars
-            .insert(fd_stdin_offset_key(0), input_len);
+        self.env_vars.insert(fd_stdin_offset_key(0), input_len);
         let target = shell_display_path(&path.to_string_lossy());
         rewritten.redirect_in = Some(Redirect {
             fd: Some(0),
@@ -685,7 +682,10 @@ fn sync_ordered_redirect_targets(command: &mut CommandNode) {
             continue;
         }
         let source = if redirect.fd.unwrap_or(1) == 2 {
-            command.redirect_err_append.as_ref().or(command.redirect_err.as_ref())
+            command
+                .redirect_err_append
+                .as_ref()
+                .or(command.redirect_err.as_ref())
         } else {
             command.redirect_out.as_ref().or(command.append.as_ref())
         };

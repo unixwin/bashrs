@@ -1,5 +1,5 @@
-use super::*;
 use super::alias_loop_match::control_word;
+use super::*;
 
 impl Executor {
     pub(in crate::executor) fn execute_alias_introduced_select(

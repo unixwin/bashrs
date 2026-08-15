@@ -82,10 +82,7 @@ where
     Ok(EXECUTION_SUCCESS)
 }
 
-fn current_directory(
-    mode: Mode,
-    env_vars: &HashMap<String, String>,
-) -> io::Result<Option<String>> {
+fn current_directory(mode: Mode, env_vars: &HashMap<String, String>) -> io::Result<Option<String>> {
     let physical = env::current_dir()?;
 
     if mode == Mode::Logical {
@@ -97,10 +94,7 @@ fn current_directory(
     Ok(Some(shell_display_path(&physical)))
 }
 
-fn logical_pwd_if_current(
-    physical: &Path,
-    env_vars: &HashMap<String, String>,
-) -> Option<String> {
+fn logical_pwd_if_current(physical: &Path, env_vars: &HashMap<String, String>) -> Option<String> {
     let logical = env_vars.get("PWD")?.clone();
 
     if !(logical.starts_with('/') || Path::new(&logical).is_absolute()) {

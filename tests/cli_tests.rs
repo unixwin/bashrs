@@ -5,16 +5,16 @@ use std::{fs, path::Path};
 
 use regex::Regex;
 
+#[path = "cli_tests/compat_issue_regressions.rs"]
+mod compat_issue_regressions;
 #[path = "cli_tests/examples.rs"]
 mod examples;
 #[path = "cli_tests/fd_redirects.rs"]
 mod fd_redirects;
-#[path = "cli_tests/scripts.rs"]
-mod scripts;
-#[path = "cli_tests/compat_issue_regressions.rs"]
-mod compat_issue_regressions;
 #[path = "cli_tests/process_substitution.rs"]
 mod process_substitution;
+#[path = "cli_tests/scripts.rs"]
+mod scripts;
 
 fn shell_test_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
@@ -191,7 +191,11 @@ fn c_command_closing_named_coproc_stdin_fd_produces_eof() {
 
     let deadline = Instant::now() + Duration::from_secs(5);
     while Instant::now() < deadline {
-        if child.try_wait().expect("poll rubash coproc close probe").is_some() {
+        if child
+            .try_wait()
+            .expect("poll rubash coproc close probe")
+            .is_some()
+        {
             let output = child
                 .wait_with_output()
                 .expect("collect rubash coproc close probe");
@@ -253,10 +257,7 @@ fn c_command_materializes_persistent_stderr_to_stdout_for_external_children() {
         .expect("run persistent fd2 external child probe");
 
     assert!(output.status.success());
-    assert!(
-        String::from_utf8_lossy(&output.stdout)
-            .contains("/definitely-missing-rubash-fd2-path")
-    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("/definitely-missing-rubash-fd2-path"));
     assert!(String::from_utf8_lossy(&output.stdout).contains("status=1"));
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -274,10 +275,8 @@ fn c_command_pipeline_stages_inherit_persistent_stderr_to_stdout() {
         .expect("run persistent fd2 pipeline probe");
 
     assert!(output.status.success());
-    assert!(
-        String::from_utf8_lossy(&output.stdout)
-            .contains("/definitely-missing-rubash-pipeline-fd2-path")
-    );
+    assert!(String::from_utf8_lossy(&output.stdout)
+        .contains("/definitely-missing-rubash-pipeline-fd2-path"));
     assert!(String::from_utf8_lossy(&output.stdout).contains("status=0"));
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -485,7 +484,10 @@ fn c_command_external_writes_named_coproc_stdin_through_array_fd() {
         .expect("run rubash");
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "external-write:payload\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "external-write:payload\n"
+    );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
@@ -609,6 +611,45 @@ fn pipeline_pipefail_triggers_errexit_on_failure() {
 }
 
 #[test]
+fn nonfinal_brace_pipeline_stage_keeps_errexit_inside_group() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("set -e; { false; echo group; } | cat; echo end")
+        .output()
+        .expect("run rubash");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "end\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn nonfinal_function_pipeline_stage_keeps_errexit_inside_body() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("set -e; f() { false; echo function; }; f | cat; echo end")
+        .output()
+        .expect("run rubash");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "end\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn final_brace_pipeline_stage_triggers_errexit() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("set -e; true | { false; echo group; }; echo end")
+        .output()
+        .expect("run rubash");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn pipeline_statuses_match_bash_for_pipefail() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
@@ -695,9 +736,7 @@ fn parameter_replacement_matches_escaped_slash_pattern() {
 #[test]
 fn large_heredoc_preserves_all_lines() {
     let body = "payload\n".repeat(20_000);
-    let script = format!(
-        "mapfile -t lines <<'EOF'\n{body}EOF\nprintf '%s\n' \"${{#lines[@]}}\""
-    );
+    let script = format!("mapfile -t lines <<'EOF'\n{body}EOF\nprintf '%s\n' \"${{#lines[@]}}\"");
     let script_path = "target/rubash-large-heredoc-script.sh";
     fs::write(script_path, script).expect("write large heredoc probe");
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
@@ -771,9 +810,10 @@ fn arithmetic_errors_in_assignment_abort_the_script() {
             .output()
             .expect("run rubash");
 
+        let expected_status = if prefix == "set -u;" { 127 } else { 1 };
         assert_eq!(
             output.status.code(),
-            Some(1),
+            Some(expected_status),
             "assignment: {prefix}{assignment}"
         );
         assert_eq!(String::from_utf8_lossy(&output.stdout), "");
@@ -1169,7 +1209,10 @@ fn array_assignment_quoted_empty_arithmetic_subscripts_use_index_zero() {
         .expect("run quoted empty array subscript probe");
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "declare -a a=([0]=\"23\")\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "declare -a a=([0]=\"23\")\n"
+    );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
@@ -1182,7 +1225,10 @@ fn declare_quoted_array_element_assignment_targets_index_zero() {
         .expect("run declare quoted array subscript probe");
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "declare -a a=([0]=\"14\")\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "declare -a a=([0]=\"14\")\n"
+    );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 

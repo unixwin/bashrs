@@ -34,13 +34,12 @@ impl Executor {
                 use std::io::Write;
                 use std::process::Stdio;
                 let program = find_user_command(&cmd_name, &self.env_vars)?;
-                let (mut process, _) =
-                    external_command_for_named_program(
-                        &program,
-                        Some(&cmd_name),
-                        &expanded_args,
-                        &self.env_vars,
-                    );
+                let (mut process, _) = external_command_for_named_program(
+                    &program,
+                    Some(&cmd_name),
+                    &expanded_args,
+                    &self.env_vars,
+                );
                 self.apply_child_environment(&mut process);
                 let mut child = process
                     .stdin(Stdio::piped())
@@ -374,13 +373,12 @@ impl Executor {
             // the source (functions, builtins, compound commands).
             return None;
         };
-        let (mut process, _) =
-            external_command_for_named_program(
-                &program,
-                Some(&stdio.expanded_words[0]),
-                &stdio.expanded_words[1..],
-                &self.env_vars,
-            );
+        let (mut process, _) = external_command_for_named_program(
+            &program,
+            Some(&stdio.expanded_words[0]),
+            &stdio.expanded_words[1..],
+            &self.env_vars,
+        );
 
         self.apply_child_environment(&mut process);
         if let Some(stdin_path) = stdio.stdin_path {

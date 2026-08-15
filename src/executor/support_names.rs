@@ -364,10 +364,8 @@ pub(in crate::executor) fn apply_stderr_append_redirect(
     commands: &mut [CommandNode],
     redirect: &Redirect,
 ) {
-    let redirect = if matches!(
-        redirect.kind,
-        crate::parser::RedirectKind::DuplicateOutput
-    ) && redirect_target_fd(&redirect.target).is_none()
+    let redirect = if matches!(redirect.kind, crate::parser::RedirectKind::DuplicateOutput)
+        && redirect_target_fd(&redirect.target).is_none()
     {
         let mut normalized = redirect.clone();
         normalized.operator = "2>>".to_string();

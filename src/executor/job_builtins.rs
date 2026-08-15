@@ -185,9 +185,7 @@ impl Executor {
             }
         }
 
-        if cmd.words.len() == 1
-            && self.job_table.jobs.values().any(|job| job.background)
-        {
+        if cmd.words.len() == 1 && self.job_table.jobs.values().any(|job| job.background) {
             let pids = self
                 .job_table
                 .jobs
@@ -286,7 +284,9 @@ impl Executor {
                     self.job_table
                         .jobs
                         .values()
-                        .filter(|job| job.background && job.state != crate::jobs::ProcessState::Completed)
+                        .filter(|job| {
+                            job.background && job.state != crate::jobs::ProcessState::Completed
+                        })
                         .filter_map(|job| job.pids.last().copied())
                         .next()
                 })?
@@ -362,7 +362,8 @@ impl Executor {
             self.env_vars.remove(&fd_stdin_offset_key(fd));
             self.env_vars.remove(&fd_dynamic_input_key(fd));
             self.env_vars.remove(&fd_output_key(fd));
-            self.env_vars.remove(&fd_output_process_substitution_key(fd));
+            self.env_vars
+                .remove(&fd_output_process_substitution_key(fd));
             self.env_vars.insert(fd_closed_key(fd), "1".to_string());
         }
         let coproc_names = self
@@ -401,12 +402,7 @@ impl Executor {
         pid: u32,
         _retain_for_explicit_wait: bool,
     ) -> Result<Option<i32>, ExecuteError> {
-        if let Some(status) = self
-            .job_table
-            .completed_statuses
-            .get(&pid)
-            .copied()
-        {
+        if let Some(status) = self.job_table.completed_statuses.get(&pid).copied() {
             self.join_coproc_stderr_forwarder(pid)?;
             // Waiting consumes the jobs-table entry, but the completed status
             // remains available for a later explicit wait of the same PID.
@@ -442,7 +438,11 @@ impl Executor {
                 if let Some(pid) = self.resolve_background_job(job) {
                     if let Some(job_id) = self.job_table.pid_to_job.get(&pid).copied() {
                         if let Some(entry) = self.job_table.jobs.get(&job_id) {
-                            selected.push((self.background_job_number(pid), pid, entry.command.clone()));
+                            selected.push((
+                                self.background_job_number(pid),
+                                pid,
+                                entry.command.clone(),
+                            ));
                         }
                     }
                 } else {
@@ -605,14 +605,19 @@ impl Executor {
         let pid = job.parse::<u32>().ok()?;
         (self.job_table.pid_to_job.contains_key(&pid)
             || self.job_table.completed_statuses.contains_key(&pid))
-            .then_some(pid)
+        .then_some(pid)
     }
 
     fn background_job_number(&self, pid: u32) -> usize {
         self.job_table
             .pid_to_job
             .get(&pid)
-            .and_then(|job_id| self.job_table.jobs.keys().position(|candidate| candidate == job_id))
+            .and_then(|job_id| {
+                self.job_table
+                    .jobs
+                    .keys()
+                    .position(|candidate| candidate == job_id)
+            })
             .map(|index| index + 1)
             .unwrap_or(1)
     }

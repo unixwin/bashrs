@@ -447,9 +447,7 @@ impl Executor {
         let mut matches = shell_directory_entries(dir, &self.env_vars)
             .ok()?
             .into_iter()
-            .filter_map(|entry| {
-                case_pattern_matches(pattern, &entry.name).then_some(entry.path)
-            })
+            .filter_map(|entry| case_pattern_matches(pattern, &entry.name).then_some(entry.path))
             .collect::<Vec<_>>();
         matches.sort();
         matches.into_iter().next()

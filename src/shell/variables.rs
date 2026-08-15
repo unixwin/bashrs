@@ -92,10 +92,13 @@ impl VariableStore {
         index: i64,
         value: impl Into<String>,
     ) -> Result<(), &'static str> {
-        let variable = self.variables.entry(name.to_string()).or_insert_with(|| Variable {
-            value: ShellValue::IndexedArray(BTreeMap::new()),
-            ..Variable::scalar("")
-        });
+        let variable = self
+            .variables
+            .entry(name.to_string())
+            .or_insert_with(|| Variable {
+                value: ShellValue::IndexedArray(BTreeMap::new()),
+                ..Variable::scalar("")
+            });
         if variable.readonly {
             return Err("readonly variable");
         }
@@ -107,24 +110,25 @@ impl VariableStore {
                 values.insert(index, value.into());
                 Ok(())
             }
-            ShellValue::AssociativeArray(_) => Err("cannot assign indexed element to associative array"),
+            ShellValue::AssociativeArray(_) => {
+                Err("cannot assign indexed element to associative array")
+            }
             ShellValue::Scalar(_) => unreachable!(),
         }
     }
 
-    pub fn replace_indexed_array<I, V>(
-        &mut self,
-        name: &str,
-        values: I,
-    ) -> Result<(), &'static str>
+    pub fn replace_indexed_array<I, V>(&mut self, name: &str, values: I) -> Result<(), &'static str>
     where
         I: IntoIterator<Item = V>,
         V: Into<String>,
     {
-        let variable = self.variables.entry(name.to_string()).or_insert_with(|| Variable {
-            value: ShellValue::IndexedArray(BTreeMap::new()),
-            ..Variable::scalar("")
-        });
+        let variable = self
+            .variables
+            .entry(name.to_string())
+            .or_insert_with(|| Variable {
+                value: ShellValue::IndexedArray(BTreeMap::new()),
+                ..Variable::scalar("")
+            });
         if variable.readonly {
             return Err("readonly variable");
         }
@@ -151,10 +155,13 @@ impl VariableStore {
         K: Into<String>,
         V: Into<String>,
     {
-        let variable = self.variables.entry(name.to_string()).or_insert_with(|| Variable {
-            value: ShellValue::AssociativeArray(HashMap::new()),
-            ..Variable::scalar("")
-        });
+        let variable = self
+            .variables
+            .entry(name.to_string())
+            .or_insert_with(|| Variable {
+                value: ShellValue::AssociativeArray(HashMap::new()),
+                ..Variable::scalar("")
+            });
         if variable.readonly {
             return Err("readonly variable");
         }
@@ -177,10 +184,13 @@ impl VariableStore {
         key: impl Into<String>,
         value: impl Into<String>,
     ) -> Result<(), &'static str> {
-        let variable = self.variables.entry(name.to_string()).or_insert_with(|| Variable {
-            value: ShellValue::AssociativeArray(HashMap::new()),
-            ..Variable::scalar("")
-        });
+        let variable = self
+            .variables
+            .entry(name.to_string())
+            .or_insert_with(|| Variable {
+                value: ShellValue::AssociativeArray(HashMap::new()),
+                ..Variable::scalar("")
+            });
         if variable.readonly {
             return Err("readonly variable");
         }
@@ -192,7 +202,9 @@ impl VariableStore {
                 values.insert(key.into(), value.into());
                 Ok(())
             }
-            ShellValue::IndexedArray(_) => Err("cannot assign associative element to indexed array"),
+            ShellValue::IndexedArray(_) => {
+                Err("cannot assign associative element to indexed array")
+            }
             ShellValue::Scalar(_) => unreachable!(),
         }
     }
@@ -337,14 +349,25 @@ mod tests {
         store.set_indexed_element("items", 9, "nine").unwrap();
         assert_eq!(store.indexed_element("items", 3), Some("three"));
         assert_eq!(store.indexed_element("items", 4), None);
-        assert_eq!(store.remove_indexed_element("items", 3).unwrap(), Some("three".into()));
+        assert_eq!(
+            store.remove_indexed_element("items", 3).unwrap(),
+            Some("three".into())
+        );
         assert_eq!(store.indexed_element("items", 3), None);
 
-        store.set_associative_element("map", "a b]", "value").unwrap();
+        store
+            .set_associative_element("map", "a b]", "value")
+            .unwrap();
         assert_eq!(store.associative_element("map", "a b]"), Some("value"));
 
         store.get_mut("items").unwrap().readonly = true;
-        assert_eq!(store.set_indexed_element("items", 1, "blocked"), Err("readonly variable"));
-        assert_eq!(store.remove_indexed_element("items", 9), Err("readonly variable"));
+        assert_eq!(
+            store.set_indexed_element("items", 1, "blocked"),
+            Err("readonly variable")
+        );
+        assert_eq!(
+            store.remove_indexed_element("items", 9),
+            Err("readonly variable")
+        );
     }
 }

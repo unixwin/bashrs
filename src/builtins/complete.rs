@@ -6,9 +6,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::io::{self, Write};
 
-use crate::executor::path::{
-    shell_directory_entries, shell_path_entries,
-};
+use crate::executor::path::{shell_directory_entries, shell_path_entries};
 
 use crate::builtins::alias::Alias;
 
@@ -320,10 +318,7 @@ where
     }
 
     if let Some(glob_pattern) = parsed.glob_pattern.as_deref() {
-        return match crate::executor::glob::pathname_expand_word(
-            glob_pattern,
-            env_vars,
-        ) {
+        return match crate::executor::glob::pathname_expand_word(glob_pattern, env_vars) {
             crate::executor::glob::PathnameExpansion::Matches(matches) => {
                 write_compgen_matches(matches.iter().map(String::as_str), &parsed, stdout)
             }

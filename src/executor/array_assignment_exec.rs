@@ -216,11 +216,7 @@ impl Executor {
             self.exit_code = 1;
             return true;
         }
-        let index = if index.trim().is_empty() {
-            "0"
-        } else {
-            index
-        };
+        let index = if index.trim().is_empty() { "0" } else { index };
         if index.trim() == "*" {
             eprintln!(
                 "{}{}: cannot assign to non-numeric index",

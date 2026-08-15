@@ -55,9 +55,8 @@ impl Executor {
             return expanded;
         }
 
-        let mut expanded = unescape_remaining_shell_escapes(
-            &self.expand_embedded_parameters_mut(value),
-        );
+        let mut expanded =
+            unescape_remaining_shell_escapes(&self.expand_embedded_parameters_mut(value));
         if expanded.contains("<(") || expanded.contains(">(") {
             if let Ok(materialized) = self.materialize_assignment_process_substitutions(&expanded) {
                 expanded = materialized;

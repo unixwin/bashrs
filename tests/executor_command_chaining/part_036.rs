@@ -625,7 +625,11 @@ fn test_kill_stop_continue_preserves_job_lifecycle() {
 
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
-    assert!(fs::read_to_string(output_path).unwrap().trim().parse::<u32>().is_ok());
+    assert!(fs::read_to_string(output_path)
+        .unwrap()
+        .trim()
+        .parse::<u32>()
+        .is_ok());
     assert_eq!(fs::read_to_string(status_path).unwrap(), "137\n");
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_file(status_path);

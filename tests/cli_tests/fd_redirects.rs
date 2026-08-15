@@ -398,7 +398,10 @@ fn c_dynamic_fd_closed_redirect_preserves_source_token_diagnostic() {
 
     assert!(output.status.success());
     assert_eq!(stream_text(&output.stdout), "status:1\n");
-    assert_eq!(stream_text(&output.stderr), "rubash: $fd: Bad file descriptor\n");
+    assert_eq!(
+        stream_text(&output.stderr),
+        "rubash: $fd: Bad file descriptor\n"
+    );
 }
 
 fn read_text(path: &Path) -> String {

@@ -1973,5 +1973,7 @@ fn redirected_input_fd(executor: &Executor, cmd: &CommandNode) -> Option<u32> {
     }
     let target = executor.expand_word(&redirect.target);
     let target = target.strip_prefix('&').unwrap_or(&target);
-    (target != "-").then(|| target.parse::<u32>().ok()).flatten()
+    (target != "-")
+        .then(|| target.parse::<u32>().ok())
+        .flatten()
 }

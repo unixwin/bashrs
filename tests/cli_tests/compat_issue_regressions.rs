@@ -17,10 +17,7 @@ echo "${v%"${v#?}"}"
         .expect("run rubash");
 
     assert!(output.status.success());
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        "\na\nb\na\n"
-    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "\na\nb\na\n");
     assert!(String::from_utf8_lossy(&output.stderr).is_empty());
 }
 
@@ -78,4 +75,36 @@ fn aliases_expand_when_expand_aliases_is_enabled() {
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), "hi\n");
     assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
+fn arithmetic_conditional_false_branch_assignment_matches_bash() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("x=0; (( 1 ? x=4 : x=9 )); printf 'status:%s x:%s\n' \"$?\" \"$x\"")
+        .output()
+        .expect("run rubash");
+
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "status:1 x:4\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("attempted assignment to non-variable"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("error token is \"=9"), "stderr: {stderr}");
+}
+
+#[test]
+fn arithmetic_invalid_octal_reports_bash_base_diagnostic() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("printf '%s\n' $((08))")
+        .output()
+        .expect("run invalid octal arithmetic probe");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("value too great for base"), "stderr: {stderr}");
+    assert!(stderr.contains("error token is \"08\""), "stderr: {stderr}");
 }

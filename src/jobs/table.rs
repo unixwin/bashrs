@@ -99,7 +99,9 @@ impl JobTable {
     pub fn resolve_jobspec(&self, spec: &str) -> Option<JobId> {
         let body = spec.strip_prefix('%').unwrap_or(spec);
         if body.is_empty() || matches!(body, "%" | "+") {
-            return self.current_job.or_else(|| self.jobs.keys().next_back().copied());
+            return self
+                .current_job
+                .or_else(|| self.jobs.keys().next_back().copied());
         }
         if body == "-" {
             return self.previous_job;
@@ -182,8 +184,14 @@ impl JobTable {
         let Some(job) = self.jobs.get_mut(&job_id) else {
             return;
         };
-        let any_running = job.processes.values().any(|p| p.state == ProcessState::Running);
-        let any_stopped = job.processes.values().any(|p| p.state == ProcessState::Stopped);
+        let any_running = job
+            .processes
+            .values()
+            .any(|p| p.state == ProcessState::Running);
+        let any_stopped = job
+            .processes
+            .values()
+            .any(|p| p.state == ProcessState::Stopped);
         job.state = if any_running {
             ProcessState::Running
         } else if any_stopped {

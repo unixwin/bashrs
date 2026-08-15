@@ -101,11 +101,7 @@ pub(crate) fn pathname_expand_word(
         Err(_) => return unmatched_expansion(word, nullglob, failglob),
     };
     let mut names = synthetic_dot_names(pattern, globskipdots);
-    names.extend(
-        entries
-            .into_iter()
-            .map(|entry| entry.name),
-    );
+    names.extend(entries.into_iter().map(|entry| entry.name));
     let mut matches: Vec<String> = names
         .into_iter()
         .filter_map(|name| {
@@ -171,11 +167,7 @@ fn pathname_expand_segments(
                 };
                 let include_dotfiles = dotglob || part.starts_with('.');
                 let mut names = synthetic_dot_names(part, globskipdots);
-                names.extend(
-                    entries
-                        .into_iter()
-                        .map(|entry| entry.name),
-                );
+                names.extend(entries.into_iter().map(|entry| entry.name));
                 for name in names {
                     if !include_dotfiles && name.starts_with('.') {
                         continue;
@@ -186,9 +178,7 @@ fn pathname_expand_segments(
                 }
             } else {
                 let candidate = join_path_segment(prefix, part);
-                if !is_last
-                    || !saw_pattern
-                    || shell_path_to_windows(&candidate, env_vars).exists()
+                if !is_last || !saw_pattern || shell_path_to_windows(&candidate, env_vars).exists()
                 {
                     next.push(candidate);
                 }
@@ -313,11 +303,7 @@ fn collect_globstar_matches(
         Err(_) => return,
     };
     let mut names = synthetic_dot_names(suffix, globskipdots);
-    names.extend(
-        entries
-            .iter()
-            .map(|entry| entry.name.clone()),
-    );
+    names.extend(entries.iter().map(|entry| entry.name.clone()));
     let include_dotfiles = dotglob || suffix.starts_with('.');
     for name in names {
         if name.starts_with('.') && !include_dotfiles {
@@ -386,10 +372,12 @@ mod tests {
         std::fs::write(root.join("etc").join("config"), "value").unwrap();
 
         let mut env_vars = HashMap::new();
-        env_vars.insert("RUBASH_ROOT".to_string(), root.to_string_lossy().to_string());
+        env_vars.insert(
+            "RUBASH_ROOT".to_string(),
+            root.to_string_lossy().to_string(),
+        );
 
-        let PathnameExpansion::Matches(matches) = pathname_expand_word("/etc/*", &env_vars)
-        else {
+        let PathnameExpansion::Matches(matches) = pathname_expand_word("/etc/*", &env_vars) else {
             panic!("logical root glob did not produce matches");
         };
         assert_eq!(matches, vec!["/etc/config".to_string()]);

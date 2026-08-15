@@ -88,12 +88,16 @@ impl ConditionalArithParser<'_> {
             if !self.consume(":") {
                 return None;
             }
-            return self.parse_assignment();
+            return self.parse_conditional();
         }
 
         let true_value = self.parse_comma()?;
         self.skip_ws();
         if !self.consume(":") {
+            return None;
+        }
+        if self.assignment_lvalue_is_next() {
+            self.skip_arithmetic_conditional_branch(&[",", ")", ":"]);
             return None;
         }
         self.skip_arithmetic_conditional_branch(&[",", ")", ":"]);

@@ -53,8 +53,7 @@ impl Executor {
             return Ok(());
         };
 
-        let (mut process, used_shell) =
-        external_command_for_named_program(
+        let (mut process, used_shell) = external_command_for_named_program(
             &program,
             Some(&cmd.words[0]),
             &cmd.words[1..],

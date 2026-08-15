@@ -94,28 +94,56 @@ impl Executor {
             line.push_str(delimiter);
         }
         append_function_redirect(&mut line, command.redirect_in.as_ref(), "<");
-        append_function_redirect(
-            &mut line,
-            command.redirect_out.as_ref(),
-            command
-                .redirect_out
-                .as_ref()
-                .filter(|redirect| redirect.clobber)
-                .map(|_| ">|")
-                .unwrap_or(">"),
-        );
-        append_function_redirect(&mut line, command.append.as_ref(), ">>");
-        append_function_redirect(
-            &mut line,
-            command.redirect_err.as_ref(),
-            command
-                .redirect_err
-                .as_ref()
-                .filter(|redirect| redirect.clobber)
-                .map(|_| "2>|")
-                .unwrap_or("2>"),
-        );
-        append_function_redirect(&mut line, command.redirect_err_append.as_ref(), "2>>");
+        let combined = command
+            .redirect_out
+            .as_ref()
+            .filter(|redirect| {
+                matches!(
+                    redirect.kind,
+                    crate::parser::RedirectKind::CombinedOutput
+                        | crate::parser::RedirectKind::CombinedAppend
+                )
+            })
+            .or_else(|| {
+                command.redirect_err_append.as_ref().filter(|redirect| {
+                    matches!(
+                        redirect.kind,
+                        crate::parser::RedirectKind::CombinedOutput
+                            | crate::parser::RedirectKind::CombinedAppend
+                    )
+                })
+            });
+        if let Some(redirect) = combined {
+            let op = if redirect.kind == crate::parser::RedirectKind::CombinedAppend {
+                "&>>"
+            } else {
+                "&>"
+            };
+            append_function_redirect(&mut line, Some(redirect), op);
+        } else {
+            append_function_redirect(
+                &mut line,
+                command.redirect_out.as_ref(),
+                command
+                    .redirect_out
+                    .as_ref()
+                    .filter(|redirect| redirect.clobber)
+                    .map(|_| ">|")
+                    .unwrap_or(">"),
+            );
+            append_function_redirect(&mut line, command.append.as_ref(), ">>");
+            append_function_redirect(
+                &mut line,
+                command.redirect_err.as_ref(),
+                command
+                    .redirect_err
+                    .as_ref()
+                    .filter(|redirect| redirect.clobber)
+                    .map(|_| "2>|")
+                    .unwrap_or("2>"),
+            );
+            append_function_redirect(&mut line, command.redirect_err_append.as_ref(), "2>>");
+        }
         Some(line)
     }
 

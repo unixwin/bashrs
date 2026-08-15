@@ -154,13 +154,12 @@ where
     W: Write,
     E: Write,
 {
-    let (mut process, _) =
-        crate::executor::path::external_command_for_named_program(
-            program,
-            program.file_stem().and_then(|stem| stem.to_str()),
-            operands,
-            env_vars,
-        );
+    let (mut process, _) = crate::executor::path::external_command_for_named_program(
+        program,
+        program.file_stem().and_then(|stem| stem.to_str()),
+        operands,
+        env_vars,
+    );
 
     process.env_clear();
     if !clean_env {

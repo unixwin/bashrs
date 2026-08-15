@@ -1,5 +1,5 @@
-use super::*;
 use super::alias_loop_match::control_word;
+use super::*;
 
 impl Executor {
     pub(in crate::executor) fn execute_alias_introduced_arithmetic_for(
@@ -72,8 +72,7 @@ impl Executor {
                 index += 1;
                 continue;
             }
-            if command.brace_group.is_some() || control_word(command) == Some("do")
-            {
+            if command.brace_group.is_some() || control_word(command) == Some("do") {
                 break;
             }
             parts.push(alias_arithmetic_part(command, &command.words));

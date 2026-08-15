@@ -42,7 +42,6 @@ mod compound_exec;
 use compound_exec::*;
 mod declare_local;
 mod dynamic_arrays;
-mod fd_table;
 mod embedded_mutations;
 mod embedded_parameters;
 mod expand_braced_indices;
@@ -57,6 +56,7 @@ mod external_finish;
 mod external_inner;
 mod external_redirects;
 mod external_setup;
+mod fd_table;
 mod function_calls;
 mod function_locals;
 mod getopts_enable;
@@ -121,6 +121,8 @@ mod redirection;
 mod select_exec;
 mod support_names;
 
+use crate::jobs::JobTable;
+use crate::shell::state::ShellState;
 use alias_helpers::*;
 use assignment_helpers::*;
 use builtin_names::*;
@@ -131,6 +133,7 @@ use execution_misc::*;
 use external_setup::{
     command_needs_process_substitution_materialization, ProcessSubstitutionFiles,
 };
+use fd_table::{FdReadEndpoint, FdTable, FdWriteEndpoint, MaterializedRead};
 use function_env::*;
 use local_helpers::*;
 use parameter_case::*;
@@ -142,9 +145,6 @@ use read_helpers::*;
 use read_split::*;
 use redirect_inherit::*;
 use support_names::*;
-use fd_table::{FdReadEndpoint, FdTable, FdWriteEndpoint, MaterializedRead};
-use crate::jobs::JobTable;
-use crate::shell::state::ShellState;
 
 pub(crate) mod conditional;
 use conditional::{case_pattern_matches, case_pattern_matches_nocase, simple_grep_pattern_matches};
@@ -357,8 +357,7 @@ pub struct Executor {
     background_job_order: Vec<u32>,
     coproc_stdin_writers: HashMap<u32, std::io::PipeWriter>,
     coproc_stdout_readers: HashMap<u32, std::io::PipeReader>,
-    coproc_stderr_forwarders:
-        HashMap<u32, std::thread::JoinHandle<Result<(), std::io::Error>>>,
+    coproc_stderr_forwarders: HashMap<u32, std::thread::JoinHandle<Result<(), std::io::Error>>>,
     assignment_output_process_substitutions: HashMap<String, String>,
     suppress_errexit: usize,
     debug_trap_running: bool,

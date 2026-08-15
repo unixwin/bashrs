@@ -70,10 +70,7 @@ fn test_err_trap_requires_errtrace_inside_functions() {
     let ast = parse(&tokens);
     let mut executor = Executor::new();
     assert!(executor.execute_ast(&ast).is_ok());
-    assert_eq!(
-        fs::read_to_string(output_path).unwrap(),
-        "inside\nafter\n"
-    );
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "inside\nafter\n");
     let _ = fs::remove_file(output_path);
 
     let input = format!(

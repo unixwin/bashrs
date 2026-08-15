@@ -45,6 +45,9 @@ impl Executor {
     ) -> Result<(String, String, i32), ExecuteError> {
         let saved_dir = env::current_dir().ok();
         let mut subshell = self.command_substitution_executor();
+        // Compound pipeline stages keep Bash's child-list errexit semantics;
+        // the caller handles the stage status at the pipeline boundary.
+        subshell.suppress_errexit = 0;
         subshell
             .env_vars
             .insert(FUNCTION_STDIN.to_string(), input.to_string());
@@ -72,7 +75,11 @@ impl Executor {
         if let Some(saved_dir) = saved_dir {
             let _ = env::set_current_dir(saved_dir);
         }
-        result?;
+        let status = match result {
+            Ok(()) => status,
+            Err(ExecuteError::ExitCode(code)) => code,
+            Err(error) => return Err(error),
+        };
 
         Ok((
             String::from_utf8_lossy(&output).into_owned(),
@@ -106,6 +113,8 @@ impl Executor {
 
         let saved_dir = env::current_dir().ok();
         let mut subshell = self.command_substitution_executor();
+        // Function pipeline stages are compound command bodies for errexit.
+        subshell.suppress_errexit = 0;
         subshell
             .env_vars
             .insert(FUNCTION_STDIN.to_string(), input.to_string());
@@ -123,7 +132,11 @@ impl Executor {
         if let Some(saved_dir) = saved_dir {
             let _ = env::set_current_dir(saved_dir);
         }
-        result?;
+        let status = match result {
+            Ok(()) => status,
+            Err(ExecuteError::ExitCode(code)) => code,
+            Err(error) => return Err(error),
+        };
         Ok(Some((
             String::from_utf8_lossy(&output).into_owned(),
             String::from_utf8_lossy(&stderr).into_owned(),

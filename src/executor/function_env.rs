@@ -61,9 +61,12 @@ pub(in crate::executor) fn exported_function_env_value(body: &[CommandNode]) -> 
         "() { :; }".to_string()
     } else {
         let mut output = String::from("() {");
-        for command in commands {
+        for (index, command) in commands.iter().enumerate() {
             output.push('\n');
-            output.push_str(&command);
+            output.push_str(command);
+            if index + 1 < commands.len() && !command.ends_with(';') {
+                output.push(';');
+            }
         }
         output.push_str("\n}");
         output
@@ -91,28 +94,56 @@ pub(in crate::executor) fn exported_function_command_text(command: &CommandNode)
         line.push_str(delimiter);
     }
     append_exported_redirect(&mut line, command.redirect_in.as_ref(), "<");
-    append_exported_redirect(
-        &mut line,
-        command.redirect_out.as_ref(),
-        command
-            .redirect_out
-            .as_ref()
-            .filter(|redirect| redirect.clobber)
-            .map(|_| ">|")
-            .unwrap_or(">"),
-    );
-    append_exported_redirect(&mut line, command.append.as_ref(), ">>");
-    append_exported_redirect(
-        &mut line,
-        command.redirect_err.as_ref(),
-        command
-            .redirect_err
-            .as_ref()
-            .filter(|redirect| redirect.clobber)
-            .map(|_| "2>|")
-            .unwrap_or("2>"),
-    );
-    append_exported_redirect(&mut line, command.redirect_err_append.as_ref(), "2>>");
+    let combined = command
+        .redirect_out
+        .as_ref()
+        .filter(|redirect| {
+            matches!(
+                redirect.kind,
+                crate::parser::RedirectKind::CombinedOutput
+                    | crate::parser::RedirectKind::CombinedAppend
+            )
+        })
+        .or_else(|| {
+            command.redirect_err_append.as_ref().filter(|redirect| {
+                matches!(
+                    redirect.kind,
+                    crate::parser::RedirectKind::CombinedOutput
+                        | crate::parser::RedirectKind::CombinedAppend
+                )
+            })
+        });
+    if let Some(redirect) = combined {
+        let op = if redirect.kind == crate::parser::RedirectKind::CombinedAppend {
+            "&>>"
+        } else {
+            "&>"
+        };
+        append_exported_redirect(&mut line, Some(redirect), op);
+    } else {
+        append_exported_redirect(
+            &mut line,
+            command.redirect_out.as_ref(),
+            command
+                .redirect_out
+                .as_ref()
+                .filter(|redirect| redirect.clobber)
+                .map(|_| ">|")
+                .unwrap_or(">"),
+        );
+        append_exported_redirect(&mut line, command.append.as_ref(), ">>");
+        append_exported_redirect(
+            &mut line,
+            command.redirect_err.as_ref(),
+            command
+                .redirect_err
+                .as_ref()
+                .filter(|redirect| redirect.clobber)
+                .map(|_| "2>|")
+                .unwrap_or("2>"),
+        );
+        append_exported_redirect(&mut line, command.redirect_err_append.as_ref(), "2>>");
+    }
     if let (Some(body), Some(delimiter)) = (&command.heredoc, &command.heredoc_delimiter) {
         let body = body.strip_prefix('\x1e').unwrap_or(body);
         line.push('\n');
@@ -145,9 +176,20 @@ pub(in crate::executor) fn append_exported_redirect(
 ) {
     if let Some(redirect) = redirect {
         line.push(' ');
-        line.push_str(op);
-        line.push(' ');
-        line.push_str(&redirect.target);
+        if redirect.target.starts_with('&') {
+            if redirect.fd.is_none()
+                && matches!(op, "<" | ">")
+                && redirect.target[1..].chars().all(|ch| ch.is_ascii_digit())
+            {
+                line.push_str(if op == "<" { "0" } else { "1" });
+            }
+            line.push_str(op);
+            line.push_str(&redirect.target);
+        } else {
+            line.push_str(op);
+            line.push(' ');
+            line.push_str(&redirect.target);
+        }
     }
 }
 

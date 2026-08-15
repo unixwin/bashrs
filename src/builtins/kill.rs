@@ -394,11 +394,11 @@ fn signal_process(pid: u32, signal: i32) -> Result<(), &'static str> {
         CloseHandle, GetLastError, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER, STILL_ACTIVE,
     };
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Thread32First, Thread32Next, THREADENTRY32, TH32CS_SNAPTHREAD,
+        CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
     };
     use windows_sys::Win32::System::Threading::{
-        GetExitCodeProcess, OpenProcess, OpenThread, ResumeThread, SuspendThread,
-        TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION, THREAD_SUSPEND_RESUME,
+        GetExitCodeProcess, OpenProcess, OpenThread, ResumeThread, SuspendThread, TerminateProcess,
+        PROCESS_QUERY_LIMITED_INFORMATION, THREAD_SUSPEND_RESUME,
     };
 
     if signal == 17 || signal == 18 || signal == 19 {
@@ -434,7 +434,11 @@ fn signal_process(pid: u32, signal: i32) -> Result<(), &'static str> {
             result = unsafe { Thread32Next(snapshot, &mut entry) } != 0;
         }
         unsafe { CloseHandle(snapshot) };
-        return if found { Ok(()) } else { Err("No such process") };
+        return if found {
+            Ok(())
+        } else {
+            Err("No such process")
+        };
     }
 
     use windows_sys::Win32::System::Threading::PROCESS_TERMINATE;

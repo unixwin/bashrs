@@ -137,7 +137,11 @@ impl Executor {
         // must stop, including when it is followed by `||` or `&&`.
         if self.arithmetic_expansion_error.get() {
             self.arithmetic_expansion_error.set(false);
-            let status = if self.env_vars.remove("__RUBASH_ARITH_NOUNSET_ERROR").is_some() {
+            let status = if self
+                .env_vars
+                .remove("__RUBASH_ARITH_NOUNSET_ERROR")
+                .is_some()
+            {
                 127
             } else {
                 1

@@ -229,8 +229,8 @@ fn virtual_device_test(op: &str, operand: &str) -> Option<bool> {
 
     Some(match op {
         "-a" | "-e" | "-r" | "-w" | "-c" => true,
-        "-x" | "-s" | "-b" | "-p" | "-S" | "-u" | "-g" | "-k" | "-h" | "-L"
-        | "-O" | "-G" | "-N" => false,
+        "-x" | "-s" | "-b" | "-p" | "-S" | "-u" | "-g" | "-k" | "-h" | "-L" | "-O" | "-G"
+        | "-N" => false,
         _ => return None,
     })
 }

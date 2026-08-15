@@ -557,9 +557,7 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
             push_compound_command(state, for_cmd);
             return Some(next_i);
         }
-        let arithmetic_for_marker = tokens
-            .get(i + 1)
-            .is_some_and(|next| next.value == "((")
+        let arithmetic_for_marker = tokens.get(i + 1).is_some_and(|next| next.value == "((")
             || (tokens.get(i + 1).is_some_and(|next| next.value == "(")
                 && tokens.get(i + 2).is_some_and(|next| next.value == "("));
         if arithmetic_for_marker {

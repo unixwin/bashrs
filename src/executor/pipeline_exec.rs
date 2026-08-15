@@ -291,10 +291,17 @@ impl Executor {
             }
             self.set_current_command(stage);
             let last_stage = stage_index + 1 == commands.len();
+            let preserve_compound_errexit = command_is_compound_pipeline_stage(stage)
+                || stage
+                    .words
+                    .first()
+                    .map(|word| self.expand_word(word))
+                    .and_then(|word| self.function_name_for_command_word(&word))
+                    .is_some();
             let Some((mut next_input, next_stderr, next_status)) =
                 (if last_stage && self.lastpipe_enabled() {
                     Some(self.execute_lastpipe_stage(stage, &input)?)
-                } else if last_stage {
+                } else if last_stage || preserve_compound_errexit {
                     self.execute_pipeline_stage(stage, &input)?
                 } else {
                     // Non-final pipeline stages never trigger errexit (bash
@@ -469,9 +476,9 @@ impl Executor {
         }
         results.reverse();
         for reader in intermediate_stderr {
-            let output = reader
-                .join()
-                .map_err(|_| ExecuteError::IoError(std::io::Error::other("pipeline stderr reader panicked")))??;
+            let output = reader.join().map_err(|_| {
+                ExecuteError::IoError(std::io::Error::other("pipeline stderr reader panicked"))
+            })??;
             if capture_intermediate_stderr {
                 self.write_default_stdout(&output)?;
             }
@@ -615,9 +622,9 @@ impl Executor {
         }
         results.reverse();
         for reader in intermediate_stderr {
-            let output = reader
-                .join()
-                .map_err(|_| ExecuteError::IoError(std::io::Error::other("pipeline stderr reader panicked")))??;
+            let output = reader.join().map_err(|_| {
+                ExecuteError::IoError(std::io::Error::other("pipeline stderr reader panicked"))
+            })??;
             if capture_intermediate_stderr {
                 self.write_default_stdout(&output)?;
             }

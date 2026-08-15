@@ -6,12 +6,12 @@
 use std::collections::HashMap;
 mod paths;
 
+use crate::expand::tilde::tilde::home_value;
 use paths::{
     current_logical_pwd, filesystem_path_for_display, logical_destination,
     logical_destination_display, set_shell_env, shell_display_path, shell_var,
     starts_with_dot_component,
 };
-use crate::expand::tilde::tilde::home_value;
 use std::env;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -307,7 +307,10 @@ mod tests {
     fn cd_dash_resolves_oldpwd_through_configured_shell_root() {
         let root = std::env::temp_dir().join("rubash-cd-oldpwd-root");
         let mut env_vars = HashMap::new();
-        env_vars.insert("RUBASH_ROOT".to_string(), root.to_string_lossy().to_string());
+        env_vars.insert(
+            "RUBASH_ROOT".to_string(),
+            root.to_string_lossy().to_string(),
+        );
         env_vars.insert("OLDPWD".to_string(), "/etc".to_string());
         let mut stderr = Vec::new();
 

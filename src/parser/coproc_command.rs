@@ -174,9 +174,23 @@ fn is_coproc_simple_command_start(token: Option<&Token>) -> bool {
     token.is_some_and(|token| {
         matches!(
             token.value.as_str(),
-            "builtin" | "command" | "echo" | "eval" | "exec" | "export" | "printf"
-                | "pwd" | "read" | "set" | "shift" | "test" | "true" | "false"
-                | "type" | "unset" | "wait"
+            "builtin"
+                | "command"
+                | "echo"
+                | "eval"
+                | "exec"
+                | "export"
+                | "printf"
+                | "pwd"
+                | "read"
+                | "set"
+                | "shift"
+                | "test"
+                | "true"
+                | "false"
+                | "type"
+                | "unset"
+                | "wait"
         )
     })
 }

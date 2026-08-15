@@ -75,7 +75,8 @@ impl Executor {
             let body =
                 strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(&body)).to_string();
             saved_fd_inputs.push((fd, self.fd_table.entries.get(&fd).cloned()));
-            self.fd_table.open_input(fd, FdReadEndpoint::text(&body), true);
+            self.fd_table
+                .open_input(fd, FdReadEndpoint::text(&body), true);
         }
 
         let mut ran_body = false;
@@ -170,15 +171,11 @@ impl Executor {
             self.expand_aliases(&command.words)
         };
         let mut do_index = command_index + 1;
-        while ast
-            .commands
-            .get(do_index)
-            .is_some_and(|command| {
-                command.words.is_empty()
-                    && command.brace_group.is_none()
-                    && !command.assignments.contains_key("__RUBASH_PARSE_ERROR__")
-            })
-        {
+        while ast.commands.get(do_index).is_some_and(|command| {
+            command.words.is_empty()
+                && command.brace_group.is_none()
+                && !command.assignments.contains_key("__RUBASH_PARSE_ERROR__")
+        }) {
             do_index += 1;
         }
 

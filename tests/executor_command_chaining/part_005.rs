@@ -778,7 +778,12 @@ fn test_stdin_script_waits_for_command_substitution_heredoc_closer() {
         .spawn()
         .unwrap();
     use std::io::Write;
-    child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
     let status = child.wait().unwrap();
     assert!(status.success());
     assert_eq!(fs::read_to_string(output_path).unwrap(), "abc def geh\n");

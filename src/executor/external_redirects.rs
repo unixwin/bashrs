@@ -240,9 +240,7 @@ impl Executor {
         let writer = self
             .coproc_stdin_writers
             .get(&pid)
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::BrokenPipe, "coprocess input is closed")
-            })?
+            .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "coprocess input is closed"))?
             .try_clone()?;
         if stdout {
             process.stdout(Stdio::from(writer));
@@ -330,25 +328,27 @@ impl Executor {
 
     fn external_stdout_copies_to_stderr(&self, cmd: &CommandNode) -> bool {
         self.fd_table.write_endpoint(1) == Some(FdWriteEndpoint::Stderr)
-            || cmd.redirect_out
-            .as_ref()
-            .or(cmd.append.as_ref())
-            .map(|redirect| self.expand_word(&redirect.target))
-            .is_some_and(|target| {
-                redirect_target_fd(&target) == Some(2)
-                    || self.output_fd_redirects_to_stderr(&target)
-            })
+            || cmd
+                .redirect_out
+                .as_ref()
+                .or(cmd.append.as_ref())
+                .map(|redirect| self.expand_word(&redirect.target))
+                .is_some_and(|target| {
+                    redirect_target_fd(&target) == Some(2)
+                        || self.output_fd_redirects_to_stderr(&target)
+                })
     }
 
     fn external_stderr_copies_to_stdout(&self, cmd: &CommandNode) -> bool {
         self.fd_table.write_endpoint(2) == Some(FdWriteEndpoint::Stdout)
-            || cmd.redirect_err
-            .as_ref()
-            .or(cmd.redirect_err_append.as_ref())
-            .map(|redirect| self.expand_word(&redirect.target))
-            .is_some_and(|target| {
-                redirect_target_fd(&target) == Some(1)
-                    || self.output_fd_redirects_to_stdout(&target)
-            })
+            || cmd
+                .redirect_err
+                .as_ref()
+                .or(cmd.redirect_err_append.as_ref())
+                .map(|redirect| self.expand_word(&redirect.target))
+                .is_some_and(|target| {
+                    redirect_target_fd(&target) == Some(1)
+                        || self.output_fd_redirects_to_stdout(&target)
+                })
     }
 }

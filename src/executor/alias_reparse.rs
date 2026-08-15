@@ -308,10 +308,7 @@ impl Executor {
 
         let mut source = alias_compound_source_words(&words);
         if words.get(1).map(String::as_str) == Some("-c") {
-            source = format!(
-                "coproc {}",
-                alias_compound_source_words(&words[1..])
-            );
+            source = format!("coproc {}", alias_compound_source_words(&words[1..]));
         }
         append_source_redirects(&mut source, command);
         let mut next_index = index + 1;
@@ -794,7 +791,10 @@ fn alias_reparse_reserved_word(message: &str) -> String {
         return String::new();
     };
     let word = word.trim_end_matches(['`', '\'']);
-    if matches!(word, "then" | "elif" | "else" | "fi" | "do" | "done" | "in" | "esac") {
+    if matches!(
+        word,
+        "then" | "elif" | "else" | "fi" | "do" | "done" | "in" | "esac"
+    ) {
         word.to_string()
     } else {
         String::new()

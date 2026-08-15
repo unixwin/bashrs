@@ -29,7 +29,10 @@ impl Executor {
         let fd = redirect_target_fd(target)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "bad file descriptor"))?;
         if self.fd_table.is_closed(fd) {
-            return Err(io::Error::new(io::ErrorKind::NotFound, "bad file descriptor"));
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "bad file descriptor",
+            ));
         }
         let endpoint = self
             .fd_table
@@ -96,21 +99,39 @@ impl Executor {
     }
 
     pub(in crate::executor) fn output_fd_redirects_to_stdout(&self, target: &str) -> bool {
-        if redirect_target_fd(target).map_or(false, |fd| matches!(self.fd_table.output_endpoint(fd), Some(FdWriteEndpoint::Stdout))) {
+        if redirect_target_fd(target).map_or(false, |fd| {
+            matches!(
+                self.fd_table.output_endpoint(fd),
+                Some(FdWriteEndpoint::Stdout)
+            )
+        }) {
             return true;
         }
         false
     }
 
     pub(in crate::executor) fn output_fd_redirects_to_stderr(&self, target: &str) -> bool {
-        if redirect_target_fd(target).map_or(false, |fd| matches!(self.fd_table.output_endpoint(fd), Some(FdWriteEndpoint::Stderr))) {
+        if redirect_target_fd(target).map_or(false, |fd| {
+            matches!(
+                self.fd_table.output_endpoint(fd),
+                Some(FdWriteEndpoint::Stderr)
+            )
+        }) {
             return true;
         }
         false
     }
 
     pub(in crate::executor) fn input_fd_redirects_to_process_stdin(&self, target: &str) -> bool {
-        if redirect_target_fd(target).map_or(false, |fd| matches!(self.fd_table.entries.get(&fd).and_then(|entry| entry.read.as_ref()), Some(FdReadEndpoint::InheritedProcessStdin))) {
+        if redirect_target_fd(target).map_or(false, |fd| {
+            matches!(
+                self.fd_table
+                    .entries
+                    .get(&fd)
+                    .and_then(|entry| entry.read.as_ref()),
+                Some(FdReadEndpoint::InheritedProcessStdin)
+            )
+        }) {
             return true;
         }
         false
@@ -148,8 +169,9 @@ impl Executor {
     }
 
     pub(in crate::executor) fn has_output_fd_target(&self, target: &str) -> bool {
-        redirect_target_fd(target)
-            .is_some_and(|fd| !self.fd_table.is_closed(fd) && self.fd_table.output_endpoint(fd).is_some())
+        redirect_target_fd(target).is_some_and(|fd| {
+            !self.fd_table.is_closed(fd) && self.fd_table.output_endpoint(fd).is_some()
+        })
     }
 
     fn write_fd_endpoint(&mut self, fd: u32, output: &[u8]) -> Result<(), ExecuteError> {
@@ -164,7 +186,11 @@ impl Executor {
             FdWriteEndpoint::Stderr => write_stderr_bytes(output)?,
             FdWriteEndpoint::CoprocStdin(pid) => {
                 let Some(writer) = self.coproc_stdin_writers.get_mut(&pid) else {
-                    return Err(io::Error::new(io::ErrorKind::BrokenPipe, "coprocess input is closed").into());
+                    return Err(io::Error::new(
+                        io::ErrorKind::BrokenPipe,
+                        "coprocess input is closed",
+                    )
+                    .into());
                 };
                 writer.write_all(output)?;
             }
@@ -579,7 +605,6 @@ fn trace_stdio_write(
     }
     result
 }
-
 
 #[cfg(windows)]
 mod windows_raw_stdio {

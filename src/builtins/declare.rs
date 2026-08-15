@@ -15,13 +15,13 @@ mod output;
 mod print;
 mod storage;
 
+use crate::shell::VariableStore;
 use assign::assign_declare_names;
 use attrs::{apply_declare_attrs, DeclareOptions};
 use diagnostic::diagnostic_prefix;
 use marks::marked_vars;
 use names::{declare_base_name, nameref_self_reference, valid_declare_name};
 use storage::{indexed_array_entries, parse_assoc_words};
-use crate::shell::VariableStore;
 
 const EXECUTION_SUCCESS: i32 = 0;
 const EXECUTION_FAILURE: i32 = 1;
@@ -92,9 +92,19 @@ pub(crate) fn sync_typed_attributes(
             let value = variables.get(base).cloned().unwrap_or_default();
             let _ = store.set_scalar(base, value);
         }
-        if arrays.contains(base) && !matches!(store.get(base).map(|v| &v.value), Some(crate::shell::ShellValue::IndexedArray(_))) {
+        if arrays.contains(base)
+            && !matches!(
+                store.get(base).map(|v| &v.value),
+                Some(crate::shell::ShellValue::IndexedArray(_))
+            )
+        {
             let _ = store.replace_indexed_array(base, std::iter::empty::<String>());
-        } else if assocs.contains(base) && !matches!(store.get(base).map(|v| &v.value), Some(crate::shell::ShellValue::AssociativeArray(_))) {
+        } else if assocs.contains(base)
+            && !matches!(
+                store.get(base).map(|v| &v.value),
+                Some(crate::shell::ShellValue::AssociativeArray(_))
+            )
+        {
             let _ = store.replace_associative_array(base, std::iter::empty::<(String, String)>());
         }
         if let Some(variable) = store.get_mut(base) {

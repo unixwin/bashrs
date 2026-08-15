@@ -77,7 +77,8 @@ impl Executor {
         let child = child.spawn()?;
         let pid = child.id();
         self.background_children.insert(pid, child);
-        self.job_table.register_process(pid, display_source.clone(), true);
+        self.job_table
+            .register_process(pid, display_source.clone(), true);
         self.background_jobs.insert(pid, display_source);
         self.background_job_order.push(pid);
         self.last_background_pid = Some(pid);
@@ -469,7 +470,8 @@ impl Executor {
             // stdin heredoc, including parameter and command substitutions.
             let body = self.expand_heredoc_body(&body);
             saved_fd_inputs.push((fd, self.fd_table.entries.get(&fd).cloned()));
-            self.fd_table.open_input(fd, FdReadEndpoint::text(&body), true);
+            self.fd_table
+                .open_input(fd, FdReadEndpoint::text(&body), true);
         }
 
         let result = f(self);
@@ -634,14 +636,15 @@ impl Executor {
                     let pid = child_proc.id();
                     if let Some(target) = coproc_stderr_target {
                         if let Some(stderr) = child_proc.stderr.take() {
-                            let forwarder = std::thread::spawn(|| {
-                                forward_coproc_stderr(stderr, target)
-                            });
+                            let forwarder =
+                                std::thread::spawn(|| forward_coproc_stderr(stderr, target));
                             self.coproc_stderr_forwarders.insert(pid, forwarder);
                         }
                     }
                     self.background_children.insert(pid, child_proc);
-                    let job_id = self.job_table.register_process(pid, bash_command_source_text(cmd), true);
+                    let job_id =
+                        self.job_table
+                            .register_process(pid, bash_command_source_text(cmd), true);
                     self.background_jobs
                         .insert(pid, bash_command_source_text(cmd));
                     self.background_job_order.push(pid);

@@ -269,11 +269,7 @@ fn find_winuxcmd_dispatcher(env_vars: &HashMap<String, String>) -> Option<PathBu
 }
 
 #[cfg(windows)]
-fn winuxcmd_has_command(
-    dispatcher: &Path,
-    name: &str,
-    env_vars: &HashMap<String, String>,
-) -> bool {
+fn winuxcmd_has_command(dispatcher: &Path, name: &str, env_vars: &HashMap<String, String>) -> bool {
     let mut command = Command::new(dispatcher);
     command.arg("help").arg(name);
     for key in ["SystemRoot", "WINDIR", "ComSpec"] {
@@ -435,10 +431,7 @@ pub(crate) fn shell_path_process_entries(
 /// child needs the root-backed directory and the selected provider directory
 /// as separate native entries. This is the PATH equivalent of the filesystem
 /// overlay used by command lookup.
-pub(crate) fn shell_path_to_process(
-    path: &str,
-    env_vars: &HashMap<String, String>,
-) -> String {
+pub(crate) fn shell_path_to_process(path: &str, env_vars: &HashMap<String, String>) -> String {
     let separator = if cfg!(windows) { ';' } else { ':' };
     shell_path_entries(path)
         .into_iter()
@@ -458,7 +451,10 @@ fn logical_bin_path_parts(name: &str) -> Option<(String, String)> {
     if rest.is_empty() || rest.contains('/') || rest.contains('\\') {
         return None;
     }
-    Some((directory.trim_end_matches('/').to_string(), rest.to_string()))
+    Some((
+        directory.trim_end_matches('/').to_string(),
+        rest.to_string(),
+    ))
 }
 
 #[cfg(windows)]
@@ -766,8 +762,7 @@ pub(crate) fn resolve_shell_path_from_env(
 
 pub(crate) fn is_shell_null_device(path: &str) -> bool {
     let normalized = path.replace('\\', "/");
-    normalized == "/dev/null"
-        || (cfg!(windows) && normalized.eq_ignore_ascii_case("NUL"))
+    normalized == "/dev/null" || (cfg!(windows) && normalized.eq_ignore_ascii_case("NUL"))
 }
 
 fn configured_shell_root(env_vars: &HashMap<String, String>) -> Option<PathBuf> {
@@ -785,8 +780,7 @@ fn configured_shell_root(env_vars: &HashMap<String, String>) -> Option<PathBuf> 
     {
         let drive = normalized.as_bytes()[1] as char;
         return Some(PathBuf::from(
-            format!("{}:\\{}", drive.to_ascii_uppercase(), &normalized[3..])
-                .replace('/', "\\"),
+            format!("{}:\\{}", drive.to_ascii_uppercase(), &normalized[3..]).replace('/', "\\"),
         ));
     }
 
@@ -967,7 +961,10 @@ mod tests {
         fs::write(&command, "").unwrap();
 
         let mut env_vars = HashMap::new();
-        env_vars.insert("RUBASH_ROOT".to_string(), root.to_string_lossy().to_string());
+        env_vars.insert(
+            "RUBASH_ROOT".to_string(),
+            root.to_string_lossy().to_string(),
+        );
 
         assert_eq!(find_user_command("/usr/bin/tool", &env_vars), Some(command));
         let _ = fs::remove_dir_all(root);
@@ -978,7 +975,10 @@ mod tests {
     fn windows_shell_root_maps_root_and_clamps_parent_components() {
         let root = std::env::temp_dir().join("rubash-logical-root-paths");
         let mut env_vars = HashMap::new();
-        env_vars.insert("RUBASH_ROOT".to_string(), root.to_string_lossy().to_string());
+        env_vars.insert(
+            "RUBASH_ROOT".to_string(),
+            root.to_string_lossy().to_string(),
+        );
         env_vars.insert("TMPDIR".to_string(), r"C:\Windows\Temp".to_string());
 
         assert_eq!(shell_path_to_windows("/", &env_vars), root);
@@ -998,7 +998,10 @@ mod tests {
             shell_path_to_windows("C:/Users/example", &env_vars),
             PathBuf::from(r"C:/Users/example")
         );
-        assert_eq!(shell_path_to_windows("/dev/null", &env_vars), PathBuf::from("NUL"));
+        assert_eq!(
+            shell_path_to_windows("/dev/null", &env_vars),
+            PathBuf::from("NUL")
+        );
         assert_eq!(
             shell_path_to_windows("/dev/fd/1", &env_vars),
             PathBuf::from(r"\\.\WINUXSH_UNSUPPORTED_DEVICE")
@@ -1077,10 +1080,7 @@ mod tests {
             find_user_command("/usr/bin/ls", &env_vars),
             Some(link.clone())
         );
-        assert_eq!(
-            shell_path_to_windows_for_lookup("/bin/ls", &env_vars),
-            link
-        );
+        assert_eq!(shell_path_to_windows_for_lookup("/bin/ls", &env_vars), link);
         assert_eq!(
             shell_path_to_windows_for_lookup("/usr/bin/awk", &env_vars),
             nested_provider
@@ -1149,7 +1149,10 @@ mod tests {
         );
 
         let entries = shell_path_process_entries("/usr/bin", &env_vars);
-        assert_eq!(entries, vec![shell_root.join("usr").join("bin"), winuxcmd_home]);
+        assert_eq!(
+            entries,
+            vec![shell_root.join("usr").join("bin"), winuxcmd_home]
+        );
 
         let _ = fs::remove_dir_all(root);
     }

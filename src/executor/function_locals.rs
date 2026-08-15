@@ -251,7 +251,10 @@ impl Executor {
             );
             let typed_scope = self.local_typed_scopes.get_mut(saved.scope_index);
             if let Some(typed_scope) = typed_scope {
-                typed_scope.insert(saved.name.clone(), self.shell_state.variables.get(&saved.name).cloned());
+                typed_scope.insert(
+                    saved.name.clone(),
+                    self.shell_state.variables.get(&saved.name).cloned(),
+                );
             }
             self.shell_state.variables.remove(&saved.name);
             if let Some(variable) = saved.local_typed {

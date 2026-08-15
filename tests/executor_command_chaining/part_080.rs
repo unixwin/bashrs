@@ -1199,9 +1199,7 @@ fn test_external_command_uses_fd_table_for_persistent_stdout() {
     let output_path = "target/rubash-external-persistent-stdout-output.txt";
     fs::write(input_path, "from-persistent-stdout\n").unwrap();
     let _ = fs::remove_file(output_path);
-    let input = format!(
-        "exec > {output_path}; cat {input_path}; exec 1>&-"
-    );
+    let input = format!("exec > {output_path}; cat {input_path}; exec 1>&-");
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
     let mut executor = Executor::new();
@@ -1210,7 +1208,10 @@ fn test_external_command_uses_fd_table_for_persistent_stdout() {
 
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
-    assert_eq!(fs::read_to_string(output_path).unwrap(), "from-persistent-stdout\n");
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "from-persistent-stdout\n"
+    );
     let _ = fs::remove_file(input_path);
     let _ = fs::remove_file(output_path);
 }

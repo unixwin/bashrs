@@ -95,7 +95,11 @@ impl Executor {
                 // the current command list in Bash. Do not install a partial
                 // assignment or let the AST walker skip only the next
                 // command as if this were an ordinary word expansion.
-                let status = if self.env_vars.remove("__RUBASH_ARITH_NOUNSET_ERROR").is_some() {
+                let status = if self
+                    .env_vars
+                    .remove("__RUBASH_ARITH_NOUNSET_ERROR")
+                    .is_some()
+                {
                     127
                 } else {
                     1
@@ -301,10 +305,7 @@ impl Executor {
         {
             values
         } else if self.splits_unquoted_expanded_word(cmd, index, &expanded) {
-            field_split_escaped_ifs(
-                &expanded,
-                self.env_vars.get("IFS").map(String::as_str),
-            )
+            field_split_escaped_ifs(&expanded, self.env_vars.get("IFS").map(String::as_str))
         } else {
             vec![expanded]
         }
@@ -532,11 +533,7 @@ fn field_split_escaped_ifs(value: &str, ifs: Option<&str>) -> Vec<String> {
     let chars = value.chars().collect::<Vec<_>>();
     let mut index = 0;
     while index < chars.len() {
-        if chars[index] == '\\'
-            && chars
-                .get(index + 1)
-                .is_some_and(|next| ifs.contains(*next))
-        {
+        if chars[index] == '\\' && chars.get(index + 1).is_some_and(|next| ifs.contains(*next)) {
             protected.push(PROTECTED_IFS);
             protected.push(chars[index + 1]);
             index += 2;
@@ -548,12 +545,7 @@ fn field_split_escaped_ifs(value: &str, ifs: Option<&str>) -> Vec<String> {
 
     field_split_values_with_ifs(&protected, Some(ifs))
         .into_iter()
-        .map(|field| {
-            field
-                .replace(PROTECTED_IFS, "")
-                .chars()
-                .collect::<String>()
-        })
+        .map(|field| field.replace(PROTECTED_IFS, "").chars().collect::<String>())
         .collect()
 }
 

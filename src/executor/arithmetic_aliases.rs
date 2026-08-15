@@ -1,12 +1,17 @@
 use super::*;
 
 impl Executor {
-    pub(in crate::executor) fn reparse_reserved_word_aliases(&self, source: &str) -> Option<String> {
+    pub(in crate::executor) fn reparse_reserved_word_aliases(
+        &self,
+        source: &str,
+    ) -> Option<String> {
         let mut tokens = crate::lexer::tokenize(source);
         let mut changed = false;
         for token in &mut tokens {
-            if !matches!(token.kind, crate::lexer::TokenKind::Word | crate::lexer::TokenKind::Keyword)
-            {
+            if !matches!(
+                token.kind,
+                crate::lexer::TokenKind::Word | crate::lexer::TokenKind::Keyword
+            ) {
                 continue;
             }
             let Some(alias) = self.aliases.get(&token.value) else {
@@ -66,7 +71,11 @@ impl Executor {
             Some(_) => 0,
             None => {
                 self.report_arithmetic_error(expression);
-                if self.env_vars.remove("__RUBASH_ARITH_NOUNSET_ERROR").is_some() {
+                if self
+                    .env_vars
+                    .remove("__RUBASH_ARITH_NOUNSET_ERROR")
+                    .is_some()
+                {
                     127
                 } else {
                     1

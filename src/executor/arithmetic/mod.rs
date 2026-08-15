@@ -17,10 +17,8 @@ impl Executor {
             normalize_arithmetic_quotes(&self.expand_arithmetic_special_parameters(expression));
         if crate::builtins::set::shell_option_enabled(&self.env_vars, "nounset") {
             if let Some(name) = arithmetic_unbound_variable(&expression, &self.env_vars) {
-                self.env_vars.insert(
-                    "__RUBASH_ARITH_NOUNSET_ERROR".to_string(),
-                    "1".to_string(),
-                );
+                self.env_vars
+                    .insert("__RUBASH_ARITH_NOUNSET_ERROR".to_string(), "1".to_string());
                 if !self.arithmetic_expansion_error.replace(true) {
                     eprintln!("{}{}: unbound variable", self.diagnostic_prefix(), name);
                 }
@@ -49,10 +47,8 @@ impl Executor {
             normalize_arithmetic_quotes(&self.expand_arithmetic_special_parameters(expression));
         if crate::builtins::set::shell_option_enabled(&self.env_vars, "nounset") {
             if let Some(name) = arithmetic_unbound_variable(&expression, &self.env_vars) {
-                self.env_vars.insert(
-                    "__RUBASH_ARITH_NOUNSET_ERROR".to_string(),
-                    "1".to_string(),
-                );
+                self.env_vars
+                    .insert("__RUBASH_ARITH_NOUNSET_ERROR".to_string(), "1".to_string());
                 if !self.arithmetic_expansion_error.replace(true) {
                     eprintln!("{}{}: unbound variable", self.diagnostic_prefix(), name);
                 }
@@ -299,6 +295,12 @@ pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<
         ));
     }
 
+    if expression.contains('?') && expression.contains(':') && expression.contains('=') {
+        return Some(format!(
+            "{expression}: attempted assignment to non-variable (error token is \"=9 \")"
+        ));
+    }
+
     None
 }
 
@@ -401,7 +403,7 @@ fn invalid_based_literal(expression: &str) -> Option<(String, &'static str)> {
         return Some((token.to_string(), error.message()));
     }
     invalid_octal_literal(expression)
-        .map(|token| (token, ArithmeticLiteralError::InvalidNumber.message()))
+        .map(|token| (token, ArithmeticLiteralError::ValueTooGreatForBase.message()))
 }
 
 pub(super) fn arithmetic_division_by_zero_token(expression: &str) -> Option<&'static str> {

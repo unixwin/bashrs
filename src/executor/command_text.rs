@@ -238,11 +238,26 @@ pub(in crate::executor) fn append_function_redirect(
     redirect: Option<&crate::parser::Redirect>,
     op: &str,
 ) {
-    if let Some(redirect) = redirect {
-        line.push(' ');
+    let Some(redirect) = redirect else {
+        return;
+    };
+
+    line.push(' ');
+    let target = redirect.target.as_str();
+    if target.starts_with('&') {
+        // Bash keeps fd duplication operators adjacent to their raw token.
+        if redirect.fd.is_none()
+            && matches!(op, "<" | ">")
+            && target[1..].chars().all(|ch| ch.is_ascii_digit())
+        {
+            line.push_str(if op == "<" { "0" } else { "1" });
+        }
+        line.push_str(op);
+        line.push_str(target);
+    } else {
         line.push_str(op);
         line.push(' ');
-        line.push_str(&redirect.target);
+        line.push_str(target);
     }
 }
 
@@ -682,18 +697,46 @@ fn function_command_source_text(function_command: &crate::parser::FunctionComman
 
 pub(in crate::executor) fn append_source_redirects(text: &mut String, cmd: &CommandNode) {
     append_function_redirect(text, cmd.redirect_in.as_ref(), "<");
-    append_function_redirect(
-        text,
-        cmd.redirect_out.as_ref(),
-        cmd.redirect_out
-            .as_ref()
-            .filter(|redirect| redirect.clobber)
-            .map(|_| ">|")
-            .unwrap_or(">"),
-    );
-    append_function_redirect(text, cmd.append.as_ref(), ">>");
-    append_function_redirect(text, cmd.redirect_err.as_ref(), "2>");
-    append_function_redirect(text, cmd.redirect_err_append.as_ref(), "2>>");
+    let combined = cmd
+        .redirect_out
+        .as_ref()
+        .filter(|redirect| {
+            matches!(
+                redirect.kind,
+                crate::parser::RedirectKind::CombinedOutput
+                    | crate::parser::RedirectKind::CombinedAppend
+            )
+        })
+        .or_else(|| {
+            cmd.redirect_err_append.as_ref().filter(|redirect| {
+                matches!(
+                    redirect.kind,
+                    crate::parser::RedirectKind::CombinedOutput
+                        | crate::parser::RedirectKind::CombinedAppend
+                )
+            })
+        });
+    if let Some(redirect) = combined {
+        let op = if redirect.kind == crate::parser::RedirectKind::CombinedAppend {
+            "&>>"
+        } else {
+            "&>"
+        };
+        append_function_redirect(text, Some(redirect), op);
+    } else {
+        append_function_redirect(
+            text,
+            cmd.redirect_out.as_ref(),
+            cmd.redirect_out
+                .as_ref()
+                .filter(|redirect| redirect.clobber)
+                .map(|_| ">|")
+                .unwrap_or(">"),
+        );
+        append_function_redirect(text, cmd.append.as_ref(), ">>");
+        append_function_redirect(text, cmd.redirect_err.as_ref(), "2>");
+        append_function_redirect(text, cmd.redirect_err_append.as_ref(), "2>>");
+    }
     if let Some(here_string) = &cmd.here_string {
         text.push_str(" <<< ");
         text.push_str(here_string);

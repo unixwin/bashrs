@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::io::{self, Write};
 
 use super::diagnostic::diagnostic_prefix;
-use crate::executor::arithmetic::eval_conditional_arith_value;
 use super::marks::{mark_typed, marked_vars, unmark_typed};
 use super::storage::{
     append_array_value, append_assoc_value, eval_arith_value, format_indexed_array_storage,
@@ -12,6 +11,7 @@ use super::{
     ARRAY_VARS, ASSOC_VARS, COMPOUND_ASSIGNMENT_MARKER, DECLARED_UNSET_VARS, EXECUTION_FAILURE,
     EXECUTION_SUCCESS, READONLY_VARS,
 };
+use crate::executor::arithmetic::eval_conditional_arith_value;
 
 pub(super) fn assign_declare_names<W>(
     names: &[&str],

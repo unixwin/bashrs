@@ -1779,6 +1779,28 @@ fn test_type_prints_nested_function_definition_body() {
 }
 
 #[test]
+fn test_type_prints_canonical_fd_duplication_and_combined_redirects() {
+    let output_path = "target/rubash-type-fd-render-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "f() {{ echo input<&0; echo output>&1; echo named<&$fd; echo combined &>out; echo append &>>out; }}; type f > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "f is a function\nf () \n{ \n    echo input 0<&0\n    echo output 1>&1\n    echo named <&$fd\n    echo combined &> out\n    echo append &>> out\n}\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_declare_pf_prints_condition_heredocs() {
     let output_path = "target/rubash-declare-function-condition-heredoc-output.txt";
     let _ = fs::remove_file(output_path);

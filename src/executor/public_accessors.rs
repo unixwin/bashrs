@@ -29,10 +29,8 @@ impl Executor {
     /// Windows-native paths and shell file-descriptor semantics remain native.
     pub fn set_shell_root(&mut self, root: impl AsRef<std::path::Path>) {
         let value = root.as_ref().to_string_lossy().into_owned();
-        self.env_vars.insert(
-            "__RUBASH_SHELL_ROOT".to_string(),
-            value.clone(),
-        );
+        self.env_vars
+            .insert("__RUBASH_SHELL_ROOT".to_string(), value.clone());
         self.env_vars.insert("WINUXSH_ROOT".to_string(), value);
         self.mark_exported("WINUXSH_ROOT");
     }

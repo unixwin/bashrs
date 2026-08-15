@@ -5,9 +5,9 @@
 pub mod builtins;
 pub mod executor;
 pub mod expand;
+pub mod jobs;
 pub mod lexer;
 pub mod parser;
-pub mod jobs;
 pub mod shell;
 
 // Re-export commonly used types
