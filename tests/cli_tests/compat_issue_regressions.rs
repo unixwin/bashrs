@@ -108,3 +108,15 @@ fn arithmetic_invalid_octal_reports_bash_base_diagnostic() {
     assert!(stderr.contains("value too great for base"), "stderr: {stderr}");
     assert!(stderr.contains("error token is \"08\""), "stderr: {stderr}");
 }
+
+#[test]
+fn inherit_errexit_aborts_command_substitution_body() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("set -e; shopt -s inherit_errexit; x=$(false; echo sub); echo after")
+        .output()
+        .expect("run inherit_errexit probe");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+}

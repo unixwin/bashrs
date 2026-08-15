@@ -93,5 +93,6 @@ Run the full bounded suite from a clean tree, create a new dated result director
 
 - Phase 0: complete at checkpoint 2c96b50.
 - Phase 1: complete for host/runner classification; evidence is in `docs/actual-output-phase1-host-classification.md`.
-- Next permitted phase: Phase 2, set-e and ERR suppression.
-- Phases 3-8 remain blocked until Phase 2 closes.
+- Phase 2: complete; evidence is in `docs/actual-output-phase2-set-e-evidence.md`.
+- Next permitted phase: Phase 3, arithmetic evaluator and status.
+- Phases 4-8 remain blocked until Phase 3 closes.
