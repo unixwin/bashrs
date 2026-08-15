@@ -296,7 +296,10 @@ impl Executor {
         {
             values
         } else if self.splits_unquoted_expanded_word(cmd, index, &expanded) {
-            self.field_split_values(&expanded)
+            field_split_escaped_ifs(
+                &expanded,
+                self.env_vars.get("IFS").map(String::as_str),
+            )
         } else {
             vec![expanded]
         }
@@ -515,6 +518,38 @@ pub(in crate::executor) fn raw_word_is_quoted(raw: Option<&str>) -> bool {
 
 fn raw_has_quoted_empty_suffix(raw: &str) -> bool {
     raw.ends_with("''") || raw.ends_with("\"\"")
+}
+
+fn field_split_escaped_ifs(value: &str, ifs: Option<&str>) -> Vec<String> {
+    const PROTECTED_IFS: char = '\u{1e}';
+    let ifs = ifs.unwrap_or(" \t\n");
+    let mut protected = String::with_capacity(value.len());
+    let chars = value.chars().collect::<Vec<_>>();
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] == '\\'
+            && chars
+                .get(index + 1)
+                .is_some_and(|next| ifs.contains(*next))
+        {
+            protected.push(PROTECTED_IFS);
+            protected.push(chars[index + 1]);
+            index += 2;
+        } else {
+            protected.push(chars[index]);
+            index += 1;
+        }
+    }
+
+    field_split_values_with_ifs(&protected, Some(ifs))
+        .into_iter()
+        .map(|field| {
+            field
+                .replace(PROTECTED_IFS, "")
+                .chars()
+                .collect::<String>()
+        })
+        .collect()
 }
 
 fn expanded_ends_with_ifs_separator(expanded: &str, executor: &Executor) -> bool {

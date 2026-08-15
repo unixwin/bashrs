@@ -114,7 +114,8 @@ pub(super) fn logical_dir_exists(dir: &str, env_vars: &HashMap<String, String>) 
     // The shell keeps POSIX-looking paths in PWD even on Windows.  Resolve
     // those paths before checking them, while allowing relative operands such
     // as `pushd .` and `pushd ..` against the process working directory.
-    matches!(dir, "/" | "/bin" | "/etc" | "/tmp" | "/usr")
+    (!crate::executor::path::shell_root_configured(env_vars)
+        && matches!(dir, "/" | "/bin" | "/etc" | "/tmp" | "/usr"))
         || shell_path_to_windows(dir, env_vars).is_dir()
 }
 

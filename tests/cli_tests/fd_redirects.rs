@@ -388,6 +388,19 @@ fn stream_text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).replace("\r\n", "\n")
 }
 
+#[test]
+fn c_dynamic_fd_closed_redirect_preserves_source_token_diagnostic() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"exec {fd}>&1; exec {fd}>&-; echo hi >&$fd; printf 'status:%s\n' "$?""#)
+        .output()
+        .expect("run closed dynamic fd diagnostic probe");
+
+    assert!(output.status.success());
+    assert_eq!(stream_text(&output.stdout), "status:1\n");
+    assert_eq!(stream_text(&output.stderr), "rubash: $fd: Bad file descriptor\n");
+}
+
 fn read_text(path: &Path) -> String {
     fs::read_to_string(path).unwrap().replace("\r\n", "\n")
 }

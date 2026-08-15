@@ -3,6 +3,7 @@ use super::*;
 impl Executor {
     pub(in crate::executor) fn save_local_names(&mut self, args: &[String]) {
         let mut names = Vec::new();
+        // Typed values are captured alongside the legacy local scope below.
         for arg in args {
             if arg == "--" {
                 continue;
@@ -22,13 +23,17 @@ impl Executor {
         let Some(attr_scope_index) = self.local_attr_scopes.len().checked_sub(1) else {
             return;
         };
+        let Some(typed_scope) = self.local_typed_scopes.last_mut() else {
+            return;
+        };
         for name in names {
             if scope.contains_key(&name) {
                 continue;
             }
             scope.insert(name.clone(), self.env_vars.get(&name).cloned());
             let attrs = capture_var_attrs(&self.env_vars, &name);
-            self.local_attr_scopes[attr_scope_index].insert(name, attrs);
+            self.local_attr_scopes[attr_scope_index].insert(name.clone(), attrs);
+            typed_scope.insert(name.clone(), self.shell_state.variables.get(&name).cloned());
         }
     }
 
@@ -47,13 +52,17 @@ impl Executor {
         let Some(attr_scope_index) = self.local_attr_scopes.len().checked_sub(1) else {
             return;
         };
+        let Some(typed_scope) = self.local_typed_scopes.last_mut() else {
+            return;
+        };
         for name in names {
             if scope.contains_key(&name) {
                 continue;
             }
             scope.insert(name.clone(), self.env_vars.get(&name).cloned());
             let attrs = capture_var_attrs(&self.env_vars, &name);
-            self.local_attr_scopes[attr_scope_index].insert(name, attrs);
+            self.local_attr_scopes[attr_scope_index].insert(name.clone(), attrs);
+            typed_scope.insert(name.clone(), self.shell_state.variables.get(&name).cloned());
         }
     }
 
@@ -123,6 +132,7 @@ impl Executor {
             return HashSet::new();
         };
         let attr_scope = self.local_attr_scopes.pop().unwrap_or_default();
+        let typed_scope = self.local_typed_scopes.pop().unwrap_or_default();
         let mut names = HashSet::new();
         for (name, value) in scope {
             names.insert(name.clone());
@@ -142,6 +152,12 @@ impl Executor {
                 attr_scope.get(&name).copied().unwrap_or_default(),
             );
             remove_local_export_env_value(&mut self.env_vars, &name);
+        }
+        for (name, variable) in typed_scope {
+            self.shell_state.variables.remove(&name);
+            if let Some(variable) = variable {
+                let _ = self.shell_state.variables.set(name, variable);
+            }
         }
         names
     }
@@ -177,6 +193,7 @@ impl Executor {
                 scope_index,
                 local_value: self.env_vars.get(name).cloned(),
                 local_attrs: capture_var_attrs(&self.env_vars, name),
+                local_typed: self.shell_state.variables.get(name).cloned(),
             });
         }
 
@@ -193,6 +210,14 @@ impl Executor {
                 &saved.name,
                 attr_scope.get(&saved.name).copied().unwrap_or_default(),
             );
+            let global_typed = self.local_typed_scopes[saved.scope_index]
+                .get(&saved.name)
+                .cloned()
+                .flatten();
+            self.shell_state.variables.remove(&saved.name);
+            if let Some(variable) = global_typed {
+                let _ = self.shell_state.variables.set(&saved.name, variable);
+            }
         }
 
         saved_locals
@@ -224,6 +249,14 @@ impl Executor {
                 saved.name.clone(),
                 capture_var_attrs(&self.env_vars, &saved.name),
             );
+            let typed_scope = self.local_typed_scopes.get_mut(saved.scope_index);
+            if let Some(typed_scope) = typed_scope {
+                typed_scope.insert(saved.name.clone(), self.shell_state.variables.get(&saved.name).cloned());
+            }
+            self.shell_state.variables.remove(&saved.name);
+            if let Some(variable) = saved.local_typed {
+                let _ = self.shell_state.variables.set(&saved.name, variable);
+            }
             restore_optional_shell_var(&mut self.env_vars, &saved.name, saved.local_value);
             set_var_attrs(&mut self.env_vars, &saved.name, saved.local_attrs);
         }

@@ -55,10 +55,11 @@ impl Executor {
             return Err(ExecuteError::ExitCode(2));
         }
 
-        if cmd
-            .word_metadata
-            .iter()
-            .any(|metadata| unterminated_extglob(&metadata.raw))
+        if cmd.function_command.is_none()
+            && cmd
+                .word_metadata
+                .iter()
+                .any(|metadata| unterminated_extglob(&metadata.raw))
         {
             eprintln!(
                 "{}syntax error near unexpected token `('",
@@ -218,5 +219,8 @@ fn unterminated_extglob(raw: &str) -> bool {
         }
         index += 1;
     }
-    extglob_depth > 0
+    if extglob_depth > 0 {
+        return true;
+    }
+    false
 }

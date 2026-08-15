@@ -136,6 +136,7 @@ impl Executor {
         };
         self.local_var_scopes.push(HashMap::new());
         self.local_attr_scopes.push(HashMap::new());
+        self.local_typed_scopes.push(HashMap::new());
         self.function_depth += 1;
         let old_debug_trap_function_line = self.debug_trap_function_line;
         if self.debug_trap_running {

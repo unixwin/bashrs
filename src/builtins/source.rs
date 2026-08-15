@@ -181,7 +181,7 @@ where
 }
 
 fn is_null_device(path: &str) -> bool {
-    matches!(path, "/dev/null" | "NUL")
+    crate::executor::path::is_shell_null_device(path)
 }
 
 fn posix_plain_name_lookup(executor: &Executor, filename: &str) -> bool {

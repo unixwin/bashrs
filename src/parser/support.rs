@@ -179,6 +179,7 @@ pub(super) fn command_boundary_keyword_allowed(tokens: &[Token], index: usize) -
     matches!(
         previous.kind,
         TokenKind::Semicolon
+            | TokenKind::HereDocBody
             | TokenKind::And
             | TokenKind::Or
             | TokenKind::Pipe

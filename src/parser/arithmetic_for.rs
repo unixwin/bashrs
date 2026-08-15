@@ -16,14 +16,17 @@ pub(super) fn parse_arithmetic_for_command(
     let mut parts = vec![Vec::new(), Vec::new(), Vec::new()];
     let mut part_index = 0usize;
     let mut paren_depth = 0usize;
+    let mut closed = false;
     while i + 1 < tokens.len() {
         if paren_depth == 0 && tokens[i].value == "))" {
             i += 1;
+            closed = true;
             break;
         }
 
         if paren_depth == 0 && is_keyword(tokens, i, ")") && is_keyword(tokens, i + 1, ")") {
             i += 2;
+            closed = true;
             break;
         }
 
@@ -69,7 +72,7 @@ pub(super) fn parse_arithmetic_for_command(
         i += 1;
     }
 
-    if part_index != 2 {
+    if !closed || part_index != 2 {
         return None;
     }
 

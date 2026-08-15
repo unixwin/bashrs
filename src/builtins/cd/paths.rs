@@ -3,6 +3,8 @@ use std::env;
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
+use crate::executor::path::shell_path_to_windows;
+
 pub(super) fn starts_with_dot_component(path: &Path) -> bool {
     matches!(
         path.components().next(),
@@ -64,32 +66,7 @@ pub(super) fn filesystem_path_for_display(
     dir: &str,
     env_vars: &HashMap<String, String>,
 ) -> PathBuf {
-    // TODO(general.c/pathnames.h): keep Bash-visible /tmp paths logical on Windows.
-    if cfg!(windows) {
-        if dir.len() >= 3
-            && dir.as_bytes()[0] == b'/'
-            && dir.as_bytes()[2] == b'/'
-            && dir.as_bytes()[1].is_ascii_alphabetic()
-        {
-            let drive = dir.as_bytes()[1] as char;
-            return PathBuf::from(
-                format!("{}:\\{}", drive.to_ascii_uppercase(), &dir[3..]).replace('/', "\\"),
-            );
-        }
-
-        if dir == "/tmp" {
-            if let Some(tmpdir) = shell_var(env_vars, "TMPDIR") {
-                return PathBuf::from(tmpdir);
-            }
-        }
-        if let Some(rest) = dir.strip_prefix("/tmp/") {
-            if let Some(tmpdir) = shell_var(env_vars, "TMPDIR") {
-                return PathBuf::from(tmpdir).join(rest);
-            }
-        }
-    }
-
-    PathBuf::from(dir)
+    shell_path_to_windows(dir, env_vars)
 }
 
 pub(super) fn set_shell_env(env_vars: &mut HashMap<String, String>, name: &str, value: String) {

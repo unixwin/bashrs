@@ -320,6 +320,7 @@ struct SavedGlobalDeclareLocal {
     scope_index: usize,
     local_value: Option<String>,
     local_attrs: VarAttrs,
+    local_typed: Option<crate::shell::Variable>,
 }
 
 /// Command executor
@@ -342,6 +343,7 @@ pub struct Executor {
     bash_source_stack: Vec<String>,
     local_var_scopes: Vec<HashMap<String, Option<String>>>,
     local_attr_scopes: Vec<HashMap<String, VarAttrs>>,
+    local_typed_scopes: Vec<HashMap<String, Option<crate::shell::Variable>>>,
     expanding_aliases: Vec<String>,
     loop_depth: usize,
     function_depth: usize,

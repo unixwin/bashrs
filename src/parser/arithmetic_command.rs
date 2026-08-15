@@ -23,7 +23,10 @@ pub(super) fn parse_arithmetic_command(
     let mut bracket_depth = 0usize;
     if first == "((" {
         i = start + 1;
-    } else if is_keyword(tokens, start, "(") && is_keyword(tokens, start + 1, "(") {
+    } else if is_keyword(tokens, start, "(")
+        && is_keyword(tokens, start + 1, "(")
+        && tokens[start + 1].column == tokens[start].column + tokens[start].raw.len()
+    {
         i = start + 2;
     } else {
         return None;

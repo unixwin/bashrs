@@ -2,8 +2,10 @@ use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
 
 pub(crate) const SHOPT_OPTIONS: &[&str] = &[
-    "autocd",
+    "array_expand_once",
     "assoc_expand_once",
+    "autocd",
+    "bash_source_fullpath",
     "cdable_vars",
     "cdspell",
     "checkhash",
@@ -17,7 +19,6 @@ pub(crate) const SHOPT_OPTIONS: &[&str] = &[
     "compat42",
     "compat43",
     "compat44",
-    "completion_strip_exe",
     "complete_fullquote",
     "direxpand",
     "dirspell",
@@ -115,7 +116,7 @@ where
     if reusable {
         writeln!(stdout, "shopt -{} {name}", if enabled { "s" } else { "u" })
     } else {
-        writeln!(stdout, "{name:<15}\t{}", if enabled { "on" } else { "off" })
+        writeln!(stdout, "{name:<20}\t{}", if enabled { "on" } else { "off" })
     }
 }
 

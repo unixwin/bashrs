@@ -9,6 +9,15 @@ pub(super) fn parse_for_command(tokens: &[Token], start: usize) -> Option<(Comma
     if let Some((command, next_i)) = parse_arithmetic_for_command(tokens, start) {
         return Some((command, next_i));
     }
+    // Once Bash has recognized the arithmetic-for opener, malformed headers
+    // must remain syntax errors instead of falling through to ordinary for.
+    let arithmetic_for_marker = tokens
+        .get(start + 1)
+        .is_some_and(|token| token.value == "((")
+        || (is_keyword(tokens, start + 1, "(") && is_keyword(tokens, start + 2, "("));
+    if arithmetic_for_marker {
+        return None;
+    }
 
     let variable_token = tokens.get(start + 1)?;
     let variable = variable_token.value.clone();

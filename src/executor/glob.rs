@@ -3,6 +3,8 @@
 use std::fs;
 use std::path::Path;
 
+use crate::executor::path::shell_path_to_windows;
+
 pub(crate) enum PathnameExpansion {
     Matches(Vec<String>),
     NoMatch,
@@ -66,7 +68,15 @@ pub(crate) fn pathname_expand_word(
     let extglob = shopt_enabled(env_vars, "extglob");
 
     if word.contains("**") && globstar {
-        return globstar_expand(word, nullglob, failglob, nocaseglob, dotglob, globskipdots);
+        return globstar_expand(
+            word,
+            nullglob,
+            failglob,
+            nocaseglob,
+            dotglob,
+            globskipdots,
+            env_vars,
+        );
     }
 
     if word.contains('/') {
@@ -78,6 +88,7 @@ pub(crate) fn pathname_expand_word(
             dotglob,
             globskipdots,
             extglob,
+            env_vars,
         );
     }
 
@@ -86,7 +97,7 @@ pub(crate) fn pathname_expand_word(
         None => (".".to_string(), word.as_ref()),
     };
     let include_dotfiles = dotglob || pattern.starts_with('.');
-    let entries = match fs::read_dir(&dir_path) {
+    let entries = match fs::read_dir(shell_path_to_windows(&dir_path, env_vars)) {
         Ok(rd) => rd,
         Err(_) => return unmatched_expansion(word, nullglob, failglob),
     };
@@ -129,6 +140,7 @@ fn pathname_expand_segments(
     dotglob: bool,
     globskipdots: bool,
     extglob: bool,
+    env_vars: &std::collections::HashMap<String, String>,
 ) -> PathnameExpansion {
     let parts: Vec<&str> = word.split('/').collect();
     let mut prefixes = if word.starts_with('/') {
@@ -154,7 +166,7 @@ fn pathname_expand_segments(
                 } else {
                     prefix.as_str()
                 };
-                let entries = match fs::read_dir(dir) {
+                let entries = match fs::read_dir(shell_path_to_windows(dir, env_vars)) {
                     Ok(entries) => entries,
                     Err(_) => continue,
                 };
@@ -175,7 +187,10 @@ fn pathname_expand_segments(
                 }
             } else {
                 let candidate = join_path_segment(prefix, part);
-                if !is_last || !saw_pattern || Path::new(&candidate).exists() {
+                if !is_last
+                    || !saw_pattern
+                    || shell_path_to_windows(&candidate, env_vars).exists()
+                {
                     next.push(candidate);
                 }
             }
@@ -237,6 +252,7 @@ fn globstar_expand(
     nocaseglob: bool,
     dotglob: bool,
     globskipdots: bool,
+    env_vars: &std::collections::HashMap<String, String>,
 ) -> PathnameExpansion {
     let parts: Vec<&str> = word.split("**").collect();
     if parts.len() != 2 {
@@ -245,15 +261,19 @@ fn globstar_expand(
     let prefix = parts[0];
     let suffix = parts[1].trim_start_matches('/');
 
-    let base_dir = if prefix.is_empty() {
+    let logical_base_dir = if prefix.is_empty() {
         ".".to_string()
+    } else if prefix == "/" {
+        "/".to_string()
     } else {
-        prefix.to_string()
+        prefix.trim_end_matches('/').to_string()
     };
+    let physical_base_dir = shell_path_to_windows(&logical_base_dir, env_vars);
 
     let mut matches = Vec::new();
     collect_globstar_matches(
-        Path::new(&base_dir),
+        &logical_base_dir,
+        &physical_base_dir,
         suffix,
         &mut matches,
         nocaseglob,
@@ -279,14 +299,15 @@ fn unmatched_expansion(word: &str, nullglob: bool, failglob: bool) -> PathnameEx
 }
 
 fn collect_globstar_matches(
-    dir: &Path,
+    logical_dir: &str,
+    physical_dir: &Path,
     suffix: &str,
     matches: &mut Vec<String>,
     nocaseglob: bool,
     dotglob: bool,
     globskipdots: bool,
 ) {
-    let entries = match fs::read_dir(dir) {
+    let entries = match fs::read_dir(physical_dir) {
         Ok(rd) => rd,
         Err(_) => return,
     };
@@ -301,18 +322,27 @@ fn collect_globstar_matches(
         if name.starts_with('.') && !include_dotfiles {
             continue;
         }
-        let path = dir.join(&name);
-        if path.is_dir() {
+        let physical_path = physical_dir.join(&name);
+        let logical_path = join_path_segment(logical_dir, &name);
+        if physical_path.is_dir() {
             let matched = if nocaseglob {
                 case_pattern_matches_nocase(suffix, &name)
             } else {
                 super::case_pattern_matches(suffix, &name)
             };
             if matched {
-                matches.push(path.to_string_lossy().to_string());
+                matches.push(logical_path.clone());
             }
             if name != "." && name != ".." {
-                collect_globstar_matches(&path, suffix, matches, nocaseglob, dotglob, globskipdots);
+                collect_globstar_matches(
+                    &logical_path,
+                    &physical_path,
+                    suffix,
+                    matches,
+                    nocaseglob,
+                    dotglob,
+                    globskipdots,
+                );
             }
         } else {
             let matched = if nocaseglob {
@@ -321,7 +351,7 @@ fn collect_globstar_matches(
                 super::case_pattern_matches(suffix, &name)
             };
             if matched {
-                matches.push(path.to_string_lossy().to_string());
+                matches.push(logical_path);
             }
         }
     }
@@ -332,5 +362,32 @@ fn synthetic_dot_names(pattern: &str, globskipdots: bool) -> Vec<String> {
         Vec::new()
     } else {
         vec![".".to_string(), "..".to_string()]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[cfg(windows)]
+    use std::collections::HashMap;
+
+    #[cfg(windows)]
+    #[test]
+    fn logical_root_glob_reads_backing_directory_and_returns_logical_names() {
+        let root = std::env::temp_dir().join("rubash-logical-root-glob");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("etc")).unwrap();
+        std::fs::write(root.join("etc").join("config"), "value").unwrap();
+
+        let mut env_vars = HashMap::new();
+        env_vars.insert("RUBASH_ROOT".to_string(), root.to_string_lossy().to_string());
+
+        let PathnameExpansion::Matches(matches) = pathname_expand_word("/etc/*", &env_vars)
+        else {
+            panic!("logical root glob did not produce matches");
+        };
+        assert_eq!(matches, vec!["/etc/config".to_string()]);
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }

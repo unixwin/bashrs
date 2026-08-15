@@ -108,10 +108,9 @@ Status: open output-format TODO; no fd semantic regression is indicated.
       `target/issue-suites/results/native-bash-20260814-vredir-varredir-regression/`.
 - [x] Re-run bounded `run-redir` and `run-vredir` after the regression pass;
       both passed 1/1.
-- [ ] Decide whether actual-output compatibility requires Bash's original
-      source token (`$fd`) in closed-fd diagnostics. If required, assign the
-      fix to command/diagnostic rendering and add a focused diagnostic test;
-      do not change `FdTable` for this output-only difference.
+- [x] Preserve Bash's original source token (`$fd`) in closed-fd diagnostics;
+      the fix belongs to command/diagnostic rendering, not `FdTable`. The
+      focused regression is `c_dynamic_fd_closed_redirect_preserves_source_token_diagnostic`.
 - [ ] Define a Windows fixture or explicit host-owned policy for `/dev/tty`
       and its localized OS diagnostic.
 - [ ] Decide whether function pretty-print spacing/semicolons is part of the

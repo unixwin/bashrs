@@ -143,6 +143,7 @@ impl Executor {
             bash_source_stack: Vec::new(),
             local_var_scopes: Vec::new(),
             local_attr_scopes: Vec::new(),
+            local_typed_scopes: Vec::new(),
             expanding_aliases: Vec::new(),
             loop_depth: 0,
             function_depth: 0,

@@ -22,6 +22,45 @@ impl Executor {
         self.external_file_builtins_enabled = enabled;
     }
 
+    /// Configure the native directory that backs the shell-visible `/` root.
+    ///
+    /// This is a path namespace adapter, not a POSIX runtime. Logical paths
+    /// such as `/bin/tool` and `/etc/config` resolve below this directory;
+    /// Windows-native paths and shell file-descriptor semantics remain native.
+    pub fn set_shell_root(&mut self, root: impl AsRef<std::path::Path>) {
+        let value = root.as_ref().to_string_lossy().into_owned();
+        self.env_vars.insert(
+            "__RUBASH_SHELL_ROOT".to_string(),
+            value.clone(),
+        );
+        self.env_vars.insert("WINUXSH_ROOT".to_string(), value);
+    }
+
+    /// Configure the native WinuxCmd dispatcher used for shell commands that
+    /// are not backed by a file in the logical root.
+    pub fn set_winuxcmd_path(&mut self, path: impl AsRef<std::path::Path>) {
+        self.env_vars.insert(
+            "WINUXCMD_PATH".to_string(),
+            path.as_ref().to_string_lossy().into_owned(),
+        );
+    }
+
+    /// Resolve a shell-visible path using the executor's current namespace.
+    pub fn resolve_shell_path(&self, path: &str) -> std::path::PathBuf {
+        Self::resolve_shell_path_from_env(path, &self.env_vars)
+    }
+
+    /// Resolve a shell-visible path using an executor environment snapshot.
+    ///
+    /// Host layers use this when they have an environment map but do not own
+    /// the executor instance, such as process-plugin working-directory setup.
+    pub fn resolve_shell_path_from_env(
+        path: &str,
+        env_vars: &std::collections::HashMap<String, String>,
+    ) -> std::path::PathBuf {
+        crate::executor::path::resolve_shell_path_from_env(path, env_vars)
+    }
+
     pub fn set_host_external_command_handler<F>(&mut self, handler: F)
     where
         F: FnMut(&[String], &HashMap<String, String>) -> Option<HostExternalCommandOutput>

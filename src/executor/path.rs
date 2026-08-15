@@ -11,6 +11,10 @@ use std::process::Command;
 
 use super::support_names::split_shell_path;
 
+pub(crate) fn shell_path_entries(path: &str) -> Vec<String> {
+    split_shell_path(path)
+}
+
 pub fn find_user_command(name: &str, env_vars: &HashMap<String, String>) -> Option<PathBuf> {
     if name.is_empty() {
         return None;
@@ -21,7 +25,11 @@ pub fn find_user_command(name: &str, env_vars: &HashMap<String, String>) -> Opti
         if let Some(found) = executable_candidate(&candidate, env_vars) {
             return Some(found);
         }
-        return find_msys_absolute_command(name, env_vars);
+        #[cfg(windows)]
+        if let Some(found) = find_winuxcmd_absolute_command(name, env_vars) {
+            return Some(found);
+        }
+        return None;
     }
 
     for dir in split_shell_path(env_vars.get("PATH").map(String::as_str).unwrap_or_default()) {
@@ -46,6 +54,9 @@ pub fn find_user_command(name: &str, env_vars: &HashMap<String, String>) -> Opti
 
 pub fn standard_path(_env_vars: &HashMap<String, String>) -> String {
     if cfg!(windows) {
+        if configured_shell_root(_env_vars).is_some() {
+            return "/usr/local/bin:/usr/bin:/bin".to_string();
+        }
         return [
             PathBuf::from(r"C:\Windows\System32"),
             PathBuf::from(r"C:\Windows"),
@@ -140,7 +151,7 @@ pub fn external_command_for_named_program(
     let mut command = Command::new(program);
     if is_winuxcmd_dispatcher(program) {
         if let Some(command_name) = command_name {
-            command.arg(command_name);
+            command.arg(dispatcher_command_name(command_name));
         }
     }
     command.args(&native_args);
@@ -157,10 +168,20 @@ fn is_winuxcmd_dispatcher(path: &Path) -> bool {
 
 #[cfg(windows)]
 fn find_winuxcmd_dispatcher(env_vars: &HashMap<String, String>) -> Option<PathBuf> {
-    split_shell_path(env_vars.get("PATH").map(String::as_str).unwrap_or_default())
-        .into_iter()
-        .map(|dir| shell_path_to_windows(&dir, env_vars).join("winuxcmd"))
-        .find_map(|candidate| executable_candidate(&candidate, env_vars))
+    for name in ["WINUXCMD", "WINUXCMD_PATH"] {
+        if let Some(value) = env_vars.get(name) {
+            let candidate = shell_path_to_windows(value, env_vars);
+            if let Some(found) = executable_candidate(&candidate, env_vars) {
+                return Some(found);
+            }
+        }
+    }
+
+    // Winuxsh owns WinuxCmd selection. Rubash must not guess a dispatcher from
+    // PATH because a process can contain command links from a different
+    // WinuxCmd installation. Embedders may still provide an explicit path via
+    // WINUXCMD_PATH/WINUXCMD or `Executor::set_winuxcmd_path`.
+    None
 }
 
 #[cfg(windows)]
@@ -180,56 +201,26 @@ fn winuxcmd_has_command(
 }
 
 #[cfg(windows)]
-fn find_msys_absolute_command(name: &str, env_vars: &HashMap<String, String>) -> Option<PathBuf> {
-    let suffix = name
-        .strip_prefix("/usr/bin/")
-        .or_else(|| name.strip_prefix("/bin/"))?;
-    if suffix.is_empty() || suffix.contains('/') || suffix.contains('\\') {
-        return None;
-    }
-
-    let mut roots = Vec::new();
-    for key in ["CLAUDE_CODE_GIT_BASH_PATH", "BASH", "SHELL"] {
-        if let Some(path) = env_vars.get(key) {
-            add_msys_root(&mut roots, Path::new(path));
-        }
-    }
-    for directory in split_shell_path(env_vars.get("PATH").map(String::as_str).unwrap_or_default())
-    {
-        let directory = shell_path_to_windows(&directory, env_vars);
-        add_msys_root(&mut roots, &directory.join("bash.exe"));
-    }
-
-    for root in roots {
-        let candidates = [
-            root.join("usr").join("bin").join(suffix),
-            root.join("bin").join(suffix),
-        ];
-        for candidate in candidates {
-            if let Some(found) = executable_candidate(&candidate, env_vars) {
-                return Some(found);
-            }
-        }
-    }
-    None
+fn find_winuxcmd_absolute_command(
+    name: &str,
+    env_vars: &HashMap<String, String>,
+) -> Option<PathBuf> {
+    let command_name = logical_bin_command_name(name)?;
+    let dispatcher = find_winuxcmd_dispatcher(env_vars)?;
+    winuxcmd_has_command(&dispatcher, &command_name, env_vars).then_some(dispatcher)
 }
 
 #[cfg(windows)]
-fn add_msys_root(roots: &mut Vec<PathBuf>, executable: &Path) {
-    let Some(bin_dir) = executable.parent() else {
-        return;
-    };
-    let Some(root) = bin_dir.parent() else {
-        return;
-    };
-    if !roots.iter().any(|existing| existing == root) {
-        roots.push(root.to_path_buf());
+fn logical_bin_command_name(name: &str) -> Option<String> {
+    let normalized = name.replace('\\', "/");
+    let rest = normalized
+        .strip_prefix("/bin/")
+        .or_else(|| normalized.strip_prefix("/usr/bin/"))
+        .or_else(|| normalized.strip_prefix("/usr/local/bin/"))?;
+    if rest.is_empty() || rest.contains('/') || rest.contains('\\') {
+        return None;
     }
-}
-
-#[cfg(not(windows))]
-fn find_msys_absolute_command(_name: &str, _env_vars: &HashMap<String, String>) -> Option<PathBuf> {
-    None
+    Some(rest.to_string())
 }
 
 fn external_argument_path(arg: &str, env_vars: &HashMap<String, String>) -> String {
@@ -247,6 +238,9 @@ fn external_argument_path(arg: &str, env_vars: &HashMap<String, String>) -> Stri
             // `/X/...` arguments are ambiguous (regexes, git pathspecs,
             // sed/awk fragments); convert those only when they resolve to a
             // real filesystem path.
+            if drive != b'c' && normalized.len() <= 3 {
+                return arg.to_string();
+            }
             if drive != b'c' && !translated.exists() {
                 return arg.to_string();
             }
@@ -258,6 +252,30 @@ fn external_argument_path(arg: &str, env_vars: &HashMap<String, String>) -> Stri
     } else {
         arg.to_string()
     }
+}
+
+fn dispatcher_command_name(command_name: &str) -> String {
+    if let Some(name) = logical_bin_command_name_any_platform(command_name) {
+        return name;
+    }
+    command_name
+        .replace('\\', "/")
+        .rsplit('/')
+        .next()
+        .unwrap_or(command_name)
+        .to_string()
+}
+
+fn logical_bin_command_name_any_platform(name: &str) -> Option<String> {
+    let normalized = name.replace('\\', "/");
+    let rest = normalized
+        .strip_prefix("/bin/")
+        .or_else(|| normalized.strip_prefix("/usr/bin/"))
+        .or_else(|| normalized.strip_prefix("/usr/local/bin/"))?;
+    if rest.is_empty() || rest.contains('/') || rest.contains('\\') {
+        return None;
+    }
+    Some(rest.to_string())
 }
 
 fn current_shell_processor() -> Option<PathBuf> {
@@ -416,17 +434,22 @@ fn has_path_separator(name: &str) -> bool {
 }
 
 pub(crate) fn shell_path_to_windows(path: &str, env_vars: &HashMap<String, String>) -> PathBuf {
-    if !cfg!(windows) {
-        return PathBuf::from(path);
-    }
-
     let normalized = path.replace('\\', "/");
+    let shell_root = configured_shell_root(env_vars);
 
-    if normalized == "/dev/null" || normalized.eq_ignore_ascii_case("NUL") {
+    if cfg!(windows) && (normalized == "/dev/null" || normalized.eq_ignore_ascii_case("NUL")) {
         return PathBuf::from("NUL");
     }
 
-    if normalized.len() >= 3
+    // `/dev` is a capability namespace. Only `/dev/null` is currently mapped
+    // on Windows; do not let unsupported fd/tty spellings become ordinary
+    // files below the logical root.
+    if cfg!(windows) && (normalized == "/dev" || normalized.starts_with("/dev/")) {
+        return PathBuf::from(r"\\.\WINUXSH_UNSUPPORTED_DEVICE");
+    }
+
+    if cfg!(windows)
+        && normalized.len() >= 3
         && normalized.as_bytes()[0] == b'/'
         && normalized.as_bytes()[2] == b'/'
         && normalized.as_bytes()[1].is_ascii_alphabetic()
@@ -437,7 +460,7 @@ pub(crate) fn shell_path_to_windows(path: &str, env_vars: &HashMap<String, Strin
         );
     }
 
-    if normalized == "/tmp" {
+    if cfg!(windows) && shell_root.is_none() && normalized == "/tmp" {
         if let Some(tmpdir) = env_vars.get("TMPDIR") {
             if tmpdir.replace('\\', "/") == "/tmp" {
                 return std::env::temp_dir();
@@ -446,16 +469,94 @@ pub(crate) fn shell_path_to_windows(path: &str, env_vars: &HashMap<String, Strin
         }
     }
 
-    if let Some(rest) = normalized.strip_prefix("/tmp/") {
-        if let Some(tmpdir) = env_vars.get("TMPDIR") {
-            if tmpdir.replace('\\', "/") == "/tmp" {
-                return std::env::temp_dir().join(rest);
+    if cfg!(windows) && shell_root.is_none() {
+        if let Some(rest) = normalized.strip_prefix("/tmp/") {
+            if let Some(tmpdir) = env_vars.get("TMPDIR") {
+                if tmpdir.replace('\\', "/") == "/tmp" {
+                    return std::env::temp_dir().join(rest);
+                }
+                return shell_path_to_windows(tmpdir, env_vars).join(rest);
             }
-            return shell_path_to_windows(tmpdir, env_vars).join(rest);
+        }
+    }
+
+    if let Some(root) = shell_root {
+        if let Some(mapped) = map_logical_path(&normalized, &root) {
+            return mapped;
         }
     }
 
     PathBuf::from(path)
+}
+
+pub(crate) fn resolve_shell_path_from_env(
+    path: &str,
+    env_vars: &HashMap<String, String>,
+) -> PathBuf {
+    shell_path_to_windows(path, env_vars)
+}
+
+pub(crate) fn is_shell_null_device(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    normalized == "/dev/null"
+        || (cfg!(windows) && normalized.eq_ignore_ascii_case("NUL"))
+}
+
+fn configured_shell_root(env_vars: &HashMap<String, String>) -> Option<PathBuf> {
+    let value = ["__RUBASH_SHELL_ROOT", "WINUXSH_ROOT", "RUBASH_ROOT"]
+        .into_iter()
+        .find_map(|name| env_vars.get(name))
+        .filter(|value| !value.is_empty())?;
+
+    let normalized = value.replace('\\', "/");
+    if cfg!(windows)
+        && normalized.len() >= 3
+        && normalized.as_bytes()[0] == b'/'
+        && normalized.as_bytes()[2] == b'/'
+        && normalized.as_bytes()[1].is_ascii_alphabetic()
+    {
+        let drive = normalized.as_bytes()[1] as char;
+        return Some(PathBuf::from(
+            format!("{}:\\{}", drive.to_ascii_uppercase(), &normalized[3..])
+                .replace('/', "\\"),
+        ));
+    }
+
+    Some(PathBuf::from(value))
+}
+
+pub(crate) fn shell_root_configured(env_vars: &HashMap<String, String>) -> bool {
+    configured_shell_root(env_vars).is_some()
+}
+
+fn map_logical_path(normalized: &str, root: &Path) -> Option<PathBuf> {
+    if !normalized.starts_with('/') || normalized.starts_with("//") {
+        return None;
+    }
+    if normalized.len() >= 3
+        && normalized.as_bytes()[0] == b'/'
+        && normalized.as_bytes()[2] == b'/'
+        && normalized.as_bytes()[1].is_ascii_alphabetic()
+    {
+        return None;
+    }
+
+    let mut components = Vec::new();
+    for component in normalized[1..].split('/') {
+        match component {
+            "" | "." => {}
+            ".." => {
+                components.pop();
+            }
+            component => components.push(component),
+        }
+    }
+
+    let mut mapped = root.to_path_buf();
+    for component in components {
+        mapped.push(component);
+    }
+    Some(mapped)
 }
 
 #[cfg(test)]
@@ -590,28 +691,94 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn windows_find_user_command_maps_msys_usr_bin_absolute_paths() {
-        let root = std::env::temp_dir().join("rubash-msys-absolute-command");
+    fn windows_find_user_command_maps_logical_usr_bin_from_shell_root() {
+        let root = std::env::temp_dir().join("rubash-logical-root-absolute-command");
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("bin")).unwrap();
         fs::create_dir_all(root.join("usr").join("bin")).unwrap();
-        let bash = root.join("bin").join("bash.exe");
         let command = root.join("usr").join("bin").join("tool.exe");
-        fs::write(&bash, "").unwrap();
         fs::write(&command, "").unwrap();
 
         let mut env_vars = HashMap::new();
-        env_vars.insert(
-            "CLAUDE_CODE_GIT_BASH_PATH".to_string(),
-            bash.to_string_lossy().to_string(),
-        );
-        env_vars.insert(
-            "PATH".to_string(),
-            root.join("bin").to_string_lossy().to_string(),
-        );
+        env_vars.insert("RUBASH_ROOT".to_string(), root.to_string_lossy().to_string());
 
         assert_eq!(find_user_command("/usr/bin/tool", &env_vars), Some(command));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_shell_root_maps_root_and_clamps_parent_components() {
+        let root = std::env::temp_dir().join("rubash-logical-root-paths");
+        let mut env_vars = HashMap::new();
+        env_vars.insert("RUBASH_ROOT".to_string(), root.to_string_lossy().to_string());
+        env_vars.insert("TMPDIR".to_string(), r"C:\Windows\Temp".to_string());
+
+        assert_eq!(shell_path_to_windows("/", &env_vars), root);
+        assert_eq!(
+            shell_path_to_windows("/bin/../etc/config", &env_vars),
+            root.join("etc").join("config")
+        );
+        assert_eq!(
+            shell_path_to_windows("/tmp/cache", &env_vars),
+            root.join("tmp").join("cache")
+        );
+        assert_eq!(
+            shell_path_to_windows("/c/Users/example", &env_vars),
+            PathBuf::from(r"C:\Users\example")
+        );
+        assert_eq!(
+            shell_path_to_windows("C:/Users/example", &env_vars),
+            PathBuf::from(r"C:/Users/example")
+        );
+        assert_eq!(shell_path_to_windows("/dev/null", &env_vars), PathBuf::from("NUL"));
+        assert_eq!(
+            shell_path_to_windows("/dev/fd/1", &env_vars),
+            PathBuf::from(r"\\.\WINUXSH_UNSUPPORTED_DEVICE")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_shell_root_selects_logical_standard_path() {
+        let mut env_vars = HashMap::new();
+        env_vars.insert(
+            "WINUXSH_ROOT".to_string(),
+            std::env::temp_dir().to_string_lossy().to_string(),
+        );
+
+        assert_eq!(
+            standard_path(&env_vars),
+            "/usr/local/bin:/usr/bin:/bin".to_string()
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_dispatcher_requires_explicit_session_path() {
+        let dir = std::env::temp_dir().join("rubash-explicit-winuxcmd-dispatcher");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let dispatcher = dir.join("winuxcmd.exe");
+        fs::write(&dispatcher, b"").unwrap();
+
+        let mut env_vars = HashMap::new();
+        env_vars.insert("PATH".to_string(), dir.to_string_lossy().to_string());
+        assert_eq!(find_winuxcmd_dispatcher(&env_vars), None);
+
+        env_vars.insert(
+            "WINUXCMD_PATH".to_string(),
+            dispatcher.to_string_lossy().to_string(),
+        );
+        assert_eq!(find_winuxcmd_dispatcher(&env_vars), Some(dispatcher));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn dispatcher_command_name_strips_logical_bin_prefixes() {
+        assert_eq!(dispatcher_command_name("head"), "head");
+        assert_eq!(dispatcher_command_name("/bin/cat"), "cat");
+        assert_eq!(dispatcher_command_name("/usr/bin/cat"), "cat");
+        assert_eq!(dispatcher_command_name("/usr/local/bin/cat"), "cat");
     }
 
     #[cfg(windows)]

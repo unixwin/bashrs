@@ -87,7 +87,7 @@ where
     };
 
     let old_pwd = current_logical_pwd(env_vars);
-    if let Some(logical_dir) = logical_posix_test_dir(&target) {
+    if let Some(logical_dir) = logical_posix_test_dir(&target, env_vars) {
         // TODO(builtins/cd.def): This is a Windows-host bridge for the GNU
         // Bash upstream tests that use POSIX system directories. A complete
         // shell should keep logical and physical directory state separately.
@@ -176,7 +176,7 @@ where
     match operand {
         None => match shell_var(env_vars, "HOME") {
             Some(home) => Ok(Some(Target {
-                path: PathBuf::from(home),
+                path: filesystem_path_for_display(&home, env_vars),
                 display: None,
                 print: PrintPath::Never,
             })),
@@ -191,7 +191,7 @@ where
         }
         Some("-") => match shell_var(env_vars, "OLDPWD") {
             Some(old_pwd) => Ok(Some(Target {
-                path: PathBuf::from(&old_pwd),
+                path: filesystem_path_for_display(&old_pwd, env_vars),
                 display: Some(PathBuf::from(old_pwd)),
                 print: PrintPath::Always,
             })),
@@ -272,11 +272,44 @@ fn is_shell_name(name: &str) -> bool {
         && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
-fn logical_posix_test_dir(target: &Target) -> Option<&str> {
+fn logical_posix_test_dir<'a>(
+    target: &'a Target,
+    env_vars: &HashMap<String, String>,
+) -> Option<&'a str> {
     if !cfg!(windows) {
+        return None;
+    }
+
+    // With a configured logical root these names are real directories backed
+    // by that root and must go through the normal cd path. The compatibility
+    // shortcut remains only for an unconfigured Windows host where `/bin` and
+    // friends do not exist as physical directories.
+    if crate::executor::path::shell_root_configured(env_vars) {
         return None;
     }
 
     let display = target.display.as_ref()?.to_str()?;
     matches!(display, "/" | "/bin" | "/etc" | "/tmp" | "/usr").then_some(display)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn cd_dash_resolves_oldpwd_through_configured_shell_root() {
+        let root = std::env::temp_dir().join("rubash-cd-oldpwd-root");
+        let mut env_vars = HashMap::new();
+        env_vars.insert("RUBASH_ROOT".to_string(), root.to_string_lossy().to_string());
+        env_vars.insert("OLDPWD".to_string(), "/etc".to_string());
+        let mut stderr = Vec::new();
+
+        let target = resolve_target(Some("-"), &env_vars, &mut stderr)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(target.path, root.join("etc"));
+        assert!(stderr.is_empty());
+    }
 }

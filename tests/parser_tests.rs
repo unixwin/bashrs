@@ -13,6 +13,18 @@ mod coproc_tests;
 #[path = "parser_redirection_tests.rs"]
 mod redirection_tests;
 
+#[test]
+fn test_spaced_subshell_containing_arithmetic_command() {
+    let tokens = tokenize(r#"( (( a[" "]=16 )); declare -p a )"#);
+    let ast = parse(&tokens);
+
+    assert_eq!(ast.commands.len(), 1);
+    let subshell = ast.commands[0].subshell_command.as_ref().unwrap();
+    assert_eq!(subshell.body.len(), 2);
+    assert!(subshell.body[0].arithmetic_command.is_some());
+    assert_eq!(subshell.body[1].words.first().map(String::as_str), Some("declare"));
+}
+
 mod simple_commands {
     use super::*;
 

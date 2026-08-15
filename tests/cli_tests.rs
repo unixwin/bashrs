@@ -772,8 +772,10 @@ fn malformed_pipeline_and_if_are_syntax_errors() {
         "if then; fi; echo after",
         "<<EOF; then <W",
         "while; do :; done",
+        "for (( i=0; i<1; i++ ); do :; done",
         "case x in x) ;;",
         "case x in ) echo x;; esac",
+        "case x in |) echo x;; esac",
         "( echo hi",
         "{ echo hi;",
         "echo @(",
@@ -1063,6 +1065,32 @@ fn arithmetic_array_subscript_quote_removal_targets_index_zero() {
 }
 
 #[test]
+fn array_assignment_quoted_empty_arithmetic_subscripts_use_index_zero() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"declare -a a; a[" " ]=10; a[""]=23; declare -p a"#)
+        .output()
+        .expect("run quoted empty array subscript probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "declare -a a=([0]=\"23\")\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn declare_quoted_array_element_assignment_targets_index_zero() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"declare -a a; declare 'a[" "]=14'; declare -p a"#)
+        .output()
+        .expect("run declare quoted array subscript probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "declare -a a=([0]=\"14\")\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn array_element_assignment_reports_bash_subscript_errors() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
@@ -1119,6 +1147,19 @@ fn invalid_case_terminator_inside_command_substitution_is_a_syntax_error() {
         .output()
         .expect("run rubash");
     assert_eq!(output.status.code(), Some(2));
+}
+
+#[test]
+fn escaped_ifs_space_in_parameter_assignment_stays_one_field() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"unset a; printf '%s\n' ${a:=a\ b}; printf '<%s>\n' "$a""#)
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "a\nb\n<a b>\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
 #[test]

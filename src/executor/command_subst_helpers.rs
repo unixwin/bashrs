@@ -126,7 +126,7 @@ pub(super) fn unescape_remaining_shell_escapes(value: &str) -> String {
             }
             if let Some(
                 next @ ('\'' | '"' | '\\' | '$' | '`' | '(' | ')' | '{' | '}' | ';' | '&' | '|'
-                | '<' | '>' | '!' | '*' | '?' | '#'),
+                | '<' | '>' | '!' | '*' | '?' | '#' | ' '),
             ) = chars.peek().copied()
             {
                 chars.next();

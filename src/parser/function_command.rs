@@ -23,12 +23,15 @@ pub(super) fn parse_function_command(
     if !(is_function_name(&name) || (keyword_form && is_function_keyword_name(&name))) {
         return None;
     }
-
-    let has_parentheses = tokens.get(i).is_some_and(|token| {
+    let compact_parentheses = tokens.get(i).is_some_and(|token| token.value == "()");
+    let separated_parentheses = tokens.get(i).is_some_and(|token| {
         token.value == "(" && tokens.get(i + 1).is_some_and(|next| next.value == ")")
     });
+    let has_parentheses = compact_parentheses || separated_parentheses;
     let keyword_metadata = keyword_form.then(|| build_token_metadata(&tokens[start]));
-    let (open_paren_metadata, close_paren_metadata) = if has_parentheses {
+    let (open_paren_metadata, close_paren_metadata) = if compact_parentheses {
+        (Some(build_token_metadata(tokens.get(i)?)), None)
+    } else if separated_parentheses {
         (
             Some(build_token_metadata(tokens.get(i)?)),
             Some(build_token_metadata(tokens.get(i + 1)?)),
@@ -36,10 +39,9 @@ pub(super) fn parse_function_command(
     } else {
         (None, None)
     };
-    if has_parentheses {
-        if tokens.get(i + 1)?.value != ")" {
-            return None;
-        }
+    if compact_parentheses {
+        i += 1;
+    } else if separated_parentheses {
         i += 2;
     } else if !keyword_form {
         return None;
@@ -53,7 +55,7 @@ pub(super) fn parse_function_command(
     }
     if let Some(group) = tokens
         .get(i)
-        .map(|token| token.value.as_str())
+        .map(|token| token.value.trim())
         .filter(|value| value.starts_with('{') && value.ends_with('}'))
     {
         // TODO(parse.y): The lexer can currently preserve a full brace group
@@ -149,7 +151,7 @@ pub(super) fn parse_function_command(
         return Some(finish_function_command(command, tokens, body_end));
     }
 
-    if tokens.get(i)?.value != "{" {
+    if tokens.get(i)?.value.trim() != "{" {
         return None;
     }
     let open_brace = i;
@@ -162,7 +164,15 @@ pub(super) fn parse_function_command(
     }
 
     let body_start = i;
-    let i = matching_brace_group_end(tokens, open_brace)?;
+    let i = matching_brace_group_end(tokens, open_brace).or_else(|| {
+        // A heredoc body is a complete lexical token, but older boundary
+        // paths can omit the separator before the function closing brace.
+        // Retain the final brace as the body terminator for serialized
+        // functions when no nested delimiter was recognized.
+        (open_brace + 1..tokens.len())
+            .rev()
+            .find(|&index| is_keyword(tokens, index, "}"))
+    })?;
 
     let body = parse(&tokens[body_start..i]).commands;
     let mut command = CommandNode::new();

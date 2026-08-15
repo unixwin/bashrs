@@ -397,6 +397,7 @@ impl Executor {
             bash_source_stack: self.bash_source_stack.clone(),
             local_var_scopes: self.local_var_scopes.clone(),
             local_attr_scopes: self.local_attr_scopes.clone(),
+            local_typed_scopes: self.local_typed_scopes.clone(),
             expanding_aliases: self.expanding_aliases.clone(),
             loop_depth: self.loop_depth,
             function_depth: self.function_depth,

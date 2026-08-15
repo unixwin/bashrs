@@ -676,7 +676,8 @@ broader unrelated differences and are not yet classified as passing.
 Compared with GNU Bash `expr.c::subexpr` and
 `arrayfunc.c::array_value_internal`, Rubash now treats empty arithmetic
 expressions as zero and performs quote removal inside indexed arithmetic
-subscripts before evaluating the index. `$(( ))`, `$((\"\"))`,
+subscripts before evaluating the index, including ordinary indexed-array
+assignment words such as `a[" "]=10` and `a[""]=23`. `$(( ))`, `$((\"\"))`,
 `[[ 0 -eq \"\" ]]`, and `(( a[\" \"]=11 ))` match Bash in focused probes.
 The empty-expression and indexed-subscript behaviors are covered by CLI
 regressions.
@@ -1736,7 +1737,9 @@ elements into `VariableStore`, and then updates the legacy encoded mirror for
 parameter expansion and external-child compatibility. Command-substitution and
 other isolated printf callers still use the compatibility wrapper. The indexed
 `declare -a` assignment path now synchronizes typed state after legacy assignment;
-associative declaration, attributes, and `local` remain to be migrated.
+associative declaration and declare attributes now synchronize typed state. Function-local
+scopes also capture and restore typed values for local names; the legacy mirror
+remains the expansion and process-environment adapter.
 
 Evidence:
 
@@ -1750,3 +1753,9 @@ Evidence:
 - `run-array`, `run-array2`, `run-assoc`, `run-read`, `run-printf`, and
   `run-builtins` -> 6/6 combined focused slices pass.
 - No upstream bridge was removed as part of this boundary.
+- `cargo test --test cli_tests -- --nocapture` -> 172/172 after typed local-scope
+  capture/restore integration.
+- GNU `shopt.right` comparison added `array_expand_once` and
+  `bash_source_fullpath` and aligned native option ordering. Native shopt still
+  differs on output field width and host-owned `igncr`; the upstream bridge remains
+  until those contracts are separated.

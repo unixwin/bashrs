@@ -5,7 +5,8 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::io::{self, Write};
-use std::path::Path;
+
+use crate::executor::path::{shell_path_entries, shell_path_to_windows};
 
 use crate::builtins::alias::Alias;
 
@@ -319,7 +320,7 @@ where
     if let Some(glob_pattern) = parsed.glob_pattern.as_deref() {
         return match crate::executor::glob::pathname_expand_word(
             glob_pattern,
-            &std::collections::HashMap::new(),
+            env_vars,
         ) {
             crate::executor::glob::PathnameExpansion::Matches(matches) => {
                 write_compgen_matches(matches.iter().map(String::as_str), &parsed, stdout)
@@ -358,8 +359,11 @@ where
                 );
             }
             "directory" => {
-                let candidates =
-                    path_completion_candidates(parsed.word(), PathCompletionKind::Directory);
+                let candidates = path_completion_candidates(
+                    parsed.word(),
+                    PathCompletionKind::Directory,
+                    env_vars,
+                );
                 return write_compgen_matches(
                     candidates.iter().map(String::as_str),
                     &parsed,
@@ -368,7 +372,7 @@ where
             }
             "file" => {
                 let candidates =
-                    path_completion_candidates(parsed.word(), PathCompletionKind::File);
+                    path_completion_candidates(parsed.word(), PathCompletionKind::File, env_vars);
                 return write_compgen_matches(
                     candidates.iter().map(String::as_str),
                     &parsed,
@@ -497,9 +501,13 @@ enum PathCompletionKind {
     File,
 }
 
-fn path_completion_candidates(word: &str, kind: PathCompletionKind) -> Vec<String> {
+fn path_completion_candidates(
+    word: &str,
+    kind: PathCompletionKind,
+    env_vars: &HashMap<String, String>,
+) -> Vec<String> {
     let (search_dir, display_prefix) = path_completion_base(word);
-    let Ok(entries) = std::fs::read_dir(Path::new(search_dir)) else {
+    let Ok(entries) = std::fs::read_dir(shell_path_to_windows(search_dir, env_vars)) else {
         return Vec::new();
     };
 
@@ -684,8 +692,8 @@ fn path_command_completion_candidates(env_vars: &HashMap<String, String>) -> Vec
     };
 
     let mut candidates = Vec::new();
-    for dir in std::env::split_paths(path_value) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
+    for dir in shell_path_entries(path_value) {
+        let Ok(entries) = std::fs::read_dir(shell_path_to_windows(&dir, env_vars)) else {
             continue;
         };
         for entry in entries.flatten() {

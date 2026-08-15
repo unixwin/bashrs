@@ -2,9 +2,11 @@ use std::collections::HashMap;
 use std::io::{self, Write};
 
 use super::diagnostic::diagnostic_prefix;
+use crate::executor::arithmetic::eval_conditional_arith_value;
 use super::marks::{mark_typed, marked_vars, unmark_typed};
 use super::storage::{
-    append_array_value, append_assoc_value, eval_arith_value, is_noassign_bash_array,
+    append_array_value, append_assoc_value, eval_arith_value, format_indexed_array_storage,
+    indexed_array_entries, is_noassign_bash_array,
 };
 use super::{
     ARRAY_VARS, ASSOC_VARS, COMPOUND_ASSIGNMENT_MARKER, DECLARED_UNSET_VARS, EXECUTION_FAILURE,
@@ -33,6 +35,24 @@ where
             }
             continue;
         };
+        if let Some((base, index_expression)) = declare_indexed_element(var_name) {
+            if !assoc && !marked_vars(variables, ASSOC_VARS).contains(base) {
+                let index = if index_expression.trim().is_empty() {
+                    Some(0)
+                } else {
+                    eval_conditional_arith_value(index_expression, variables)
+                        .and_then(|value| usize::try_from(value).ok())
+                };
+                if let Some(index) = index {
+                    let current = variables.get(base).cloned().unwrap_or_default();
+                    let mut entries = indexed_array_entries(&current);
+                    entries.insert(index, value.to_string());
+                    variables.insert(base.to_string(), format_indexed_array_storage(entries));
+                    mark_typed(variables, ARRAY_VARS, base);
+                    continue;
+                }
+            }
+        }
         let (var_name, append) = var_name
             .strip_suffix('+')
             .map(|base| (base, true))
@@ -97,4 +117,13 @@ where
         unmark_typed(variables, DECLARED_UNSET_VARS, var_name);
     }
     Ok(status)
+}
+
+fn declare_indexed_element(name: &str) -> Option<(&str, &str)> {
+    let (base, subscript) = name.split_once('[')?;
+    let subscript = subscript.strip_suffix(']')?;
+    if base.is_empty() || subscript.contains('[') {
+        return None;
+    }
+    Some((base, subscript))
 }

@@ -51,6 +51,10 @@ impl VariableStore {
         self.variables.get_mut(name)
     }
 
+    pub(crate) fn remove(&mut self, name: &str) -> Option<Variable> {
+        self.variables.remove(name)
+    }
+
     pub fn set(&mut self, name: impl Into<String>, variable: Variable) -> Result<(), &'static str> {
         let name = name.into();
         if self.get(&name).map_or(false, |old| old.readonly) {

@@ -448,12 +448,14 @@ pub(super) fn eval_mutable_arith_value_with_random(
 ) -> Option<i128> {
     // GNU Bash's subexpr() treats an empty arithmetic expression as zero.
     // This matters for expansion and variable contexts, where an empty
-    // quoted operand is valid rather than a parser failure.
-    if value.trim().is_empty() {
+    // quoted operand is valid rather than a parser failure. Lexer quote
+    // markers must be normalized before lvalue parsing as well as expansion.
+    let normalized = normalize_arithmetic_quotes(value);
+    if normalized.trim().is_empty() {
         return Some(0);
     }
     let mut parser = ConditionalArithParser {
-        input: value.as_bytes(),
+        input: normalized.as_bytes(),
         pos: 0,
         env_vars,
         resolving: Vec::new(),

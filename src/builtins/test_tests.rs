@@ -77,6 +77,16 @@ fn leading_file_operator_is_unary_not_logical_and() {
 }
 
 #[test]
+fn null_device_has_virtual_character_device_semantics() {
+    assert_eq!(run(&["-e", "/dev/null"], false).0, EXECUTION_SUCCESS);
+    assert_eq!(run(&["-r", "/dev/null"], false).0, EXECUTION_SUCCESS);
+    assert_eq!(run(&["-w", "/dev/null"], false).0, EXECUTION_SUCCESS);
+    assert_eq!(run(&["-c", "/dev/null"], false).0, EXECUTION_SUCCESS);
+    assert_eq!(run(&["-f", "/dev/null"], false).0, EXECUTION_FAILURE);
+    assert_eq!(run(&["-s", "/dev/null"], false).0, EXECUTION_FAILURE);
+}
+
+#[test]
 fn modified_since_read_unary_operator_checks_existing_file() {
     let path = "target/rubash-test-n-unary.txt";
     let missing = "target/rubash-test-n-unary-missing.txt";

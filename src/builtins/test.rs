@@ -175,6 +175,10 @@ fn is_unary_operator(op: &str) -> bool {
 }
 
 fn eval_unary(op: &str, operand: &str, env_vars: &HashMap<String, String>) -> Result<bool, String> {
+    if let Some(result) = virtual_device_test(op, operand) {
+        return Ok(result);
+    }
+
     match op {
         "-z" => Ok(operand.is_empty()),
         "-n" => Ok(!operand.is_empty()),
@@ -216,6 +220,19 @@ fn eval_unary(op: &str, operand: &str, env_vars: &HashMap<String, String>) -> Re
         "-t" => Ok(fd_is_terminal(operand)),
         _ => Err(format!("{}: unary operator expected", op)),
     }
+}
+
+fn virtual_device_test(op: &str, operand: &str) -> Option<bool> {
+    if !crate::executor::path::is_shell_null_device(operand) {
+        return None;
+    }
+
+    Some(match op {
+        "-a" | "-e" | "-r" | "-w" | "-c" => true,
+        "-x" | "-s" | "-b" | "-p" | "-S" | "-u" | "-g" | "-k" | "-h" | "-L"
+        | "-O" | "-G" | "-N" => false,
+        _ => return None,
+    })
 }
 
 fn test_path(operand: &str, env_vars: &HashMap<String, String>) -> std::path::PathBuf {

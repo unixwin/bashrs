@@ -5,7 +5,12 @@ pub(super) fn parse_subshell_command(
     tokens: &[Token],
     start: usize,
 ) -> Option<(CommandNode, usize)> {
-    if !is_keyword(tokens, start, "(") || is_keyword(tokens, start + 1, "(") {
+    if !is_keyword(tokens, start, "(") {
+        return None;
+    }
+    if is_keyword(tokens, start + 1, "(")
+        && tokens[start + 1].column == tokens[start].column + tokens[start].raw.len()
+    {
         return None;
     }
 
