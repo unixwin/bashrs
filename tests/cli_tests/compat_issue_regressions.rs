@@ -17,6 +17,19 @@ fn escaped_brace_expansion_preserves_literal_suffix() {
 }
 
 #[test]
+fn quoted_parameter_assignment_preserves_escaped_space_for_equals() {
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/parameter_assignment_escaped_space.sh");
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg(script)
+        .output()
+        .expect("run parameter assignment escape probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<a\\ b> <x> <a\\ b> \n");
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn quoted_parameter_pattern_braces_match_bash() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

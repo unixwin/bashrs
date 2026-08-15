@@ -307,6 +307,13 @@ impl Executor {
         self.expand_word(word)
     }
 
+    fn expand_parameter_assignment_value_mut(&mut self, value: &str) -> String {
+        const PROTECTED_ESCAPED_SPACE: char = '\x13';
+        let protected = value.replace("\\ ", &PROTECTED_ESCAPED_SPACE.to_string());
+        self.expand_parameter_word_mut(&protected)
+            .replace(PROTECTED_ESCAPED_SPACE, "\\ ")
+    }
+
     pub(in crate::executor) fn apply_parameter_assignment_expansions_in_word(
         &mut self,
         word: &str,
@@ -349,7 +356,7 @@ impl Executor {
             if self.parameter_operator_value(name).is_some() {
                 return;
             }
-            let value = self.expand_parameter_word_mut(value);
+            let value = self.expand_parameter_assignment_value_mut(value);
             if self.apply_array_element_parameter_assignment(name, value.clone()) {
                 return;
             }
