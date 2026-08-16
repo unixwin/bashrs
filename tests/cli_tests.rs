@@ -172,7 +172,7 @@ fn c_command_failed_dynamic_varredir_continues_and_does_not_set_variable() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
         .arg(
-            "unset fd; : {fd}<>target/does-not-exist-rubash-varredir; \
+            "unset fd; : {fd}<>target/rubash-varredir-missing-parent/file; \
              open_status=$?; printf 'open=%s fd=%s\\n' \"$open_status\" \"${fd-unset}\"; \
              printf 'continued\\n'",
         )
@@ -185,6 +185,26 @@ fn c_command_failed_dynamic_varredir_continues_and_does_not_set_variable() {
         "open=1 fd=unset\ncontinued\n"
     );
     assert!(!String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
+fn c_command_closes_read_write_dynamic_fd_before_reusing_slot_after_failure() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            ": {fd}<>/dev/null; exec {fd}>&-; \
+             : {fd}<>target/rubash-varredir-missing-parent/file; \
+             failed=$?; : {next}>&1; \
+             printf 'failed=%s fd=%s next=%s\\n' \"$failed\" \"$fd\" \"$next\"",
+        )
+        .output()
+        .expect("run dynamic read-write fd close/reuse probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "failed=1 fd=10 next=10\n"
+    );
 }
 
 #[test]

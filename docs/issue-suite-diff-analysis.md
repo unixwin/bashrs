@@ -2051,3 +2051,22 @@ Verification:
 - `cargo test --test executor_tests command_chaining::part_009 -- --nocapture`: 14/14.
 - `cargo test --test executor_tests command_chaining::part_045 -- --nocapture`: 15/15.
 - `run-trap`: 1/1.
+
+### 2026-08-17 failed read-write varredir releases the descriptor
+
+The remaining `vredir8` fd-allocation difference was caused by the virtual fd
+close path. For a dynamic descriptor opened with `<>`, Bash treats
+`exec {fd}>&-` as closing the descriptor itself. Rubash previously removed
+only its write capability, leaving the read capability occupied in `FdTable`.
+The next dynamic allocation therefore skipped the lowest reusable slot after
+a failed `<>` open.
+
+`close_dynamic_output_fd` now closes the complete entry when it has a read
+endpoint; one-sided coprocess endpoints retain their capability-specific close
+behavior. A CLI regression covers close, failed `<>`, and lowest-slot reuse.
+
+Verification:
+
+- `cargo test --test cli_tests dynamic_varredir -- --nocapture`: 2/2.
+- `cargo test --test cli_tests c_command_closes_read_write_dynamic_fd_before_reusing_slot_after_failure -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`: 152/152.

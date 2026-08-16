@@ -1172,6 +1172,16 @@ impl Executor {
             return Ok(());
         };
 
+        // A dynamic fd opened with `<>` is one shell descriptor.  Closing its
+        // output side with `>&-` must release the descriptor completely;
+        // otherwise its still-live input side prevents Bash's lowest-free fd
+        // allocation from reusing the slot. Coprocess endpoints are modeled
+        // as one-sided entries, so they retain the capability-specific path.
+        if self.fd_table.read_endpoint(fd).is_some() {
+            self.close_persistent_fd(fd)?;
+            return Ok(());
+        }
+
         // Coprocess input/output endpoints currently share the child PID as
         // their virtual descriptor. Close only the output capability so
         // `exec {COPROC[1]}>&-` does not invalidate `COPROC[0]` as well.
