@@ -2097,6 +2097,21 @@ Verification:
 - `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`: 152/152.
 - `run-arith`: 1/1.
 
+### 2026-08-17 no-operand `wait` status
+
+The jobs probe exposed a Bash contract not covered by the prior `wait -n` and
+explicit-PID regressions: `wait` with no operands waits for all current
+background jobs and returns success, even when one of those jobs exits nonzero.
+Rubash previously returned the last reaped job status.
+
+The no-operand branch now consumes every tracked job and returns `0`; explicit
+PID/jobspec and `wait -n` paths retain their individual exit statuses.
+
+Verification:
+
+- `cargo test --test cli_tests wait_without_operands_returns_success_after_failed_background_job -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_036 -- --nocapture`: bounded jobs slice remains green.
+
 ### 2026-08-17 failed read-write varredir releases the descriptor
 
 The remaining `vredir8` fd-allocation difference was caused by the virtual fd

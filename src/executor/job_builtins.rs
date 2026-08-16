@@ -193,14 +193,13 @@ impl Executor {
                 .filter(|job| job.background)
                 .flat_map(|job| job.pids.iter().copied())
                 .collect::<Vec<_>>();
-            let mut status = 0;
             for pid in pids {
-                if let Some(wait_status) = self.wait_for_background_pid(pid, false)? {
-                    status = wait_status;
-                }
+                let _ = self.wait_for_background_pid(pid, false)?;
             }
             self.write_buffered_builtin_output(cmd, &[], &[])?;
-            return Ok(status);
+            // Bash's no-operand wait reports success after waiting for all
+            // current jobs; individual statuses require an explicit operand.
+            return Ok(0);
         }
 
         if let Some(operands) = wait_background_operands(&cmd.words[1..]) {

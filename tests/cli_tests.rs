@@ -1572,6 +1572,19 @@ fn builtin_pipeline_head_accepts_separate_line_count_argument() {
 }
 
 #[test]
+fn wait_without_operands_returns_success_after_failed_background_job() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("false & wait; printf 'wait=%s\\n' \"$?\"")
+        .output()
+        .expect("run no-operand wait probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "wait=0\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn select_menu_uses_bash_stderr_format() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
