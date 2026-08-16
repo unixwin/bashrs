@@ -2200,3 +2200,27 @@ Evidence:
 - `cargo test --lib umask -- --nocapture`: 6/6.
 - `cargo test --test cli_tests umask_symbolic_output_takes_precedence_over_reusable_output -- --nocapture`: 1/1.
 - `cargo test --test executor_tests command_chaining::part_023 -- --nocapture`: 12/12.
+
+### 2026-08-17 parser-level alias handlers see the command's physical line
+
+Newline-separated `alias t=time` cases in `part_077` exposed a second alias
+boundary bug. Compound alias handlers run from `execute_ast` before the normal
+`execute_command` path updated `__RUBASH_CURRENT_LINE`; after an alias was
+defined, the next command was therefore still compared with the definition
+line and ordinary expansion was suppressed. The resulting `time` alias was
+left as a plain word, so brace, `if`, `for`, `case`, `coproc`, and arithmetic
+forms were dispatched incorrectly.
+
+`execute_ast` now publishes the current command line before its parser-level
+alias and compound-command handlers. This preserves Bash's same-physical-line
+visibility rule while allowing aliases defined on an earlier line to enter the
+existing compound reparse path.
+
+Evidence:
+
+- `cargo test --test executor_tests command_chaining::part_077 -- --nocapture`: 50/50.
+- The regression covers brace, `if`, nested `if`, `for`, nested `while`,
+  `case`, arithmetic, `coproc`, and redirected timed commands.
+
+This closes the parser-state slice only; the broader alias, compound-command,
+and official-suite rows for #20--#26 remain open.

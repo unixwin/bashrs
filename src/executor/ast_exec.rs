@@ -34,6 +34,7 @@ impl Executor {
             self.run_pending_signal_traps()?;
 
             let command = &ast.commands[index];
+            self.set_current_line(command);
             if self.noexec_enabled() {
                 self.exit_code = 0;
                 if command.subshell_end {
