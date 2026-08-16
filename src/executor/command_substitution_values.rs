@@ -43,6 +43,37 @@ impl Executor {
                     ))
                 }
             }
+            "head" => {
+                let args = words[1..]
+                    .iter()
+                    .map(|word| self.expand_word(word))
+                    .collect::<Vec<_>>();
+                let count = crate::executor::pipeline_exec::head_line_count(&args).unwrap_or(10);
+                Some(input.split_inclusive('\n').take(count).collect())
+            }
+            "grep" => {
+                let pattern = words.get(1).map(|word| self.expand_word(word))?;
+                let mut output = String::new();
+                for line in input.split_inclusive('\n') {
+                    let comparable = line.strip_suffix('\n').unwrap_or(line);
+                    if crate::executor::simple_grep_pattern_matches(comparable, &pattern) {
+                        output.push_str(line);
+                        if !line.ends_with('\n') {
+                            output.push('\n');
+                        }
+                    }
+                }
+                Some(output)
+            }
+            "wc" => {
+                let option = words.get(1).map(String::as_str).unwrap_or("-l");
+                let value = match option {
+                    "-c" => input.as_bytes().len(),
+                    "-l" => input.bytes().filter(|byte| *byte == b'\n').count(),
+                    _ => return None,
+                };
+                Some(format!("{value}\n"))
+            }
             _ => {
                 let cmd_name = self.expand_word(&words[0]);
                 let expanded_args: Vec<String> =

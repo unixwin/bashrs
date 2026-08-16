@@ -2296,3 +2296,21 @@ Evidence:
 
 This closes the tested command-substitution `tr` pipeline primitive; other
 external filters and nested command-substitution interactions remain open.
+
+### 2026-08-17 command-substitution common pipeline filters
+
+The same command-substitution shortcut had three adjacent filter gaps. Bash
+applies `grep`, `head`, and `wc` to the pipeline input, while Rubash's generic
+Windows external fallback returned the unfiltered input for these forms. The
+shortcut now uses the existing shell implementations for simple patterns,
+line limits, and byte/line counts. Unsupported options still use the generic
+fallback.
+
+Evidence:
+
+- Bridge-free raw Bash/Rubash probe: `target/issue-suites/results/native-bash-20260817-command-substitution-filters/`.
+- `cargo test --test cli_tests compat_issue_regressions::command_substitution_pipeline -- --nocapture`: 2/2.
+- `cargo test --test executor_tests command_chaining::part_024 -- --nocapture`: 13/13.
+
+This closes the tested common-filter forms; command-substitution status
+propagation and unsupported filter options remain open compatibility work.

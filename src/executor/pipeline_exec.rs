@@ -911,7 +911,7 @@ fn pipeline_stage_reads_stdin_by_default(command: &CommandNode) -> bool {
     )
 }
 
-fn head_line_count(args: &[String]) -> Option<usize> {
+pub(in crate::executor) fn head_line_count(args: &[String]) -> Option<usize> {
     let mut index = 0;
     while let Some(arg) = args.get(index) {
         if arg == "--" {

@@ -142,6 +142,21 @@ fn command_substitution_pipeline_applies_tr_translation() {
 }
 
 #[test]
+fn command_substitution_pipeline_applies_common_filters() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "printf '<%s>|<%s>|<%s>\\n' \"$(printf 'b\\na\\n' | grep a)\" \"$(printf 'b\\na\\n' | head -n 1)\" \"$(printf 'b\\na\\n' | wc -l)\"",
+        )
+        .output()
+        .expect("run command substitution filter probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<a>|<b>|<2>\n");
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn umask_symbolic_output_takes_precedence_over_reusable_output() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
