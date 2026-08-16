@@ -67,6 +67,34 @@ fn stdin_script_child_shell_inherits_unread_input() {
 }
 
 #[test]
+fn nested_this_shell_script_runs_in_process() {
+    let parent_script = Path::new("target/rubash-cli-nested-this-shell-parent.sh");
+    let child_script = Path::new("target/rubash-cli-nested-this-shell-child.sh");
+    fs::write(child_script, "printf 'child:%s\\n' nested\n").unwrap();
+    fs::write(
+        parent_script,
+        format!(
+            "printf 'parent\\n'\n${{THIS_SH}} {}\n",
+            child_script.to_string_lossy().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+
+    let shell = env!("CARGO_BIN_EXE_rubash").replace('\\', "/");
+    let output = Command::new(&shell)
+        .env("THIS_SH", &shell)
+        .arg(parent_script)
+        .output()
+        .expect("run nested THIS_SH script");
+
+    let _ = fs::remove_file(parent_script);
+    let _ = fs::remove_file(child_script);
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "parent\nchild:nested\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn stdin_script_collects_heredoc_before_execution() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .stdin(Stdio::piped())

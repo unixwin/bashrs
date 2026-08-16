@@ -54,12 +54,19 @@ impl Executor {
         let Some(command_name) = cmd.words.first() else {
             return Ok(false);
         };
+        let command_uses_this_shell = command_name.contains("THIS_SH");
         let expanded_command_name = self.expand_word(command_name);
-        if let Some(script_path) =
-            direct_windows_shell_script_path(&expanded_command_name, &self.env_vars)
-        {
-            self.execute_direct_shell_script(cmd, &expanded_command_name, &script_path)?;
-            return Ok(true);
+        let expanded_is_this_shell = self.env_vars.get("THIS_SH").is_some_and(|this_sh| {
+            shell_path_to_windows(this_sh, &self.env_vars)
+                == shell_path_to_windows(&expanded_command_name, &self.env_vars)
+        });
+        if !command_uses_this_shell && !expanded_is_this_shell {
+            if let Some(script_path) =
+                direct_windows_shell_script_path(&expanded_command_name, &self.env_vars)
+            {
+                self.execute_direct_shell_script(cmd, &expanded_command_name, &script_path)?;
+                return Ok(true);
+            }
         }
         // A nested same-shell script still needs to run in-process when its
         // parent is consuming virtual stdin (for example a script supplied
@@ -70,10 +77,11 @@ impl Executor {
         if self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
             && !self.env_vars.contains_key(FUNCTION_STDIN)
             && self.fd_table.input_snapshot(0).is_none()
+            && !command_name.contains("THIS_SH")
+            && !expanded_is_this_shell
         {
             return Ok(false);
         }
-        let command_uses_this_shell = command_name.contains("THIS_SH");
         let command_name = expanded_command_name;
         let normalized_command = command_name.replace('\\', "/");
         let normalized_this_sh = self.env_vars.get("THIS_SH").map(|this_sh| {
@@ -97,46 +105,10 @@ impl Executor {
         };
         let script = self.expand_word(script);
         let script_path = shell_path_to_windows(&script, &self.env_vars);
-        let source = match fs::read_to_string(&script_path) {
-            Ok(source) => source,
-            Err(_) => return Ok(false),
-        };
-
-        let old_script_name = self.env_vars.get("__RUBASH_SCRIPT_NAME").cloned();
-        let old_function_stdin = self.env_vars.get(FUNCTION_STDIN).cloned();
-        let old_function_stdin_offset = self.env_vars.get(FUNCTION_STDIN_OFFSET).cloned();
-        let old_inherit_process_stdin = self.env_vars.get(INHERIT_PROCESS_STDIN).cloned();
-        if let Some(input) = self.function_call_stdin(cmd)? {
-            self.env_vars.insert(FUNCTION_STDIN.to_string(), input);
-            self.env_vars
-                .insert(FUNCTION_STDIN_OFFSET.to_string(), "0".to_string());
-            self.env_vars.remove(INHERIT_PROCESS_STDIN);
-        } else {
-            self.env_vars
-                .insert(INHERIT_PROCESS_STDIN.to_string(), "1".to_string());
+        if !script_path.is_file() {
+            return Ok(false);
         }
-        self.set_env("__RUBASH_SCRIPT_NAME", &script);
-        let result =
-            crate::builtins::source::execute_text_with_args(self, &source, &cmd.words[2..]);
-        match old_script_name {
-            Some(value) => self.set_env("__RUBASH_SCRIPT_NAME", &value),
-            None => {
-                self.env_vars.remove("__RUBASH_SCRIPT_NAME");
-                env::remove_var("__RUBASH_SCRIPT_NAME");
-            }
-        }
-        restore_optional_env_var(&mut self.env_vars, FUNCTION_STDIN, old_function_stdin);
-        restore_optional_env_var(
-            &mut self.env_vars,
-            FUNCTION_STDIN_OFFSET,
-            old_function_stdin_offset,
-        );
-        restore_optional_env_var(
-            &mut self.env_vars,
-            INHERIT_PROCESS_STDIN,
-            old_inherit_process_stdin,
-        );
-        result?;
+        self.execute_direct_shell_script(cmd, &script, &script_path)?;
         Ok(true)
     }
 
@@ -152,6 +124,18 @@ impl Executor {
         self.apply_command_output_redirects(cmd, &mut ast)?;
 
         let saved_env = self.env_vars.clone();
+        let this_shell_invocation = cmd.words.first().is_some_and(|command| {
+            self.env_vars.get("THIS_SH").is_some_and(|this_sh| {
+                shell_path_to_windows(this_sh, &self.env_vars)
+                    == shell_path_to_windows(&self.expand_word(command), &self.env_vars)
+            })
+        });
+        let saved_shell_state = this_shell_invocation.then(|| self.shell_state.clone());
+        if this_shell_invocation {
+            let child_env = self.child_shell_environment();
+            self.env_vars = child_env.clone();
+            self.shell_state.variables = crate::shell::VariableStore::from_environment(&child_env);
+        }
         let saved_pipestatus = self.pipestatus.clone();
         let saved_positional_params = self.positional_params.clone();
         let saved_functions = self.functions.clone();
@@ -181,6 +165,9 @@ impl Executor {
         let status = self.exit_code;
 
         self.restore_shell_env(saved_env);
+        if let Some(saved_shell_state) = saved_shell_state {
+            self.shell_state = saved_shell_state;
+        }
         self.pipestatus = saved_pipestatus;
         self.positional_params = saved_positional_params;
         self.functions = saved_functions;
@@ -203,6 +190,33 @@ impl Executor {
             }
             other => other,
         }
+    }
+
+    fn child_shell_environment(&self) -> HashMap<String, String> {
+        let exported = marked_env_names(&self.env_vars, EXPORTED_VARS);
+        let mut child = exported
+            .iter()
+            .filter_map(|name| {
+                self.env_vars
+                    .get(name)
+                    .map(|value| (name.clone(), value.clone()))
+            })
+            .collect::<HashMap<_, _>>();
+        // These are shell-local values maintained for every shell instance,
+        // even when they are not exported to native children.
+        if let Ok(current_dir) = env::current_dir() {
+            child.insert(
+                "PWD".to_string(),
+                shell_display_path(&current_dir.to_string_lossy().replace('\\', "/")),
+            );
+        }
+        for name in ["OLDPWD", "IFS", "SHELL"] {
+            if let Some(value) = self.env_vars.get(name) {
+                child.entry(name.to_string()).or_insert_with(|| value.clone());
+            }
+        }
+        child.insert(EXPORTED_VARS.to_string(), exported.join("\x1f"));
+        child
     }
 
     pub(in crate::executor) fn is_this_shell_posixpipe_time_count(

@@ -1790,3 +1790,30 @@ Verification:
 - `cargo test --lib`: 200/200 passed.
 - `cargo test --test executor_tests command_chaining::part_045`: 15/15 passed.
 - `cargo test --test executor_tests command_chaining::part_009::test_lineno_in_multiline_function_body_uses_body_line`: passed.
+
+### 2026-08-16 THIS_SH nested scripts and Windows tilde ownership
+
+The bounded upstream slice `run-appendop`, `run-tilde`, and `run-tilde2`
+now passes 3/3 after two root-cause fixes.
+
+First, `${THIS_SH}` commands were recognized as ordinary extensionless
+Windows scripts after the command word had already been expanded to the
+wrapper path. Nested `appendop1.sub` and `appendop2.sub` therefore either
+failed to run or reused the parent's shell variables. The same-shell path now
+recognizes the expanded `THIS_SH` target, forwards the script argument, and
+isolates nested shell state to exported variables plus shell-local defaults.
+Readonly assignment errors remain nonfatal in script mode unless `errexit` is
+active, matching the upstream `appendop.tests` continuation after `x+=5`.
+
+Second, Windows tilde expansion preferred `USERPROFILE` over an explicitly
+set `HOME`. Bash uses `HOME` when present and only falls back to
+`USERPROFILE`; the corrected order removes the `run-tilde`/`run-tilde2`
+path and case-pattern differences. Evidence is in
+`target/bash-upstream-tests/logs/run-appendop.log`,
+`target/bash-upstream-tests/logs/run-tilde.log`, and
+`target/bash-upstream-tests/logs/run-tilde2.log`.
+
+Verification: `cargo test --lib` 200/200; focused nested `THIS_SH` CLI
+regression 1/1; the three upstream runners 3/3. The broader CLI test binary
+still contains Windows host/fixture-dependent POSIX utility and pipeline
+failures; those are not used as evidence for this slice.

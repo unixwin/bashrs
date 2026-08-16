@@ -9,9 +9,8 @@ use std::collections::HashMap;
 pub const QUOTED_ASSIGNMENT_VALUE: char = '\x1c';
 
 pub fn home_value(env_vars: &HashMap<String, String>) -> String {
-    #[cfg(windows)]
-    let names = ["USERPROFILE", "HOME"];
-    #[cfg(not(windows))]
+    // Bash's tilde expansion follows HOME when it is set. USERPROFILE is
+    // only a Windows fallback for shells that have no HOME value.
     let names = ["HOME", "USERPROFILE"];
 
     names
@@ -121,13 +120,13 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn windows_home_value_matches_userprofile_before_home() {
+    fn windows_home_value_prefers_home_before_userprofile() {
         let env_vars = HashMap::from([
             ("HOME".to_string(), "C:/from-home".to_string()),
             ("USERPROFILE".to_string(), "C:/from-userprofile".to_string()),
         ]);
 
-        assert_eq!(home_value(&env_vars), "C:/from-userprofile");
+        assert_eq!(home_value(&env_vars), "C:/from-home");
     }
 
     #[test]

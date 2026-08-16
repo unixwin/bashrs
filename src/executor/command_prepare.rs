@@ -123,7 +123,11 @@ impl Executor {
                     && !special_readonly_assignment_is_recoverable(base_name)
                 {
                     self.exit_code = 1;
-                    return Err(ExecuteError::ExitCode(1));
+                    let script_mode_nonfatal = self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
+                        && (!self.errexit_enabled() || !self.errexit_is_active());
+                    if !script_mode_nonfatal {
+                        return Err(ExecuteError::ExitCode(1));
+                    }
                 }
             }
         }
