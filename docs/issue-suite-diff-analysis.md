@@ -2012,3 +2012,21 @@ Verification:
 - `cargo test --lib parser::tests -- --nocapture`: 13/13.
 - `run-parser`: 1/1.
 - `run-cond`: 1/1.
+
+### 2026-08-16 ERR trap BASH_COMMAND context
+
+An ERR trap action that expands `$BASH_COMMAND` must see the command that
+failed, not the trap action itself. Rubash previously let the trap action's
+AST update the ordinary current-command mirror before expansion, producing
+`err:echo err:$BASH_COMMAND` where Bash produced `err:false`.
+
+The executor now temporarily pins the current command text while evaluating
+the ERR trap action and restores the previous trap context afterward. This
+keeps the behavior separate from DEBUG trap command tracking while sharing the
+same dynamic parameter contract.
+
+Verification:
+
+- `cargo test --test cli_tests c_command_err_trap_preserves_failed_bash_command -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_045 -- --nocapture`: 15/15.
+- `run-trap`: 1/1.

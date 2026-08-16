@@ -152,6 +152,22 @@ fn c_command_rejects_unbalanced_arithmetic_command_as_parse_error() {
 }
 
 #[test]
+fn c_command_err_trap_preserves_failed_bash_command() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("trap 'echo err:$BASH_COMMAND' ERR; false; echo after")
+        .output()
+        .expect("run ERR trap command probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "err:false\nafter\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn c_command_failed_dynamic_varredir_continues_and_does_not_set_variable() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

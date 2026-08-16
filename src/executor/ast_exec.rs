@@ -380,9 +380,14 @@ impl Executor {
                 {
                     if !action.is_empty() {
                         let saved_exit = self.exit_code;
+                        let saved_trap_command = self.debug_trap_command.clone();
+                        self.debug_trap_command = Some(
+                            crate::executor::command_text::bash_command_text(command),
+                        );
                         let tokens = crate::lexer::tokenize(&action);
                         let ast = crate::parser::parse(&tokens);
                         let _ = self.execute_ast(&ast);
+                        self.debug_trap_command = saved_trap_command;
                         self.exit_code = saved_exit;
                     }
                 }

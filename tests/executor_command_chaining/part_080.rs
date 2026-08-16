@@ -2630,8 +2630,8 @@ fn test_unclosed_arithmetic_subscript_does_not_execute_tail_bracket() {
 
     let result = executor.execute_ast(&ast);
 
-    assert!(result.is_ok());
-    assert_eq!(executor.last_exit_code(), 1);
+    assert!(matches!(result, Err(ExecuteError::ExitCode(2))));
+    assert_eq!(executor.last_exit_code(), 2);
 }
 
 #[test]
