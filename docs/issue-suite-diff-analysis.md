@@ -1885,3 +1885,8 @@ Verification:
 - `part_010`: 16/16 passed.
 - `part_046`: 41/41 passed.
 - `cargo test --lib`: 200/200 passed.
+
+The two `part_005` pipeline cases initially reported `tr: command not found`
+on Windows. The pipeline owner now handles the common two-set character
+translation form in-process (`tr a A` as well as the existing newline form),
+so the complete `part_005` slice is 40/40 without relying on a Git/POSIX tool.

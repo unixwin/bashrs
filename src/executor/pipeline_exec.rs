@@ -823,6 +823,8 @@ impl Executor {
                     .collect::<Vec<_>>();
                 if args.len() == 2 && matches!(args[0].as_str(), "\\n" | "\n") {
                     Ok(Some((input.replace('\n', &args[1]), String::new(), 0)))
+                } else if args.len() == 2 {
+                    Ok(Some((translate_tr(input, &args[0], &args[1]), String::new(), 0)))
                 } else {
                     self.execute_external_pipeline_stage(command, input)
                 }
@@ -929,6 +931,24 @@ fn head_line_count(args: &[String]) -> Option<usize> {
         index += 1;
     }
     None
+}
+
+fn translate_tr(input: &str, source: &str, target: &str) -> String {
+    let source_chars = source.chars().collect::<Vec<_>>();
+    let target_chars = target.chars().collect::<Vec<_>>();
+    if source_chars.is_empty() || target_chars.is_empty() {
+        return input.to_string();
+    }
+    input
+        .chars()
+        .map(|ch| {
+            source_chars
+                .iter()
+                .position(|source_ch| *source_ch == ch)
+                .map(|index| target_chars[index.min(target_chars.len() - 1)])
+                .unwrap_or(ch)
+        })
+        .collect()
 }
 
 fn command_has_non_concurrent_pipeline_redirects(
