@@ -234,6 +234,34 @@ fn arithmetic_empty_array_subscript_defaults_to_zero() {
 }
 
 #[test]
+fn arithmetic_empty_quoted_array_subscript_fails_outside_let() {
+    let command_output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("declare -a a; (( a[\"\"]=24 )); printf 'status=%s\\n' \"$?\"")
+        .output()
+        .expect("run empty quoted arithmetic command subscript probe");
+
+    assert!(
+        command_output.status.success(),
+        "status={:?}, stdout={:?}, stderr={:?}",
+        command_output.status.code(),
+        String::from_utf8_lossy(&command_output.stdout),
+        String::from_utf8_lossy(&command_output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&command_output.stdout), "status=1\n");
+
+    let expansion_output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("declare -a a; : $(( a[\"\"]=25 )); echo after")
+        .output()
+        .expect("run empty quoted arithmetic expansion subscript probe");
+
+    assert_eq!(expansion_output.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&expansion_output.stdout), "");
+    assert!(!String::from_utf8_lossy(&expansion_output.stderr).is_empty());
+}
+
+#[test]
 fn umask_symbolic_output_takes_precedence_over_reusable_output() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

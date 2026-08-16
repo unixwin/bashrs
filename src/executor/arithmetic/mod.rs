@@ -34,6 +34,9 @@ impl Executor {
         if empty_quoted_operand_has_operator(&expression) {
             return None;
         }
+        if empty_quoted_array_subscript(&expression) {
+            return None;
+        }
         eval_mutable_arith_value_with_random(
             &expression,
             &mut self.env_vars,
@@ -59,6 +62,9 @@ impl Executor {
             }
         }
         if empty_quoted_operand_has_operator(&expression) {
+            return None;
+        }
+        if empty_quoted_array_subscript(&expression) {
             return None;
         }
         eval_mutable_arith_value_with_random(
@@ -111,6 +117,23 @@ fn empty_quoted_operand_has_operator(expression: &str) -> bool {
         && outside
             .chars()
             .any(|ch| matches!(ch, '+' | '-' | '*' | '/' | '%' | '<' | '>' | '&' | '|' | '^' | '?' | ':'))
+}
+
+fn empty_quoted_array_subscript(expression: &str) -> bool {
+    let mut start = 0;
+    while let Some(relative_open) = expression[start..].find('[') {
+        let open = start + relative_open;
+        let Some(relative_close) = expression[open + 1..].find(']') else {
+            break;
+        };
+        let close = open + 1 + relative_close;
+        let subscript = &expression[open + 1..close];
+        if subscript.is_empty() || matches!(subscript.trim(), "\"\"" | "''") {
+            return true;
+        }
+        start = close + 1;
+    }
+    false
 }
 
 pub(crate) fn eval_conditional_arith_value(

@@ -2414,3 +2414,25 @@ Evidence:
 
 The broader `arith10` contexts, arithmetic diagnostics, and official actual
 output rows remain separate compatibility work.
+
+### 2026-08-17 empty quoted arithmetic array subscripts
+
+The same `arith10.sub` matrix distinguishes an empty quoted indexed subscript
+from a whitespace-only one: Bash accepts `a[" "]` as index 0, but reports an
+arithmetic error for `(( a[""]=24 ))` and for the equivalent `$((...))`
+expansion. `let` retains its separate Bash behavior and continues to accept
+the empty subscript as index 0.
+
+The arithmetic command and arithmetic expansion entry points now reject an
+empty quoted indexed subscript before generic lvalue evaluation. Ordinary
+array assignment and `let` remain unchanged.
+
+Evidence:
+
+- `cargo test --test cli_tests compat_issue_regressions::arithmetic_empty
+  -- --nocapture`: 3/3.
+- `cargo test --test cli_tests escaped_quote_array -- --nocapture`: 3/3.
+- `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`
+  152/152.
+- Fresh `arith10.sub` stdout/stderr artifacts:
+  `target/issue-suites/results/native-bash-20260817-arith10-current/`.
