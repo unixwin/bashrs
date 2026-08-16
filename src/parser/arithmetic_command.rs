@@ -131,10 +131,58 @@ fn arithmetic_token_value(token: &Token) -> String {
 }
 
 fn set_arithmetic_command_words(command: &mut CommandNode, expression: String) {
+    let delimiters_balanced = arithmetic_delimiters_balanced(&expression);
     command.words.push("((".to_string());
     command.words.push(expression.clone());
     command.words.push("))".to_string());
     command.arithmetic_command = Some(arithmetic_command(expression));
+    if !delimiters_balanced {
+        command.assignments.insert(
+            "__RUBASH_PARSE_ERROR__".to_string(),
+            "unexpected EOF while looking for matching `)'".to_string(),
+        );
+    }
+}
+
+/// Arithmetic commands are parsed before arithmetic evaluation. Reject an
+/// unmatched grouping delimiter here so malformed input gets Bash's parse
+/// status (2), instead of being treated as a valid command that merely
+/// evaluates to an arithmetic error (status 1).
+fn arithmetic_delimiters_balanced(expression: &str) -> bool {
+    let mut stack = Vec::new();
+    let mut escaped = false;
+    let mut quote = None;
+
+    for ch in expression.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' && quote != Some('"') {
+            escaped = true;
+            continue;
+        }
+        if let Some(active) = quote {
+            if ch == active {
+                quote = None;
+            }
+            continue;
+        }
+        if ch == '\'' || ch == '"' {
+            quote = Some(ch);
+            continue;
+        }
+
+        match ch {
+            '(' => stack.push(ch),
+            '[' => stack.push(ch),
+            ')' if stack.pop() != Some('(') => return false,
+            ']' if stack.pop() != Some('[') => return false,
+            _ => {}
+        }
+    }
+
+    quote.is_none() && stack.is_empty()
 }
 
 fn arithmetic_command(expression: String) -> ArithmeticCommand {

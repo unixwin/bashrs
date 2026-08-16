@@ -140,6 +140,18 @@ fn c_command_dynamic_varredir_covers_read_write_dup_and_auto_close() {
 }
 
 #[test]
+fn c_command_rejects_unbalanced_arithmetic_command_as_parse_error() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("((X=([))]")
+        .output()
+        .expect("run malformed arithmetic command");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unexpected EOF"));
+}
+
+#[test]
 fn c_command_failed_dynamic_varredir_continues_and_does_not_set_variable() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

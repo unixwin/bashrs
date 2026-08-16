@@ -1992,3 +1992,23 @@ Verification:
 - cargo test --test cli_tests stdin_script_ -- --nocapture: 7/7 passed.
 - Direct Bash/Rubash stdin probe for set -e followed by false produces only
   the prefix output and status 1 in both shells.
+
+### 2026-08-16 malformed arithmetic-command parse status
+
+The parser accepted an unbalanced arithmetic command such as
+`((X=([))]` and passed it to arithmetic evaluation. GNU Bash rejects this
+during parsing with status 2, while Rubash previously returned the evaluator's
+status 1. The root cause was missing structural delimiter validation in the
+arithmetic-command parser, not numeric evaluation.
+
+`src/parser/arithmetic_command.rs` now validates grouping parentheses and
+array brackets before constructing the arithmetic command and marks malformed
+expressions as parse errors. Valid nested arithmetic grouping and subscripts
+remain accepted.
+
+Verification:
+
+- `cargo test --test cli_tests c_command_rejects_unbalanced_arithmetic_command_as_parse_error -- --nocapture`: 1/1.
+- `cargo test --lib parser::tests -- --nocapture`: 13/13.
+- `run-parser`: 1/1.
+- `run-cond`: 1/1.
