@@ -262,6 +262,25 @@ fn arithmetic_empty_quoted_array_subscript_fails_outside_let() {
 }
 
 #[test]
+fn parameter_substring_empty_length_is_zero() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "v=12345; printf '<%s>|<%s>|<%s>\\n' \
+             \"${v:2:}\" \"${v::}\" \"${v:2}\"",
+        )
+        .output()
+        .expect("run empty parameter substring length probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "<>|<>|<345>\n"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn umask_symbolic_output_takes_precedence_over_reusable_output() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

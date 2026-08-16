@@ -2436,3 +2436,20 @@ Evidence:
   152/152.
 - Fresh `arith10.sub` stdout/stderr artifacts:
   `target/issue-suites/results/native-bash-20260817-arith10-current/`.
+
+### 2026-08-17 parameter substring explicit empty length
+
+The Bash actual-output probe also exposed the `v:2:` substring form. The
+parser previously represented both `v:2` and `v:2:` as `length=None`, so the
+latter incorrectly returned the suffix instead of an empty string. The
+top-level substring splitter now preserves whether a separator colon was
+present; an absent length after that colon becomes `Some(0)`, while no colon
+continues to mean “through the end”.
+
+Evidence:
+
+- `cargo test --test cli_tests parameter_substring_empty_length_is_zero
+  -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_063 -- --nocapture`:
+  21/21.
+- `cargo check`: passed.

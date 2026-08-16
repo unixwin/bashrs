@@ -189,9 +189,9 @@ impl Executor {
         // Split offset/length on a *top-level* `:` only: `${v:${w:-4}}` has
         // offset `${w:-4}` whose inner `:` is default-value syntax, not the
         // slice separator (Bash extracts nested `${...}` as one unit).
-        let (offset, length) = split_top_level_colon(rest);
+        let (offset, length, has_length) = split_top_level_colon(rest);
         let offset = offset.trim_start();
-        if offset.is_empty() && length.is_empty() {
+        if offset.is_empty() && length.is_empty() && !has_length {
             return None;
         }
 
@@ -200,8 +200,10 @@ impl Executor {
         } else {
             self.eval_parameter_substring_offset(offset)?
         };
-        let length = if length.is_empty() {
+        let length = if !has_length {
             None
+        } else if length.is_empty() {
+            Some(0)
         } else {
             Some(self.eval_parameter_substring_offset(length)?)
         };
@@ -237,7 +239,7 @@ impl Executor {
 /// Splits a slice rest (`offset[:length]`) on the first *top-level* colon,
 /// skipping `:` inside nested `${...}` groups: `${v:${w:-4}}` must split on
 /// the colon after `v`, not on the `:` inside `${w:-4}`.
-fn split_top_level_colon(input: &str) -> (&str, &str) {
+fn split_top_level_colon(input: &str) -> (&str, &str, bool) {
     let mut depth = 0usize;
     let bytes = input.as_bytes();
     let mut index = 0;
@@ -253,11 +255,11 @@ fn split_top_level_colon(input: &str) -> (&str, &str) {
             continue;
         }
         if bytes[index] == b':' && depth == 0 {
-            return (&input[..index], &input[index + 1..]);
+            return (&input[..index], &input[index + 1..], true);
         }
         index += 1;
     }
-    (input, "")
+    (input, "", false)
 }
 
 pub(in crate::executor) fn word_contains_current_shell_command_substitution(word: &str) -> bool {
