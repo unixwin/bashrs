@@ -1912,3 +1912,25 @@ Verification:
 - Direct Bash/Rubash probes for pushd . and pushd .. agree in stack structure
   and status; the remaining /d/... versus D:/... spelling is the existing
   Windows path-display policy.
+
+### 2026-08-16 stdin command-stream errexit propagation
+
+The noninteractive stdin driver intentionally reads one physical line at a
+time so shell children can inherit unread input and large heredocs do not
+require buffering the whole stream. It previously discarded the status
+returned by each completed line, however. Consequently stdin input continued
+after set -e; false even though the same command stream stopped correctly in
+the -c and script-file paths.
+
+run_stdin_script now stops consuming subsequent commands when a completed line
+returns nonzero while SHELLOPTS still contains errexit. Conditional failures
+remain handled by the normal parser/executor suppression rules, and the
+line-oriented input behavior is unchanged.
+
+Verification:
+
+- cargo test --test cli_tests stdin_script_honors_errexit_across_input_lines
+  -- --nocapture: 1/1 passed.
+- cargo test --test cli_tests stdin_script_ -- --nocapture: 7/7 passed.
+- Direct Bash/Rubash stdin probe for set -e followed by false produces only
+  the prefix output and status 1 in both shells.

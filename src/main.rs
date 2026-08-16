@@ -262,16 +262,28 @@ fn run_stdin_script(executor: &mut Executor) -> i32 {
             continue;
         }
 
-        run_line(executor, &pending, false);
+        let status = run_line(executor, &pending, false);
         pending.clear();
+        if status != 0 && stdin_script_errexit_enabled(executor) {
+            break;
+        }
     }
 
     if !pending.trim().is_empty() {
-        run_line(executor, &pending, false);
+        let status = run_line(executor, &pending, false);
+        if status != 0 && stdin_script_errexit_enabled(executor) {
+            pending.clear();
+        }
     }
 
     let status = executor.last_exit_code();
     finish_shell(executor, status, false)
+}
+
+fn stdin_script_errexit_enabled(executor: &Executor) -> bool {
+    executor
+        .get_env("SHELLOPTS")
+        .is_some_and(|options| options.split(':').any(|option| option == "errexit"))
 }
 
 fn stdin_source_needs_more(source: &str) -> bool {
