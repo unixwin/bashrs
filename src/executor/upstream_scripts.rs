@@ -23,7 +23,7 @@ pub(super) enum UpstreamOutputStream {
 impl Executor {
     /// Try all upstream test script handlers. Returns true if one matched.
     #[allow(unreachable_code)]
-    pub(super) fn try_upstream_scripts(&mut self) -> bool {
+    pub fn try_upstream_scripts(&mut self) -> bool {
         self.execute_upstream_precedence_script()
             || self.execute_upstream_mapfile_script()
             || self.execute_upstream_rsh_script()

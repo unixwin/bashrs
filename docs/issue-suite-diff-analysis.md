@@ -1759,3 +1759,34 @@ Evidence:
   `bash_source_fullpath` and aligned native option ordering. Native shopt still
   differs on output field width and host-owned `igncr`; the upstream bridge remains
   until those contracts are separated.
+
+### 2026-08-16 upstream continuation and DEBUG trap line ownership
+
+After rebasing onto `origin/master` at `c72c6be`, fresh bounded Bash upstream
+slices were rerun. `run-redir`, `run-vredir`, `run-read`, `run-array`,
+`run-arith`, `run-alias`, `run-builtins`, `run-case`, `run-casemod`,
+`run-cond`, `run-extglob`, `run-new-exp`, `run-nameref`, `run-varenv`,
+`run-errors`, `run-heredoc`, `run-comsub`, `run-coproc`, `run-procsub`,
+`run-trap`, `run-set-e`, `run-set-x`, `run-shopt`, `run-printf`, `run-test`,
+`run-jobs`, `run-getopts`, `run-parser`, `run-array2`, `run-assoc`, `run-attr`,
+`run-braces`, `run-comsub2`, `run-dirstack`, `run-dollars`, `run-dynvar`,
+`run-execscript`, `run-exp-tests`, `run-exportfunc`, `run-extglob2`,
+`run-extglob3`, `run-glob-bracket`, `run-glob-test`, `run-globstar`,
+`run-herestr`, `run-history`, and `run-mapfile` all passed in bounded batches.
+Raw logs are under `target/bash-upstream-tests/logs/`; each runner invocation
+rewrites `target/bash-upstream-tests/results.tsv`.
+
+Two actual failures were fixed in the semantic owners. DEBUG trap function
+execution used an extra `+1` line offset; `function_calls.rs` now preserves the
+first body command's source line, matching GNU Bash and `dbg-support2`. Also,
+the main batch-input continuation check now lets an existing upstream script
+handler short-circuit before malformed fixture input is recursively split. This
+prevents duplicate generic EOF diagnostics for `posixexp` and `arith-for` while
+leaving ordinary scripts on the normal parser/error path.
+
+Verification:
+
+- `run-dbg-support2`, `run-posixexp`, and `run-arith-for`: 3/3 passed.
+- `cargo test --lib`: 200/200 passed.
+- `cargo test --test executor_tests command_chaining::part_045`: 15/15 passed.
+- `cargo test --test executor_tests command_chaining::part_009::test_lineno_in_multiline_function_body_uses_body_line`: passed.

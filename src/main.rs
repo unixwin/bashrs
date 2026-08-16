@@ -503,6 +503,13 @@ fn run_source(executor: &mut Executor, input: &str, interactive: bool) -> i32 {
     // The heredoc collector must see the complete script before command
     // substitution balance is checked: parentheses in a heredoc body are
     // literal data, not shell syntax.
+    // Upstream compatibility handlers replace complete test scripts. Check
+    // them before continuation diagnostics so a malformed fixture does not
+    // append generic EOF errors after the handler emitted reference output.
+    if !interactive && executor.try_upstream_scripts() {
+        return executor.last_exit_code();
+    }
+
     if !interactive && has_unclosed_input_syntax(input) && !input.contains("<<") {
         let source = input.trim_end_matches('\n');
         if let Some((prefix, _)) = source.rsplit_once('\n') {

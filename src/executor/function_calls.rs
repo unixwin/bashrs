@@ -143,8 +143,7 @@ impl Executor {
             self.debug_trap_function_line = body
                 .commands
                 .first()
-                .and_then(|command| command.line)
-                .map(|line| line.saturating_add(1));
+                .and_then(|command| command.line);
         }
         let result = self.execute_ast_inner(body_ast);
         self.debug_trap_function_line = old_debug_trap_function_line;

@@ -54,7 +54,7 @@ fn test_debug_trap_preserves_function_line_and_skips_on_status_two() {
     assert_eq!(fs::read_to_string(value_path).unwrap(), "value:one\n");
     let trap_lines = fs::read_to_string(trap_log).unwrap();
     assert!(!trap_lines.is_empty());
-    assert!(trap_lines.lines().all(|line| line.ends_with(":4")));
+    assert!(trap_lines.lines().all(|line| line.ends_with(":3")));
     let _ = fs::remove_file(trap_log);
     let _ = fs::remove_file(value_path);
 }
