@@ -896,6 +896,19 @@ fn arithmetic_commands_reject_single_quoted_operands() {
 }
 
 #[test]
+fn escaped_quote_array_subscript_is_a_syntax_error() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("a[\\\" \\\"]=15; echo after")
+        .output()
+        .expect("run escaped array-subscript probe");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("operand expected"));
+}
+
+#[test]
 fn function_call_stack_reports_multiline_source_and_line() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

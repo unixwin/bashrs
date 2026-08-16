@@ -18,6 +18,12 @@ pub(super) fn push_command_word(cmd: &mut CommandNode, token: &Token) {
     record_pathname_patterns_for_word(cmd, word_index, &token.value, &token.raw);
     record_word_quotes_for_word(cmd, word_index, &token.raw);
     record_array_element_assignment_for_word(cmd, word_index, &token.value, &token.raw);
+    if crate::parser::array_element_subscript_has_escaped_quote(&token.raw) {
+        cmd.assignments.insert(
+            "__RUBASH_PARSE_ERROR__".to_string(),
+            "arithmetic syntax error: operand expected".to_string(),
+        );
+    }
     cmd.word_metadata
         .push(build_word_metadata(word_index, &token.value, &token.raw));
     cmd.words.push(token.value.clone());

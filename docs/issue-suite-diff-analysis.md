@@ -2079,6 +2079,24 @@ Verification:
   25/26; only `case-16-glob` differs in host-specific missing-directory
   diagnostics.
 
+### 2026-08-17 escaped quotes in arithmetic array subscripts
+
+GNU Bash treats an indexed-array assignment such as `a[\" \"]=15` as an
+arithmetic syntax error: the escaped quote characters reach the arithmetic
+parser and are not a valid operand. Rubash previously removed the escapes too
+early, converted the resulting empty index to zero, and assigned element 0.
+
+The parser now marks array-element words whose raw subscript contains escaped
+quote characters with the existing parse-error marker. Ordinary quoted
+subscripts such as `a[" "]=10` continue through the arithmetic array owner.
+
+Verification:
+
+- `cargo test --test parser_tests -- --nocapture`: 351/351.
+- `cargo test --test cli_tests escaped_quote_array_subscript_is_a_syntax_error -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`: 152/152.
+- `run-arith`: 1/1.
+
 ### 2026-08-17 failed read-write varredir releases the descriptor
 
 The remaining `vredir8` fd-allocation difference was caused by the virtual fd
