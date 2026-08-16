@@ -1931,6 +1931,24 @@ Verification:
 - `cargo test --test executor_tests command_chaining::part_063 -- --nocapture`: 21/21.
 - `cargo test --lib matching_parameter_brace -- --nocapture`: 3/3.
 
+### 2026-08-16 DEBUG trap line numbers in stdin scripts
+
+`bash -s` preserves physical input line numbers for DEBUG trap expansion.
+Rubash's stdin driver executes complete commands incrementally so child
+processes can inherit unread input, but it previously tokenized every pending
+command block as if it started on line 1. Consequently a trap such as
+`trap 'echo debug:$LINENO' DEBUG` reported `debug:1` for a command on line 2.
+
+The stdin driver now tracks each pending block's physical start line and adds
+that offset to lexer token positions before parsing. Script-file and `-c`
+execution retain their existing source positions.
+
+Verification:
+
+- `cargo test --test cli_tests stdin_script_preserves_debug_trap_line_numbers -- --nocapture`: 1/1.
+- `cargo test --test cli_tests stdin_script_ -- --nocapture`: 10/10.
+- `cargo test --test executor_tests command_chaining::part_045 -- --nocapture`: 15/15.
+
 ### 2026-08-16 directory-stack logical path normalization
 
 The directory-stack builtin had one remaining Bash-visible path difference:

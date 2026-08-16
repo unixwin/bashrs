@@ -88,6 +88,27 @@ fn stdin_script_honors_errexit_across_input_lines() {
 }
 
 #[test]
+fn stdin_script_preserves_debug_trap_line_numbers() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("run rubash");
+
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"trap 'echo debug:$LINENO' DEBUG\necho one\n")
+        .unwrap();
+
+    let output = child.wait_with_output().unwrap();
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "debug:2\none\n");
+}
+
+#[test]
 fn nested_this_shell_script_runs_in_process() {
     let parent_script = Path::new("target/rubash-cli-nested-this-shell-parent.sh");
     let child_script = Path::new("target/rubash-cli-nested-this-shell-child.sh");

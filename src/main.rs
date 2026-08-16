@@ -234,6 +234,8 @@ fn run_stdin_script(executor: &mut Executor) -> i32 {
     let mut input = String::new();
     let mut pending = String::new();
     let mut pending_heredocs: Vec<(String, bool)> = Vec::new();
+    let mut next_line = 1usize;
+    let mut pending_start_line = 1usize;
 
     loop {
         input.clear();
@@ -243,6 +245,10 @@ fn run_stdin_script(executor: &mut Executor) -> i32 {
             Err(_) => break,
         }
 
+        if pending.is_empty() {
+            pending_start_line = next_line;
+        }
+        next_line += input.matches('\n').count().max(1);
         pending.push_str(&input);
         if let Some((delimiter, strip_tabs)) = pending_heredocs.first() {
             let candidate = input.trim_end_matches(['\r', '\n']);
@@ -262,7 +268,12 @@ fn run_stdin_script(executor: &mut Executor) -> i32 {
             continue;
         }
 
-        let status = run_line(executor, &pending, false);
+        let status = run_source_with_line_offset(
+            executor,
+            &pending,
+            false,
+            pending_start_line.saturating_sub(1),
+        );
         pending.clear();
         if status != 0 && stdin_script_errexit_enabled(executor) {
             break;
@@ -270,7 +281,12 @@ fn run_stdin_script(executor: &mut Executor) -> i32 {
     }
 
     if !pending.trim().is_empty() {
-        let status = run_line(executor, &pending, false);
+        let status = run_source_with_line_offset(
+            executor,
+            &pending,
+            false,
+            pending_start_line.saturating_sub(1),
+        );
         if status != 0 && stdin_script_errexit_enabled(executor) {
             pending.clear();
         }
@@ -508,6 +524,15 @@ fn run_line(executor: &mut Executor, input: &str, interactive: bool) -> i32 {
 }
 
 fn run_source(executor: &mut Executor, input: &str, interactive: bool) -> i32 {
+    run_source_with_line_offset(executor, input, interactive, 0)
+}
+
+fn run_source_with_line_offset(
+    executor: &mut Executor,
+    input: &str,
+    interactive: bool,
+    line_offset: usize,
+) -> i32 {
     // TODO(shell.c/eval.c/parse.y): GNU Bash parses complete command streams,
     // including pending here-documents, rather than executing script files one
     // physical line at a time. This keeps batch input whole; interactive mode
@@ -526,14 +551,20 @@ fn run_source(executor: &mut Executor, input: &str, interactive: bool) -> i32 {
         let source = input.trim_end_matches('\n');
         if let Some((prefix, _)) = source.rsplit_once('\n') {
             if !prefix.trim().is_empty() {
-                let _ = run_source(executor, prefix, interactive);
+                let _ = run_source_with_line_offset(executor, prefix, interactive, line_offset);
             }
         }
         eprintln!("rubash: syntax error: unexpected end of file");
         return 2;
     }
 
-    let tokens = tokenize(input);
+    let mut tokens = tokenize(input);
+    if line_offset != 0 {
+        for token in &mut tokens {
+            token.position += line_offset;
+            token.column += line_offset;
+        }
+    }
     let ast = parse(&tokens);
 
     match executor.execute_ast(&ast) {
