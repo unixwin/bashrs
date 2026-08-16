@@ -48,6 +48,10 @@ pub(super) fn parse_arithmetic_for_command(
             continue;
         }
 
+        if paren_depth == 0 && malformed_arithmetic_parameter_word(&tokens[i].raw) {
+            return None;
+        }
+
         if is_keyword(tokens, i, "(") {
             paren_depth += 1;
             parts[part_index].push(tokens[i].value.clone());
@@ -198,6 +202,40 @@ pub(super) fn parse_arithmetic_for_command(
         body,
     }));
     Some(finish_compound_command(command, tokens, body_end))
+}
+
+fn malformed_arithmetic_parameter_word(word: &str) -> bool {
+    let Some(open) = word.find("${") else {
+        return false;
+    };
+    let body = &word[open + 2..];
+    let Some(close) = body.find('}') else {
+        return false;
+    };
+    let body = body[..close].trim_start();
+    let Some(first) = body.chars().next() else {
+        return true;
+    };
+
+    let mut offset = first.len_utf8();
+    if matches!(first, '!' | '#') {
+        let Some(next) = body[offset..].chars().next() else {
+            return true;
+        };
+        offset += next.len_utf8();
+    } else if !first.is_ascii_alphanumeric() && first != '_' {
+        return !matches!(first, '@' | '*' | '?' | '-' | '$' | '!' | '0'..='9');
+    }
+
+    while let Some(ch) = body[offset..].chars().next() {
+        if ch == '_' || ch.is_ascii_alphanumeric() {
+            offset += ch.len_utf8();
+            continue;
+        }
+        return matches!(ch, ' ' | '\t' | '\n' | ';' | '(' | ')');
+    }
+
+    false
 }
 
 fn delimiter_metadata(delimiter: &str) -> Box<WordMetadata> {

@@ -7,6 +7,7 @@ impl Executor {
         cmd: &CommandNode,
     ) -> Result<(), ExecuteError> {
         if cmd.subshell && command_has_unterminated_heredoc(cmd) {
+            self.mark_parse_error();
             self.report_unterminated_subshell_heredoc(cmd);
             self.exit_code = 2;
             return Err(ExecuteError::ExitCode(2));

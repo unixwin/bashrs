@@ -2453,3 +2453,27 @@ Evidence:
 - `cargo test --test executor_tests command_chaining::part_063 -- --nocapture`:
   21/21.
 - `cargo check`: passed.
+
+### 2026-08-17 malformed parameter expansion in arithmetic-for headers
+
+The bridge-free arithmetic-for parser probe found that a malformed braced
+parameter word inside an arithmetic-for header was accepted:
+`${ case x in x) esac; }`. Its internal semicolon was treated as arithmetic
+header structure, so Rubash executed the loop and continued instead of
+returning Bash's syntax status 2. The parser now rejects this malformed
+parameter-name boundary while retaining valid arithmetic parameter forms.
+
+The stdin batch runner also records syntax errors independently from ordinary
+nonzero command statuses. A syntax error now stops a non-interactive stdin
+script without enabling `errexit`; ordinary arithmetic/builtin failures still
+continue as Bash does.
+
+Evidence:
+
+- Raw bridge-free artifacts: `target/issue-suites/results/native-bash-20260817-arith-for/`.
+- `cargo test --test cli_tests arithmetic_for -- --nocapture`: 3/3.
+- `cargo test --test parser_tests arithmetic_for -- --nocapture`: 4/4.
+- `cargo test --lib`: 200/200.
+
+This closes only the malformed arithmetic-for parameter-header primitive; the
+aggregate `arith-for` and official actual-output rows remain open.

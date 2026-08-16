@@ -274,8 +274,9 @@ fn run_stdin_script(executor: &mut Executor) -> i32 {
             false,
             pending_start_line.saturating_sub(1),
         );
+        let parse_error = executor.take_parse_error();
         pending.clear();
-        if status != 0 && stdin_script_errexit_enabled(executor) {
+        if parse_error || (status != 0 && stdin_script_errexit_enabled(executor)) {
             break;
         }
     }
@@ -287,7 +288,8 @@ fn run_stdin_script(executor: &mut Executor) -> i32 {
             false,
             pending_start_line.saturating_sub(1),
         );
-        if status != 0 && stdin_script_errexit_enabled(executor) {
+        let parse_error = executor.take_parse_error();
+        if parse_error || (status != 0 && stdin_script_errexit_enabled(executor)) {
             pending.clear();
         }
     }
@@ -554,6 +556,7 @@ fn run_source_with_line_offset(
                 let _ = run_source_with_line_offset(executor, prefix, interactive, line_offset);
             }
         }
+        executor.mark_parse_error();
         eprintln!("rubash: syntax error: unexpected end of file");
         return 2;
     }

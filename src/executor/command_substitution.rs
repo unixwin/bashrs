@@ -386,6 +386,7 @@ impl Executor {
             fd_table: self.fd_table.clone(),
             job_table: self.job_table.clone(),
             exit_code: self.exit_code,
+            parse_error_occurred: false,
             env_vars: self.env_vars.clone(),
             aliases: self.aliases.clone(),
             functions: self.functions.clone(),

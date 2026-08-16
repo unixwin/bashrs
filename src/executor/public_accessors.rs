@@ -5,6 +5,14 @@ impl Executor {
         self.exit_code
     }
 
+    pub fn mark_parse_error(&mut self) {
+        self.parse_error_occurred = true;
+    }
+
+    pub fn take_parse_error(&mut self) -> bool {
+        std::mem::take(&mut self.parse_error_occurred)
+    }
+
     pub fn shell_state(&self) -> &crate::shell::ShellState {
         &self.shell_state
     }

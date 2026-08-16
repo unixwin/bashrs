@@ -330,6 +330,7 @@ pub struct Executor {
     fd_table: FdTable,
     job_table: JobTable,
     exit_code: i32,
+    parse_error_occurred: bool,
     env_vars: HashMap<String, String>,
     aliases: HashMap<String, Alias>,
     functions: HashMap<String, FunctionBody>,

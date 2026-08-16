@@ -21,6 +21,7 @@ impl Executor {
         self.report_command_heredoc_errors(cmd)?;
 
         if cmd.assignments.contains_key("__RUBASH_PARSE_ERROR__") {
+            self.mark_parse_error();
             if let Some(source) = cmd.assignments.get("__RUBASH_PARSE_SOURCE__") {
                 if let Some(reparsed) = self.reparse_reserved_word_aliases(source) {
                     let tokens = crate::lexer::tokenize(&reparsed);
@@ -47,6 +48,7 @@ impl Executor {
                 .values()
                 .any(|value| crate::lexer::has_unclosed_command_substitution(value))
         {
+            self.mark_parse_error();
             eprintln!(
                 "{}syntax error: unexpected EOF while looking for matching `)'",
                 self.diagnostic_prefix()
@@ -61,6 +63,7 @@ impl Executor {
                 .iter()
                 .any(|metadata| unterminated_extglob(&metadata.raw))
         {
+            self.mark_parse_error();
             eprintln!(
                 "{}syntax error near unexpected token `('",
                 self.diagnostic_prefix()
@@ -80,6 +83,7 @@ impl Executor {
             && cmd.conditional_command.is_none()
             && cmd.case_command.is_none()
         {
+            self.mark_parse_error();
             eprintln!(
                 "{}syntax error near unexpected token `('",
                 self.diagnostic_prefix()
@@ -117,6 +121,7 @@ impl Executor {
 
         let expanded = self.expand_command_words(cmd)?;
         if self.last_command_substitution_status.get() == Some(2) {
+            self.mark_parse_error();
             eprintln!(
                 "{}syntax error in command substitution",
                 self.diagnostic_prefix()

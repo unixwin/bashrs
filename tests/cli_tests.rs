@@ -1109,6 +1109,43 @@ fn newline_for_header_inside_case_is_a_syntax_error() {
 }
 
 #[test]
+fn malformed_parameter_expansion_in_arithmetic_for_is_a_syntax_error() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("for (( ${ case x in x) esac; };; )); do break; done; echo after")
+        .output()
+        .expect("run rubash");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("syntax error"));
+}
+
+#[test]
+fn stdin_script_stops_after_arithmetic_for_syntax_error_without_errexit() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-s")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run rubash");
+    child
+        .stdin
+        .take()
+        .expect("stdin pipe")
+        .write_all(
+            b"for (( ${ case x in x) esac; };; )); do break; done\necho after\n",
+        )
+        .expect("write script");
+    let output = child.wait_with_output().expect("wait for rubash");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("syntax error"));
+}
+
+#[test]
 fn invalid_for_and_select_names_fail_at_execution_like_bash() {
     for command in [
         "for invalid-name in a b; do echo bad; done",

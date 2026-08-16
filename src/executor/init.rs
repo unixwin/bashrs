@@ -130,6 +130,7 @@ impl Executor {
             fd_table: FdTable::new(),
             job_table: JobTable::default(),
             exit_code: 0,
+            parse_error_occurred: false,
             env_vars,
             aliases: HashMap::new(),
             functions: imported_functions,
