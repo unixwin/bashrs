@@ -129,6 +129,19 @@ fn printf_integer_conversion_keeps_valid_prefix_before_invalid_suffix() {
 }
 
 #[test]
+fn command_substitution_pipeline_applies_tr_translation() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("value=\"$(printf 'x\\n' | tr x y)\"; printf '<%s>\\n' \"$value\"")
+        .output()
+        .expect("run command substitution pipeline probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<y>\n");
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn umask_symbolic_output_takes_precedence_over_reusable_output() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

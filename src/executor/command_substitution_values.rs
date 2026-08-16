@@ -27,6 +27,22 @@ impl Executor {
                     .collect::<Vec<_>>();
                 apply_simple_sed_args(input, &args)
             }
+            "tr" => {
+                let args = words[1..]
+                    .iter()
+                    .map(|word| self.expand_word(word))
+                    .collect::<Vec<_>>();
+                if args.len() != 2 {
+                    return None;
+                }
+                if matches!(args[0].as_str(), "\\n" | "\n") {
+                    Some(input.replace('\n', &args[1]))
+                } else {
+                    Some(crate::executor::pipeline_exec::translate_tr(
+                        input, &args[0], &args[1],
+                    ))
+                }
+            }
             _ => {
                 let cmd_name = self.expand_word(&words[0]);
                 let expanded_args: Vec<String> =

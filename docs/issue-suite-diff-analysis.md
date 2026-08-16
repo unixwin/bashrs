@@ -2273,3 +2273,26 @@ Evidence:
 
 This closes the tested integer-prefix conversion primitive; other `printf`
 option, floating-point, and suite-level builtin differences remain open.
+
+### 2026-08-17 command-substitution `tr` pipeline
+
+A bridge-free #20/#21 probe found that a normal pipeline translated input
+correctly, but the same pipeline inside command substitution did not:
+`value="$(printf 'x\\n' | tr x y)"` produced `y` under Bash and `x` under
+Rubash. The command-substitution pipeline shortcut sent `tr` through the
+Windows external-command path instead of the existing shell pipeline
+translation owner.
+
+The command-substitution filter now handles the two-argument `tr` form using
+the same `translate_tr` implementation as ordinary pipelines. Unsupported
+argument shapes continue to fall through to the external path.
+
+Evidence:
+
+- Bridge-free raw Bash/Rubash probe: `target/issue-suites/results/native-bash-20260817-command-substitution-tr/`.
+- `cargo test --test cli_tests compat_issue_regressions::command_substitution_pipeline_applies_tr_translation -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_024 -- --nocapture`: 13/13.
+- `cargo test --lib command_substitution -- --nocapture`: 8/8.
+
+This closes the tested command-substitution `tr` pipeline primitive; other
+external filters and nested command-substitution interactions remain open.

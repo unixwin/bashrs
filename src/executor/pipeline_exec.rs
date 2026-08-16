@@ -941,7 +941,7 @@ fn head_line_count(args: &[String]) -> Option<usize> {
     None
 }
 
-fn translate_tr(input: &str, source: &str, target: &str) -> String {
+pub(in crate::executor) fn translate_tr(input: &str, source: &str, target: &str) -> String {
     let source_chars = source.chars().collect::<Vec<_>>();
     let target_chars = target.chars().collect::<Vec<_>>();
     if source_chars.is_empty() || target_chars.is_empty() {
