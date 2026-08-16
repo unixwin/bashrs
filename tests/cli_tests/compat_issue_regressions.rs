@@ -112,6 +112,23 @@ fn parameter_replacement_keeps_escaped_command_substitution_literal() {
 }
 
 #[test]
+fn printf_integer_conversion_keeps_valid_prefix_before_invalid_suffix() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("printf '%d:%d:%d\\n' '1.2' '08' '10#12'; status=$?; printf 'status=%s\\n' \"$status\"")
+        .output()
+        .expect("run printf integer prefix probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "1:0:10\nstatus=1\n"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(stderr.matches("invalid number").count(), 3, "stderr: {stderr}");
+}
+
+#[test]
 fn umask_symbolic_output_takes_precedence_over_reusable_output() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

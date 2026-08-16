@@ -2247,3 +2247,29 @@ Evidence:
 
 This closes the escaped-dollar RHS primitive; other RHS-exp and
 command-substitution suite rows remain open.
+
+### 2026-08-17 printf integer prefixes before invalid suffixes
+
+The #24 builtin-focused probe found that Bash's integer conversions keep the
+valid numeric prefix when the remainder is invalid, while still returning a
+failure status. For example, `printf '%d' 1.2` prints `1`, `printf '%d' 08`
+prints `0`, and `printf '%d' 10#12` prints `10`; each argument also reports an
+invalid-number diagnostic and the builtin returns status 1. Rubash previously
+parsed the entire argument with Rust's integer parser, so all three values
+rendered as `0`.
+
+`src/builtins/printf/number.rs` now scans the Bash-selected radix (decimal,
+octal, or hexadecimal), converts the valid prefix, and retains the original
+argument as an error when trailing characters remain. Arguments with no valid
+prefix still render as zero and fail as before.
+
+Evidence:
+
+- Bridge-free raw Bash/Rubash probe: `target/issue-suites/results/native-bash-20260817-printf-integer-prefix/`.
+- `cargo test --lib printf -- --nocapture`: 29/29.
+- `cargo test --test cli_tests compat_issue_regressions::printf_integer_conversion_keeps_valid_prefix_before_invalid_suffix -- --nocapture`: 1/1.
+- `cargo test --test cli_tests c_command_printf -- --nocapture`: 2/2.
+- `cargo test --test executor_tests command_chaining::part_023 -- --nocapture`: 12/12.
+
+This closes the tested integer-prefix conversion primitive; other `printf`
+option, floating-point, and suite-level builtin differences remain open.
