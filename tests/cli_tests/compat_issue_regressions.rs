@@ -205,6 +205,19 @@ fn command_substitution_nested_pipeline_expands_tr_ranges() {
 }
 
 #[test]
+fn arithmetic_empty_quoted_operand_with_operator_fails() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("(( 1 - \"\" )); printf 'status=%s\\n' \"$?\"")
+        .output()
+        .expect("run empty arithmetic operand probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "status=1\n");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("operand expected"));
+}
+
+#[test]
 fn umask_symbolic_output_takes_precedence_over_reusable_output() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

@@ -31,6 +31,9 @@ impl Executor {
         if expression.contains('\'') {
             return None;
         }
+        if empty_quoted_operand_has_operator(&expression) {
+            return None;
+        }
         eval_mutable_arith_value_with_random(
             &expression,
             &mut self.env_vars,
@@ -55,6 +58,9 @@ impl Executor {
                 return None;
             }
         }
+        if empty_quoted_operand_has_operator(&expression) {
+            return None;
+        }
         eval_mutable_arith_value_with_random(
             &expression,
             &mut self.env_vars,
@@ -73,6 +79,38 @@ pub(super) fn eval_arith_value(value: &str) -> i128 {
         .split('+')
         .map(|part| part.trim().parse::<i128>().unwrap_or(0))
         .sum()
+}
+
+fn empty_quoted_operand_has_operator(expression: &str) -> bool {
+    let chars = expression.chars().collect::<Vec<_>>();
+    let mut outside = String::new();
+    let mut index = 0;
+    let mut found_empty = false;
+    while index < chars.len() {
+        if chars[index] == '"' {
+            let start = index + 1;
+            index = start;
+            while index < chars.len() && chars[index] != '"' {
+                index += 1;
+            }
+            if index == chars.len() {
+                return false;
+            }
+            if chars[start..index].iter().all(|ch| ch.is_whitespace()) {
+                found_empty = true;
+            } else {
+                outside.extend(chars[start..index].iter().copied());
+            }
+            index += 1;
+        } else {
+            outside.push(chars[index]);
+            index += 1;
+        }
+    }
+    found_empty
+        && outside
+            .chars()
+            .any(|ch| matches!(ch, '+' | '-' | '*' | '/' | '%' | '<' | '>' | '&' | '|' | '^' | '?' | ':'))
 }
 
 pub(crate) fn eval_conditional_arith_value(
@@ -230,6 +268,12 @@ pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<
         return Some(format!(
             "{expression}: {message} (error token is \"{}\")",
             trimmed.trim_start_matches(|ch: char| ch.is_ascii_digit())
+        ));
+    }
+
+    if empty_quoted_operand_has_operator(expression) {
+        return Some(format!(
+            "{expression}: syntax error: operand expected (error token is \"\"\")"
         ));
     }
 

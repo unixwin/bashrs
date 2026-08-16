@@ -2347,3 +2347,23 @@ Evidence:
 
 This closes the tested ASCII range form; character classes, escapes, and
 locale-sensitive `tr` forms remain separate compatibility work.
+
+### 2026-08-17 arithmetic empty quoted operands
+
+The arithmetic slice exposed a status/diagnostic gap in #22/#23/#24:
+`(( 1 - "" ))` is an operand error in Bash and returns 1, while Rubash had
+treated every empty double-quoted arithmetic operand as numeric zero and
+returned success. The arithmetic command and expansion wrappers now reject an
+empty quoted operand when it participates in an arithmetic operation. A
+standalone empty quoted expression and empty array subscripts retain their
+existing Bash-compatible zero behavior.
+
+Evidence:
+
+- Bridge-free raw Bash/Rubash probe: `target/issue-suites/results/native-bash-20260817-arithmetic-empty-operand/`.
+- `cargo test --test cli_tests compat_issue_regressions::arithmetic_empty_quoted_operand_with_operator_fails -- --nocapture`: 1/1.
+- `cargo test --test cli_tests compat_issue_regressions::arithmetic_ -- --nocapture`: 7/7.
+- Arithmetic parser tests: 5/5.
+
+This closes the tested empty-quoted-operand arithmetic primitive; division by
+zero, malformed bases, and other arithmetic diagnostics remain open families.
