@@ -20,6 +20,7 @@ pub(crate) const SHOPT_OPTIONS: &[&str] = &[
     "compat43",
     "compat44",
     "complete_fullquote",
+    "completion_strip_exe",
     "direxpand",
     "dirspell",
     "dotglob",

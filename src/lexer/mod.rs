@@ -81,13 +81,15 @@ fn tokenize_with_heredocs(input: &str) -> Vec<Token> {
         if has_unclosed_command_substitution(&logical_line) {
             continue;
         }
+        let mut line_tokens = tokenize_plain(&logical_line);
+        let has_heredoc = !heredoc_delimiters(&line_tokens, &logical_line).is_empty();
         if has_unclosed_brace_group(&logical_line)
             && !opens_function_body_after_previous_signature(&logical_line, &output)
+            && !has_heredoc
         {
             continue;
         }
 
-        let mut line_tokens = tokenize_plain(&logical_line);
         for token in &mut line_tokens {
             token.position = logical_start_line;
         }

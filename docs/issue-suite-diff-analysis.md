@@ -1846,3 +1846,24 @@ Verification:
 - `cargo test --lib`: 200/200 passed.
 - This closes only the covered parameter-expansion regressions; open issues
   #20-#26 still contain broader suite families that require separate evidence.
+
+### 2026-08-16 shopt process substitution and exported-function heredocs
+
+The Windows process-substitution regression in `part_047` was caused by the
+missing `completion_strip_exe` option in the semantic shopt registry. Adding
+the option lets the existing exported shopt state flow into the extensionless
+child script; no special process-substitution output path was needed.
+
+The `part_054` heredoc regression had two layers. The lexer now collects a
+heredoc on the current command line even while an enclosing function brace is
+still open. Exported-function serialization also avoids appending `;` after a
+heredoc delimiter, which would turn `EOF` into `EOF;` and make the child shell
+consume the remaining function body as heredoc text.
+
+Verification:
+
+- `cargo test --test executor_tests command_chaining::part_047 -- --nocapture`:
+  32/32 passed.
+- `cargo test --test executor_tests command_chaining::part_054 -- --nocapture`:
+  14/14 passed.
+- lexer focused tests: 10/10 passed; `cargo test --lib`: 200/200 passed.

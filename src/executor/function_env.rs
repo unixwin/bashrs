@@ -64,7 +64,10 @@ pub(in crate::executor) fn exported_function_env_value(body: &[CommandNode]) -> 
         for (index, command) in commands.iter().enumerate() {
             output.push('\n');
             output.push_str(command);
-            if index + 1 < commands.len() && !command.ends_with(';') {
+            let command_has_heredoc = body
+                .get(index)
+                .is_some_and(|command| command.heredoc.is_some());
+            if index + 1 < commands.len() && !command_has_heredoc && !command.ends_with(';') {
                 output.push(';');
             }
         }
