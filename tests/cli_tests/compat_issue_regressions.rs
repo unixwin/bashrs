@@ -99,6 +99,22 @@ fn parameter_replacement_consumes_quoted_backslashes_like_bash() {
 }
 
 #[test]
+fn umask_symbolic_output_takes_precedence_over_reusable_output() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("umask -Sp 0002")
+        .output()
+        .expect("run umask option precedence probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "u=rwx,g=rwx,o=rx\n"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn custom_space_ifs_does_not_create_empty_fields() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

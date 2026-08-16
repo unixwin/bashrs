@@ -84,24 +84,19 @@ where
         };
         env_vars.insert("__RUBASH_UMASK".to_string(), format!("{mask:04o}"));
         if symbolic {
-            if reusable {
-                writeln!(stdout, "umask -S {}", symbolic_mask(mask))?;
-            } else {
-                writeln!(stdout, "{}", symbolic_mask(mask))?;
-            }
+            // Bash's symbolic form is already human-readable; `-p` only
+            // changes the octal form into a reusable command and is ignored
+            // when `-S` is also present.
+            writeln!(stdout, "{}", symbolic_mask(mask))?;
         }
         return Ok(EXECUTION_SUCCESS);
     }
 
     let mask = current_mask(env_vars);
-    if reusable {
-        if symbolic {
-            writeln!(stdout, "umask -S {}", symbolic_mask(mask))?;
-        } else {
-            writeln!(stdout, "umask {mask:04o}")?;
-        }
-    } else if symbolic {
+    if symbolic {
         writeln!(stdout, "{}", symbolic_mask(mask))?;
+    } else if reusable {
+        writeln!(stdout, "umask {mask:04o}")?;
     } else {
         writeln!(stdout, "{mask:04o}")?;
     }

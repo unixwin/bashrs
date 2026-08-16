@@ -2181,3 +2181,22 @@ Evidence:
 
 This closes only the quoted RHS backslash primitive; pattern backslashes,
 command-substitution RHS expansion, and other `rhs-exp` rows remain open.
+
+### 2026-08-17 umask `-S` takes precedence over `-p`
+
+The #24 builtin-focused probe found that `umask -Sp 0002` is a formatting
+option-precedence case. GNU Bash prints only the symbolic mask,
+`u=rwx,g=rwx,o=rx`; Rubash previously printed the reusable command prefix
+`umask -S ...` whenever `-p` was also present.
+
+The `umask` builtin now treats `-S` as the output-form selector before `-p`.
+`-p` still produces `umask 0002` for octal output, while symbolic output is
+always the bare `u=...,g=...,o=...` form.
+
+Evidence:
+
+- Bash/Rubash bridge-free probe: `target/issue-suites/results/native-bash-20260817-umask-option-precedence/`.
+- Both shells produce `u=rwx,g=rwx,o=rx` with status 0.
+- `cargo test --lib umask -- --nocapture`: 6/6.
+- `cargo test --test cli_tests umask_symbolic_output_takes_precedence_over_reusable_output -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_023 -- --nocapture`: 12/12.
