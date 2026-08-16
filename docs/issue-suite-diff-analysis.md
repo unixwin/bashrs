@@ -1817,3 +1817,11 @@ Verification: `cargo test --lib` 200/200; focused nested `THIS_SH` CLI
 regression 1/1; the three upstream runners 3/3. The broader CLI test binary
 still contains Windows host/fixture-dependent POSIX utility and pipeline
 failures; those are not used as evidence for this slice.
+
+The bounded local differential corpus was also rerun with
+`BASH_RUNNER=/d/Git/bin/bash.exe bash tests/difftest/difftest.sh`: 25/26
+cases matched byte-for-byte. The sole remaining case (`case-16-glob`) has
+identical stdout and status; its stderr differs only because the configured
+host path `C:/Users/hzz/.oh-my-winuxsh/themes` is absent and the two shells
+render the Windows missing-directory diagnostic differently. No semantic
+failure was inferred from that row.
