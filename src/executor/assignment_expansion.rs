@@ -55,8 +55,16 @@ impl Executor {
             return expanded;
         }
 
-        let mut expanded =
-            unescape_remaining_shell_escapes(&self.expand_embedded_parameters_mut(value));
+        let expanded_value = self.expand_embedded_parameters_mut(value);
+        let mut expanded = if quoted {
+            // Prompt transforms consume Bash's `\!` and `\#` escapes after
+            // parameter expansion. Keep those two quoted backslashes until
+            // `${var@P}` reaches prompt_expansion; ordinary shell escapes
+            // still undergo the normal assignment quote-removal pass.
+            preserve_prompt_escapes(&expanded_value)
+        } else {
+            unescape_remaining_shell_escapes(&expanded_value)
+        };
         if expanded.contains("<(") || expanded.contains(">(") {
             if let Ok(materialized) = self.materialize_assignment_process_substitutions(&expanded) {
                 expanded = materialized;
@@ -264,4 +272,19 @@ impl Executor {
         self.exit_code = 0;
         Ok(())
     }
+}
+
+fn preserve_prompt_escapes(value: &str) -> String {
+    const PROTECTED_PROMPT_ESCAPE: char = '\x15';
+    let mut preserved = String::with_capacity(value.len());
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' && matches!(chars.peek(), Some('!' | '#')) {
+            preserved.push(PROTECTED_PROMPT_ESCAPE);
+            preserved.push(chars.next().expect("peeked prompt escape"));
+        } else {
+            preserved.push(ch);
+        }
+    }
+    unescape_remaining_shell_escapes(&preserved).replace(PROTECTED_PROMPT_ESCAPE, "\\")
 }

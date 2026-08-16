@@ -231,17 +231,26 @@ pub(in crate::executor) fn matching_parameter_brace(input: &str) -> Option<usize
     let mut in_bracket_expression = false;
     let mut single = false;
     let mut double = false;
+    // In `${var/pattern/replacement}`, quotes in the pattern and replacement
+    // are part of the parameter operation. They must not hide the operation's
+    // closing brace from the outer `${...}` scanner. A colon before the slash
+    // identifies other forms such as `${var:-word/with/slashes}`.
+    let replacement_context = input.find('/').is_some_and(|slash| {
+        !input[..slash].contains(':')
+            && input[..slash]
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '#')
+    });
     while let Some((index, ch)) = chars.next() {
         // GNU Bash treats `\` plus the next character as one unit while
         // scanning `${...}` (extract_dollar_brace_string advances by two).
         // `\\` is a literal backslash, so the following `}` still closes.
         if ch == '\\' {
-            if chars
-                .peek()
-                .is_some_and(|(_, next)| *next != '\'' && *next != '"')
-            {
-                chars.next();
-            }
+            // A backslash quotes the following character while Bash scans a
+            // braced parameter. This includes quote characters in a
+            // replacement word; they must not leave the scanner in a false
+            // single/double-quote state and hide the closing brace.
+            chars.next();
             continue;
         }
         if ch == '\'' && !double {
@@ -265,7 +274,10 @@ pub(in crate::executor) fn matching_parameter_brace(input: &str) -> Option<usize
             depth += 1;
             continue;
         }
-        if ch == '}' && !in_bracket_expression && !single && !double {
+        if ch == '}'
+            && !in_bracket_expression
+            && (replacement_context || (!single && !double))
+        {
             if depth == 0 {
                 return Some(index);
             }

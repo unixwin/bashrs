@@ -1825,3 +1825,24 @@ identical stdout and status; its stderr differs only because the configured
 host path `C:/Users/hzz/.oh-my-winuxsh/themes` is absent and the two shells
 render the Windows missing-directory diagnostic differently. No semantic
 failure was inferred from that row.
+
+### 2026-08-16 parameter replacement and prompt-transform escapes
+
+Two independent executor regressions from the focused `part_063` and
+`part_066` slices were fixed in their semantic owners. Quoted assignment
+values now preserve `\!` and `\#` until `${var@P}` prompt decoding, while
+ordinary assignment quote removal remains unchanged. The braced-parameter
+scanner now treats escaped quote characters as escaped during scanning and
+recognizes the closing brace of `${var/pattern/replacement}` forms without
+letting replacement quotes hide it; colon operators such as `${var:-...}`
+retain the ordinary quote-aware path.
+
+Verification:
+
+- `cargo test --test executor_tests command_chaining::part_063 -- --nocapture`:
+  21/21 passed.
+- `cargo test --test executor_tests command_chaining::part_066 -- --nocapture`:
+  37/37 passed.
+- `cargo test --lib`: 200/200 passed.
+- This closes only the covered parameter-expansion regressions; open issues
+  #20-#26 still contain broader suite families that require separate evidence.
