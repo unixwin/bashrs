@@ -86,6 +86,19 @@ echo "${v%"${v#?}"}"
 }
 
 #[test]
+fn parameter_replacement_consumes_quoted_backslashes_like_bash() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"value=x; printf '<%s>|<%s>\n' "${value//x/\n}" "${value//x/\\n}""#)
+        .output()
+        .expect("run parameter replacement escape probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<n>|<\\n>\n");
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn custom_space_ifs_does_not_create_empty_fields() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

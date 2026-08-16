@@ -2157,3 +2157,27 @@ Verification:
 - `cargo test --test executor_tests command_chaining::part_078 -- --nocapture`: 5/5.
 - `cargo test --test executor_tests command_chaining::part_079 -- --nocapture`: 5/5.
 - `cargo test --test executor_tests command_chaining::part_080::test_alias_introduced_coproc -- --nocapture`: 3/3.
+
+### 2026-08-17 parameter-replacement backslash decoding
+
+The #20/#24 parameter-expansion probe found a real RHS quoting difference in
+`${value//x/\\n}`. The lexer represents an escaped backslash inside the quoted
+word with `\\x14`, but `decode_parameter_replacement_quotes` previously
+treated that marker as a final literal backslash. This skipped Bash's
+parameter-replacement escape pass, so a source `\\n` remained `\\n` instead of
+becoming `n`.
+
+The decoder now feeds the marker through the same escape normalizer as an
+ordinary replacement backslash. Two markers still produce one literal
+backslash, while `\\&` remains available to the later literal-ampersand pass.
+
+Evidence:
+
+- Bash/Rubash bridge-free probe: `target/issue-suites/results/native-bash-20260817-parameter-replacement-backslashes/`.
+- Bash and Rubash both produce `<n>|<\\n>` with status 0.
+- `cargo test --lib parameter_ops -- --nocapture`: 4/4.
+- `cargo test --test cli_tests parameter_replacement_consumes_quoted_backslashes_like_bash -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_063 -- --nocapture`: 21/21.
+
+This closes only the quoted RHS backslash primitive; pattern backslashes,
+command-substitution RHS expansion, and other `rhs-exp` rows remain open.
