@@ -2367,3 +2367,22 @@ Evidence:
 
 This closes the tested empty-quoted-operand arithmetic primitive; division by
 zero, malformed bases, and other arithmetic diagnostics remain open families.
+
+### 2026-08-17 empty arithmetic array subscripts
+
+`arith10.sub` also exposed that `let a[\\" \"]=13` reaches the arithmetic
+parser as `a[ ]=13`. Bash treats the whitespace-only subscript as the default
+indexed-array element 0; Rubash previously stopped at `]` and dropped the
+assignment. The arithmetic lvalue parser now consumes an empty subscript and
+uses index 0, while quoted and non-empty subscripts retain their existing
+paths.
+
+Evidence:
+
+- Bridge-free raw Bash/Rubash probe: `target/issue-suites/results/native-bash-20260817-arithmetic-empty-subscript/`.
+- `cargo test --test cli_tests compat_issue_regressions::arithmetic_empty_array_subscript_defaults_to_zero -- --nocapture`: 1/1.
+- `cargo test --test cli_tests compat_issue_regressions::arithmetic_ -- --nocapture`: 8/8.
+- `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`: 152/152.
+
+The remaining `arith10` differences are separate `declare`/quoted assignment
+forms and are not folded into this lvalue change.

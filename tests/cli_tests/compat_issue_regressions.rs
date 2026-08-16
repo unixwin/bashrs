@@ -218,6 +218,22 @@ fn arithmetic_empty_quoted_operand_with_operator_fails() {
 }
 
 #[test]
+fn arithmetic_empty_array_subscript_defaults_to_zero() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"declare -a a; let a[" "]=13; declare -p a"#)
+        .output()
+        .expect("run empty array subscript probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "declare -a a=([0]=\"13\")\n"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn umask_symbolic_output_takes_precedence_over_reusable_output() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

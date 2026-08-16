@@ -39,17 +39,22 @@ impl ConditionalArithParser<'_> {
             });
         }
 
-        let index = if self.peek() == Some(b'"') || self.peek() == Some(b'\'') {
+        let index = {
+            self.skip_ws();
+            if self.consume("]") {
+                0
+            } else if self.peek() == Some(b'"') || self.peek() == Some(b'\'') {
             let expression = self.collect_quoted_index_expression()?;
             let expression = strip_arith_double_quotes(&expression);
             eval_mutable_arith_value_with_random(&expression, self.env_vars, self.random_state)?
-        } else {
-            let index = self.parse_comma()?;
-            self.skip_ws();
-            if !self.consume("]") {
-                return None;
+            } else {
+                let index = self.parse_comma()?;
+                self.skip_ws();
+                if !self.consume("]") {
+                    return None;
+                }
+                index
             }
-            index
         };
         Some(ArithLValue::Indexed {
             name: resolved_name,
