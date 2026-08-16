@@ -942,8 +942,8 @@ pub(in crate::executor) fn head_line_count(args: &[String]) -> Option<usize> {
 }
 
 pub(in crate::executor) fn translate_tr(input: &str, source: &str, target: &str) -> String {
-    let source_chars = source.chars().collect::<Vec<_>>();
-    let target_chars = target.chars().collect::<Vec<_>>();
+    let source_chars = expand_tr_set(source);
+    let target_chars = expand_tr_set(target);
     if source_chars.is_empty() || target_chars.is_empty() {
         return input.to_string();
     }
@@ -957,6 +957,25 @@ pub(in crate::executor) fn translate_tr(input: &str, source: &str, target: &str)
                 .unwrap_or(ch)
         })
         .collect()
+}
+
+fn expand_tr_set(spec: &str) -> Vec<char> {
+    let chars = spec.chars().collect::<Vec<_>>();
+    let mut expanded = Vec::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if index + 2 < chars.len()
+            && chars[index + 1] == '-'
+            && chars[index] <= chars[index + 2]
+        {
+            expanded.extend(chars[index]..=chars[index + 2]);
+            index += 3;
+        } else {
+            expanded.push(chars[index]);
+            index += 1;
+        }
+    }
+    expanded
 }
 
 fn command_has_non_concurrent_pipeline_redirects(

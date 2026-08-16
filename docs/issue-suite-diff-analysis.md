@@ -2330,3 +2330,20 @@ The same bridge-free matrix also covers adjacent filters: `uniq` now removes
 adjacent duplicate lines and `tail -n 1` selects the final line inside command
 substitution. The focused regression is
 `compat_issue_regressions::command_substitution_pipeline_applies_tail_and_uniq`.
+
+### 2026-08-17 `tr` character ranges in nested pipelines
+
+The nested command-substitution probe from #20 still differed for
+`tr a-z A-Z`: Rubash treated the hyphens as literal characters and converted
+`abcxyz` to `AbcxyZ`, while Bash expands both ranges and produces `ABCXYZ`.
+The shared `translate_tr` owner now expands ascending character ranges before
+translation, fixing both ordinary pipelines and command-substitution filters.
+
+Evidence:
+
+- Bridge-free raw Bash/Rubash probe: `target/issue-suites/results/native-bash-20260817-tr-ranges/`.
+- `cargo test --test cli_tests compat_issue_regressions::command_substitution_nested_pipeline_expands_tr_ranges -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_024 -- --nocapture`: 13/13.
+
+This closes the tested ASCII range form; character classes, escapes, and
+locale-sensitive `tr` forms remain separate compatibility work.
