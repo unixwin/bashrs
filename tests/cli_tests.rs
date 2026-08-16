@@ -888,7 +888,24 @@ fn function_call_stack_reports_multiline_source_and_line() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "t2 main|main|2 0\n"
+        "t2|environment|2\n"
+    );
+}
+
+#[test]
+fn function_call_stack_omits_internal_main_frame() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "outer(){ inner; }; inner(){ printf '%s|%s|%s\\n' \"${FUNCNAME[*]}\" \"${BASH_SOURCE[*]}\" \"${BASH_LINENO[*]}\"; }; outer",
+        )
+        .output()
+        .expect("run nested function stack probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "inner outer|environment environment|1 1\n"
     );
 }
 

@@ -2031,3 +2031,23 @@ Verification:
 - `cargo test --test cli_tests c_command_err_trap_preserves_failed_bash_command -- --nocapture`: 1/1.
 - `cargo test --test executor_tests command_chaining::part_045 -- --nocapture`: 15/15.
 - `run-trap`: 1/1.
+
+### 2026-08-17 function call-stack frame boundaries
+
+The Bash-visible call-stack arrays leaked Rubash's synthetic `main` frame in
+`-c` execution. A single function therefore reported `FUNCNAME=f main`,
+`BASH_SOURCE=main`, and `BASH_LINENO=1 0`, while GNU Bash reports
+`f`, `environment`, and `1`. Nested calls had the same extra frame.
+
+The executor now exposes only real function frames, uses `environment` as the
+top-level source for command strings, and replaces the initial top-level
+`BASH_LINENO=0` with the first function call line. Script-file source paths and
+the existing argument-stack behavior remain unchanged.
+
+Verification:
+
+- `cargo test --test cli_tests function_call_stack -- --nocapture`: 2/2.
+- `cargo test --test executor_tests command_chaining::part_008 -- --nocapture`: 13/13.
+- `cargo test --test executor_tests command_chaining::part_009 -- --nocapture`: 14/14.
+- `cargo test --test executor_tests command_chaining::part_045 -- --nocapture`: 15/15.
+- `run-trap`: 1/1.

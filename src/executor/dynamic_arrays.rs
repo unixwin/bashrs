@@ -103,11 +103,7 @@ impl Executor {
         match name {
             "PIPESTATUS" => return Some(format_indexed_array_values(self.pipestatus_values())),
             "FUNCNAME" => {
-                let mut stack = self.function_name_stack.clone();
-                if !stack.is_empty() && stack.last().map(String::as_str) != Some("main") {
-                    stack.push("main".to_string());
-                }
-                return Some(format_indexed_array_values(stack));
+                return Some(format_indexed_array_values(self.function_name_stack.clone()));
             }
             "BASH_ARGC" => return Some(format_indexed_array_values(self.bash_argc_stack.clone())),
             "BASH_ARGV" => return Some(format_indexed_array_values(self.bash_argv_stack.clone())),
