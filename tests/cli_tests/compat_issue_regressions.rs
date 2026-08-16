@@ -157,6 +157,24 @@ fn command_substitution_pipeline_applies_common_filters() {
 }
 
 #[test]
+fn command_substitution_pipeline_preserves_last_filter_status() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "value=\"$(printf 'x\\n' | grep y)\"; printf 'value=<%s> status=%s\\n' \"$value\" \"$?\"",
+        )
+        .output()
+        .expect("run command substitution status probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "value=<> status=1\n"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn umask_symbolic_output_takes_precedence_over_reusable_output() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

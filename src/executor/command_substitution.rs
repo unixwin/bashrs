@@ -105,7 +105,8 @@ impl Executor {
             return output;
         }
 
-        if let Some(output) = self.command_substitution_pipeline_output(&words) {
+        if let Some((output, status)) = self.command_substitution_pipeline_output(&words) {
+            self.last_command_substitution_status.set(Some(status));
             return output;
         }
 

@@ -5,7 +5,7 @@ impl Executor {
         &self,
         words: &[String],
         input: &str,
-    ) -> Option<String> {
+    ) -> Option<(String, i32)> {
         match words.first().map(String::as_str)? {
             "sort" => {
                 let unique = words[1..].iter().any(|word| self.expand_word(word) == "-u");
@@ -18,14 +18,14 @@ impl Executor {
                 if !output.is_empty() {
                     output.push('\n');
                 }
-                Some(output)
+                Some((output, 0))
             }
             "sed" => {
                 let args = words[1..]
                     .iter()
                     .map(|word| self.expand_word(word))
                     .collect::<Vec<_>>();
-                apply_simple_sed_args(input, &args)
+                apply_simple_sed_args(input, &args).map(|output| (output, 0))
             }
             "tr" => {
                 let args = words[1..]
@@ -36,10 +36,13 @@ impl Executor {
                     return None;
                 }
                 if matches!(args[0].as_str(), "\\n" | "\n") {
-                    Some(input.replace('\n', &args[1]))
+                    Some((input.replace('\n', &args[1]), 0))
                 } else {
-                    Some(crate::executor::pipeline_exec::translate_tr(
-                        input, &args[0], &args[1],
+                    Some((
+                        crate::executor::pipeline_exec::translate_tr(
+                            input, &args[0], &args[1],
+                        ),
+                        0,
                     ))
                 }
             }
@@ -49,21 +52,23 @@ impl Executor {
                     .map(|word| self.expand_word(word))
                     .collect::<Vec<_>>();
                 let count = crate::executor::pipeline_exec::head_line_count(&args).unwrap_or(10);
-                Some(input.split_inclusive('\n').take(count).collect())
+                Some((input.split_inclusive('\n').take(count).collect(), 0))
             }
             "grep" => {
                 let pattern = words.get(1).map(|word| self.expand_word(word))?;
                 let mut output = String::new();
+                let mut matched = false;
                 for line in input.split_inclusive('\n') {
                     let comparable = line.strip_suffix('\n').unwrap_or(line);
                     if crate::executor::simple_grep_pattern_matches(comparable, &pattern) {
+                        matched = true;
                         output.push_str(line);
                         if !line.ends_with('\n') {
                             output.push('\n');
                         }
                     }
                 }
-                Some(output)
+                Some((output, i32::from(!matched)))
             }
             "wc" => {
                 let option = words.get(1).map(String::as_str).unwrap_or("-l");
@@ -72,7 +77,7 @@ impl Executor {
                     "-l" => input.bytes().filter(|byte| *byte == b'\n').count(),
                     _ => return None,
                 };
-                Some(format!("{value}\n"))
+                Some((format!("{value}\n"), 0))
             }
             _ => {
                 let cmd_name = self.expand_word(&words[0]);
@@ -96,11 +101,12 @@ impl Executor {
                     .ok()?;
                 child.stdin.as_mut()?.write_all(input.as_bytes()).ok()?;
                 let output = child.wait_with_output().ok()?;
-                Some(
+                Some((
                     String::from_utf8_lossy(&output.stdout)
                         .trim_end_matches('\n')
                         .to_string(),
-                )
+                    output.status.code().unwrap_or(1),
+                ))
             }
         }
     }

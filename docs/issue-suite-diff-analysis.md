@@ -2314,3 +2314,14 @@ Evidence:
 
 This closes the tested common-filter forms; command-substitution status
 propagation and unsupported filter options remain open compatibility work.
+
+The status gap in that same path is now covered as well. A non-matching
+`grep` stage in `value="$(printf 'x\\n' | grep y)"` leaves the assignment with
+status 1 under both shells. The pipeline shortcut now carries the final stage
+status alongside its captured output; supported filters report their Bash
+status and generic external filters use the child exit code.
+
+Evidence:
+
+- `cargo test --test cli_tests compat_issue_regressions::command_substitution_pipeline_preserves_last_filter_status -- --nocapture`: 1/1.
+- `cargo test --lib command_substitution -- --nocapture`: 8/8.
