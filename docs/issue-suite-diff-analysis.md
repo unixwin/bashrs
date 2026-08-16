@@ -2325,3 +2325,8 @@ Evidence:
 
 - `cargo test --test cli_tests compat_issue_regressions::command_substitution_pipeline_preserves_last_filter_status -- --nocapture`: 1/1.
 - `cargo test --lib command_substitution -- --nocapture`: 8/8.
+
+The same bridge-free matrix also covers adjacent filters: `uniq` now removes
+adjacent duplicate lines and `tail -n 1` selects the final line inside command
+substitution. The focused regression is
+`compat_issue_regressions::command_substitution_pipeline_applies_tail_and_uniq`.

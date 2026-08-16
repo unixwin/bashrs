@@ -175,6 +175,21 @@ fn command_substitution_pipeline_preserves_last_filter_status() {
 }
 
 #[test]
+fn command_substitution_pipeline_applies_tail_and_uniq() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "printf '<%s>|<%s>\\n' \"$(printf 'b\\nb\\na\\n' | uniq)\" \"$(printf 'b\\nb\\na\\n' | tail -n 1)\"",
+        )
+        .output()
+        .expect("run command substitution tail/uniq probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<b\na>|<a>\n");
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn umask_symbolic_output_takes_precedence_over_reusable_output() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

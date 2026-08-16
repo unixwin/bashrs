@@ -79,6 +79,28 @@ impl Executor {
                 };
                 Some((format!("{value}\n"), 0))
             }
+            "tail" => {
+                let args = words[1..]
+                    .iter()
+                    .map(|word| self.expand_word(word))
+                    .collect::<Vec<_>>();
+                let count = crate::executor::pipeline_exec::head_line_count(&args).unwrap_or(10);
+                let lines = input.split_inclusive('\n').collect::<Vec<_>>();
+                let start = lines.len().saturating_sub(count);
+                Some((lines[start..].concat(), 0))
+            }
+            "uniq" => {
+                let mut output = String::new();
+                let mut previous = None;
+                for line in input.split_inclusive('\n') {
+                    let comparable = line.strip_suffix('\n').unwrap_or(line);
+                    if previous != Some(comparable) {
+                        output.push_str(line);
+                    }
+                    previous = Some(comparable);
+                }
+                Some((output, 0))
+            }
             _ => {
                 let cmd_name = self.expand_word(&words[0]);
                 let expanded_args: Vec<String> =
