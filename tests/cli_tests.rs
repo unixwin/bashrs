@@ -1537,6 +1537,28 @@ fn external_pipeline_preserves_limited_head_output() {
 }
 
 #[test]
+fn builtin_pipeline_head_accepts_separate_line_count_argument() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "printf 'x\\ny\\n' | head -n 1; \
+             set -o 2>&1 | head -n 2; \
+             export PIPE_HEAD_TEST=value; export | head -n 2",
+        )
+        .output()
+        .expect("run builtin head pipeline probe");
+
+    assert!(output.status.success());
+    let lines = String::from_utf8_lossy(&output.stdout);
+    let lines = lines.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 5);
+    assert_eq!(lines[0], "x");
+    assert!(lines[1].starts_with("allexport"));
+    assert!(lines[2].starts_with("braceexpand"));
+    assert!(lines.iter().any(|line| line.starts_with("declare -x ")));
+}
+
+#[test]
 fn select_menu_uses_bash_stderr_format() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

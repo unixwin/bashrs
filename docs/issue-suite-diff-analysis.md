@@ -2060,6 +2060,25 @@ Verification:
   24/26 byte-for-byte matches, with only the documented host-path diagnostic
   and special-builtin pipeline rows remaining.
 
+### 2026-08-17 builtin pipeline `head -n N` parsing
+
+The remaining special-builtin pipeline mismatch in the local differential
+corpus was an option parser bug in the shell-owned pipeline stage. The internal
+`head` implementation recognized `-n1` and `-1`, but treated the standard
+separate form `-n 1` as an unrecognized option and fell back to ten lines.
+That affected ordinary builtin output as well as `set -o` and `export` stages.
+
+`head_line_count` now accepts `-n N` and `--lines=N`. The pipeline stage keeps
+the output capture path, so special builtins remain isolated from the parent.
+
+Verification:
+
+- `cargo test --test cli_tests builtin_pipeline_head_accepts_separate_line_count_argument -- --nocapture`: 1/1.
+- bounded `tests/difftest/difftest.sh 'case-18*'`: 1/1.
+- Full local differential corpus after rebuilding `target/debug/rubash.exe`:
+  25/26; only `case-16-glob` differs in host-specific missing-directory
+  diagnostics.
+
 ### 2026-08-17 failed read-write varredir releases the descriptor
 
 The remaining `vredir8` fd-allocation difference was caused by the virtual fd

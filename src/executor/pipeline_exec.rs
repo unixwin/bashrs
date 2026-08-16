@@ -920,6 +920,14 @@ fn head_line_count(args: &[String]) -> Option<usize> {
         if arg == "-" || !arg.starts_with('-') {
             break;
         }
+        if arg == "-n" {
+            return args
+                .get(index + 1)
+                .and_then(|value| value.parse::<usize>().ok());
+        }
+        if let Some(value) = arg.strip_prefix("--lines=") {
+            return value.parse::<usize>().ok();
+        }
         if let Some(value) = arg.strip_prefix("-n") {
             return value.parse::<usize>().ok();
         }
