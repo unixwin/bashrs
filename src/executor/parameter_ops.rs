@@ -276,7 +276,7 @@ pub(in crate::executor) fn matching_parameter_brace(input: &str) -> Option<usize
         }
         if ch == '}'
             && !in_bracket_expression
-            && (replacement_context || (!single && !double))
+            && (replacement_context || (!single && (!double || depth > 0)))
         {
             if depth == 0 {
                 return Some(index);

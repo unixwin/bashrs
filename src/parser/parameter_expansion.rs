@@ -129,7 +129,10 @@ fn braced_parameter_expansion(chars: &[char], start: usize) -> Option<(Parameter
         match ch {
             '\'' if !double => single = !single,
             '"' if !single => double = !double,
-            '}' if !single && !double => {
+            // A nested `${...}` closes while it is embedded in the outer
+            // parameter's quoted pattern/word. The outer quote state must
+            // not hide that nested delimiter from the depth counter.
+            '}' if !single && (!double || depth > 1) => {
                 depth = depth.saturating_sub(1);
                 if depth == 0 {
                     let parameter = chars[start + 2..index].iter().collect::<String>();

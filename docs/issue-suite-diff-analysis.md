@@ -1911,6 +1911,26 @@ Verification:
 - `cargo test --test cli_tests script_bash_source_pattern_removal_uses_first_element -- --nocapture`: 1/1.
 - `cargo test --test executor_tests command_chaining::part_005 -- --nocapture`: 40/40.
 
+### 2026-08-16 nested parameter patterns inside quoted expansions
+
+Two CLI regressions in the #20/#24 parameter-expansion family were caused by
+the parser's `${...}` depth scanner. For an expression such as
+`${v%"${v#?}"}`, the inner closing brace occurs while the outer parameter is
+in a double-quoted pattern. The scanner ignored that delimiter, left the
+nested depth open, and reported `unexpected EOF` instead of evaluating the
+suffix pattern.
+
+The parser and executor brace scanners now close nested parameter depth while
+preserving the outer quote state. Ordinary quoted literal braces and escaped
+closing braces remain covered by the existing scanner tests.
+
+Verification:
+
+- `cargo test --test cli_tests nested_parameter_expansion_can_supply_pattern_removal -- --nocapture`: 1/1.
+- `cargo test --test cli_tests compat_issue_regressions::nested_parameter_pattern_removal_keeps_argument_boundaries -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_063 -- --nocapture`: 21/21.
+- `cargo test --lib matching_parameter_brace -- --nocapture`: 3/3.
+
 ### 2026-08-16 directory-stack logical path normalization
 
 The directory-stack builtin had one remaining Bash-visible path difference:
