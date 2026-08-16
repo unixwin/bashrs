@@ -1890,3 +1890,25 @@ The two `part_005` pipeline cases initially reported `tr: command not found`
 on Windows. The pipeline owner now handles the common two-set character
 translation form in-process (`tr a A` as well as the existing newline form),
 so the complete `part_005` slice is 40/40 without relying on a Git/POSIX tool.
+
+### 2026-08-16 directory-stack logical path normalization
+
+The directory-stack builtin had one remaining Bash-visible path difference:
+relative operands such as pushd . were stored literally in DIRSTACK. GNU Bash
+resolves the operand against logical PWD before printing or storing the stack,
+so pushd .; dirs -p must show the current directory twice rather than . followed
+by the current directory. The same rule applies to parent operands such as
+pushd .. and to pushd -n.
+
+The owner in src/builtins/pushd/stack.rs now lexically resolves relative
+operands against PWD, normalizes . and .., and preserves logical POSIX paths
+before filesystem mapping. src/builtins/pushd.rs uses that value for stack and
+PWD state while retaining the original operand in diagnostics.
+
+Verification:
+
+- cargo test --test executor_tests command_chaining::part_025 -- --nocapture:
+  13/13 passed.
+- Direct Bash/Rubash probes for pushd . and pushd .. agree in stack structure
+  and status; the remaining /d/... versus D:/... spelling is the existing
+  Windows path-display policy.

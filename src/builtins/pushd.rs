@@ -10,8 +10,8 @@ pub(crate) use stack::{load_stack, save_stack, set_stack_value, stack_value, sta
 
 use parse::{parse_popd_operand, parse_pushd_operand, PopdOperand, PushdOperand};
 use stack::{
-    dirs_index_or_error, is_stack_index, logical_dir_exists, resolved_index, set_pwd_from_stack,
-    stack_index, strip_double_dash,
+    dirs_index_or_error, is_stack_index, logical_dir_exists, normalize_stack_dir, resolved_index,
+    set_pwd_from_stack, stack_index, strip_double_dash,
 };
 use std::collections::HashMap;
 use std::io::{self, Write};
@@ -163,7 +163,8 @@ where
                     set_pwd_from_stack(env_vars, &stack, true);
                 }
                 PushdOperand::Dir { dir, no_cd } => {
-                    if !logical_dir_exists(&dir, env_vars) {
+                    let resolved_dir = normalize_stack_dir(&dir, env_vars);
+                    if !logical_dir_exists(&resolved_dir, env_vars) {
                         writeln!(
                             stderr,
                             "{diagnostic_prefix}pushd: {dir}: No such file or directory"
@@ -179,11 +180,11 @@ where
                         stack.push(old_pwd.clone());
                     }
                     if no_cd && !stack.is_empty() {
-                        stack.insert(1, dir);
+                        stack.insert(1, resolved_dir);
                     } else {
-                        stack.insert(0, dir.clone());
+                        stack.insert(0, resolved_dir.clone());
                         env_vars.insert("OLDPWD".to_string(), old_pwd);
-                        env_vars.insert("PWD".to_string(), dir);
+                        env_vars.insert("PWD".to_string(), resolved_dir);
                     }
                 }
             }
