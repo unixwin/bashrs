@@ -2130,3 +2130,30 @@ Verification:
 - `cargo test --test cli_tests dynamic_varredir -- --nocapture`: 2/2.
 - `cargo test --test cli_tests c_command_closes_read_write_dynamic_fd_before_reusing_slot_after_failure -- --nocapture`: 1/1.
 - `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`: 152/152.
+
+### 2026-08-17 simple alias expansion uses parse-line visibility
+
+GNU Bash expands aliases while reading input. Consequently, with
+`expand_aliases` enabled, an alias defined earlier on the same physical line
+is not available to a later command on that line:
+
+```bash
+shopt -s expand_aliases; alias ll='echo hi'; ll
+```
+
+GNU Bash reports `ll: command not found`; Rubash previously expanded `ll` at
+execution time and printed `hi`. The executor now records the definition line
+for aliases and suppresses ordinary alias expansion when the use is on that
+same line. Newline-separated definitions remain visible to later commands.
+Parser-level aliases that introduce reserved words continue through the
+existing dedicated reparse path, so this change does not alter the compound
+alias executor's AST stitching.
+
+Verification:
+
+- `cargo test --test cli_tests compat_issue_regressions::aliases_ -- --nocapture`: 3/3.
+- `cargo test --test executor_tests command_chaining::part_074 -- --nocapture`: 17/17.
+- `cargo test --test executor_tests command_chaining::part_075 -- --nocapture`: 9/9.
+- `cargo test --test executor_tests command_chaining::part_078 -- --nocapture`: 5/5.
+- `cargo test --test executor_tests command_chaining::part_079 -- --nocapture`: 5/5.
+- `cargo test --test executor_tests command_chaining::part_080::test_alias_introduced_coproc -- --nocapture`: 3/3.

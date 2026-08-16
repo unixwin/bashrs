@@ -383,7 +383,7 @@ Status labels used below:
 
 | Test | Bash/Rubash | Current classification | TODO |
 |---|---:|---|---|
-| `alias` | `0/0` | semantic lead: alias expansion timing, quoted aliases, listing, and invalid alias diagnostics | [ ] Split the failing body into alias expansion, `alias -p`, quoted use, and `unalias`; add focused regressions. |
+| `alias` | `0/0` | partial semantic fix: ordinary alias visibility now follows parse-line timing; listing, quoted aliases, invalid diagnostics, and compound parser-level aliases remain open | [x] Add same-line versus newline-separated alias timing regressions. [ ] Split `alias -p`, quoted use, invalid diagnostics, and compound alias reparse cases. |
 | `arith-for` | `2/0` | semantic lead: arithmetic-for parsing and arithmetic error propagation | [ ] Reproduce each malformed arithmetic-for and invalid operand; make parser/status match Bash; add parser and executor tests. |
 | `arith` | `1/0` | semantic lead: arithmetic diagnostics, invalid constants, division by zero, lvalue and recursion errors | [ ] Compare each remaining `arith*.sub` primitive; propagate Bash status and diagnostics without changing already passing arithmetic cases. |
 | `array` | `1/0` | semantic lead: array syntax, bad subscripts, readonly arrays, sparse indexes, and array assignment status | [ ] Isolate syntax rejection, subscript validation, readonly behavior, and assignment status; add array regressions. |
