@@ -178,7 +178,10 @@ impl Executor {
 
     fn expand_substitution_word(&self, word: &str) -> Option<String> {
         if let Some(expanded) = self.expand_backtick_substitution(word) {
-            return Some(command_substitution_word_split(&expanded));
+            return Some(
+                command_substitution_word_split(&expanded)
+                    .replace('\\', "\x15"),
+            );
         }
 
         if let Some(value) = self.expand_dirstack_tilde(word) {

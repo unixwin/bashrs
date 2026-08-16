@@ -739,6 +739,38 @@ impl Executor {
                     status,
                 )))
             }
+            "trap" => {
+                let args = command.words[1..]
+                    .iter()
+                    .map(|word| self.expand_word(word))
+                    .collect::<Vec<_>>();
+                let mut env_vars = self.env_vars.clone();
+                let mut output = Vec::new();
+                let mut stderr = Vec::new();
+                let status = crate::builtins::trap::execute_with_io(
+                    &args,
+                    &mut env_vars,
+                    &mut output,
+                    &mut stderr,
+                )?;
+                Ok(Some((
+                    String::from_utf8_lossy(&output).into_owned(),
+                    String::from_utf8_lossy(&stderr).into_owned(),
+                    status,
+                )))
+            }
+            "head" => {
+                let args = command.words[1..]
+                    .iter()
+                    .map(|word| self.expand_word(word))
+                    .collect::<Vec<_>>();
+                let count = head_line_count(&args).unwrap_or(10);
+                let output = input
+                    .split_inclusive('\n')
+                    .take(count)
+                    .collect::<String>();
+                Ok(Some((output, String::new(), 0)))
+            }
             "cat" => {
                 if let Some(input) = self.stdin_string_for_command(command) {
                     Ok(Some((input, String::new(), 0)))
@@ -875,6 +907,28 @@ fn pipeline_stage_reads_stdin_by_default(command: &CommandNode) -> bool {
         command_name,
         "awk" | "cat" | "grep" | "head" | "sed" | "sort" | "tail" | "tr" | "uniq" | "wc"
     )
+}
+
+fn head_line_count(args: &[String]) -> Option<usize> {
+    let mut index = 0;
+    while let Some(arg) = args.get(index) {
+        if arg == "--" {
+            break;
+        }
+        if arg == "-" || !arg.starts_with('-') {
+            break;
+        }
+        if let Some(value) = arg.strip_prefix("-n") {
+            return value.parse::<usize>().ok();
+        }
+        if let Some(value) = arg.strip_prefix('-') {
+            if value.chars().all(|ch| ch.is_ascii_digit()) {
+                return value.parse::<usize>().ok();
+            }
+        }
+        index += 1;
+    }
+    None
 }
 
 fn command_has_non_concurrent_pipeline_redirects(

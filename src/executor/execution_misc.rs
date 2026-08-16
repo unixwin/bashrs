@@ -379,7 +379,10 @@ pub(in crate::executor) fn command_substitution_word_split(value: &str) -> Strin
 }
 
 pub(in crate::executor) fn protect_command_substitution_output(value: &str) -> String {
-    value.replace('`', "\x1a").replace('$', "\x1f")
+    value
+        .replace('`', "\x1a")
+        .replace('$', "\x1f")
+        .replace('\\', "\x15")
 }
 
 pub(in crate::executor) fn unescape_storage_command_substitution_source(source: &str) -> String {

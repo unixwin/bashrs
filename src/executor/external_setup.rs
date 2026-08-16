@@ -27,6 +27,19 @@ fn exec_keeps_output_process_substitution(words: &[String], redirect: &Redirect)
 pub(in crate::executor) fn command_needs_process_substitution_materialization(
     cmd: &CommandNode,
 ) -> bool {
+    // Shell-owned `read` must consume virtual descriptors directly. Its
+    // ordinary `<&N` redirects are not process substitutions; materializing
+    // them into a temporary file would advance or replace the descriptor on
+    // every loop iteration.
+    if cmd.words.first().map(String::as_str) == Some("read")
+        && cmd.process_substitutions.is_empty()
+        && !cmd
+            .redirects
+            .iter()
+            .any(|redirect| redirect.target.starts_with("<(") || redirect.target.starts_with(">("))
+    {
+        return false;
+    }
     // Persistent fd-prefixed output substitutions are opened by the exec
     // builtin and must retain their backing file across later commands.
     if cmd.words.first().map(String::as_str) == Some("exec")

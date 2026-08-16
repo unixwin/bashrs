@@ -51,8 +51,10 @@ impl Executor {
                     source.push(source_ch);
                 }
                 if closed {
-                    output.push_str(&self.expand_command_substitution(
-                        &decode_backtick_substitution_source(&source),
+                    output.push_str(&protect_command_substitution_output(
+                        &self.expand_command_substitution(
+                            &decode_backtick_substitution_source(&source),
+                        ),
                     ));
                 } else {
                     output.push('`');
@@ -201,7 +203,9 @@ impl Executor {
                             _ => source.push(source_ch),
                         }
                     }
-                    output.push_str(&self.expand_command_substitution(&source));
+                    output.push_str(&protect_command_substitution_output(
+                        &self.expand_command_substitution(&source),
+                    ));
                 }
                 Some('[') => {
                     chars.next();

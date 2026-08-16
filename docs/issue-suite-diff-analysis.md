@@ -1867,3 +1867,21 @@ Verification:
 - `cargo test --test executor_tests command_chaining::part_054 -- --nocapture`:
   14/14 passed.
 - lexer focused tests: 10/10 passed; `cargo test --lib`: 200/200 passed.
+
+### 2026-08-16 shell-owned fd loops, trap pipelines, and backticks
+
+Three remaining focused executor failures were fixed. Commands named `read`
+with ordinary fd redirects now stay on the virtual shell fd path unless an
+actual process substitution is present; this preserves shared heredoc offsets
+for `while ... read ... <&3`. Pipeline execution now captures the shell
+builtins `trap` and the simple `head` line filter, so `trap -l | head -2`
+does not depend on unavailable Windows utilities. Command-substitution output
+backslashes are protected through field splitting, fixing old-style backtick
+escape behavior without changing ordinary shell quote removal.
+
+Verification:
+
+- `part_006`: 20/20 passed.
+- `part_010`: 16/16 passed.
+- `part_046`: 41/41 passed.
+- `cargo test --lib`: 200/200 passed.
