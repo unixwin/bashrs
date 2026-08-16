@@ -103,7 +103,16 @@ impl Executor {
         match name {
             "PIPESTATUS" => return Some(format_indexed_array_values(self.pipestatus_values())),
             "FUNCNAME" => {
-                return Some(format_indexed_array_values(self.function_name_stack.clone()));
+                let mut stack = self.function_name_stack.clone();
+                // Bash exposes the script's top-level frame as `main`, but
+                // `bash -c` reports only real function frames.
+                if self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
+                    && !stack.is_empty()
+                    && stack.last().map(String::as_str) != Some("main")
+                {
+                    stack.push("main".to_string());
+                }
+                return Some(format_indexed_array_values(stack));
             }
             "BASH_ARGC" => return Some(format_indexed_array_values(self.bash_argc_stack.clone())),
             "BASH_ARGV" => return Some(format_indexed_array_values(self.bash_argv_stack.clone())),

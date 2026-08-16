@@ -2044,6 +2044,11 @@ top-level source for command strings, and replaces the initial top-level
 `BASH_LINENO=0` with the first function call line. Script-file source paths and
 the existing argument-stack behavior remain unchanged.
 
+The follow-up check found that `FUNCNAME` needs an entry-point distinction:
+script files expose the top-level `main` frame, while `bash -c` does not.
+Parameter-array expansion now restores `main` only when
+`__RUBASH_SCRIPT_NAME` is present.
+
 Verification:
 
 - `cargo test --test cli_tests function_call_stack -- --nocapture`: 2/2.
@@ -2051,6 +2056,9 @@ Verification:
 - `cargo test --test executor_tests command_chaining::part_009 -- --nocapture`: 14/14.
 - `cargo test --test executor_tests command_chaining::part_045 -- --nocapture`: 15/15.
 - `run-trap`: 1/1.
+- CLI script-file function-stack regression: 1/1; `tests/difftest` now has
+  24/26 byte-for-byte matches, with only the documented host-path diagnostic
+  and special-builtin pipeline rows remaining.
 
 ### 2026-08-17 failed read-write varredir releases the descriptor
 

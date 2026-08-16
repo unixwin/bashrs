@@ -930,6 +930,25 @@ fn function_call_stack_omits_internal_main_frame() {
 }
 
 #[test]
+fn function_call_stack_includes_main_for_script_files() {
+    let script_path = Path::new("target/rubash-funcname-main-script.sh");
+    fs::write(
+        script_path,
+        "show() { printf '%s\\n' \"${FUNCNAME[*]}\"; }; show\n",
+    )
+    .expect("write function stack script");
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg(script_path)
+        .output()
+        .expect("run function stack script");
+    let _ = fs::remove_file(script_path);
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "show main\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn umask_symbolic_mode_prints_after_setting_mode() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
