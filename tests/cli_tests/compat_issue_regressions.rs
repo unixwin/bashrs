@@ -99,6 +99,19 @@ fn parameter_replacement_consumes_quoted_backslashes_like_bash() {
 }
 
 #[test]
+fn parameter_replacement_keeps_escaped_command_substitution_literal() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"v=abc; printf '<%s>\n' "${v//a/\$(printf X)}""#)
+        .output()
+        .expect("run escaped replacement command substitution probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<$(printf X)bc>\n");
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn umask_symbolic_output_takes_precedence_over_reusable_output() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

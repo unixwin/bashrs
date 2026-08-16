@@ -2224,3 +2224,26 @@ Evidence:
 
 This closes the parser-state slice only; the broader alias, compound-command,
 and official-suite rows for #20--#26 remain open.
+
+### 2026-08-17 escaped command substitutions stay literal in replacement RHS
+
+The #20/#24 RHS-exp family still had a quoting gap. In
+`${v//a/\$(printf X)}`, Bash treats the escaped `$` as replacement data and
+prints `$(printf X)bc`; Rubash previously expanded the command substitution and
+printed `Xbc`. The replacement-specific embedded-parameter path now protects an
+escaped dollar until command-substitution expansion is complete, then restores
+the literal dollar for the replacement decoder. Unescaped command substitutions
+in the RHS continue to expand.
+
+Evidence:
+
+- Bash/Rubash bridge-free artifact:
+  `target/issue-suites/results/native-bash-20260817-parameter-replacement-escaped-command-substitution/`.
+- Both shells produce `<$(printf X)bc>` with status 0 and empty stderr.
+- `cargo test --test cli_tests compat_issue_regressions::parameter_replacement -- --nocapture`: 2/2.
+- `cargo test --test executor_tests command_chaining::part_024 -- --nocapture`: 13/13.
+- `cargo test --test executor_tests command_chaining::part_063 -- --nocapture`: 21/21.
+- `cargo test --lib parameter_ops -- --nocapture`: 4/4.
+
+This closes the escaped-dollar RHS primitive; other RHS-exp and
+command-substitution suite rows remain open.

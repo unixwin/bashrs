@@ -289,12 +289,44 @@ impl Executor {
     ) -> String {
         const PROTECTED_ESCAPED_SINGLE_QUOTE: char = '\x16';
         const PROTECTED_LITERAL_BACKSLASH: char = '\x19';
-        let protected = word
+        const PROTECTED_LITERAL_DOLLAR: char = '\x12';
+        let mut escaped_dollar_protected = String::with_capacity(word.len());
+        let mut chars = word.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\\' {
+                let mut slash_count = 1usize;
+                while chars.peek() == Some(&'\\') {
+                    chars.next();
+                    slash_count += 1;
+                }
+                if chars.peek() == Some(&'$') {
+                    if matches!(slash_count % 4, 1 | 2) {
+                        chars.next();
+                        escaped_dollar_protected.push(PROTECTED_LITERAL_DOLLAR);
+                    } else {
+                        // Three or four source slashes leave one quoting
+                        // slash before an expanding dollar after shell quote
+                        // removal; larger groups repeat this pattern.
+                        for _ in 0..(slash_count / 4).max(1) {
+                            escaped_dollar_protected.push('\\');
+                        }
+                    }
+                } else {
+                    for _ in 0..slash_count {
+                        escaped_dollar_protected.push('\\');
+                    }
+                }
+            } else {
+                escaped_dollar_protected.push(ch);
+            }
+        }
+        let protected = escaped_dollar_protected
             .replace('\x17', "\x16")
             .replace('\x14', &PROTECTED_LITERAL_BACKSLASH.to_string());
         self.expand_embedded_parameters(&protected)
             .replace(PROTECTED_ESCAPED_SINGLE_QUOTE, "\x17")
             .replace(PROTECTED_LITERAL_BACKSLASH, "\x14")
+            .replace(PROTECTED_LITERAL_DOLLAR, "$")
     }
 }
 
