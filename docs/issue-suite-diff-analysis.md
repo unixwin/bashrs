@@ -2010,6 +2010,7 @@ Verification:
 
 - `cargo test --test cli_tests c_command_rejects_unbalanced_arithmetic_command_as_parse_error -- --nocapture`: 1/1.
 - `cargo test --lib parser::tests -- --nocapture`: 13/13.
+- `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`: 152/152.
 - `run-parser`: 1/1.
 - `run-cond`: 1/1.
 
