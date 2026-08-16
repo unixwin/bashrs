@@ -133,6 +133,7 @@ impl Executor {
             eprintln!("{}dirname: missing operand", self.diagnostic_prefix());
             return 1;
         }
+        let mut stdout = Vec::new();
         for path in &paths {
             let normalized = path.replace('\\', "/");
             let dir = if let Some(pos) = normalized.rfind('/') {
@@ -145,7 +146,11 @@ impl Executor {
             } else {
                 "."
             };
-            println!("{}", dir);
+            stdout.extend_from_slice(dir.as_bytes());
+            stdout.push(b'\n');
+        }
+        if self.write_buffered_builtin_output(cmd, &stdout, &[]).is_err() {
+            return 1;
         }
         0
     }
@@ -187,6 +192,7 @@ impl Executor {
             eprintln!("{}basename: missing operand", self.diagnostic_prefix());
             return 1;
         }
+        let mut stdout = Vec::new();
         fn strip_name(name: &str, suf: &str) -> String {
             if suf.len() < name.len() && name.ends_with(suf) {
                 name[..name.len() - suf.len()].to_string()
@@ -202,7 +208,8 @@ impl Executor {
                 &normalized
             };
             let name = if name.is_empty() { "/" } else { name };
-            println!("{}", strip_name(name, &args[1]));
+            stdout.extend_from_slice(strip_name(name, &args[1]).as_bytes());
+            stdout.push(b'\n');
         } else {
             for arg in &args {
                 let normalized = arg.replace('\\', "/");
@@ -213,11 +220,15 @@ impl Executor {
                 };
                 let name = if name.is_empty() { "/" } else { name };
                 if let Some(suf) = &suffix {
-                    println!("{}", strip_name(name, suf));
+                    stdout.extend_from_slice(strip_name(name, suf).as_bytes());
                 } else {
-                    println!("{}", name);
+                    stdout.extend_from_slice(name.as_bytes());
                 }
+                stdout.push(b'\n');
             }
+        }
+        if self.write_buffered_builtin_output(cmd, &stdout, &[]).is_err() {
+            return 1;
         }
         0
     }

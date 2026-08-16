@@ -1891,6 +1891,26 @@ on Windows. The pipeline owner now handles the common two-set character
 translation form in-process (`tr a A` as well as the existing newline form),
 so the complete `part_005` slice is 40/40 without relying on a Git/POSIX tool.
 
+### 2026-08-16 path builtins in nested command substitutions
+
+The CLI regression `script_bash_source_index_locates_sibling_source_file`
+exposed a real capture-boundary bug in the path builtin owner. `dirname` and
+`basename` wrote with `println!`, bypassing executor stdout capture. As a
+result, the nested `$(dirname "${BASH_SOURCE[0]}")` output leaked into the
+parent script's stdout and the computed `SCRIPT_DIR` was empty, so `source`
+looked up `/issue20-bash-source-sibling-lib.sh` instead of the sibling file.
+
+`src/executor/printf_path_builtins.rs` now buffers both builtins through
+`write_buffered_builtin_output`. This preserves the same output for ordinary
+commands while making command substitution, pipelines, and redirects use the
+executor's normal fd/capture path.
+
+Verification:
+
+- `cargo test --test cli_tests script_bash_source_index_locates_sibling_source_file -- --nocapture`: 1/1.
+- `cargo test --test cli_tests script_bash_source_pattern_removal_uses_first_element -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_005 -- --nocapture`: 40/40.
+
 ### 2026-08-16 directory-stack logical path normalization
 
 The directory-stack builtin had one remaining Bash-visible path difference:
