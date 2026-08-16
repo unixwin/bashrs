@@ -1550,6 +1550,44 @@ fn external_pipeline_preserves_limited_head_output() {
 }
 
 #[test]
+fn declare_escaped_quote_array_element_assignment_targets_index_zero() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"declare -a a; declare "a[\" \"]=14"; declare -p a"#)
+        .output()
+        .expect("run declare escaped array subscript probe");
+
+    assert!(
+        output.status.success(),
+        "status={:?}, stdout={:?}, stderr={:?}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "declare -a a=([0]=\"14\")\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn embedded_arithmetic_escaped_quote_array_subscript_targets_index_zero() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"declare -a a; : $(( a[\" \"]=17 )); declare -p a"#)
+        .output()
+        .expect("run embedded arithmetic escaped array subscript probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "declare -a a=([0]=\"17\")\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn builtin_pipeline_head_accepts_separate_line_count_argument() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

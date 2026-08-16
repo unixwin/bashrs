@@ -2386,3 +2386,31 @@ Evidence:
 
 The remaining `arith10` differences are separate `declare`/quoted assignment
 forms and are not folded into this lvalue change.
+
+### 2026-08-17 escaped quotes in declare/typeset/let array arguments
+
+The remaining `arith10.sub` case
+`declare "a[\" \"]=14"` was being rejected before the `declare` builtin saw
+the argument. `parser::push_command_word` used the same escaped-quote guard
+for every array-element assignment-looking word, even though Bash accepts
+escaped quotes in arithmetic-aware `declare`, `typeset`, and `let` arguments.
+The same guard also covered the raw word containing an embedded `$((...))`
+expansion, so the expansion path was rejected before arithmetic evaluation.
+The guard now remains active for ordinary assignment words and is skipped only
+for those three command owners or an embedded arithmetic expansion, allowing
+their existing arithmetic/index
+handling to normalize the whitespace-only subscript to index 0.
+
+Evidence:
+
+- `cargo test --test parser_tests escaped_quote_array_subscript -- --nocapture`:
+  2/2.
+- `cargo test --test cli_tests escaped_quote_array -- --nocapture`: 2/2,
+  including the ordinary assignment status-2 regression.
+- `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`:
+  152/152.
+- `BASH_RUNNER=D:/Git/bin/bash.exe D:/Git/bin/bash.exe
+  scripts/run-bash-upstream-tests.sh run-arith`: 1/1.
+
+The broader `arith10` contexts, arithmetic diagnostics, and official actual
+output rows remain separate compatibility work.

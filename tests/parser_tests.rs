@@ -41,6 +41,23 @@ fn escaped_quote_array_subscript_is_marked_as_arithmetic_parse_error() {
     );
 }
 
+#[test]
+fn escaped_quote_array_subscript_is_allowed_for_declare_and_let() {
+    for input in [
+        r#"declare "a[\" \"]=14"#,
+        r#"let a\[\" \"]=13"#,
+    ] {
+        let ast = parse(&tokenize(input));
+        assert!(
+            ast.commands[0]
+                .assignments
+                .get("__RUBASH_PARSE_ERROR__")
+                .is_none(),
+            "unexpected parse error for {input:?}"
+        );
+    }
+}
+
 mod simple_commands {
     use super::*;
 
