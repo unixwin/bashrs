@@ -2548,6 +2548,34 @@ Evidence:
   scripts/run-bash-upstream-tests.sh run-redir`: 1/1.
 - `cargo check`: passed.
 
-Commits: `349d06ed`, `784ce7d0`. Other builtins still contain direct I/O
-redirect branches and require the same treatment where a minimal Bash
-comparison demonstrates an ordered-redirection difference.
+The same boundary has now been applied to `export`, whose output and
+diagnostics are also collected before the shared redirect owner writes them.
+The new `part_021` regression covers `export -p >&2 2>file` and verifies that
+the empty target is created while output remains on the original stderr.
+
+Evidence for this extension:
+
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  13/13.
+- `cargo check`: passed.
+
+Commits: `349d06ed`, `784ce7d0`, `be551483`. Other builtins still contain
+direct I/O redirect branches and require the same treatment where a minimal
+Bash comparison demonstrates an ordered-redirection difference.
+
+The same ordered diagnostic boundary now applies to `readonly`. Invalid
+options are collected as stderr before the shared redirect owner applies the
+left-to-right fd state, so `readonly -Z >&2 2>file` reports into `file` and
+does not bypass the second redirect.
+
+Evidence for this extension:
+
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  14/14.
+- `cargo check`: passed.
+- `scripts/validate-semantic-map.sh`: passed.
+
+Commit: `fix: preserve readonly ordered diagnostic redirects`. Other builtins
+still contain direct I/O redirect branches and require the same treatment
+where a minimal Bash comparison demonstrates an ordered-redirection
+difference.

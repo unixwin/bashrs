@@ -218,6 +218,26 @@ fn test_export_preserves_ordered_output_redirects() {
 }
 
 #[test]
+fn test_readonly_preserves_ordered_diagnostic_redirects() {
+    let error_path = "target/rubash-readonly-ordered-error.txt";
+    let _ = fs::remove_file(error_path);
+
+    let input = format!("readonly -Z >&2 2> {error_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 2);
+    let error = fs::read_to_string(error_path).unwrap();
+    assert!(error.contains("readonly: -Z: invalid option"));
+    assert!(error.contains("readonly: usage:"));
+    let _ = fs::remove_file(error_path);
+}
+
+#[test]
 fn test_hash_redirects_output() {
     let output_path = "target/rubash-hash-redirect-output.txt";
     let _ = fs::remove_file(output_path);
