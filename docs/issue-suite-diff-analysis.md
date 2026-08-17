@@ -2579,3 +2579,38 @@ Commit: `fix: preserve readonly ordered diagnostic redirects`. Other builtins
 still contain direct I/O redirect branches and require the same treatment
 where a minimal Bash comparison demonstrates an ordered-redirection
 difference.
+
+The same execution-boundary fix now covers `hash`, `shopt`, `umask`, and
+`enable`, whose `execute_with_io` paths previously opened redirect targets
+directly and therefore skipped parse-order fd duplication. A shared regression
+checks `>&2 2>file` for all three output-producing option builtins (plus
+`hash`'s existing redirect coverage).
+
+Evidence:
+
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  15/15.
+- `cargo test --test executor_tests command_chaining::part_022 -- --nocapture`:
+  14/14.
+- `cargo test --test executor_tests command_chaining::part_023 -- --nocapture`:
+  12/12.
+- `cargo test --test executor_tests command_chaining::part_029 -- --nocapture`:
+  10/10.
+- `cargo check`: passed.
+
+Commit: `997c0f93`.
+
+The same boundary has also been applied to `declare`, `kill`, `ulimit`,
+`trap`, `help`, and directory-stack builtins. Their `execute_with_io` output
+is now buffered before the shared fd state is applied, covering another set of
+direct-I/O builtin paths in the redirection family.
+
+Evidence:
+
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  16/16, including ordered probes for `declare`, `help`, `kill`, and `ulimit`.
+- `cargo test --test executor_tests command_chaining::part_032 -- --nocapture`:
+  11/11.
+- `cargo test --test executor_tests command_chaining::part_058 -- --nocapture`:
+  16/16.
+- `cargo check`: passed.
