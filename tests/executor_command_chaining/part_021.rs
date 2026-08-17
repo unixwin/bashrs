@@ -238,6 +238,33 @@ fn test_readonly_preserves_ordered_diagnostic_redirects() {
 }
 
 #[test]
+fn test_option_builtins_preserve_ordered_output_redirects() {
+    for (name, command) in [
+        ("shopt", "shopt -p sourcepath"),
+        ("umask", "umask"),
+        ("enable", "enable -a"),
+    ] {
+        let output_path = format!("target/rubash-{name}-ordered-output.txt");
+        let _ = fs::remove_file(&output_path);
+        let input = format!("{command} >&2 2> {output_path}");
+        let tokens = tokenize(&input);
+        let ast = parse(&tokens);
+        let mut executor = Executor::new();
+
+        let result = executor.execute_ast(&ast);
+
+        assert!(result.is_ok(), "{name} execution failed: {result:?}");
+        assert!(fs::metadata(&output_path).is_ok(), "{name} target missing");
+        assert_eq!(
+            fs::read_to_string(&output_path).unwrap(),
+            "",
+            "{name} output bypassed the ordered redirect"
+        );
+        let _ = fs::remove_file(output_path);
+    }
+}
+
+#[test]
 fn test_hash_redirects_output() {
     let output_path = "target/rubash-hash-redirect-output.txt";
     let _ = fs::remove_file(output_path);
