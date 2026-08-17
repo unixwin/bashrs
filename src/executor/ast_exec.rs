@@ -1,6 +1,35 @@
 use super::*;
 
 impl Executor {
+    fn coprocs_referenced_by_command(&self, command: &CommandNode) -> Vec<u32> {
+        let redirect_sources = command
+            .redirect_in
+            .iter()
+            .chain(command.redirect_out.iter())
+            .chain(command.append.iter())
+            .chain(command.redirect_err.iter())
+            .chain(command.redirect_err_append.iter())
+            .chain(command.redirects.iter())
+            .map(|redirect| redirect.target.as_str())
+            .collect::<Vec<_>>();
+        self.env_vars
+            .iter()
+            .filter_map(|(key, value)| {
+                let name = key.strip_suffix("_PID")?;
+                let pid = value.parse::<u32>().ok()?;
+                if command.coproc_command.is_some()
+                    || redirect_sources
+                        .iter()
+                        .any(|source| source.contains(name) && source.contains('['))
+                {
+                    Some(pid)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     pub fn execute_ast(&mut self, ast: &Ast) -> Result<(), ExecuteError> {
         if EXECUTION_LOCK_DEPTH.with(|depth| depth.get() > 0) {
             return self.execute_ast_inner(ast);
@@ -30,7 +59,9 @@ impl Executor {
         let mut subshell_depth: Option<usize> = None;
         let mut subshell_stdin: Option<(String, String)> = None;
         while index < ast.commands.len() {
-            self.refresh_background_jobs()?;
+            let protected_coprocs = self
+                .coprocs_referenced_by_command(&ast.commands[index]);
+            self.refresh_background_jobs_with_protected_coprocs(&protected_coprocs)?;
             self.run_pending_signal_traps()?;
 
             let command = &ast.commands[index];

@@ -2477,3 +2477,47 @@ Evidence:
 
 This closes only the malformed arithmetic-for parameter-header primitive; the
 aggregate `arith-for` and official actual-output rows remain open.
+
+### 2026-08-17 external coproc endpoints and Windows streaming pipelines
+
+The remaining focused coproc failures were caused by two related execution
+boundary issues. `refresh_background_jobs` retired a completed coprocess before
+the next command could consume its still-readable named endpoint, and the
+external-file `cat` path did not consume a virtual `CoprocStdout` descriptor.
+The executor now protects endpoints referenced by the current input redirect
+and retains existing endpoints while launching another coproc. Ordinary later
+commands still retire completed endpoints, preserving the existing closed-fd
+diagnostic behavior. External `cat` drains the shell-owned reader to EOF and
+uses the normal redirected output path.
+
+On this Windows host, `yes`, `head`, and `wc` are not available in `PATH`.
+The concurrent external-pipeline path previously fell back to the buffered
+stage path, which turned `yes | head` into a masked command-not-found result.
+When those three utilities are unavailable, the Windows pipeline now launches
+small internal streaming utility processes connected by the same OS pipes:
+`yes` applies backpressure, `head` exits after its requested line count, and
+`wc` counts input through EOF. This keeps the producer bounded by the pipe and
+does not materialize an unbounded string.
+
+The same execution boundary also fixed `/usr/bin/cat` file diagnostics,
+persistent `exec 2>&1` propagation through a `cat | cat` pipeline, and
+prefix assignments reaching the `env` builtin in a pipeline. The Windows
+POSIX-directory bridge now records a shell-visible physical path so `cd -P /;
+pwd -P` reports `/` instead of the host repository directory.
+
+Evidence:
+
+- `cargo test --test cli_tests coproc -- --nocapture`: 17/17.
+- `cargo test --test cli_tests external_pipeline -- --nocapture`: 4/4.
+- `cargo test --test cli_tests -- --nocapture`: 229/229.
+- `cargo test --test cli_tests c_command_materializes_persistent_stderr_to_stdout_for_external_children -- --nocapture`: 1/1.
+- `cargo test --test cli_tests c_command_pipeline_stages_inherit_persistent_stderr_to_stdout -- --nocapture`: 1/1.
+- `cargo test --test cli_tests prefix_assignments_reach_env_builtin_pipeline -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_031::test_command_cd_updates_pwd_for_physical_pwd -- --nocapture`: 1/1.
+- `cargo test --test executor_tests`: 1534/1535 before the physical-PWD fix; the sole failure then passed in the focused rerun. A complete post-fix executor rerun remains a required gate.
+- `cargo test --lib`: passed in the preceding full validation run.
+- `D:/Git/bin/bash.exe scripts/validate-semantic-map.sh`: passed.
+
+This closes the focused coproc, external-pipeline, persistent-stderr, and
+POSIX physical-PWD primitives only. The broader official Bash, BusyBox, Oil,
+mksh, and ksh93 issue-suite differences remain open.

@@ -1,0 +1,60 @@
+//! The Bash `sleep` builtin-compatible command used by job and coprocess tests.
+
+use std::time::Duration;
+
+pub fn execute(args: &[String]) -> (i32, Option<String>) {
+    let mut total_seconds = 0.0_f64;
+    let mut index = 0;
+    if args.first().is_some_and(|arg| arg == "--") {
+        index = 1;
+    }
+    if args.get(index).is_some_and(|arg| arg == "--help") {
+        return (0, Some("Usage: sleep number[smhd]...\n".to_string()));
+    }
+    if index == args.len() {
+        return (1, Some("sleep: missing operand\n".to_string()));
+    }
+
+    for value in &args[index..] {
+        let Some(seconds) = parse_duration(value) else {
+            return (1, Some(format!("sleep: invalid time interval '{value}'\n")));
+        };
+        total_seconds += seconds;
+    }
+
+    if total_seconds.is_sign_negative() || !total_seconds.is_finite() {
+        return (1, Some("sleep: invalid time interval\n".to_string()));
+    }
+    std::thread::sleep(Duration::from_secs_f64(total_seconds));
+    (0, None)
+}
+
+fn parse_duration(value: &str) -> Option<f64> {
+    let (number, multiplier) = match value.chars().last()? {
+        's' => (&value[..value.len() - 1], 1.0),
+        'm' => (&value[..value.len() - 1], 60.0),
+        'h' => (&value[..value.len() - 1], 3600.0),
+        'd' => (&value[..value.len() - 1], 86400.0),
+        _ => (value, 1.0),
+    };
+    let seconds = number.parse::<f64>().ok()?;
+    (seconds >= 0.0 && seconds.is_finite()).then_some(seconds * multiplier)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_common_units() {
+        assert_eq!(parse_duration("2"), Some(2.0));
+        assert_eq!(parse_duration("2m"), Some(120.0));
+        assert_eq!(parse_duration("0.01s"), Some(0.01));
+    }
+
+    #[test]
+    fn rejects_invalid_values() {
+        assert_eq!(parse_duration("nope"), None);
+        assert_eq!(parse_duration("-1"), None);
+    }
+}

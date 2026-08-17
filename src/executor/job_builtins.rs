@@ -294,6 +294,13 @@ impl Executor {
     }
 
     pub(in crate::executor) fn refresh_background_jobs(&mut self) -> Result<(), ExecuteError> {
+        self.refresh_background_jobs_with_protected_coprocs(&[])
+    }
+
+    pub(in crate::executor) fn refresh_background_jobs_with_protected_coprocs(
+        &mut self,
+        protected_coprocs: &[u32],
+    ) -> Result<(), ExecuteError> {
         let mut finished = Vec::new();
         for (pid, child) in &mut self.background_children {
             if let Some(status) = child.try_wait()? {
@@ -305,7 +312,9 @@ impl Executor {
             self.background_children.remove(&pid);
             self.join_coproc_stderr_forwarder(pid)?;
             self.job_table.mark_completed(pid, status);
-            self.retire_completed_coproc(pid);
+            if !protected_coprocs.contains(&pid) {
+                self.retire_completed_coproc(pid);
+            }
         }
         Ok(())
     }

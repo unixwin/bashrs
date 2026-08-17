@@ -24,7 +24,7 @@ impl Executor {
             "cp" => self.external_cp(cmd),
             "rm" => self.external_rm(cmd),
             "rmdir" => self.external_rmdir(cmd),
-            "cat" => self.external_cat(cmd),
+            "cat" | "/bin/cat" | "/usr/bin/cat" => self.external_cat(cmd),
             "sed" => self.external_sed(cmd),
             "mkfifo" => self.external_mkfifo(cmd),
             _ => Ok(false),
@@ -135,6 +135,26 @@ impl Executor {
     }
 
     fn external_cat(&mut self, cmd: &CommandNode) -> Result<bool, ExecuteError> {
+        if let Some(redirect) = &cmd.redirect_in {
+            if redirect.fd.unwrap_or(0) == 0 {
+                let target = self.expand_word(&redirect.target);
+                if let Some(fd) = redirect_target_fd(&target) {
+                    if let Some(FdReadEndpoint::CoprocStdout(pid)) = self.fd_table.read_endpoint(fd)
+                    {
+                        if let Some(mut reader) = self.coproc_stdout_readers.remove(&pid) {
+                            use std::io::Read;
+                            let mut input = Vec::new();
+                            reader.read_to_end(&mut input)?;
+                            self.fd_table.close_input(fd);
+                            self.write_cat_output(cmd, &input)?;
+                            self.exit_code = 0;
+                            return Ok(true);
+                        }
+                    }
+                }
+            }
+        }
+
         if cmd.heredoc.is_some() {
             let input = self.stdin_string_for_command(cmd).unwrap_or_default();
             if let Some(redirect) = &cmd.append {
@@ -188,11 +208,14 @@ impl Executor {
             match fs::read(shell_path_to_windows(&target, &self.env_vars)) {
                 Ok(bytes) => output.extend(bytes),
                 Err(_) => {
-                    eprintln!(
+                    let mut stderr = Vec::new();
+                    writeln!(
+                        &mut stderr,
                         "{}cat: {}: No such file or directory",
                         self.diagnostic_prefix(),
                         target
-                    );
+                    )?;
+                    self.write_buffered_builtin_output(cmd, &[], &stderr)?;
                     self.exit_code = 1;
                     return Ok(true);
                 }

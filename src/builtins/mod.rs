@@ -29,6 +29,7 @@ pub mod set;
 pub mod setattr;
 pub mod shift;
 pub mod shopt;
+pub mod sleep;
 pub mod source;
 pub mod suspend;
 pub mod test;

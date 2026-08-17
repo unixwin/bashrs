@@ -10,6 +10,17 @@ where
 }
 
 #[cfg(windows)]
+fn internal_pipeline_program(name: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(format!("<rubash-internal-{name}>"))
+}
+
+#[cfg(windows)]
+fn internal_pipeline_program_name(program: &std::path::Path) -> Option<&str> {
+    let name = program.to_str()?.strip_prefix("<rubash-internal-")?;
+    name.strip_suffix('>')
+}
+
+#[cfg(windows)]
 fn wait_for_windows_pipeline_member(
     process: &mut std::process::Child,
 ) -> Result<std::process::ExitStatus, ExecuteError> {
@@ -319,7 +330,9 @@ impl Executor {
             else {
                 return Ok(None);
             };
-            if command.pipe == Some(2) {
+            if command.pipe == Some(2)
+                || self.fd_table.write_endpoint(2) == Some(FdWriteEndpoint::Stdout)
+            {
                 next_input.push_str(&next_stderr);
             } else if !next_stderr.is_empty() {
                 std::io::stderr().write_all(next_stderr.as_bytes())?;
@@ -393,7 +406,10 @@ impl Executor {
             if crate::executor::builtin_names::is_shell_builtin_name(&expanded_name) {
                 return Ok(None);
             }
-            let Some(program) = find_user_command(&expanded_name, &self.env_vars) else {
+            let Some(program) = find_user_command(&expanded_name, &self.env_vars).or_else(|| {
+                matches!(expanded_name.as_str(), "yes" | "head" | "wc")
+                    .then(|| internal_pipeline_program(&expanded_name))
+            }) else {
                 return Ok(None);
             };
             let args = command.words[1..]
@@ -415,12 +431,18 @@ impl Executor {
             self.fd_table.write_endpoint(2) == Some(FdWriteEndpoint::Stdout);
         let mut intermediate_stderr = Vec::new();
         for (index, (program, args)) in specs.iter().enumerate() {
-            let (mut process, _) = external_command_for_named_program(
-                program,
-                Some(&self.expand_word(&commands[index].words[0])),
-                args,
-                &self.env_vars,
-            );
+            let (mut process, _) = if let Some(name) = internal_pipeline_program_name(program) {
+                let mut process = std::process::Command::new(std::env::current_exe()?);
+                process.arg(format!("--internal-{name}")).args(args);
+                (process, false)
+            } else {
+                external_command_for_named_program(
+                    program,
+                    Some(&self.expand_word(&commands[index].words[0])),
+                    args,
+                    &self.env_vars,
+                )
+            };
             self.apply_child_environment(&mut process);
 
             if index == 0 {
@@ -772,6 +794,29 @@ impl Executor {
                 Ok(Some((output, String::new(), 0)))
             }
             "cat" => {
+                let file_operands = command.words[1..]
+                    .iter()
+                    .filter(|word| !word.starts_with('-'))
+                    .map(|word| self.expand_word(word))
+                    .collect::<Vec<_>>();
+                if !file_operands.is_empty() {
+                    let mut output = String::new();
+                    let mut stderr = String::new();
+                    let mut status = 0;
+                    for path in file_operands {
+                        match fs::read(shell_path_to_windows(&path, &self.env_vars)) {
+                            Ok(bytes) => output.push_str(&String::from_utf8_lossy(&bytes)),
+                            Err(_) => {
+                                stderr.push_str(&format!(
+                                    "{}cat: {path}: No such file or directory\n",
+                                    self.diagnostic_prefix()
+                                ));
+                                status = 1;
+                            }
+                        }
+                    }
+                    return Ok(Some((output, stderr, status)));
+                }
                 if let Some(input) = self.stdin_string_for_command(command) {
                     Ok(Some((input, String::new(), 0)))
                 } else {

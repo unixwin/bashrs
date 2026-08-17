@@ -94,6 +94,10 @@ where
         // shell should keep logical and physical directory state separately.
         set_shell_env(env_vars, "OLDPWD", shell_display_path(&old_pwd));
         set_shell_env(env_vars, "PWD", logical_dir.to_string());
+        env_vars.insert(
+            "__RUBASH_PHYSICAL_PWD".to_string(),
+            logical_dir.to_string(),
+        );
         match target.print {
             PrintPath::Always | PrintPath::CdPath => writeln!(stdout, "{logical_dir}")?,
             PrintPath::Never => {}
@@ -121,6 +125,7 @@ where
 
     set_shell_env(env_vars, "OLDPWD", shell_display_path(&old_pwd));
     set_shell_env(env_vars, "PWD", new_pwd_display.clone());
+    env_vars.remove("__RUBASH_PHYSICAL_PWD");
 
     match target.print {
         PrintPath::Always => writeln!(stdout, "{}", new_pwd_display)?,

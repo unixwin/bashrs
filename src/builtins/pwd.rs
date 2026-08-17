@@ -83,6 +83,11 @@ where
 }
 
 fn current_directory(mode: Mode, env_vars: &HashMap<String, String>) -> io::Result<Option<String>> {
+    if mode == Mode::Physical {
+        if let Some(physical) = env_vars.get("__RUBASH_PHYSICAL_PWD") {
+            return Ok(Some(physical.clone()));
+        }
+    }
     let physical = env::current_dir()?;
 
     if mode == Mode::Logical {
