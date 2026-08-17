@@ -175,6 +175,27 @@ fn test_pwd_appends_stderr() {
 }
 
 #[test]
+fn test_pwd_preserves_ordered_output_redirects() {
+    let output_path = "target/rubash-pwd-ordered-output.txt";
+    let _ = fs::remove_file(output_path);
+
+    let input = format!(
+        "PWD=/tmp/rubash-pwd-test pwd >&2 2> {output_path}; test -e {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert!(fs::metadata(output_path).is_ok());
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_hash_redirects_output() {
     let output_path = "target/rubash-hash-redirect-output.txt";
     let _ = fs::remove_file(output_path);
