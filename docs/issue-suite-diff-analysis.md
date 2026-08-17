@@ -2521,3 +2521,33 @@ Evidence:
 This closes the focused coproc, external-pipeline, persistent-stderr, and
 POSIX physical-PWD primitives only. The broader official Bash, BusyBox, Oil,
 mksh, and ksh93 issue-suite differences remain open.
+
+### 2026-08-17 builtin ordered-output redirect boundary
+
+The #20/#24/#25/#54 redirection family exposed a shared builtin execution
+boundary bug. `printf` and `pwd` had direct `redirect_out`/`append`/
+`redirect_err` branches that bypassed the command's parse-order redirect list.
+For a command such as `printf 'x\n' >&2 2>file`, Bash leaves the output on the
+original stderr but still creates the empty `file`; Rubash previously skipped
+the redirect application entirely, so the empty target was not created. The
+same bypass also affected `pwd`.
+
+Both builtins now collect stdout/stderr and use
+`write_buffered_builtin_output`, which applies the shared ordered fd state.
+This is a semantic execution fix, not an expected-output adjustment.
+
+Evidence:
+
+- `cargo test --test cli_tests fd_redirects -- --nocapture`: 16/16.
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  12/12, including the new `pwd` ordered-output regression.
+- `cargo test --test parser_redirection_tests -- --nocapture`: 68/68.
+- `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`:
+  152/152.
+- `BASH_RUNNER=D:/Git/bin/bash.exe D:/Git/bin/bash.exe
+  scripts/run-bash-upstream-tests.sh run-redir`: 1/1.
+- `cargo check`: passed.
+
+Commits: `349d06ed`, `784ce7d0`. Other builtins still contain direct I/O
+redirect branches and require the same treatment where a minimal Bash
+comparison demonstrates an ordered-redirection difference.
