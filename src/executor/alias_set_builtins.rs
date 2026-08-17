@@ -5,110 +5,31 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<i32, ExecuteError> {
-        // TODO(redir.c/execute_cmd.c): Bash applies redirections around
-        // builtins using unwind-protected fd mutation. This only handles
-        // stderr redirection for upstream alias tests.
-        if let Some(redirect) = &cmd.redirect_err {
-            let target = self.expand_word(&redirect.target);
-            if is_null_device(&target) {
-                return Ok(crate::builtins::alias::unalias_with_io(
-                    &cmd.words[1..],
-                    &mut self.aliases,
-                    &mut std::io::sink(),
-                )?);
-            }
-
-            let mut file = self.create_redirect_output(&target, redirect.clobber)?;
-            return Ok(crate::builtins::alias::unalias_with_io(
-                &cmd.words[1..],
-                &mut self.aliases,
-                &mut file,
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.redirect_err_append {
-            let target = self.expand_word(&redirect.target);
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::alias::unalias_with_io(
-                &cmd.words[1..],
-                &mut self.aliases,
-                &mut file,
-            )?);
-        }
-
-        Ok(crate::builtins::alias::unalias(
+        let stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let status = crate::builtins::alias::unalias_with_io(
             &cmd.words[1..],
             &mut self.aliases,
-        )?)
+            &mut stderr,
+        )?;
+        self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+        Ok(status)
     }
 
     pub(in crate::executor) fn execute_alias(
         &mut self,
         cmd: &CommandNode,
     ) -> Result<i32, ExecuteError> {
-        if let Some(redirect) = &cmd.redirect_out {
-            let target = self.expand_word(&redirect.target);
-            let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::alias::alias_with_io(
-                &cmd.words[1..],
-                &mut self.aliases,
-                &mut file,
-                &mut std::io::stderr().lock(),
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.append {
-            let target = self.expand_word(&redirect.target);
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::alias::alias_with_io(
-                &cmd.words[1..],
-                &mut self.aliases,
-                &mut file,
-                &mut std::io::stderr().lock(),
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.redirect_err {
-            let target = self.expand_word(&redirect.target);
-            if is_null_device(&target) {
-                return Ok(crate::builtins::alias::alias_with_io(
-                    &cmd.words[1..],
-                    &mut self.aliases,
-                    &mut std::io::stdout(),
-                    &mut std::io::sink(),
-                )?);
-            }
-            let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::alias::alias_with_io(
-                &cmd.words[1..],
-                &mut self.aliases,
-                &mut std::io::stdout(),
-                &mut file,
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.redirect_err_append {
-            let target = self.expand_word(&redirect.target);
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::alias::alias_with_io(
-                &cmd.words[1..],
-                &mut self.aliases,
-                &mut std::io::stdout(),
-                &mut file,
-            )?);
-        }
-
-        let status = crate::builtins::alias::alias(&cmd.words[1..], &mut self.aliases)?;
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let status = crate::builtins::alias::alias_with_io(
+            &cmd.words[1..],
+            &mut self.aliases,
+            &mut stdout,
+            &mut stderr,
+        )?;
         self.record_alias_definition_lines(&cmd.words[1..], cmd.line);
+        self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
         Ok(status)
     }
 
@@ -140,68 +61,16 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<i32, ExecuteError> {
-        if let Some(redirect) = &cmd.redirect_out {
-            let target = self.expand_word(&redirect.target);
-            let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::set::set_with_io(
-                cmd.words[1..].iter().map(String::as_str),
-                &mut self.env_vars,
-                &mut file,
-                &mut std::io::stderr().lock(),
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.append {
-            let target = self.expand_word(&redirect.target);
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::set::set_with_io(
-                cmd.words[1..].iter().map(String::as_str),
-                &mut self.env_vars,
-                &mut file,
-                &mut std::io::stderr().lock(),
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.redirect_err {
-            let target = self.expand_word(&redirect.target);
-            if is_null_device(&target) {
-                return Ok(crate::builtins::set::set_with_io(
-                    cmd.words[1..].iter().map(String::as_str),
-                    &mut self.env_vars,
-                    &mut crate::executor::shell_options::GlobalStdout,
-                    &mut std::io::sink(),
-                )?);
-            }
-            let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::set::set_with_io(
-                cmd.words[1..].iter().map(String::as_str),
-                &mut self.env_vars,
-                &mut crate::executor::shell_options::GlobalStdout,
-                &mut file,
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.redirect_err_append {
-            let target = self.expand_word(&redirect.target);
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::set::set_with_io(
-                cmd.words[1..].iter().map(String::as_str),
-                &mut self.env_vars,
-                &mut crate::executor::shell_options::GlobalStdout,
-                &mut file,
-            )?);
-        }
-
-        Ok(crate::builtins::set::set(
-            &cmd.words[1..],
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let status = crate::builtins::set::set_with_io(
+            cmd.words[1..].iter().map(String::as_str),
             &mut self.env_vars,
-        )?)
+            &mut stdout,
+            &mut stderr,
+        )?;
+        self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+        Ok(status)
     }
 
     pub(in crate::executor) fn execute_set_command(
