@@ -501,6 +501,169 @@ fn script_bash_source_index_locates_sibling_source_file() {
 }
 
 #[test]
+fn source_expands_braces_and_passes_remaining_words_as_args() {
+    let script_dir = Path::new("target").join("rubash-cli-source-brace-args");
+    let main_path = script_dir.join("main.sh");
+    let a_path = script_dir.join("a.sh");
+    let b_path = script_dir.join("b.sh");
+    fs::create_dir_all(&script_dir).unwrap();
+    fs::write(&a_path, "printf 'sourced:%s\\n' \"$1\"\n").unwrap();
+    fs::write(&b_path, "printf 'b should be an argument\\n'\n").unwrap();
+    fs::write(
+        &main_path,
+        format!(
+            "source {}/{{a,b}}.sh\n",
+            script_dir.to_string_lossy().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg(main_path.to_string_lossy().replace('\\', "/"))
+        .output()
+        .expect("run rubash");
+
+    let _ = fs::remove_file(&main_path);
+    let _ = fs::remove_file(&a_path);
+    let _ = fs::remove_file(&b_path);
+    let _ = fs::remove_dir(&script_dir);
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!(
+            "sourced:{}\n",
+            b_path.to_string_lossy().replace('\\', "/")
+        )
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn source_expands_braces_then_pathname_globs_for_bashdb_style_command_load() {
+    let script_dir = Path::new("target").join("rubash-cli-source-bashdb-style");
+    let main_path = script_dir.join("main.sh");
+    let command_dir = script_dir.join("command");
+    let c_path = command_dir.join("continue.sh");
+    let help_path = command_dir.join("help.sh");
+    fs::create_dir_all(&command_dir).unwrap();
+    fs::write(&c_path, "printf 'loaded:%s\\n' \"$1\"\n").unwrap();
+    fs::write(&help_path, "printf 'help should be an argument\\n'\n").unwrap();
+    fs::write(
+        &main_path,
+        format!(
+            ". {}/command/{{c*,help}}.sh\n",
+            script_dir.to_string_lossy().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg(main_path.to_string_lossy().replace('\\', "/"))
+        .output()
+        .expect("run rubash");
+
+    let _ = fs::remove_file(&main_path);
+    let _ = fs::remove_file(&c_path);
+    let _ = fs::remove_file(&help_path);
+    let _ = fs::remove_dir(&command_dir);
+    let _ = fs::remove_dir(&script_dir);
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!(
+            "loaded:{}\n",
+            help_path.to_string_lossy().replace('\\', "/")
+        )
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn command_dot_uses_expanded_source_arguments() {
+    let script_dir = Path::new("target").join("rubash-cli-command-dot-brace");
+    let main_path = script_dir.join("main.sh");
+    let a_path = script_dir.join("a.sh");
+    let b_path = script_dir.join("b.sh");
+    fs::create_dir_all(&script_dir).unwrap();
+    fs::write(&a_path, "printf 'command-dot:%s\\n' \"$1\"\n").unwrap();
+    fs::write(&b_path, "printf 'b should be an argument\\n'\n").unwrap();
+    fs::write(
+        &main_path,
+        format!(
+            "command . {}/{{a,b}}.sh\n",
+            script_dir.to_string_lossy().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg(main_path.to_string_lossy().replace('\\', "/"))
+        .output()
+        .expect("run rubash");
+
+    let _ = fs::remove_file(&main_path);
+    let _ = fs::remove_file(&a_path);
+    let _ = fs::remove_file(&b_path);
+    let _ = fs::remove_dir(&script_dir);
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!(
+            "command-dot:{}\n",
+            b_path.to_string_lossy().replace('\\', "/")
+        )
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn case_clause_tracks_nested_if_before_clause_terminator() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "case x in \
+             x) if true; then case y in y) if true; then echo nested; fi ;; esac; fi ;; \
+             esac"
+        )
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "nested\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn sourced_file_updates_bash_source_zero() {
+    let script_dir = Path::new("target").join("rubash-cli-bash-source-stack");
+    let main_path = script_dir.join("main.sh");
+    let lib_path = script_dir.join("lib.sh");
+    fs::create_dir_all(&script_dir).unwrap();
+    fs::write(
+        &lib_path,
+        "printf 'source0:%s\\n' \"${BASH_SOURCE[0]##*/}\"\nprintf 'is-main:%s\\n' \"$([[ $0 == \"${BASH_SOURCE[0]}\" ]] && echo yes || echo no)\"\n",
+    )
+    .unwrap();
+    fs::write(
+        &main_path,
+        format!(". {}\n", lib_path.to_string_lossy().replace('\\', "/")),
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg(main_path.to_string_lossy().replace('\\', "/"))
+        .output()
+        .expect("run rubash");
+
+    let _ = fs::remove_file(&main_path);
+    let _ = fs::remove_file(&lib_path);
+    let _ = fs::remove_dir(&script_dir);
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "source0:lib.sh\nis-main:no\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn script_assignment_command_substitution_captures_function_output() {
     let script_path = Path::new("target").join("rubash-cli-function-comsub.sh");
     fs::create_dir_all("target").unwrap();

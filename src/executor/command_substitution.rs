@@ -154,12 +154,18 @@ impl Executor {
                 words[1..]
                     .iter()
                     .enumerate()
-                    .map(|(index, word)| {
-                        strip_matching_quotes(&self.expand_protected_tilde(
+                    .flat_map(|(index, word)| {
+                        if let Some(values) = self.array_at_word_values(word) {
+                            return values;
+                        }
+                        if let Some(values) = self.quoted_positional_at_word_values(word, None) {
+                            return values;
+                        }
+                        vec![strip_matching_quotes(&self.expand_protected_tilde(
                             word,
                             word_parts.get(index + 1).map(|(_, q)| *q),
                         ))
-                        .to_string()
+                        .to_string()]
                     })
                     .collect();
             let mut env_vars = self.env_vars.clone();

@@ -5,16 +5,16 @@ impl Executor {
         &self,
         name: &str,
     ) -> Option<String> {
+        if let Some(value) = self.expand_braced_replacement_parameter(name) {
+            return Some(value);
+        }
         if let Some(value) = self.expand_braced_pattern_parameter(name) {
             return Some(value);
         }
         if let Some(value) = self.expand_braced_transform_parameter(name) {
             return Some(value);
         }
-        if let Some(value) = self.expand_braced_case_parameter(name) {
-            return Some(value);
-        }
-        self.expand_braced_replacement_parameter(name)
+        self.expand_braced_case_parameter(name)
     }
 
     fn expand_braced_pattern_parameter(&self, name: &str) -> Option<String> {
@@ -31,20 +31,14 @@ impl Executor {
             ));
         }
         if operation == PatternRemoval::LongestPrefix && pattern == "*/" {
-            return Some(
-                self.parameter_pattern_scalar_value(var_name)
-                    .as_deref()
-                    .and_then(|value| value.rsplit('/').next())
-                    .map(|basename| {
-                        if var_name == "THIS_SH" && basename == "rubash-wrapper" {
-                            "bash"
-                        } else {
-                            basename
-                        }
-                    })
-                    .unwrap_or_default()
-                    .to_string(),
-            );
+            let basename = self
+                .expand_parameter_pattern_removal(var_name, pattern, operation)
+                .unwrap_or_default();
+            return Some(if var_name == "THIS_SH" && basename == "rubash-wrapper" {
+                "bash".to_string()
+            } else {
+                basename
+            });
         }
 
         Some(match operation {

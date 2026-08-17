@@ -58,10 +58,18 @@ impl Executor {
             .words
             .get(index)
             .is_some_and(|word| word_is_unquoted_indirect_name_list(word));
+        let unquoted_embedded_parameter = !word_is_quoted
+            && cmd
+                .word_metadata
+                .get(index)
+                .map(|metadata| metadata.raw.as_str())
+                .or_else(|| cmd.words.get(index).map(String::as_str))
+                .is_some_and(raw_word_has_unquoted_parameter_expansion);
 
         let field_split_would_split = self.field_split_values(expanded).len() > 1;
 
         ((unquoted_variable && !unquoted_dynamic_parameter && field_split_would_split)
+            || (unquoted_embedded_parameter && field_split_would_split)
             || (unquoted_command_substitution && expanded.contains(char::is_whitespace))
             || (unquoted_indirect_name_list && expanded.contains(char::is_whitespace)))
             && (field_split_would_split || expanded.split_whitespace().nth(1).is_some())
@@ -76,6 +84,9 @@ impl Executor {
         let suppress_glob = word.starts_with('\x1b')
             || word.starts_with('\x1d')
             || super::command_prepare::raw_word_suppresses_pathname_expansion(raw, metadata);
+        if let Some(values) = self.quoted_positional_at_word_values_with_raw(word, raw, None) {
+            return Ok(values);
+        }
         if let Some(values) = self.array_at_word_values(word) {
             if word_is_unquoted_array_list_expansion(word) {
                 return Ok(field_split_array_values_with_ifs(
@@ -189,4 +200,36 @@ fn word_is_unquoted_indirect_name_list(word: &str) -> bool {
             .strip_suffix('*')
             .or_else(|| inner.strip_suffix('@'))
             .is_some_and(|prefix| !prefix.is_empty())
+}
+
+fn raw_word_has_unquoted_parameter_expansion(raw: &str) -> bool {
+    let chars = raw.chars().collect::<Vec<_>>();
+    let mut index = 0usize;
+    while index < chars.len() {
+        if chars[index] == '\\' {
+            index += 2;
+            continue;
+        }
+        if chars[index] == '$' {
+            match chars.get(index + 1).copied() {
+                Some('{') => {
+                    if chars.get(index + 2).is_some_and(|ch| {
+                        is_shell_name_start(*ch)
+                            || matches!(*ch, '@' | '*' | '#' | '?' | '$' | '!' | '-' | '0')
+                    }) {
+                        return true;
+                    }
+                }
+                Some(ch)
+                    if is_shell_name_start(ch)
+                        || matches!(ch, '@' | '*' | '#' | '?' | '$' | '!' | '-' | '0') =>
+                {
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        index += 1;
+    }
+    false
 }

@@ -365,6 +365,18 @@ impl Executor {
     ) -> Option<String> {
         words.first()?;
         let stdio = self.command_substitution_words_and_stdio(words)?;
+        if matches!(
+            stdio.expanded_words.first().map(String::as_str),
+            Some("tty") | Some("/bin/tty") | Some("/usr/bin/tty")
+        ) {
+            let silent = stdio
+                .expanded_words
+                .iter()
+                .skip(1)
+                .any(|arg| arg == "-s" || arg == "--silent" || arg == "--quiet");
+            self.last_command_substitution_status.set(Some(1));
+            return Some(if silent { String::new() } else { "not a tty".to_string() });
+        }
         let Some(program) = find_user_command(&stdio.expanded_words[0], &self.env_vars) else {
             if stdio.expanded_words.first().map(String::as_str) == Some("mktemp") {
                 return None;
@@ -466,7 +478,7 @@ impl Executor {
                 word => {
                     stdio
                         .expanded_words
-                        .push(strip_matching_quotes(&self.expand_word(word)).to_string());
+                        .extend(self.expand_command_substitution_arg_values(word));
                     index += 1;
                 }
             }

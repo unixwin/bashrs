@@ -57,6 +57,8 @@ mod external_inner;
 mod external_redirects;
 mod external_setup;
 mod fd_table;
+#[cfg(windows)]
+mod sudo_builtin;
 mod function_calls;
 mod function_locals;
 mod getopts_enable;
@@ -179,6 +181,36 @@ struct HostExternalCommandHandler(
 impl std::fmt::Debug for HostExternalCommandHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("HostExternalCommandHandler(..)")
+    }
+}
+
+#[cfg(windows)]
+pub use crate::builtins::sudo::SudoMode;
+
+#[cfg(windows)]
+#[derive(Debug, Clone)]
+pub struct ElevationRequest {
+    pub command: Vec<String>,
+    pub environment: HashMap<String, String>,
+    pub current_dir: PathBuf,
+    pub preserve_environment: bool,
+    pub mode: SudoMode,
+}
+
+#[cfg(windows)]
+pub struct ElevationOutput {
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+    pub status: i32,
+}
+
+#[cfg(windows)]
+struct ElevationHandler(Box<dyn FnMut(ElevationRequest) -> Result<ElevationOutput, String>>);
+
+#[cfg(windows)]
+impl std::fmt::Debug for ElevationHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ElevationHandler(..)")
     }
 }
 use std::process::{Command, Stdio};
@@ -371,6 +403,8 @@ pub struct Executor {
     stdout_capture: Option<Vec<u8>>,
     stderr_capture: Option<Vec<u8>>,
     host_external_command_handler: Option<HostExternalCommandHandler>,
+    #[cfg(windows)]
+    elevation_handler: Option<ElevationHandler>,
     external_file_builtins_enabled: bool,
     process_env_snapshot: HashMap<String, String>,
 }

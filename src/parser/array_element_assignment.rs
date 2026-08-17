@@ -16,7 +16,7 @@ pub(super) fn record_array_element_assignment_for_word(
     }
 }
 
-fn array_element_assignment_from_word(word: &str, raw: &str) -> Option<ArrayElementAssignment> {
+pub(super) fn array_element_assignment_from_word(word: &str, raw: &str) -> Option<ArrayElementAssignment> {
     let open = word.find('[')?;
     let name = &word[..open];
     if !is_shell_name(name) {

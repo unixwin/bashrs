@@ -135,7 +135,7 @@ impl Executor {
                 }
             }
             "env" => {
-                self.do_env()?;
+                self.execute_env_command(cmd)?;
                 Ok(())
             }
             "set" => self.execute_set_command(cmd),

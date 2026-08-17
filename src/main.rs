@@ -10,18 +10,28 @@ use std::fs;
 use std::io::{self, BufRead, IsTerminal, Read, Write};
 
 fn main() {
+    let handle = std::thread::Builder::new()
+        .name("rubash-main".to_string())
+        .stack_size(32 * 1024 * 1024)
+        .spawn(run_main)
+        .expect("spawn rubash main thread");
+    let code = handle.join().unwrap_or(1);
+    std::process::exit(code);
+}
+
+fn run_main() -> i32 {
     let args: Vec<String> = env::args().collect();
     let mut executor = Executor::new();
 
     if args.len() > 1 {
-        let code = run_args(&mut executor, &args[1..]);
-        std::process::exit(code);
+        return run_args(&mut executor, &args[1..]);
     }
 
     if io::stdin().is_terminal() {
         run_repl(&mut executor);
+        0
     } else {
-        std::process::exit(run_stdin_script(&mut executor));
+        run_stdin_script(&mut executor)
     }
 }
 

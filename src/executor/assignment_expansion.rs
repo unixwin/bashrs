@@ -14,6 +14,9 @@ impl Executor {
         let value = value
             .strip_prefix(COMPOUND_ASSIGNMENT_MARKER)
             .unwrap_or(value);
+        if quoted && value.contains(":$((") {
+            return self.expand_quoted_prompt_arithmetic_assignment(value);
+        }
         let value = if quoted && (value.contains("$(") || value.contains('`')) {
             strip_matching_quotes(value)
         } else {
@@ -145,6 +148,53 @@ impl Executor {
         self.expand_assignment_tilde(&value)
     }
 
+    fn expand_quoted_prompt_arithmetic_assignment(&mut self, value: &str) -> String {
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum QuoteMode {
+            None,
+            Single,
+            Double,
+        }
+
+        let mut output = String::with_capacity(value.len());
+        let mut segment = String::new();
+        let mut mode = QuoteMode::None;
+
+        for ch in value.chars() {
+            match (mode, ch) {
+                (QuoteMode::None, '\'') => {
+                    output.push_str(&self.expand_embedded_parameters_mut(&segment));
+                    segment.clear();
+                    mode = QuoteMode::Single;
+                }
+                (QuoteMode::None, '"') => {
+                    output.push_str(&self.expand_embedded_parameters_mut(&segment));
+                    segment.clear();
+                    mode = QuoteMode::Double;
+                }
+                (QuoteMode::Single, '\'') => {
+                    output.push_str(&segment);
+                    segment.clear();
+                    mode = QuoteMode::None;
+                }
+                (QuoteMode::Double, '"') => {
+                    output.push_str(&self.expand_embedded_parameters_mut(&segment));
+                    segment.clear();
+                    mode = QuoteMode::None;
+                }
+                _ => segment.push(ch),
+            }
+        }
+
+        if mode == QuoteMode::Single {
+            output.push_str(&segment);
+        } else {
+            output.push_str(&self.expand_embedded_parameters_mut(&segment));
+        }
+
+        preserve_prompt_escapes(&output)
+    }
+
     pub(in crate::executor) fn expand_compound_positional_at_assignment(
         &self,
         value: &str,
@@ -263,15 +313,6 @@ impl Executor {
         (expanded, status)
     }
 
-    pub(in crate::executor) fn do_env(&mut self) -> Result<(), ExecuteError> {
-        let mut output = Vec::new();
-        for (key, value) in &self.env_vars {
-            writeln!(&mut output, "{}={}", key, value)?;
-        }
-        self.write_default_stdout(&output)?;
-        self.exit_code = 0;
-        Ok(())
-    }
 }
 
 fn preserve_prompt_escapes(value: &str) -> String {

@@ -293,7 +293,7 @@ impl Executor {
             Some("printf") => {
                 let expanded_args = words[1..]
                     .iter()
-                    .map(|word| strip_matching_quotes(&self.expand_word(word)).to_string())
+                    .flat_map(|word| self.expand_command_substitution_arg_values(word))
                     .collect::<Vec<_>>();
                 let mut env_vars = self.env_vars.clone();
                 let mut stdout = Vec::new();
@@ -316,6 +316,11 @@ impl Executor {
                 let output = self.command_substitution_pipeline_output(words)?;
                 self.last_command_substitution_status.set(Some(0));
                 Some(output)
+            }
+            Some("tty") | Some("/bin/tty") | Some("/usr/bin/tty") => {
+                let silent = words.iter().skip(1).any(|arg| arg == "-s" || arg == "--silent" || arg == "--quiet");
+                self.last_command_substitution_status.set(Some(1));
+                Some(if silent { String::new() } else { "not a tty".to_string() })
             }
             Some("cat") => {
                 let mut output = String::new();

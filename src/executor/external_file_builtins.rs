@@ -1,4 +1,5 @@
 use super::*;
+use std::io::IsTerminal;
 
 impl Executor {
     pub(in crate::executor) fn handle_external_file_builtins(
@@ -27,8 +28,27 @@ impl Executor {
             "cat" => self.external_cat(cmd),
             "sed" => self.external_sed(cmd),
             "mkfifo" => self.external_mkfifo(cmd),
+            "tty" | "/bin/tty" | "/usr/bin/tty" => self.external_tty(cmd),
             _ => Ok(false),
         }
+    }
+
+    fn external_tty(&mut self, cmd: &CommandNode) -> Result<bool, ExecuteError> {
+        let silent = cmd.words.iter().skip(1).any(|arg| arg == "-s" || arg == "--silent" || arg == "--quiet");
+        let output = if std::io::stdin().is_terminal() {
+            // A real tty device name is platform-specific; the non-tty case is
+            // the compatibility-critical path for bashdb command input.
+            "/dev/tty
+"
+        } else {
+            "not a tty
+"
+        };
+        if !silent {
+            self.write_cat_output(cmd, output.as_bytes())?;
+        }
+        self.exit_code = if std::io::stdin().is_terminal() { 0 } else { 1 };
+        Ok(true)
     }
 
     fn external_mkdir(&mut self, cmd: &CommandNode) -> Result<bool, ExecuteError> {

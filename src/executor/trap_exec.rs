@@ -31,10 +31,7 @@ impl Executor {
         cmd: &CommandNode,
     ) -> Result<(), ExecuteError> {
         let mut stderr = Vec::new();
-        let args = cmd.words[1..]
-            .iter()
-            .map(|word| unescape_remaining_shell_escapes(word))
-            .collect::<Vec<_>>();
+        let args = cmd.words[1..].to_vec();
         match crate::builtins::eval::execute_with_io(args.iter().map(String::as_str), &mut stderr)?
         {
             crate::builtins::eval::EvalAction::Complete(status) => {
@@ -586,6 +583,12 @@ impl Executor {
                 }
             }
 
+            if matches!(target.as_str(), "/dev/stdin" | "/proc/self/fd/0" | "/dev/fd/0") {
+                self.fd_table
+                    .open_input(fd, FdReadEndpoint::InheritedProcessStdin, fd != 0);
+                return Ok(Some(0));
+            }
+
             let path = shell_path_to_windows(&target, &self.env_vars);
             if redirect.append {
                 let _ = OpenOptions::new()
@@ -894,6 +897,14 @@ impl Executor {
                     self.set_fd_input_text(fd, input, true);
                     return Ok(Some(0));
                 }
+            }
+
+            if matches!(target.as_str(), "/dev/stdin" | "/proc/self/fd/0" | "/dev/fd/0") {
+                let fd = self.allocate_dynamic_fd();
+                self.set_dynamic_fd_variable(name, fd);
+                self.fd_table
+                    .open_input(fd, FdReadEndpoint::InheritedProcessStdin, true);
+                return Ok(Some(0));
             }
 
             let path = shell_path_to_windows(&target, &self.env_vars);

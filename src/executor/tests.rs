@@ -126,4 +126,14 @@ mod unit_tests {
             .insert("EUID".to_string(), "1000".to_string());
         assert_eq!(executor.decode_prompt_string("\\$"), "$");
     }
+
+    #[test]
+    fn prompt_expansion_runs_starship_ps0_arithmetic_assignment() {
+        let mut executor = Executor::new();
+        let rendered = executor
+            .expand_prompt_string_mut("${STARSHIP_START_TIME:$((STARSHIP_START_TIME=12345,0)):0}");
+
+        assert_eq!(rendered, "");
+        assert_eq!(executor.get_env("STARSHIP_START_TIME"), Some("12345"));
+    }
 }

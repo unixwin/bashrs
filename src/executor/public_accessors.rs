@@ -5,6 +5,19 @@ impl Executor {
         self.exit_code
     }
 
+    pub fn set_last_exit_code(&mut self, exit_code: i32) {
+        self.set_exit_code(exit_code);
+    }
+
+    pub fn expand_prompt_string(&self, value: &str) -> String {
+        self.expand_prompt_parameters(&self.decode_prompt_string(value))
+    }
+
+    pub fn expand_prompt_string_mut(&mut self, value: &str) -> String {
+        let decoded = self.decode_prompt_string(value);
+        self.expand_embedded_parameters_mut(&decoded)
+    }
+
     pub fn shell_state(&self) -> &crate::shell::ShellState {
         &self.shell_state
     }
@@ -86,6 +99,19 @@ impl Executor {
         self.host_external_command_handler = Some(HostExternalCommandHandler(Box::new(handler)));
     }
 
+    #[cfg(windows)]
+    pub fn set_elevation_handler<F>(&mut self, handler: F)
+    where
+        F: FnMut(ElevationRequest) -> Result<ElevationOutput, String> + 'static,
+    {
+        self.elevation_handler = Some(ElevationHandler(Box::new(handler)));
+    }
+
+    #[cfg(windows)]
+    pub fn clear_elevation_handler(&mut self) {
+        self.elevation_handler = None;
+    }
+
     pub fn set_env(&mut self, name: &str, value: &str) {
         let value = if name == "TMPDIR" && value.contains('\0') {
             safe_temp_dir_string()
@@ -118,6 +144,18 @@ impl Executor {
 
     pub fn get_env(&self, name: &str) -> Option<&str> {
         self.env_vars.get(name).map(|s| s.as_str())
+    }
+
+    pub(crate) fn push_bash_source(&mut self, source: String) {
+        self.bash_source_stack.insert(0, source);
+        store_indexed_array(&mut self.env_vars, "BASH_SOURCE", self.bash_source_stack.clone());
+    }
+
+    pub(crate) fn pop_bash_source(&mut self) {
+        if !self.bash_source_stack.is_empty() {
+            self.bash_source_stack.remove(0);
+        }
+        store_indexed_array(&mut self.env_vars, "BASH_SOURCE", self.bash_source_stack.clone());
     }
 
     /// Returns whether a shell function is currently defined in this executor.

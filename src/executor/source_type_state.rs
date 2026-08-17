@@ -8,7 +8,23 @@ impl Executor {
         // TODO(builtins/command.def/builtins/source.def): `command` removes
         // special-builtin exit behavior while still invoking `.` as a builtin.
         // This covers builtins7.sub's `command . notthere` in POSIX mode.
-        if cmd.words.get(1).is_none() {
+        self.execute_source_command_with_expanded_args(cmd, true)
+    }
+
+    pub(in crate::executor) fn execute_source_command(
+        &mut self,
+        cmd: &CommandNode,
+    ) -> Result<(), ExecuteError> {
+        self.execute_source_command_with_expanded_args(cmd, false)
+    }
+
+    fn execute_source_command_with_expanded_args(
+        &mut self,
+        cmd: &CommandNode,
+        command_builtin: bool,
+    ) -> Result<(), ExecuteError> {
+        let expanded = self.expand_command_words(cmd)?;
+        if expanded.words.get(1).is_none() {
             self.exit_code = 2;
             return Ok(());
         };
@@ -16,8 +32,8 @@ impl Executor {
         let mut stderr = Vec::new();
         let result = crate::builtins::source::execute_named_with_io_and_redirects(
             self,
-            &cmd.words[0],
-            &cmd.words[1..],
+            &expanded.words[0],
+            &expanded.words[1..],
             &mut stderr,
             cmd,
         );
@@ -26,27 +42,9 @@ impl Executor {
             self.write_buffered_builtin_output(cmd, &[], &stderr)?;
         }
         match result {
-            Err(ExecuteError::ExitCode(1)) if had_diagnostic => Ok(()),
+            Err(ExecuteError::ExitCode(1)) if command_builtin && had_diagnostic => Ok(()),
             other => other,
         }
-    }
-
-    pub(in crate::executor) fn execute_source_command(
-        &mut self,
-        cmd: &CommandNode,
-    ) -> Result<(), ExecuteError> {
-        let mut stderr = Vec::new();
-        let result = crate::builtins::source::execute_named_with_io_and_redirects(
-            self,
-            &cmd.words[0],
-            &cmd.words[1..],
-            &mut stderr,
-            cmd,
-        );
-        if !stderr.is_empty() {
-            self.write_buffered_builtin_output(cmd, &[], &stderr)?;
-        }
-        result
     }
 
     pub(in crate::executor) fn execute_type_with_disabled_builtin_state(

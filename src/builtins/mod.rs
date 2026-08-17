@@ -30,6 +30,8 @@ pub mod setattr;
 pub mod shift;
 pub mod shopt;
 pub mod source;
+#[cfg(windows)]
+pub mod sudo;
 pub mod suspend;
 pub mod test;
 pub mod times;

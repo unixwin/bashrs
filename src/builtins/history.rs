@@ -17,6 +17,7 @@ where
     E: Write,
 {
     let mut index = 0;
+    let mut accepts_history_file = false;
     while let Some(arg) = args.get(index) {
         if arg == "--" {
             index += 1;
@@ -28,7 +29,10 @@ where
 
         for option in arg[1..].chars() {
             match option {
-                'a' | 'c' | 'n' | 'r' | 'w' => {}
+                'a' | 'n' | 'r' | 'w' => {
+                    accepts_history_file = true;
+                }
+                'c' => {}
                 'd' => {
                     index += 1;
                     if args.get(index).is_none() {
@@ -50,6 +54,10 @@ where
             }
         }
         index += 1;
+    }
+
+    if accepts_history_file {
+        return Ok(EXECUTION_SUCCESS);
     }
 
     if let Some(arg) = args.get(index) {

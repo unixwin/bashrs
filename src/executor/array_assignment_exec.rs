@@ -226,7 +226,7 @@ impl Executor {
             self.exit_code = 1;
             return true;
         }
-        let Some(computed_index) = eval_conditional_arith_value(index, &self.env_vars) else {
+        let Some(computed_index) = self.eval_arithmetic_expansion_value(index) else {
             eprintln!(
                 "{}{}: bad array subscript",
                 self.diagnostic_prefix(),

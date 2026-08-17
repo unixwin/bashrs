@@ -145,9 +145,7 @@ pub(super) fn update_compound_boundary_stack(
         }
     }
 
-    if stack.last().is_some_and(|expected| *expected == "esac")
-        || !command_boundary_keyword_allowed(tokens, index)
-    {
+    if !command_boundary_keyword_allowed(tokens, index) {
         return;
     }
 
