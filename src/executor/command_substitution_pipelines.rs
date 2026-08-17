@@ -218,17 +218,18 @@ impl Executor {
     pub(in crate::executor) fn command_substitution_pipeline_output(
         &self,
         words: &[String],
-    ) -> Option<String> {
+    ) -> Option<(String, i32)> {
         if !words.iter().any(|word| word == "|") {
             return None;
         }
 
         let stages = split_pipeline_words(words)?;
         let mut output = self.command_substitution_pipeline_first_stage(stages.first()?)?;
+        let mut status = 0;
         for stage in stages.iter().skip(1) {
-            output = self.command_substitution_pipeline_filter(stage, &output)?;
+            (output, status) = self.command_substitution_pipeline_filter(stage, &output)?;
         }
-        Some(output.trim_end_matches('\n').to_string())
+        Some((output.trim_end_matches('\n').to_string(), status))
     }
 
     pub(in crate::executor) fn timed_command_substitution_output(
@@ -313,14 +314,21 @@ impl Executor {
                 )
             }
             Some(_) if words.iter().any(|word| word == "|") => {
-                let output = self.command_substitution_pipeline_output(words)?;
-                self.last_command_substitution_status.set(Some(0));
+                let (output, status) = self.command_substitution_pipeline_output(words)?;
+                self.last_command_substitution_status.set(Some(status));
                 Some(output)
             }
             Some("tty") | Some("/bin/tty") | Some("/usr/bin/tty") => {
-                let silent = words.iter().skip(1).any(|arg| arg == "-s" || arg == "--silent" || arg == "--quiet");
+                let silent = words
+                    .iter()
+                    .skip(1)
+                    .any(|arg| arg == "-s" || arg == "--silent" || arg == "--quiet");
                 self.last_command_substitution_status.set(Some(1));
-                Some(if silent { String::new() } else { "not a tty".to_string() })
+                Some(if silent {
+                    String::new()
+                } else {
+                    "not a tty".to_string()
+                })
             }
             Some("cat") => {
                 let mut output = String::new();

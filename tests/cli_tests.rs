@@ -140,11 +140,39 @@ fn c_command_dynamic_varredir_covers_read_write_dup_and_auto_close() {
 }
 
 #[test]
+fn c_command_rejects_unbalanced_arithmetic_command_as_parse_error() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("((X=([))]")
+        .output()
+        .expect("run malformed arithmetic command");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unexpected EOF"));
+}
+
+#[test]
+fn c_command_err_trap_preserves_failed_bash_command() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("trap 'echo err:$BASH_COMMAND' ERR; false; echo after")
+        .output()
+        .expect("run ERR trap command probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "err:false\nafter\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn c_command_failed_dynamic_varredir_continues_and_does_not_set_variable() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
         .arg(
-            "unset fd; : {fd}<>target/does-not-exist-rubash-varredir; \
+            "unset fd; : {fd}<>target/rubash-varredir-missing-parent/file; \
              open_status=$?; printf 'open=%s fd=%s\\n' \"$open_status\" \"${fd-unset}\"; \
              printf 'continued\\n'",
         )
@@ -157,6 +185,26 @@ fn c_command_failed_dynamic_varredir_continues_and_does_not_set_variable() {
         "open=1 fd=unset\ncontinued\n"
     );
     assert!(!String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
+fn c_command_closes_read_write_dynamic_fd_before_reusing_slot_after_failure() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            ": {fd}<>/dev/null; exec {fd}>&-; \
+             : {fd}<>target/rubash-varredir-missing-parent/file; \
+             failed=$?; : {next}>&1; \
+             printf 'failed=%s fd=%s next=%s\\n' \"$failed\" \"$fd\" \"$next\"",
+        )
+        .output()
+        .expect("run dynamic read-write fd close/reuse probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "failed=1 fd=10 next=10\n"
+    );
 }
 
 #[test]
@@ -914,10 +962,7 @@ fn env_command_supplies_windows_profile_vars_from_home() {
 
 #[test]
 fn env_file_assignments_are_printed_when_no_command_is_given() {
-    let env_file = std::env::temp_dir().join(format!(
-        "rubash-env-file-{}.env",
-        std::process::id()
-    ));
+    let env_file = std::env::temp_dir().join(format!("rubash-env-file-{}.env", std::process::id()));
     fs::write(&env_file, "A=1\n# ignored\nB=two\n").expect("write env file");
     let script = format!("env -f {}", shell_test_path(&env_file));
 
@@ -961,6 +1006,19 @@ fn arithmetic_commands_reject_single_quoted_operands() {
 }
 
 #[test]
+fn escaped_quote_array_subscript_is_a_syntax_error() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("a[\\\" \\\"]=15; echo after")
+        .output()
+        .expect("run escaped array-subscript probe");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("operand expected"));
+}
+
+#[test]
 fn function_call_stack_reports_multiline_source_and_line() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
@@ -973,8 +1031,44 @@ fn function_call_stack_reports_multiline_source_and_line() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "t2 main|main|2 0\n"
+        "t2|environment|2\n"
     );
+}
+
+#[test]
+fn function_call_stack_omits_internal_main_frame() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "outer(){ inner; }; inner(){ printf '%s|%s|%s\\n' \"${FUNCNAME[*]}\" \"${BASH_SOURCE[*]}\" \"${BASH_LINENO[*]}\"; }; outer",
+        )
+        .output()
+        .expect("run nested function stack probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "inner outer|environment environment|1 1\n"
+    );
+}
+
+#[test]
+fn function_call_stack_includes_main_for_script_files() {
+    let script_path = Path::new("target/rubash-funcname-main-script.sh");
+    fs::write(
+        script_path,
+        "show() { printf '%s\\n' \"${FUNCNAME[*]}\"; }; show\n",
+    )
+    .expect("write function stack script");
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg(script_path)
+        .output()
+        .expect("run function stack script");
+    let _ = fs::remove_file(script_path);
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "show main\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
 #[test]
@@ -1122,6 +1216,41 @@ fn newline_for_header_inside_case_is_a_syntax_error() {
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("syntax error near unexpected token `do'")
     );
+}
+
+#[test]
+fn malformed_parameter_expansion_in_arithmetic_for_is_a_syntax_error() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("for (( ${ case x in x) esac; };; )); do break; done; echo after")
+        .output()
+        .expect("run rubash");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("syntax error"));
+}
+
+#[test]
+fn stdin_script_stops_after_arithmetic_for_syntax_error_without_errexit() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-s")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run rubash");
+    child
+        .stdin
+        .take()
+        .expect("stdin pipe")
+        .write_all(b"for (( ${ case x in x) esac; };; )); do break; done\necho after\n")
+        .expect("write script");
+    let output = child.wait_with_output().expect("wait for rubash");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("syntax error"));
 }
 
 #[test]
@@ -1563,6 +1692,79 @@ fn external_pipeline_preserves_limited_head_output() {
         String::from_utf8_lossy(&output.stdout),
         "pipeline\npipeline\npipeline\n"
     );
+}
+
+#[test]
+fn declare_escaped_quote_array_element_assignment_targets_index_zero() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"declare -a a; declare "a[\" \"]=14"; declare -p a"#)
+        .output()
+        .expect("run declare escaped array subscript probe");
+
+    assert!(
+        output.status.success(),
+        "status={:?}, stdout={:?}, stderr={:?}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "declare -a a=([0]=\"14\")\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn embedded_arithmetic_escaped_quote_array_subscript_targets_index_zero() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"declare -a a; : $(( a[\" \"]=17 )); declare -p a"#)
+        .output()
+        .expect("run embedded arithmetic escaped array subscript probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "declare -a a=([0]=\"17\")\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn builtin_pipeline_head_accepts_separate_line_count_argument() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "printf 'x\\ny\\n' | head -n 1; \
+             set -o 2>&1 | head -n 2; \
+             export PIPE_HEAD_TEST=value; export | head -n 2",
+        )
+        .output()
+        .expect("run builtin head pipeline probe");
+
+    assert!(output.status.success());
+    let lines = String::from_utf8_lossy(&output.stdout);
+    let lines = lines.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 5);
+    assert_eq!(lines[0], "x");
+    assert!(lines[1].starts_with("allexport"));
+    assert!(lines[2].starts_with("braceexpand"));
+    assert!(lines.iter().any(|line| line.starts_with("declare -x ")));
+}
+
+#[test]
+fn wait_without_operands_returns_success_after_failed_background_job() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("false & wait; printf 'wait=%s\\n' \"$?\"")
+        .output()
+        .expect("run no-operand wait probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "wait=0\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
 #[test]

@@ -44,11 +44,11 @@ pub(in crate::executor) fn decode_parameter_word_quotes(word: &str) -> String {
 
 pub(in crate::executor) fn decode_parameter_replacement_quotes(replacement: &str) -> String {
     const PROTECTED_BACKSLASH_QUOTE: char = '\x16';
-    const PROTECTED_LITERAL_BACKSLASH: char = '\x19';
-    // The lexer preserves an escaped backslash as \x14 so replacement
-    // decoding can distinguish `\\n` (literal `\\n`) from `\n` (the
-    // backslash is consumed by Bash's replacement parser).
-    let replacement = replacement.replace('\x14', &PROTECTED_LITERAL_BACKSLASH.to_string());
+    // The lexer preserves an escaped backslash as \x14. It is still an
+    // escape character to Bash's parameter-replacement parser: one such
+    // marker before `n` becomes `n`, while two markers become one literal
+    // backslash before `n`.
+    let replacement = replacement.replace('\x14', "\\");
     // In a parameter replacement, backslashes are data (and `\&` is
     // interpreted later by replace_with_amp).  The pattern decoder cannot be
     // reused here because it intentionally removes a backslash while
@@ -77,7 +77,7 @@ pub(in crate::executor) fn decode_parameter_replacement_quotes(replacement: &str
             }
             output.push(if ch == '\x17' { '\'' } else { ch });
         }
-        return output.replace(PROTECTED_LITERAL_BACKSLASH, "\\");
+        return output;
     }
 
     if replacement.contains('\x17') || replacement.contains("\\'") {
@@ -109,7 +109,7 @@ pub(in crate::executor) fn decode_parameter_replacement_quotes(replacement: &str
                 output.push(ch);
             }
         }
-        return output.replace(PROTECTED_LITERAL_BACKSLASH, "\\");
+        return output;
     }
 
     if replacement.contains('\\') {
@@ -128,8 +128,7 @@ pub(in crate::executor) fn decode_parameter_replacement_quotes(replacement: &str
                 index += 1;
             }
         }
-        return normalize_parameter_replacement_escapes(&output.replace('\x18', "\\"))
-            .replace(PROTECTED_LITERAL_BACKSLASH, "\\");
+        return normalize_parameter_replacement_escapes(&output.replace('\x18', "\\"));
     }
     let mut protected = String::new();
     let chars = replacement.chars().collect::<Vec<_>>();
@@ -146,7 +145,6 @@ pub(in crate::executor) fn decode_parameter_replacement_quotes(replacement: &str
     normalize_parameter_replacement_escapes(
         &decode_parameter_pattern_quotes(&protected).replace('\x18', "\\"),
     )
-    .replace(PROTECTED_LITERAL_BACKSLASH, "\\")
 }
 
 /// Remove the quoting backslash that Bash consumes while parsing a
@@ -508,7 +506,8 @@ mod tests {
     #[test]
     fn replacement_decoder_preserves_backslashes() {
         assert_eq!(decode_parameter_replacement_quotes(r"\n"), "n");
-        assert_eq!(decode_parameter_replacement_quotes(r"\\n"), r"\n");
+        assert_eq!(decode_parameter_replacement_quotes("\x14n"), "n");
+        assert_eq!(decode_parameter_replacement_quotes("\x14\x14n"), r"\n");
         assert_eq!(decode_parameter_replacement_quotes(r"\&"), r"\&");
     }
 }

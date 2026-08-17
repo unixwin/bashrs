@@ -175,6 +175,92 @@ fn test_pwd_appends_stderr() {
 }
 
 #[test]
+fn test_pwd_preserves_ordered_output_redirects() {
+    let output_path = "target/rubash-pwd-ordered-output.txt";
+    let _ = fs::remove_file(output_path);
+
+    let input = format!("PWD=/tmp/rubash-pwd-test pwd >&2 2> {output_path}; test -e {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert!(fs::metadata(output_path).is_ok());
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_export_preserves_ordered_output_redirects() {
+    let output_path = "target/rubash-export-ordered-output.txt";
+    let _ = fs::remove_file(output_path);
+
+    let input = format!("export RUBASH_EXPORT_ORDERED=value; export -p >&2 2> {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert!(fs::metadata(output_path).is_ok());
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "");
+    std::env::remove_var("RUBASH_EXPORT_ORDERED");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_readonly_preserves_ordered_diagnostic_redirects() {
+    let error_path = "target/rubash-readonly-ordered-error.txt";
+    let _ = fs::remove_file(error_path);
+
+    let input = format!("readonly -Z >&2 2> {error_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 2);
+    let error = fs::read_to_string(error_path).unwrap();
+    assert!(error.contains("readonly: -Z: invalid option"));
+    assert!(error.contains("readonly: usage:"));
+    let _ = fs::remove_file(error_path);
+}
+
+#[test]
+fn test_option_builtins_preserve_ordered_output_redirects() {
+    for (name, command) in [
+        ("shopt", "shopt -p sourcepath"),
+        ("umask", "umask"),
+        ("enable", "enable -a"),
+    ] {
+        let output_path = format!("target/rubash-{name}-ordered-output.txt");
+        let _ = fs::remove_file(&output_path);
+        let input = format!("{command} >&2 2> {output_path}");
+        let tokens = tokenize(&input);
+        let ast = parse(&tokens);
+        let mut executor = Executor::new();
+
+        let result = executor.execute_ast(&ast);
+
+        assert!(result.is_ok(), "{name} execution failed: {result:?}");
+        assert!(fs::metadata(&output_path).is_ok(), "{name} target missing");
+        assert_eq!(
+            fs::read_to_string(&output_path).unwrap(),
+            "",
+            "{name} output bypassed the ordered redirect"
+        );
+        let _ = fs::remove_file(output_path);
+    }
+}
+
+#[test]
 fn test_hash_redirects_output() {
     let output_path = "target/rubash-hash-redirect-output.txt";
     let _ = fs::remove_file(output_path);

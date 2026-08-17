@@ -137,7 +137,13 @@ where
         // that generated text directly until process substitution is parsed.
         let source = args.iter().skip(1).cloned().collect::<Vec<_>>().join(" ");
         if !source.is_empty() {
-            return execution::execute_text_maybe_redirected(executor, &source, &[], redirect_cmd, None);
+            return execution::execute_text_maybe_redirected(
+                executor,
+                &source,
+                &[],
+                redirect_cmd,
+                None,
+            );
         }
     }
 

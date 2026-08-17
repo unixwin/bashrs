@@ -134,6 +134,14 @@ impl Executor {
                     Ok(())
                 }
             }
+            "sleep" => {
+                let (status, stderr) = crate::builtins::sleep::execute(&cmd.words[1..]);
+                if let Some(stderr) = stderr {
+                    eprint!("{stderr}");
+                }
+                self.exit_code = status;
+                Ok(())
+            }
             "env" => {
                 self.execute_env_command(cmd)?;
                 Ok(())

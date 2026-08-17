@@ -20,11 +20,7 @@ impl Executor {
             Ok(crate::builtins::sudo::SudoAction::Run(invocation)) => invocation,
             Err(message) => {
                 let mut stderr = Vec::new();
-                writeln!(
-                    &mut stderr,
-                    "{}sudo: {message}",
-                    self.diagnostic_prefix()
-                )?;
+                writeln!(&mut stderr, "{}sudo: {message}", self.diagnostic_prefix())?;
                 writeln!(
                     &mut stderr,
                     "sudo: usage: sudo [-E] [--inline|--new-window] [--] command [arg ...]"
@@ -34,7 +30,7 @@ impl Executor {
             }
         };
 
-        let Some(handler) = self.elevation_handler.as_mut() else {
+        if self.elevation_handler.is_none() {
             let mut stderr = Vec::new();
             writeln!(
                 &mut stderr,
@@ -43,7 +39,7 @@ impl Executor {
             )?;
             self.write_buffered_builtin_output(cmd, &[], &stderr)?;
             return Ok(1);
-        };
+        }
 
         let environment = if invocation.preserve_environment {
             self.env_vars.clone()
@@ -59,6 +55,10 @@ impl Executor {
             mode: invocation.mode,
         };
 
+        let handler = self
+            .elevation_handler
+            .as_mut()
+            .expect("checked elevation handler");
         match (handler.0)(request) {
             Ok(output) => {
                 self.write_buffered_builtin_output(cmd, &output.stdout, &output.stderr)?;
@@ -66,11 +66,7 @@ impl Executor {
             }
             Err(message) => {
                 let mut stderr = Vec::new();
-                writeln!(
-                    &mut stderr,
-                    "{}sudo: {message}",
-                    self.diagnostic_prefix()
-                )?;
+                writeln!(&mut stderr, "{}sudo: {message}", self.diagnostic_prefix())?;
                 self.write_buffered_builtin_output(cmd, &[], &stderr)?;
                 Ok(1)
             }

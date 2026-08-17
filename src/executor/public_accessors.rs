@@ -18,6 +18,14 @@ impl Executor {
         self.expand_embedded_parameters_mut(&decoded)
     }
 
+    pub fn mark_parse_error(&mut self) {
+        self.parse_error_occurred = true;
+    }
+
+    pub fn take_parse_error(&mut self) -> bool {
+        std::mem::take(&mut self.parse_error_occurred)
+    }
+
     pub fn shell_state(&self) -> &crate::shell::ShellState {
         &self.shell_state
     }
@@ -148,14 +156,22 @@ impl Executor {
 
     pub(crate) fn push_bash_source(&mut self, source: String) {
         self.bash_source_stack.insert(0, source);
-        store_indexed_array(&mut self.env_vars, "BASH_SOURCE", self.bash_source_stack.clone());
+        store_indexed_array(
+            &mut self.env_vars,
+            "BASH_SOURCE",
+            self.bash_source_stack.clone(),
+        );
     }
 
     pub(crate) fn pop_bash_source(&mut self) {
         if !self.bash_source_stack.is_empty() {
             self.bash_source_stack.remove(0);
         }
-        store_indexed_array(&mut self.env_vars, "BASH_SOURCE", self.bash_source_stack.clone());
+        store_indexed_array(
+            &mut self.env_vars,
+            "BASH_SOURCE",
+            self.bash_source_stack.clone(),
+        );
     }
 
     /// Returns whether a shell function is currently defined in this executor.

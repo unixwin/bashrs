@@ -5,83 +5,6 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<i32, ExecuteError> {
-        // TODO(redir.c/execute_cmd.c/builtins/printf.def): Redirections are a
-        // general command property in Bash. This covers stdout redirection for
-        // builtin `printf`, which upstream builtins.tests uses to create files
-        // later sourced by `.`.
-        if let Some(redirect) = &cmd.redirect_out {
-            let target = self.expand_word(&redirect.target);
-            if self.has_output_fd_target(&target) {
-                let mut stdout = Vec::new();
-                let mut stderr = Vec::new();
-                let status = crate::builtins::printf::execute_with_io_and_store(
-                    cmd.words[1..].iter().map(String::as_str),
-                    &mut self.env_vars,
-                    Some(&mut self.shell_state.variables),
-                    &mut stdout,
-                    &mut stderr,
-                )?;
-                self.write_output_fd_redirect(&target, &stdout)?;
-                self.write_default_stderr(&stderr)?;
-                return Ok(status);
-            }
-            if target == "&2" {
-                return Ok(crate::builtins::printf::execute_with_io_and_store(
-                    cmd.words[1..].iter().map(String::as_str),
-                    &mut self.env_vars,
-                    Some(&mut self.shell_state.variables),
-                    &mut std::io::stderr().lock(),
-                    &mut std::io::stderr().lock(),
-                )?);
-            }
-            if is_null_device(&target) {
-                return Ok(crate::builtins::printf::execute_with_io_and_store(
-                    cmd.words[1..].iter().map(String::as_str),
-                    &mut self.env_vars,
-                    Some(&mut self.shell_state.variables),
-                    &mut std::io::sink(),
-                    &mut std::io::stderr().lock(),
-                )?);
-            }
-            let mut file = self.create_redirect_output(&target, redirect.clobber)?;
-            return Ok(crate::builtins::printf::execute_with_io_and_store(
-                cmd.words[1..].iter().map(String::as_str),
-                &mut self.env_vars,
-                Some(&mut self.shell_state.variables),
-                &mut file,
-                &mut std::io::stderr().lock(),
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.append {
-            let target = self.expand_word(&redirect.target);
-            if self.has_output_fd_target(&target) {
-                let mut stdout = Vec::new();
-                let mut stderr = Vec::new();
-                let status = crate::builtins::printf::execute_with_io_and_store(
-                    cmd.words[1..].iter().map(String::as_str),
-                    &mut self.env_vars,
-                    Some(&mut self.shell_state.variables),
-                    &mut stdout,
-                    &mut stderr,
-                )?;
-                self.write_output_fd_redirect(&target, &stdout)?;
-                self.write_default_stderr(&stderr)?;
-                return Ok(status);
-            }
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::printf::execute_with_io_and_store(
-                cmd.words[1..].iter().map(String::as_str),
-                &mut self.env_vars,
-                Some(&mut self.shell_state.variables),
-                &mut file,
-                &mut std::io::stderr().lock(),
-            )?);
-        }
-
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let status = crate::builtins::printf::execute_with_io_and_store(
@@ -149,7 +72,10 @@ impl Executor {
             stdout.extend_from_slice(dir.as_bytes());
             stdout.push(b'\n');
         }
-        if self.write_buffered_builtin_output(cmd, &stdout, &[]).is_err() {
+        if self
+            .write_buffered_builtin_output(cmd, &stdout, &[])
+            .is_err()
+        {
             return 1;
         }
         0
@@ -227,7 +153,10 @@ impl Executor {
                 stdout.push(b'\n');
             }
         }
-        if self.write_buffered_builtin_output(cmd, &stdout, &[]).is_err() {
+        if self
+            .write_buffered_builtin_output(cmd, &stdout, &[])
+            .is_err()
+        {
             return 1;
         }
         0

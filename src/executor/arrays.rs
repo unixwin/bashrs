@@ -83,10 +83,14 @@ fn split_mixed_ifs(value: &str, ifs: &str) -> Vec<String> {
         }
 
         if is_ifs_whitespace(ch) {
-            while index < chars.len() && ifs.contains(chars[index]) && is_ifs_whitespace(chars[index]) {
+            while index < chars.len()
+                && ifs.contains(chars[index])
+                && is_ifs_whitespace(chars[index])
+            {
                 index += 1;
             }
-            if index < chars.len() && !is_ifs_whitespace(chars[index]) && ifs.contains(chars[index]) {
+            if index < chars.len() && !is_ifs_whitespace(chars[index]) && ifs.contains(chars[index])
+            {
                 continue;
             }
             if !current.is_empty() {
@@ -183,7 +187,10 @@ pub(super) fn field_split_positional_values_with_ifs(
                 if ifs.chars().any(is_ifs_whitespace) {
                     split_mixed_ifs(&value, ifs)
                 } else {
-                    value.split(|ch| ifs.contains(ch)).map(str::to_string).collect()
+                    value
+                        .split(|ch| ifs.contains(ch))
+                        .map(str::to_string)
+                        .collect()
                 }
             } else {
                 field_split_values_with_ifs(&value, ifs)

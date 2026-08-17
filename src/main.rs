@@ -21,6 +21,13 @@ fn main() {
 
 fn run_main() -> i32 {
     let args: Vec<String> = env::args().collect();
+    if let Some(name) = args
+        .get(1)
+        .and_then(|arg| arg.strip_prefix("--internal-"))
+        .filter(|name| matches!(*name, "yes" | "head" | "wc"))
+    {
+        run_internal_pipeline_utility(name, &args[2..]);
+    }
     let mut executor = Executor::new();
 
     if args.len() > 1 {
@@ -284,8 +291,9 @@ fn run_stdin_script(executor: &mut Executor) -> i32 {
             false,
             pending_start_line.saturating_sub(1),
         );
+        let parse_error = executor.take_parse_error();
         pending.clear();
-        if status != 0 && stdin_script_errexit_enabled(executor) {
+        if parse_error || (status != 0 && stdin_script_errexit_enabled(executor)) {
             break;
         }
     }
@@ -297,13 +305,95 @@ fn run_stdin_script(executor: &mut Executor) -> i32 {
             false,
             pending_start_line.saturating_sub(1),
         );
-        if status != 0 && stdin_script_errexit_enabled(executor) {
+        let parse_error = executor.take_parse_error();
+        if parse_error || (status != 0 && stdin_script_errexit_enabled(executor)) {
             pending.clear();
         }
     }
 
     let status = executor.last_exit_code();
     finish_shell(executor, status, false)
+}
+
+fn run_internal_pipeline_utility(name: &str, args: &[String]) -> ! {
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    let mut stdout = stdout.lock();
+    match name {
+        "yes" => {
+            let line = if args.is_empty() {
+                "y".to_string()
+            } else {
+                args.join(" ")
+            };
+            let chunk = format!("{line}\n").repeat(256);
+            loop {
+                if stdout.write_all(chunk.as_bytes()).is_err() || stdout.flush().is_err() {
+                    std::process::exit(0);
+                }
+            }
+        }
+        "head" => {
+            let count = internal_head_line_count(args).unwrap_or(10);
+            let mut input = std::io::BufReader::new(stdin.lock());
+            let mut line = Vec::new();
+            for _ in 0..count {
+                line.clear();
+                match input.read_until(b'\n', &mut line) {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        if stdout.write_all(&line).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            let _ = stdout.flush();
+            std::process::exit(0);
+        }
+        "wc" => {
+            let mut input = stdin.lock();
+            let mut buffer = [0_u8; 8192];
+            let mut lines = 0usize;
+            loop {
+                match input.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(size) => {
+                        lines += buffer[..size].iter().filter(|byte| **byte == b'\n').count()
+                    }
+                    Err(_) => break,
+                }
+            }
+            let _ = writeln!(stdout, "{lines}");
+            std::process::exit(0);
+        }
+        _ => std::process::exit(127),
+    }
+}
+
+fn internal_head_line_count(args: &[String]) -> Option<usize> {
+    let mut index = 0;
+    while let Some(arg) = args.get(index) {
+        if arg == "-n" {
+            return args.get(index + 1)?.parse().ok();
+        }
+        if let Some(value) = arg.strip_prefix("-n") {
+            if !value.is_empty() {
+                return value.parse().ok();
+            }
+        }
+        if let Some(value) = arg.strip_prefix('-') {
+            if !value.is_empty() && value.chars().all(|ch| ch.is_ascii_digit()) {
+                return value.parse().ok();
+            }
+        }
+        if let Some(value) = arg.strip_prefix("--lines=") {
+            return value.parse().ok();
+        }
+        index += 1;
+    }
+    None
 }
 
 fn stdin_script_errexit_enabled(executor: &Executor) -> bool {
@@ -564,6 +654,7 @@ fn run_source_with_line_offset(
                 let _ = run_source_with_line_offset(executor, prefix, interactive, line_offset);
             }
         }
+        executor.mark_parse_error();
         eprintln!("rubash: syntax error: unexpected end of file");
         return 2;
     }

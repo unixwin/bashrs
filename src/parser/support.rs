@@ -18,6 +18,24 @@ pub(super) fn push_command_word(cmd: &mut CommandNode, token: &Token) {
     record_pathname_patterns_for_word(cmd, word_index, &token.value, &token.raw);
     record_word_quotes_for_word(cmd, word_index, &token.raw);
     record_array_element_assignment_for_word(cmd, word_index, &token.value, &token.raw);
+    // An escaped quote in an ordinary array-assignment word is malformed
+    // arithmetic syntax, but Bash accepts the same spelling when it enters
+    // through declare/typeset or let, where the argument is evaluated by the
+    // corresponding arithmetic-aware owner.
+    let arithmetic_aware_command = matches!(
+        cmd.words.first().map(String::as_str),
+        Some("declare" | "typeset" | "let")
+    );
+    let embedded_arithmetic = token.raw.contains("$((") || token.raw.contains("$[");
+    if !arithmetic_aware_command
+        && !embedded_arithmetic
+        && crate::parser::array_element_subscript_has_escaped_quote(&token.raw)
+    {
+        cmd.assignments.insert(
+            "__RUBASH_PARSE_ERROR__".to_string(),
+            "arithmetic syntax error: operand expected".to_string(),
+        );
+    }
     cmd.word_metadata
         .push(build_word_metadata(word_index, &token.value, &token.raw));
     cmd.words.push(token.value.clone());

@@ -33,7 +33,9 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                 push_synthetic_process_substitution_word(&mut state.current_cmd, &value, &raw);
                 *i = next_i;
             } else if state.current_cmd.words.is_empty() {
-                if let Some((value, raw, next_i)) = collect_split_array_element_assignment_word(tokens, *i) {
+                if let Some((value, raw, next_i)) =
+                    collect_split_array_element_assignment_word(tokens, *i)
+                {
                     push_synthetic_process_substitution_word(&mut state.current_cmd, &value, &raw);
                     *i = next_i;
                 } else {
@@ -662,7 +664,6 @@ fn collect_adjacent_assignment_process_substitution<'a>(
     }
     collect_adjacent_process_substitution_word(tokens, current + 1)
 }
-
 
 fn collect_split_array_element_assignment_word(
     tokens: &[Token],

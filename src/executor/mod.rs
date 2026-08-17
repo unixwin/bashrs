@@ -57,8 +57,6 @@ mod external_inner;
 mod external_redirects;
 mod external_setup;
 mod fd_table;
-#[cfg(windows)]
-mod sudo_builtin;
 mod function_calls;
 mod function_locals;
 mod getopts_enable;
@@ -84,6 +82,8 @@ mod read_io;
 mod read_redirected_fd;
 mod readonly_functions;
 mod shell_options;
+#[cfg(windows)]
+mod sudo_builtin;
 
 pub(crate) use shell_options::GlobalStdout;
 
@@ -362,6 +362,7 @@ pub struct Executor {
     fd_table: FdTable,
     job_table: JobTable,
     exit_code: i32,
+    parse_error_occurred: bool,
     env_vars: HashMap<String, String>,
     aliases: HashMap<String, Alias>,
     functions: HashMap<String, FunctionBody>,

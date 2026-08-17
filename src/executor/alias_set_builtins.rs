@@ -107,10 +107,33 @@ impl Executor {
             )?);
         }
 
-        Ok(crate::builtins::alias::alias(
-            &cmd.words[1..],
-            &mut self.aliases,
-        )?)
+        let status = crate::builtins::alias::alias(&cmd.words[1..], &mut self.aliases)?;
+        self.record_alias_definition_lines(&cmd.words[1..], cmd.line);
+        Ok(status)
+    }
+
+    fn record_alias_definition_lines(&mut self, args: &[String], line: Option<usize>) {
+        let Some(line) = line else {
+            return;
+        };
+        let mut index = 0;
+        while let Some(arg) = args.get(index) {
+            if arg == "--" {
+                index += 1;
+                continue;
+            }
+            if arg.starts_with('-') && arg != "-" {
+                index += 1;
+                continue;
+            }
+            if let Some((name, _)) = arg.split_once('=') {
+                if !name.is_empty() {
+                    self.env_vars
+                        .insert(format!("__RUBASH_ALIAS_LINE_{name}"), line.to_string());
+                }
+            }
+            index += 1;
+        }
     }
 
     pub(in crate::executor) fn execute_set(

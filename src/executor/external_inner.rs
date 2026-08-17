@@ -712,15 +712,23 @@ fn materialize_required_windows_env(
             env_vars
                 .get("HOME")
                 .or_else(|| shell_env_vars.get("HOME"))
-                .map(|value| shell_path_to_windows(value, shell_env_vars).to_string_lossy().into_owned())
+                .map(|value| {
+                    shell_path_to_windows(value, shell_env_vars)
+                        .to_string_lossy()
+                        .into_owned()
+                })
         });
     let Some(home) = home.filter(|value| !value.trim().is_empty() && !value.contains('\0')) else {
         return;
     };
 
     let native_home = home.replace('/', "\\");
-    env_vars.entry("USERPROFILE".to_string()).or_insert_with(|| native_home.clone());
-    env_vars.entry("HOME".to_string()).or_insert_with(|| native_home.clone());
+    env_vars
+        .entry("USERPROFILE".to_string())
+        .or_insert_with(|| native_home.clone());
+    env_vars
+        .entry("HOME".to_string())
+        .or_insert_with(|| native_home.clone());
     if let Some((drive, path)) = windows_drive_and_home_path(&native_home) {
         env_vars.entry("HOMEDRIVE".to_string()).or_insert(drive);
         env_vars.entry("HOMEPATH".to_string()).or_insert(path);

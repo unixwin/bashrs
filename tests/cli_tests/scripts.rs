@@ -132,7 +132,10 @@ fn nested_this_shell_script_runs_in_process() {
     let _ = fs::remove_file(parent_script);
     let _ = fs::remove_file(child_script);
     assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "parent\nchild:nested\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "parent\nchild:nested\n"
+    );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
@@ -530,10 +533,7 @@ fn source_expands_braces_and_passes_remaining_words_as_args() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        format!(
-            "sourced:{}\n",
-            b_path.to_string_lossy().replace('\\', "/")
-        )
+        format!("sourced:{}\n", b_path.to_string_lossy().replace('\\', "/"))
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
@@ -623,7 +623,7 @@ fn case_clause_tracks_nested_if_before_clause_terminator() {
         .arg(
             "case x in \
              x) if true; then case y in y) if true; then echo nested; fi ;; esac; fi ;; \
-             esac"
+             esac",
         )
         .output()
         .expect("run rubash");
@@ -659,7 +659,10 @@ fn sourced_file_updates_bash_source_zero() {
     let _ = fs::remove_file(&lib_path);
     let _ = fs::remove_dir(&script_dir);
     assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "source0:lib.sh\nis-main:no\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "source0:lib.sh\nis-main:no\n"
+    );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 

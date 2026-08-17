@@ -57,6 +57,13 @@ impl Executor {
         subshell
             .env_vars
             .insert(FUNCTION_STDIN_OFFSET.to_string(), "0".to_string());
+        for (name, value) in &command.assignments {
+            let (base_name, _) = assignment_name_and_append(name);
+            let expanded_value = subshell.expand_assignment_value(value);
+            subshell
+                .env_vars
+                .insert(base_name.to_string(), expanded_value);
+        }
 
         subshell.stdout_capture = Some(Vec::new());
         subshell.stderr_capture = Some(Vec::new());

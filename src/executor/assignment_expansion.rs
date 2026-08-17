@@ -312,7 +312,6 @@ impl Executor {
         self.last_command_substitution_status.set(None);
         (expanded, status)
     }
-
 }
 
 fn preserve_prompt_escapes(value: &str) -> String {

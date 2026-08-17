@@ -463,9 +463,11 @@ pub fn apply_required_windows_child_environment(
         .cloned()
         .or_else(|| std::env::var("USERPROFILE").ok())
         .or_else(|| {
-            env_vars
-                .get("HOME")
-                .map(|value| shell_path_to_windows(value, env_vars).to_string_lossy().into_owned())
+            env_vars.get("HOME").map(|value| {
+                shell_path_to_windows(value, env_vars)
+                    .to_string_lossy()
+                    .into_owned()
+            })
         });
 
     if let Some(home) = home.filter(|value| !value.trim().is_empty() && !value.contains('\0')) {

@@ -56,6 +56,7 @@ pub(in crate::executor) fn is_shell_builtin_name(name: &str) -> bool {
             | "disown"
             | "echo"
             | "enable"
+            | "env"
             | "eval"
             | "exec"
             | "exit"

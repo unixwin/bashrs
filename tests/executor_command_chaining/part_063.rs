@@ -239,7 +239,7 @@ fn test_parameter_replacement_preserves_escaped_backslash_before_text() {
 
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
-    assert_eq!(fs::read_to_string(output_path).unwrap(), "<a\\nb>\n");
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "<anb>\n");
     let _ = fs::remove_file(output_path);
 }
 

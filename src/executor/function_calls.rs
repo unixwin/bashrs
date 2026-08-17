@@ -112,12 +112,18 @@ impl Executor {
                 .cloned()
                 .or_else(|| call_cmd.line.map(|line| line.to_string()))
                 .unwrap_or_else(|| "0".to_string());
-            self.bash_lineno_stack.insert(0, call_line);
+            if self.bash_lineno_stack.len() == 1
+                && self.bash_lineno_stack.first().map(String::as_str) == Some("0")
+            {
+                self.bash_lineno_stack[0] = call_line;
+            } else {
+                self.bash_lineno_stack.insert(0, call_line);
+            }
             let source = self.current_bash_source();
             self.bash_source_stack.insert(
                 0,
                 if source.is_empty() {
-                    "main".to_string()
+                    "environment".to_string()
                 } else {
                     source
                 },
@@ -140,10 +146,7 @@ impl Executor {
         self.function_depth += 1;
         let old_debug_trap_function_line = self.debug_trap_function_line;
         if self.debug_trap_running {
-            self.debug_trap_function_line = body
-                .commands
-                .first()
-                .and_then(|command| command.line);
+            self.debug_trap_function_line = body.commands.first().and_then(|command| command.line);
         }
         let result = self.execute_ast_inner(body_ast);
         self.debug_trap_function_line = old_debug_trap_function_line;
@@ -157,6 +160,9 @@ impl Executor {
             }
             if !self.bash_lineno_stack.is_empty() {
                 self.bash_lineno_stack.remove(0);
+            }
+            if self.bash_lineno_stack.is_empty() {
+                self.bash_lineno_stack.push("0".to_string());
             }
             if !self.bash_source_stack.is_empty() {
                 self.bash_source_stack.remove(0);

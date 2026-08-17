@@ -7,6 +7,7 @@ impl Executor {
         cmd: &CommandNode,
     ) -> Result<(), ExecuteError> {
         if cmd.subshell && command_has_unterminated_heredoc(cmd) {
+            self.mark_parse_error();
             self.report_unterminated_subshell_heredoc(cmd);
             self.exit_code = 2;
             return Err(ExecuteError::ExitCode(2));
@@ -225,7 +226,7 @@ impl Executor {
             let mut words = Vec::new();
             for (word, suppress_glob) in expanded_words {
                 if suppress_glob {
-                        words.push(word.replace('\x15', "\\"));
+                    words.push(word.replace('\x15', "\\"));
                 } else {
                     match pathname_expand_word(&word, &self.env_vars) {
                         PathnameExpansion::Matches(matches) => words.extend(matches),

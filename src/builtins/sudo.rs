@@ -86,16 +86,37 @@ pub fn print_help_with_io<W>(stdout: &mut W) -> io::Result<()>
 where
     W: Write,
 {
-    writeln!(stdout, "sudo: sudo [-E] [--inline|--new-window] [--] command [arg ...]")?;
-    writeln!(stdout, "    Run a command through the host elevation provider.")?;
+    writeln!(
+        stdout,
+        "sudo: sudo [-E] [--inline|--new-window] [--] command [arg ...]"
+    )?;
+    writeln!(
+        stdout,
+        "    Run a command through the host elevation provider."
+    )?;
     writeln!(stdout, "")?;
     writeln!(stdout, "    Options:")?;
-    writeln!(stdout, "      -E, --preserve-env    request the current shell environment")?;
-    writeln!(stdout, "          --inline          request inline elevated execution")?;
-    writeln!(stdout, "          --new-window      request execution in a new elevated window")?;
+    writeln!(
+        stdout,
+        "      -E, --preserve-env    request the current shell environment"
+    )?;
+    writeln!(
+        stdout,
+        "          --inline          request inline elevated execution"
+    )?;
+    writeln!(
+        stdout,
+        "          --new-window      request execution in a new elevated window"
+    )?;
     writeln!(stdout, "")?;
-    writeln!(stdout, "    The shell parses sudo as a builtin, but elevation is supplied by the")?;
-    writeln!(stdout, "    embedding host through Executor::set_elevation_handler.")
+    writeln!(
+        stdout,
+        "    The shell parses sudo as a builtin, but elevation is supplied by the"
+    )?;
+    writeln!(
+        stdout,
+        "    embedding host through Executor::set_elevation_handler."
+    )
 }
 
 #[cfg(test)]
@@ -121,8 +142,15 @@ mod tests {
 
     #[test]
     fn parses_options_before_command() {
-        let action = parse(&words(&["-E", "--new-window", "--", "rubash", "-c", "echo hi"]))
-            .unwrap();
+        let action = parse(&words(&[
+            "-E",
+            "--new-window",
+            "--",
+            "rubash",
+            "-c",
+            "echo hi",
+        ]))
+        .unwrap();
         assert_eq!(
             action,
             SudoAction::Run(SudoInvocation {
@@ -135,6 +163,9 @@ mod tests {
 
     #[test]
     fn rejects_missing_command() {
-        assert_eq!(parse(&words(&["-E"])), Err("a command is required".to_string()));
+        assert_eq!(
+            parse(&words(&["-E"])),
+            Err("a command is required".to_string())
+        );
     }
 }

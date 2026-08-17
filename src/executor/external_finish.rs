@@ -192,7 +192,7 @@ impl Executor {
         }
     }
 
-    fn child_shell_environment(&self) -> HashMap<String, String> {
+    pub(in crate::executor) fn child_shell_environment(&self) -> HashMap<String, String> {
         let exported = marked_env_names(&self.env_vars, EXPORTED_VARS);
         let mut child = exported
             .iter()
@@ -212,7 +212,9 @@ impl Executor {
         }
         for name in ["OLDPWD", "IFS", "SHELL"] {
             if let Some(value) = self.env_vars.get(name) {
-                child.entry(name.to_string()).or_insert_with(|| value.clone());
+                child
+                    .entry(name.to_string())
+                    .or_insert_with(|| value.clone());
             }
         }
         child.insert(EXPORTED_VARS.to_string(), exported.join("\x1f"));

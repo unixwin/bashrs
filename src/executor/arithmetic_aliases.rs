@@ -337,6 +337,16 @@ impl Executor {
             return (vec![word.to_string()], false);
         };
 
+        // Bash expands aliases while reading a line. An alias defined earlier
+        // on the same physical line is therefore not visible to later tokens
+        // on that line; the executor otherwise sees the mutation immediately.
+        if self.alias_defined_on_current_line(word)
+            && !needs_parser_level_alias_expansion(&alias.value)
+            && !alias_value_starts_reserved_word(&alias.value)
+        {
+            return (vec![word.to_string()], false);
+        }
+
         if alias.value.is_empty() {
             return (Vec::new(), false);
         }
@@ -356,4 +366,45 @@ impl Executor {
             (Vec::new(), alias.expand_next)
         }
     }
+
+    fn alias_defined_on_current_line(&self, word: &str) -> bool {
+        let Some(current_line) = self
+            .env_vars
+            .get("__RUBASH_CURRENT_LINE")
+            .and_then(|line| line.parse::<usize>().ok())
+        else {
+            return false;
+        };
+        let key = format!("__RUBASH_ALIAS_LINE_{word}");
+        self.env_vars
+            .get(&key)
+            .and_then(|line| line.parse::<usize>().ok())
+            == Some(current_line)
+    }
+}
+
+fn alias_value_starts_reserved_word(value: &str) -> bool {
+    matches!(
+        value.split_whitespace().next(),
+        Some(
+            "if" | "case"
+                | "for"
+                | "while"
+                | "until"
+                | "select"
+                | "function"
+                | "!"
+                | "("
+                | "{"
+                | "then"
+                | "elif"
+                | "else"
+                | "fi"
+                | "do"
+                | "done"
+                | "in"
+                | "esac"
+                | "coproc",
+        )
+    )
 }

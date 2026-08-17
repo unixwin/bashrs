@@ -105,7 +105,8 @@ impl Executor {
             return output;
         }
 
-        if let Some(output) = self.command_substitution_pipeline_output(&words) {
+        if let Some((output, status)) = self.command_substitution_pipeline_output(&words) {
+            self.last_command_substitution_status.set(Some(status));
             return output;
         }
 
@@ -391,6 +392,7 @@ impl Executor {
             fd_table: self.fd_table.clone(),
             job_table: self.job_table.clone(),
             exit_code: self.exit_code,
+            parse_error_occurred: false,
             env_vars: self.env_vars.clone(),
             aliases: self.aliases.clone(),
             functions: self.functions.clone(),
@@ -432,6 +434,7 @@ impl Executor {
             stdout_capture: None,
             stderr_capture: None,
             host_external_command_handler: None,
+            elevation_handler: None,
             external_file_builtins_enabled: self.external_file_builtins_enabled,
             process_env_snapshot: self.process_env_snapshot.clone(),
         }

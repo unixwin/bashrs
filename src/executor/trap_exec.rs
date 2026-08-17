@@ -583,7 +583,10 @@ impl Executor {
                 }
             }
 
-            if matches!(target.as_str(), "/dev/stdin" | "/proc/self/fd/0" | "/dev/fd/0") {
+            if matches!(
+                target.as_str(),
+                "/dev/stdin" | "/proc/self/fd/0" | "/dev/fd/0"
+            ) {
                 self.fd_table
                     .open_input(fd, FdReadEndpoint::InheritedProcessStdin, fd != 0);
                 return Ok(Some(0));
@@ -899,7 +902,10 @@ impl Executor {
                 }
             }
 
-            if matches!(target.as_str(), "/dev/stdin" | "/proc/self/fd/0" | "/dev/fd/0") {
+            if matches!(
+                target.as_str(),
+                "/dev/stdin" | "/proc/self/fd/0" | "/dev/fd/0"
+            ) {
                 let fd = self.allocate_dynamic_fd();
                 self.set_dynamic_fd_variable(name, fd);
                 self.fd_table
@@ -1182,6 +1188,16 @@ impl Executor {
         let Some(fd) = self.dynamic_fd_variable_value(name) else {
             return Ok(());
         };
+
+        // A dynamic fd opened with `<>` is one shell descriptor.  Closing its
+        // output side with `>&-` must release the descriptor completely;
+        // otherwise its still-live input side prevents Bash's lowest-free fd
+        // allocation from reusing the slot. Coprocess endpoints are modeled
+        // as one-sided entries, so they retain the capability-specific path.
+        if self.fd_table.read_endpoint(fd).is_some() {
+            self.close_persistent_fd(fd)?;
+            return Ok(());
+        }
 
         // Coprocess input/output endpoints currently share the child PID as
         // their virtual descriptor. Close only the output capability so

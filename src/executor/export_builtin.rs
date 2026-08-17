@@ -15,68 +15,16 @@ impl Executor {
         }
         self.mark_posix_function_export_touches(&cmd.words[1..]);
 
-        if let Some(redirect) = &cmd.redirect_out {
-            let target = self.expand_word(&redirect.target);
-            let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::setattr::export_with_io(
-                cmd.words[1..].iter().map(String::as_str),
-                &mut self.env_vars,
-                &mut file,
-                &mut std::io::stderr().lock(),
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.append {
-            let target = self.expand_word(&redirect.target);
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::setattr::export_with_io(
-                cmd.words[1..].iter().map(String::as_str),
-                &mut self.env_vars,
-                &mut file,
-                &mut std::io::stderr().lock(),
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.redirect_err {
-            let target = self.expand_word(&redirect.target);
-            if is_null_device(&target) {
-                return Ok(crate::builtins::setattr::export_with_io(
-                    cmd.words[1..].iter().map(String::as_str),
-                    &mut self.env_vars,
-                    &mut std::io::stdout().lock(),
-                    &mut std::io::sink(),
-                )?);
-            }
-            let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::setattr::export_with_io(
-                cmd.words[1..].iter().map(String::as_str),
-                &mut self.env_vars,
-                &mut std::io::stdout().lock(),
-                &mut file,
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.redirect_err_append {
-            let target = self.expand_word(&redirect.target);
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::setattr::export_with_io(
-                cmd.words[1..].iter().map(String::as_str),
-                &mut self.env_vars,
-                &mut std::io::stdout().lock(),
-                &mut file,
-            )?);
-        }
-
-        Ok(crate::builtins::setattr::export(
-            &cmd.words[1..],
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let status = crate::builtins::setattr::export_with_io(
+            cmd.words[1..].iter().map(String::as_str),
             &mut self.env_vars,
-        )?)
+            &mut stdout,
+            &mut stderr,
+        )?;
+        self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+        Ok(status)
     }
 
     pub(in crate::executor) fn mark_posix_function_export_touches(&mut self, args: &[String]) {

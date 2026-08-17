@@ -232,7 +232,7 @@ fn test_umask_combined_symbolic_reusable_options() {
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(
         fs::read_to_string(output_path).unwrap(),
-        "umask -S u=rwx,g=rx,o=rx\numask -S u=rwx,g=rx,o=rx\n"
+        "u=rwx,g=rx,o=rx\nu=rwx,g=rx,o=rx\n"
     );
     let _ = fs::remove_file(output_path);
 }

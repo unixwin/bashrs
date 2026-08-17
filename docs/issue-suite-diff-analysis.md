@@ -1992,3 +1992,590 @@ Verification:
 - cargo test --test cli_tests stdin_script_ -- --nocapture: 7/7 passed.
 - Direct Bash/Rubash stdin probe for set -e followed by false produces only
   the prefix output and status 1 in both shells.
+
+### 2026-08-16 malformed arithmetic-command parse status
+
+The parser accepted an unbalanced arithmetic command such as
+`((X=([))]` and passed it to arithmetic evaluation. GNU Bash rejects this
+during parsing with status 2, while Rubash previously returned the evaluator's
+status 1. The root cause was missing structural delimiter validation in the
+arithmetic-command parser, not numeric evaluation.
+
+`src/parser/arithmetic_command.rs` now validates grouping parentheses and
+array brackets before constructing the arithmetic command and marks malformed
+expressions as parse errors. Valid nested arithmetic grouping and subscripts
+remain accepted.
+
+Verification:
+
+- `cargo test --test cli_tests c_command_rejects_unbalanced_arithmetic_command_as_parse_error -- --nocapture`: 1/1.
+- `cargo test --lib parser::tests -- --nocapture`: 13/13.
+- `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`: 152/152.
+- `run-parser`: 1/1.
+- `run-cond`: 1/1.
+
+### 2026-08-16 ERR trap BASH_COMMAND context
+
+An ERR trap action that expands `$BASH_COMMAND` must see the command that
+failed, not the trap action itself. Rubash previously let the trap action's
+AST update the ordinary current-command mirror before expansion, producing
+`err:echo err:$BASH_COMMAND` where Bash produced `err:false`.
+
+The executor now temporarily pins the current command text while evaluating
+the ERR trap action and restores the previous trap context afterward. This
+keeps the behavior separate from DEBUG trap command tracking while sharing the
+same dynamic parameter contract.
+
+Verification:
+
+- `cargo test --test cli_tests c_command_err_trap_preserves_failed_bash_command -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_045 -- --nocapture`: 15/15.
+- `run-trap`: 1/1.
+
+### 2026-08-17 function call-stack frame boundaries
+
+The Bash-visible call-stack arrays leaked Rubash's synthetic `main` frame in
+`-c` execution. A single function therefore reported `FUNCNAME=f main`,
+`BASH_SOURCE=main`, and `BASH_LINENO=1 0`, while GNU Bash reports
+`f`, `environment`, and `1`. Nested calls had the same extra frame.
+
+The executor now exposes only real function frames, uses `environment` as the
+top-level source for command strings, and replaces the initial top-level
+`BASH_LINENO=0` with the first function call line. Script-file source paths and
+the existing argument-stack behavior remain unchanged.
+
+The follow-up check found that `FUNCNAME` needs an entry-point distinction:
+script files expose the top-level `main` frame, while `bash -c` does not.
+Parameter-array expansion now restores `main` only when
+`__RUBASH_SCRIPT_NAME` is present.
+
+Verification:
+
+- `cargo test --test cli_tests function_call_stack -- --nocapture`: 2/2.
+- `cargo test --test executor_tests command_chaining::part_008 -- --nocapture`: 13/13.
+- `cargo test --test executor_tests command_chaining::part_009 -- --nocapture`: 14/14.
+- `cargo test --test executor_tests command_chaining::part_045 -- --nocapture`: 15/15.
+- `run-trap`: 1/1.
+- CLI script-file function-stack regression: 1/1; `tests/difftest` now has
+  24/26 byte-for-byte matches, with only the documented host-path diagnostic
+  and special-builtin pipeline rows remaining.
+
+### 2026-08-17 builtin pipeline `head -n N` parsing
+
+The remaining special-builtin pipeline mismatch in the local differential
+corpus was an option parser bug in the shell-owned pipeline stage. The internal
+`head` implementation recognized `-n1` and `-1`, but treated the standard
+separate form `-n 1` as an unrecognized option and fell back to ten lines.
+That affected ordinary builtin output as well as `set -o` and `export` stages.
+
+`head_line_count` now accepts `-n N` and `--lines=N`. The pipeline stage keeps
+the output capture path, so special builtins remain isolated from the parent.
+
+Verification:
+
+- `cargo test --test cli_tests builtin_pipeline_head_accepts_separate_line_count_argument -- --nocapture`: 1/1.
+- bounded `tests/difftest/difftest.sh 'case-18*'`: 1/1.
+- Full local differential corpus after rebuilding `target/debug/rubash.exe`:
+  25/26; only `case-16-glob` differs in host-specific missing-directory
+  diagnostics.
+
+### 2026-08-17 escaped quotes in arithmetic array subscripts
+
+GNU Bash treats an indexed-array assignment such as `a[\" \"]=15` as an
+arithmetic syntax error: the escaped quote characters reach the arithmetic
+parser and are not a valid operand. Rubash previously removed the escapes too
+early, converted the resulting empty index to zero, and assigned element 0.
+
+The parser now marks array-element words whose raw subscript contains escaped
+quote characters with the existing parse-error marker. Ordinary quoted
+subscripts such as `a[" "]=10` continue through the arithmetic array owner.
+
+Verification:
+
+- `cargo test --test parser_tests -- --nocapture`: 351/351.
+- `cargo test --test cli_tests escaped_quote_array_subscript_is_a_syntax_error -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`: 152/152.
+- `run-arith`: 1/1.
+
+### 2026-08-17 no-operand `wait` status
+
+The jobs probe exposed a Bash contract not covered by the prior `wait -n` and
+explicit-PID regressions: `wait` with no operands waits for all current
+background jobs and returns success, even when one of those jobs exits nonzero.
+Rubash previously returned the last reaped job status.
+
+The no-operand branch now consumes every tracked job and returns `0`; explicit
+PID/jobspec and `wait -n` paths retain their individual exit statuses.
+
+Verification:
+
+- `cargo test --test cli_tests wait_without_operands_returns_success_after_failed_background_job -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_036 -- --nocapture`: bounded jobs slice remains green.
+
+### 2026-08-17 failed read-write varredir releases the descriptor
+
+The remaining `vredir8` fd-allocation difference was caused by the virtual fd
+close path. For a dynamic descriptor opened with `<>`, Bash treats
+`exec {fd}>&-` as closing the descriptor itself. Rubash previously removed
+only its write capability, leaving the read capability occupied in `FdTable`.
+The next dynamic allocation therefore skipped the lowest reusable slot after
+a failed `<>` open.
+
+`close_dynamic_output_fd` now closes the complete entry when it has a read
+endpoint; one-sided coprocess endpoints retain their capability-specific close
+behavior. A CLI regression covers close, failed `<>`, and lowest-slot reuse.
+
+Verification:
+
+- `cargo test --test cli_tests dynamic_varredir -- --nocapture`: 2/2.
+- `cargo test --test cli_tests c_command_closes_read_write_dynamic_fd_before_reusing_slot_after_failure -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`: 152/152.
+
+### 2026-08-17 simple alias expansion uses parse-line visibility
+
+GNU Bash expands aliases while reading input. Consequently, with
+`expand_aliases` enabled, an alias defined earlier on the same physical line
+is not available to a later command on that line:
+
+```bash
+shopt -s expand_aliases; alias ll='echo hi'; ll
+```
+
+GNU Bash reports `ll: command not found`; Rubash previously expanded `ll` at
+execution time and printed `hi`. The executor now records the definition line
+for aliases and suppresses ordinary alias expansion when the use is on that
+same line. Newline-separated definitions remain visible to later commands.
+Parser-level aliases that introduce reserved words continue through the
+existing dedicated reparse path, so this change does not alter the compound
+alias executor's AST stitching.
+
+Verification:
+
+- `cargo test --test cli_tests compat_issue_regressions::aliases_ -- --nocapture`: 3/3.
+- `cargo test --test executor_tests command_chaining::part_074 -- --nocapture`: 17/17.
+- `cargo test --test executor_tests command_chaining::part_075 -- --nocapture`: 9/9.
+- `cargo test --test executor_tests command_chaining::part_078 -- --nocapture`: 5/5.
+- `cargo test --test executor_tests command_chaining::part_079 -- --nocapture`: 5/5.
+- `cargo test --test executor_tests command_chaining::part_080::test_alias_introduced_coproc -- --nocapture`: 3/3.
+
+### 2026-08-17 parameter-replacement backslash decoding
+
+The #20/#24 parameter-expansion probe found a real RHS quoting difference in
+`${value//x/\\n}`. The lexer represents an escaped backslash inside the quoted
+word with `\\x14`, but `decode_parameter_replacement_quotes` previously
+treated that marker as a final literal backslash. This skipped Bash's
+parameter-replacement escape pass, so a source `\\n` remained `\\n` instead of
+becoming `n`.
+
+The decoder now feeds the marker through the same escape normalizer as an
+ordinary replacement backslash. Two markers still produce one literal
+backslash, while `\\&` remains available to the later literal-ampersand pass.
+
+Evidence:
+
+- Bash/Rubash bridge-free probe: `target/issue-suites/results/native-bash-20260817-parameter-replacement-backslashes/`.
+- Bash and Rubash both produce `<n>|<\\n>` with status 0.
+- `cargo test --lib parameter_ops -- --nocapture`: 4/4.
+- `cargo test --test cli_tests parameter_replacement_consumes_quoted_backslashes_like_bash -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_063 -- --nocapture`: 21/21.
+
+This closes only the quoted RHS backslash primitive; pattern backslashes,
+command-substitution RHS expansion, and other `rhs-exp` rows remain open.
+
+### 2026-08-17 umask `-S` takes precedence over `-p`
+
+The #24 builtin-focused probe found that `umask -Sp 0002` is a formatting
+option-precedence case. GNU Bash prints only the symbolic mask,
+`u=rwx,g=rwx,o=rx`; Rubash previously printed the reusable command prefix
+`umask -S ...` whenever `-p` was also present.
+
+The `umask` builtin now treats `-S` as the output-form selector before `-p`.
+`-p` still produces `umask 0002` for octal output, while symbolic output is
+always the bare `u=...,g=...,o=...` form.
+
+Evidence:
+
+- Bash/Rubash bridge-free probe: `target/issue-suites/results/native-bash-20260817-umask-option-precedence/`.
+- Both shells produce `u=rwx,g=rwx,o=rx` with status 0.
+- `cargo test --lib umask -- --nocapture`: 6/6.
+- `cargo test --test cli_tests umask_symbolic_output_takes_precedence_over_reusable_output -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_023 -- --nocapture`: 12/12.
+
+### 2026-08-17 parser-level alias handlers see the command's physical line
+
+Newline-separated `alias t=time` cases in `part_077` exposed a second alias
+boundary bug. Compound alias handlers run from `execute_ast` before the normal
+`execute_command` path updated `__RUBASH_CURRENT_LINE`; after an alias was
+defined, the next command was therefore still compared with the definition
+line and ordinary expansion was suppressed. The resulting `time` alias was
+left as a plain word, so brace, `if`, `for`, `case`, `coproc`, and arithmetic
+forms were dispatched incorrectly.
+
+`execute_ast` now publishes the current command line before its parser-level
+alias and compound-command handlers. This preserves Bash's same-physical-line
+visibility rule while allowing aliases defined on an earlier line to enter the
+existing compound reparse path.
+
+Evidence:
+
+- `cargo test --test executor_tests command_chaining::part_077 -- --nocapture`: 50/50.
+- The regression covers brace, `if`, nested `if`, `for`, nested `while`,
+  `case`, arithmetic, `coproc`, and redirected timed commands.
+
+This closes the parser-state slice only; the broader alias, compound-command,
+and official-suite rows for #20--#26 remain open.
+
+### 2026-08-17 escaped command substitutions stay literal in replacement RHS
+
+The #20/#24 RHS-exp family still had a quoting gap. In
+`${v//a/\$(printf X)}`, Bash treats the escaped `$` as replacement data and
+prints `$(printf X)bc`; Rubash previously expanded the command substitution and
+printed `Xbc`. The replacement-specific embedded-parameter path now protects an
+escaped dollar until command-substitution expansion is complete, then restores
+the literal dollar for the replacement decoder. Unescaped command substitutions
+in the RHS continue to expand.
+
+Evidence:
+
+- Bash/Rubash bridge-free artifact:
+  `target/issue-suites/results/native-bash-20260817-parameter-replacement-escaped-command-substitution/`.
+- Both shells produce `<$(printf X)bc>` with status 0 and empty stderr.
+- `cargo test --test cli_tests compat_issue_regressions::parameter_replacement -- --nocapture`: 2/2.
+- `cargo test --test executor_tests command_chaining::part_024 -- --nocapture`: 13/13.
+- `cargo test --test executor_tests command_chaining::part_063 -- --nocapture`: 21/21.
+- `cargo test --lib parameter_ops -- --nocapture`: 4/4.
+
+This closes the escaped-dollar RHS primitive; other RHS-exp and
+command-substitution suite rows remain open.
+
+### 2026-08-17 printf integer prefixes before invalid suffixes
+
+The #24 builtin-focused probe found that Bash's integer conversions keep the
+valid numeric prefix when the remainder is invalid, while still returning a
+failure status. For example, `printf '%d' 1.2` prints `1`, `printf '%d' 08`
+prints `0`, and `printf '%d' 10#12` prints `10`; each argument also reports an
+invalid-number diagnostic and the builtin returns status 1. Rubash previously
+parsed the entire argument with Rust's integer parser, so all three values
+rendered as `0`.
+
+`src/builtins/printf/number.rs` now scans the Bash-selected radix (decimal,
+octal, or hexadecimal), converts the valid prefix, and retains the original
+argument as an error when trailing characters remain. Arguments with no valid
+prefix still render as zero and fail as before.
+
+Evidence:
+
+- Bridge-free raw Bash/Rubash probe: `target/issue-suites/results/native-bash-20260817-printf-integer-prefix/`.
+- `cargo test --lib printf -- --nocapture`: 29/29.
+- `cargo test --test cli_tests compat_issue_regressions::printf_integer_conversion_keeps_valid_prefix_before_invalid_suffix -- --nocapture`: 1/1.
+- `cargo test --test cli_tests c_command_printf -- --nocapture`: 2/2.
+- `cargo test --test executor_tests command_chaining::part_023 -- --nocapture`: 12/12.
+
+This closes the tested integer-prefix conversion primitive; other `printf`
+option, floating-point, and suite-level builtin differences remain open.
+
+### 2026-08-17 command-substitution `tr` pipeline
+
+A bridge-free #20/#21 probe found that a normal pipeline translated input
+correctly, but the same pipeline inside command substitution did not:
+`value="$(printf 'x\\n' | tr x y)"` produced `y` under Bash and `x` under
+Rubash. The command-substitution pipeline shortcut sent `tr` through the
+Windows external-command path instead of the existing shell pipeline
+translation owner.
+
+The command-substitution filter now handles the two-argument `tr` form using
+the same `translate_tr` implementation as ordinary pipelines. Unsupported
+argument shapes continue to fall through to the external path.
+
+Evidence:
+
+- Bridge-free raw Bash/Rubash probe: `target/issue-suites/results/native-bash-20260817-command-substitution-tr/`.
+- `cargo test --test cli_tests compat_issue_regressions::command_substitution_pipeline_applies_tr_translation -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_024 -- --nocapture`: 13/13.
+- `cargo test --lib command_substitution -- --nocapture`: 8/8.
+
+This closes the tested command-substitution `tr` pipeline primitive; other
+external filters and nested command-substitution interactions remain open.
+
+### 2026-08-17 command-substitution common pipeline filters
+
+The same command-substitution shortcut had three adjacent filter gaps. Bash
+applies `grep`, `head`, and `wc` to the pipeline input, while Rubash's generic
+Windows external fallback returned the unfiltered input for these forms. The
+shortcut now uses the existing shell implementations for simple patterns,
+line limits, and byte/line counts. Unsupported options still use the generic
+fallback.
+
+Evidence:
+
+- Bridge-free raw Bash/Rubash probe: `target/issue-suites/results/native-bash-20260817-command-substitution-filters/`.
+- `cargo test --test cli_tests compat_issue_regressions::command_substitution_pipeline -- --nocapture`: 2/2.
+- `cargo test --test executor_tests command_chaining::part_024 -- --nocapture`: 13/13.
+
+This closes the tested common-filter forms; command-substitution status
+propagation and unsupported filter options remain open compatibility work.
+
+The status gap in that same path is now covered as well. A non-matching
+`grep` stage in `value="$(printf 'x\\n' | grep y)"` leaves the assignment with
+status 1 under both shells. The pipeline shortcut now carries the final stage
+status alongside its captured output; supported filters report their Bash
+status and generic external filters use the child exit code.
+
+Evidence:
+
+- `cargo test --test cli_tests compat_issue_regressions::command_substitution_pipeline_preserves_last_filter_status -- --nocapture`: 1/1.
+- `cargo test --lib command_substitution -- --nocapture`: 8/8.
+
+The same bridge-free matrix also covers adjacent filters: `uniq` now removes
+adjacent duplicate lines and `tail -n 1` selects the final line inside command
+substitution. The focused regression is
+`compat_issue_regressions::command_substitution_pipeline_applies_tail_and_uniq`.
+
+### 2026-08-17 `tr` character ranges in nested pipelines
+
+The nested command-substitution probe from #20 still differed for
+`tr a-z A-Z`: Rubash treated the hyphens as literal characters and converted
+`abcxyz` to `AbcxyZ`, while Bash expands both ranges and produces `ABCXYZ`.
+The shared `translate_tr` owner now expands ascending character ranges before
+translation, fixing both ordinary pipelines and command-substitution filters.
+
+Evidence:
+
+- Bridge-free raw Bash/Rubash probe: `target/issue-suites/results/native-bash-20260817-tr-ranges/`.
+- `cargo test --test cli_tests compat_issue_regressions::command_substitution_nested_pipeline_expands_tr_ranges -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_024 -- --nocapture`: 13/13.
+
+This closes the tested ASCII range form; character classes, escapes, and
+locale-sensitive `tr` forms remain separate compatibility work.
+
+### 2026-08-17 arithmetic empty quoted operands
+
+The arithmetic slice exposed a status/diagnostic gap in #22/#23/#24:
+`(( 1 - "" ))` is an operand error in Bash and returns 1, while Rubash had
+treated every empty double-quoted arithmetic operand as numeric zero and
+returned success. The arithmetic command and expansion wrappers now reject an
+empty quoted operand when it participates in an arithmetic operation. A
+standalone empty quoted expression and empty array subscripts retain their
+existing Bash-compatible zero behavior.
+
+Evidence:
+
+- Bridge-free raw Bash/Rubash probe: `target/issue-suites/results/native-bash-20260817-arithmetic-empty-operand/`.
+- `cargo test --test cli_tests compat_issue_regressions::arithmetic_empty_quoted_operand_with_operator_fails -- --nocapture`: 1/1.
+- `cargo test --test cli_tests compat_issue_regressions::arithmetic_ -- --nocapture`: 7/7.
+- Arithmetic parser tests: 5/5.
+
+This closes the tested empty-quoted-operand arithmetic primitive; division by
+zero, malformed bases, and other arithmetic diagnostics remain open families.
+
+### 2026-08-17 empty arithmetic array subscripts
+
+`arith10.sub` also exposed that `let a[\\" \"]=13` reaches the arithmetic
+parser as `a[ ]=13`. Bash treats the whitespace-only subscript as the default
+indexed-array element 0; Rubash previously stopped at `]` and dropped the
+assignment. The arithmetic lvalue parser now consumes an empty subscript and
+uses index 0, while quoted and non-empty subscripts retain their existing
+paths.
+
+Evidence:
+
+- Bridge-free raw Bash/Rubash probe: `target/issue-suites/results/native-bash-20260817-arithmetic-empty-subscript/`.
+- `cargo test --test cli_tests compat_issue_regressions::arithmetic_empty_array_subscript_defaults_to_zero -- --nocapture`: 1/1.
+- `cargo test --test cli_tests compat_issue_regressions::arithmetic_ -- --nocapture`: 8/8.
+- `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`: 152/152.
+
+The remaining `arith10` differences are separate `declare`/quoted assignment
+forms and are not folded into this lvalue change.
+
+### 2026-08-17 escaped quotes in declare/typeset/let array arguments
+
+The remaining `arith10.sub` case
+`declare "a[\" \"]=14"` was being rejected before the `declare` builtin saw
+the argument. `parser::push_command_word` used the same escaped-quote guard
+for every array-element assignment-looking word, even though Bash accepts
+escaped quotes in arithmetic-aware `declare`, `typeset`, and `let` arguments.
+The same guard also covered the raw word containing an embedded `$((...))`
+expansion, so the expansion path was rejected before arithmetic evaluation.
+The guard now remains active for ordinary assignment words and is skipped only
+for those three command owners or an embedded arithmetic expansion, allowing
+their existing arithmetic/index
+handling to normalize the whitespace-only subscript to index 0.
+
+Evidence:
+
+- `cargo test --test parser_tests escaped_quote_array_subscript -- --nocapture`:
+  2/2.
+- `cargo test --test cli_tests escaped_quote_array -- --nocapture`: 2/2,
+  including the ordinary assignment status-2 regression.
+- `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`:
+  152/152.
+- `BASH_RUNNER=D:/Git/bin/bash.exe D:/Git/bin/bash.exe
+  scripts/run-bash-upstream-tests.sh run-arith`: 1/1.
+
+The broader `arith10` contexts, arithmetic diagnostics, and official actual
+output rows remain separate compatibility work.
+
+### 2026-08-17 empty quoted arithmetic array subscripts
+
+The same `arith10.sub` matrix distinguishes an empty quoted indexed subscript
+from a whitespace-only one: Bash accepts `a[" "]` as index 0, but reports an
+arithmetic error for `(( a[""]=24 ))` and for the equivalent `$((...))`
+expansion. `let` retains its separate Bash behavior and continues to accept
+the empty subscript as index 0.
+
+The arithmetic command and arithmetic expansion entry points now reject an
+empty quoted indexed subscript before generic lvalue evaluation. Ordinary
+array assignment and `let` remain unchanged.
+
+Evidence:
+
+- `cargo test --test cli_tests compat_issue_regressions::arithmetic_empty
+  -- --nocapture`: 3/3.
+- `cargo test --test cli_tests escaped_quote_array -- --nocapture`: 3/3.
+- `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`
+  152/152.
+- Fresh `arith10.sub` stdout/stderr artifacts:
+  `target/issue-suites/results/native-bash-20260817-arith10-current/`.
+
+### 2026-08-17 parameter substring explicit empty length
+
+The Bash actual-output probe also exposed the `v:2:` substring form. The
+parser previously represented both `v:2` and `v:2:` as `length=None`, so the
+latter incorrectly returned the suffix instead of an empty string. The
+top-level substring splitter now preserves whether a separator colon was
+present; an absent length after that colon becomes `Some(0)`, while no colon
+continues to mean “through the end”.
+
+Evidence:
+
+- `cargo test --test cli_tests parameter_substring_empty_length_is_zero
+  -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_063 -- --nocapture`:
+  21/21.
+- `cargo check`: passed.
+
+### 2026-08-17 malformed parameter expansion in arithmetic-for headers
+
+The bridge-free arithmetic-for parser probe found that a malformed braced
+parameter word inside an arithmetic-for header was accepted:
+`${ case x in x) esac; }`. Its internal semicolon was treated as arithmetic
+header structure, so Rubash executed the loop and continued instead of
+returning Bash's syntax status 2. The parser now rejects this malformed
+parameter-name boundary while retaining valid arithmetic parameter forms.
+
+The stdin batch runner also records syntax errors independently from ordinary
+nonzero command statuses. A syntax error now stops a non-interactive stdin
+script without enabling `errexit`; ordinary arithmetic/builtin failures still
+continue as Bash does.
+
+Evidence:
+
+- Raw bridge-free artifacts: `target/issue-suites/results/native-bash-20260817-arith-for/`.
+- `cargo test --test cli_tests arithmetic_for -- --nocapture`: 3/3.
+- `cargo test --test parser_tests arithmetic_for -- --nocapture`: 4/4.
+- `cargo test --lib`: 200/200.
+
+This closes only the malformed arithmetic-for parameter-header primitive; the
+aggregate `arith-for` and official actual-output rows remain open.
+
+### 2026-08-17 external coproc endpoints and Windows streaming pipelines
+
+The remaining focused coproc failures were caused by two related execution
+boundary issues. `refresh_background_jobs` retired a completed coprocess before
+the next command could consume its still-readable named endpoint, and the
+external-file `cat` path did not consume a virtual `CoprocStdout` descriptor.
+The executor now protects endpoints referenced by the current input redirect
+and retains existing endpoints while launching another coproc. Ordinary later
+commands still retire completed endpoints, preserving the existing closed-fd
+diagnostic behavior. External `cat` drains the shell-owned reader to EOF and
+uses the normal redirected output path.
+
+On this Windows host, `yes`, `head`, and `wc` are not available in `PATH`.
+The concurrent external-pipeline path previously fell back to the buffered
+stage path, which turned `yes | head` into a masked command-not-found result.
+When those three utilities are unavailable, the Windows pipeline now launches
+small internal streaming utility processes connected by the same OS pipes:
+`yes` applies backpressure, `head` exits after its requested line count, and
+`wc` counts input through EOF. This keeps the producer bounded by the pipe and
+does not materialize an unbounded string.
+
+The same execution boundary also fixed `/usr/bin/cat` file diagnostics,
+persistent `exec 2>&1` propagation through a `cat | cat` pipeline, and
+prefix assignments reaching the `env` builtin in a pipeline. The Windows
+POSIX-directory bridge now records a shell-visible physical path so `cd -P /;
+pwd -P` reports `/` instead of the host repository directory.
+
+Evidence:
+
+- `cargo test --test cli_tests coproc -- --nocapture`: 17/17.
+- `cargo test --test cli_tests external_pipeline -- --nocapture`: 4/4.
+- `cargo test --test cli_tests -- --nocapture`: 229/229.
+- `cargo test --test cli_tests c_command_materializes_persistent_stderr_to_stdout_for_external_children -- --nocapture`: 1/1.
+- `cargo test --test cli_tests c_command_pipeline_stages_inherit_persistent_stderr_to_stdout -- --nocapture`: 1/1.
+- `cargo test --test cli_tests prefix_assignments_reach_env_builtin_pipeline -- --nocapture`: 1/1.
+- `cargo test --test executor_tests command_chaining::part_031::test_command_cd_updates_pwd_for_physical_pwd -- --nocapture`: 1/1.
+- `cargo test --test executor_tests`: 1534/1535 before the physical-PWD fix; the sole failure then passed in the focused rerun. A complete post-fix executor rerun remains a required gate.
+- `cargo test --lib`: passed in the preceding full validation run.
+- `D:/Git/bin/bash.exe scripts/validate-semantic-map.sh`: passed.
+
+This closes the focused coproc, external-pipeline, persistent-stderr, and
+POSIX physical-PWD primitives only. The broader official Bash, BusyBox, Oil,
+mksh, and ksh93 issue-suite differences remain open.
+
+### 2026-08-17 builtin ordered-output redirect boundary
+
+The #20/#24/#25/#54 redirection family exposed a shared builtin execution
+boundary bug. `printf` and `pwd` had direct `redirect_out`/`append`/
+`redirect_err` branches that bypassed the command's parse-order redirect list.
+For a command such as `printf 'x\n' >&2 2>file`, Bash leaves the output on the
+original stderr but still creates the empty `file`; Rubash previously skipped
+the redirect application entirely, so the empty target was not created. The
+same bypass also affected `pwd`.
+
+Both builtins now collect stdout/stderr and use
+`write_buffered_builtin_output`, which applies the shared ordered fd state.
+This is a semantic execution fix, not an expected-output adjustment.
+
+Evidence:
+
+- `cargo test --test cli_tests fd_redirects -- --nocapture`: 16/16.
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  12/12, including the new `pwd` ordered-output regression.
+- `cargo test --test parser_redirection_tests -- --nocapture`: 68/68.
+- `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`:
+  152/152.
+- `BASH_RUNNER=D:/Git/bin/bash.exe D:/Git/bin/bash.exe
+  scripts/run-bash-upstream-tests.sh run-redir`: 1/1.
+- `cargo check`: passed.
+
+The same boundary has now been applied to `export`, whose output and
+diagnostics are also collected before the shared redirect owner writes them.
+The new `part_021` regression covers `export -p >&2 2>file` and verifies that
+the empty target is created while output remains on the original stderr.
+
+Evidence for this extension:
+
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  13/13.
+- `cargo check`: passed.
+
+Commits: `349d06ed`, `784ce7d0`, `be551483`. Other builtins still contain
+direct I/O redirect branches and require the same treatment where a minimal
+Bash comparison demonstrates an ordered-redirection difference.
+
+The same ordered diagnostic boundary now applies to `readonly`. Invalid
+options are collected as stderr before the shared redirect owner applies the
+left-to-right fd state, so `readonly -Z >&2 2>file` reports into `file` and
+does not bypass the second redirect.
+
+Evidence for this extension:
+
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  14/14.
+- `cargo check`: passed.
+- `scripts/validate-semantic-map.sh`: passed.
+
+Commit: `fix: preserve readonly ordered diagnostic redirects`. Other builtins
+still contain direct I/O redirect branches and require the same treatment
+where a minimal Bash comparison demonstrates an ordered-redirection
+difference.

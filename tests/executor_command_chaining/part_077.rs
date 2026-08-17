@@ -903,7 +903,7 @@ fn test_alias_introduced_time_executes_brace_group() {
     let output_path = "target/rubash-alias-time-brace-output.txt";
     let _ = fs::remove_file(output_path);
     let input = format!(
-        "shopt -s expand_aliases; alias t=time; \
+        "shopt -s expand_aliases\nalias t=time\n\
          t -p {{ echo alias-time > {output_path}; }}; echo status:$? >> {output_path}"
     );
     let tokens = tokenize(&input);
@@ -928,7 +928,7 @@ fn test_alias_introduced_time_preserves_brace_group_redirects() {
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_file(status_path);
     let input = format!(
-        "shopt -s expand_aliases; alias t=time; \
+        "shopt -s expand_aliases\nalias t=time\n\
          t -p {{ echo redirected; }} > {output_path}; echo status:$? > {status_path}"
     );
     let tokens = tokenize(&input);
@@ -950,7 +950,7 @@ fn test_alias_introduced_time_executes_if_sequence() {
     let output_path = "target/rubash-alias-time-if-output.txt";
     let _ = fs::remove_file(output_path);
     let input = format!(
-        "shopt -s expand_aliases; alias t=time; \
+        "shopt -s expand_aliases\nalias t=time\n\
          t -p if true; then echo alias-if > {output_path}; fi; \
          echo status:$? >> {output_path}"
     );
@@ -974,7 +974,7 @@ fn test_alias_introduced_time_if_keeps_nested_if_body() {
     let output_path = "target/rubash-alias-time-nested-if-output.txt";
     let _ = fs::remove_file(output_path);
     let input = format!(
-        "shopt -s expand_aliases; alias t=time; \
+        "shopt -s expand_aliases\nalias t=time\n\
          t -p if true; then if false; then echo bad >> {output_path}; \
          else echo inner >> {output_path}; fi; echo outer >> {output_path}; fi; \
          echo status:$? >> {output_path}"
@@ -1001,7 +1001,7 @@ fn test_alias_introduced_time_executes_for_sequence_with_redirect() {
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_file(status_path);
     let input = format!(
-        "shopt -s expand_aliases; alias t=time; \
+        "shopt -s expand_aliases\nalias t=time\n\
          t -p for value in a b; do echo $value; done > {output_path}; \
          echo status:$? > {status_path}"
     );
@@ -1024,7 +1024,7 @@ fn test_alias_introduced_time_for_keeps_nested_while_body() {
     let output_path = "target/rubash-alias-time-nested-for-output.txt";
     let _ = fs::remove_file(output_path);
     let input = format!(
-        "shopt -s expand_aliases; alias t=time; \
+        "shopt -s expand_aliases\nalias t=time\n\
          t -p for item in alpha; do while false; do echo bad >> {output_path}; done; \
          echo $item >> {output_path}; done; echo status:$? >> {output_path}"
     );
@@ -1048,7 +1048,7 @@ fn test_alias_introduced_time_executes_case_sequence() {
     let output_path = "target/rubash-alias-time-case-output.txt";
     let _ = fs::remove_file(output_path);
     let input = format!(
-        "shopt -s expand_aliases; alias t=time; \
+        "shopt -s expand_aliases\nalias t=time\n\
          t -p case beta in alpha) echo alpha ;; \
          beta) echo beta ;; esac > {output_path}; \
          echo status:$? >> {output_path}"
@@ -1070,7 +1070,7 @@ fn test_alias_introduced_time_executes_arithmetic_command() {
     let output_path = "target/rubash-alias-time-arithmetic-output.txt";
     let _ = fs::remove_file(output_path);
     let input = format!(
-        "shopt -s expand_aliases; alias t=time; \
+        "shopt -s expand_aliases\nalias t=time\n\
          t -p (( 1 )); echo true:$? > {output_path}; \
          t -p (( 0 )); echo false:$? >> {output_path}"
     );
@@ -1094,7 +1094,7 @@ fn test_alias_introduced_time_executes_coproc_command() {
     let status_path = "target/rubash-alias-time-coproc-status.txt";
     let _ = fs::remove_file(status_path);
     let input = format!(
-        "shopt -s expand_aliases; alias t=time; \
+        "shopt -s expand_aliases\nalias t=time\n\
          t -p coproc ATIMEDC {{ :; }}; echo pid:${{ATIMEDC_PID:+set}} > {status_path}"
     );
     let tokens = tokenize(&input);

@@ -104,7 +104,12 @@ impl Executor {
             "PIPESTATUS" => return Some(format_indexed_array_values(self.pipestatus_values())),
             "FUNCNAME" => {
                 let mut stack = self.function_name_stack.clone();
-                if !stack.is_empty() && stack.last().map(String::as_str) != Some("main") {
+                // Bash exposes the script's top-level frame as `main`, but
+                // `bash -c` reports only real function frames.
+                if self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
+                    && !stack.is_empty()
+                    && stack.last().map(String::as_str) != Some("main")
+                {
                     stack.push("main".to_string());
                 }
                 return Some(format_indexed_array_values(stack));

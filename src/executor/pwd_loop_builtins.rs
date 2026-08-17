@@ -5,72 +5,11 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<i32, ExecuteError> {
-        if let Some(redirect) = &cmd.redirect_out {
-            let target = self.expand_word(&redirect.target);
-            let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(self.execute_pwd_with_io(
-                &cmd.words[1..],
-                &mut file,
-                &mut std::io::stderr().lock(),
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.append {
-            let target = self.expand_word(&redirect.target);
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(self.execute_pwd_with_io(
-                &cmd.words[1..],
-                &mut file,
-                &mut std::io::stderr().lock(),
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.redirect_err {
-            let target = self.expand_word(&redirect.target);
-            if is_null_device(&target) {
-                return Ok(self.execute_pwd_with_io(
-                    &cmd.words[1..],
-                    &mut std::io::stdout().lock(),
-                    &mut std::io::sink(),
-                )?);
-            }
-            let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(self.execute_pwd_with_io(
-                &cmd.words[1..],
-                &mut std::io::stdout().lock(),
-                &mut file,
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.redirect_err_append {
-            let target = self.expand_word(&redirect.target);
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(self.execute_pwd_with_io(
-                &cmd.words[1..],
-                &mut std::io::stdout().lock(),
-                &mut file,
-            )?);
-        }
-
-        if self.stdout_capture.is_some() {
-            let mut stdout = Vec::new();
-            let status = self.execute_pwd_with_io(
-                &cmd.words[1..],
-                &mut stdout,
-                &mut std::io::stderr().lock(),
-            )?;
-            self.write_default_stdout(&stdout)?;
-            return Ok(status);
-        }
-
-        let mut stdout = std::io::stdout().lock();
-        Ok(self.execute_pwd_with_io(&cmd.words[1..], &mut stdout, &mut std::io::stderr().lock())?)
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let status = self.execute_pwd_with_io(&cmd.words[1..], &mut stdout, &mut stderr)?;
+        self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+        Ok(status)
     }
 
     pub(in crate::executor) fn execute_pwd_with_io<W, E>(

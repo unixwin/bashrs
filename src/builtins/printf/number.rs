@@ -14,9 +14,9 @@ pub(super) fn parse_i64(value: &str) -> ParsedNumber<i64> {
         };
     }
     match parse_integer_literal(value) {
-        Some(value) => ParsedNumber {
-            value,
-            invalid: None,
+        Some((parsed_value, has_invalid_suffix)) => ParsedNumber {
+            value: parsed_value,
+            invalid: has_invalid_suffix.then(|| value.to_string()),
         },
         None => ParsedNumber {
             value: 0,
@@ -62,7 +62,7 @@ fn printf_char_constant(value: &str) -> Option<char> {
     }
 }
 
-fn parse_integer_literal(value: &str) -> Option<i64> {
+fn parse_integer_literal(value: &str) -> Option<(i64, bool)> {
     let value = value.trim();
     let (sign, digits) = match value.as_bytes().first().copied() {
         Some(b'-') => (-1_i64, &value[1..]),
@@ -70,15 +70,30 @@ fn parse_integer_literal(value: &str) -> Option<i64> {
         _ => (1_i64, value),
     };
 
-    let parsed = if let Some(hex) = digits
+    let (radix, digits) = if let Some(hex) = digits
         .strip_prefix("0x")
         .or_else(|| digits.strip_prefix("0X"))
     {
-        i64::from_str_radix(hex, 16).ok()?
+        (16, hex)
     } else if digits.len() > 1 && digits.starts_with('0') {
-        i64::from_str_radix(&digits[1..], 8).ok()?
+        (8, digits)
     } else {
-        digits.parse::<i64>().ok()?
+        (10, digits)
     };
-    Some(sign * parsed)
+
+    // Bash's printf uses the valid numeric prefix even when the remainder is
+    // invalid, while still returning an error for the argument.  For example,
+    // `%d` formats `1.2` as `1` and `08` as `0`.
+    let prefix_len = digits
+        .char_indices()
+        .take_while(|(_, ch)| ch.to_digit(radix).is_some())
+        .map(|(index, ch)| index + ch.len_utf8())
+        .last()
+        .unwrap_or(0);
+    if prefix_len == 0 {
+        return None;
+    }
+
+    let parsed = i64::from_str_radix(&digits[..prefix_len], radix).ok()?;
+    Some((sign * parsed, prefix_len != digits.len()))
 }
