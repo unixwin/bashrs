@@ -2454,6 +2454,21 @@ Evidence:
   21/21.
 - `cargo check`: passed.
 
+The next ordered-output slice covers `times`, `shift`, `alias`, and `set`.
+These builtins now buffer their results and diagnostics through the same
+shared redirect owner; `shift` still applies its positional-parameter state
+transition before the buffered diagnostic is emitted.
+
+Evidence:
+
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  17/17, including ordered probes for `alias`, `set`, and `times`.
+- `cargo test --test executor_tests command_chaining::part_026 -- --nocapture`:
+  15/15.
+- `cargo test --test executor_tests command_chaining::part_058 -- --nocapture`:
+  16/16.
+- `cargo check`: passed without warnings.
+
 ### 2026-08-17 malformed parameter expansion in arithmetic-for headers
 
 The bridge-free arithmetic-for parser probe found that a malformed braced

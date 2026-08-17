@@ -266,6 +266,8 @@ fn test_misc_io_builtins_preserve_ordered_output_redirects() {
         ("declare", "declare -p PATH"),
         ("help", "help cd"),
         ("kill", "kill -l"),
+        ("set", "set -o"),
+        ("times", "times"),
         ("ulimit", "ulimit -a"),
     ] {
         let output_path = format!("target/rubash-{name}-ordered-output.txt");
@@ -286,6 +288,24 @@ fn test_misc_io_builtins_preserve_ordered_output_redirects() {
         );
         let _ = fs::remove_file(output_path);
     }
+}
+
+#[test]
+fn test_alias_preserves_ordered_output_redirects() {
+    let output_path = "target/rubash-alias-ordered-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "alias rubash_ordered_alias='echo value'; alias rubash_ordered_alias >&2 2> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok(), "alias execution failed: {result:?}");
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "");
+    let _ = fs::remove_file(output_path);
 }
 
 #[test]
