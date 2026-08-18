@@ -153,7 +153,10 @@ fn path_display_text(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    #[cfg(windows)]
+    use super::{logical_destination_display, shell_display_path};
+    #[cfg(windows)]
+    use std::path::Path;
 
     #[cfg(windows)]
     #[test]

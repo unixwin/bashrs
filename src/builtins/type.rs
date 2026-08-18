@@ -218,7 +218,7 @@ fn is_shell_builtin(name: &str) -> bool {
             | "unset"
             | "unsetopt"
             | "wait"
-    )
+    ) || (cfg!(windows) && name == "sudo")
 }
 
 fn find_all_in_path(name: &str) -> Vec<PathBuf> {

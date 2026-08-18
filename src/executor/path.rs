@@ -438,14 +438,11 @@ fn cmd_compatible_windows_path(path: &Path) -> PathBuf {
     path
 }
 
+#[cfg(windows)]
 pub fn apply_required_windows_child_environment(
     process: &mut Command,
     env_vars: &HashMap<String, String>,
 ) {
-    if !cfg!(windows) {
-        return;
-    }
-
     for name in ["SystemRoot", "WINDIR", "ComSpec"] {
         let value = env_vars
             .get(name)
@@ -482,6 +479,13 @@ pub fn apply_required_windows_child_environment(
         process.env("APPDATA", format!("{base}\\AppData\\Roaming"));
         process.env("LOCALAPPDATA", format!("{base}\\AppData\\Local"));
     }
+}
+
+#[cfg(not(windows))]
+pub fn apply_required_windows_child_environment(
+    _process: &mut Command,
+    _env_vars: &HashMap<String, String>,
+) {
 }
 
 #[cfg(windows)]

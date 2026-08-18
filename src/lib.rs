@@ -11,6 +11,8 @@ pub mod parser;
 pub mod shell;
 
 // Re-export commonly used types
+#[cfg(windows)]
+pub use executor::{ElevationOutput, ElevationRequest, SudoMode};
 pub use executor::{ExecuteError, Executor};
 pub use lexer::{Token, TokenKind};
 pub use parser::{Ast, CommandNode, Redirect};

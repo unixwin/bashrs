@@ -55,11 +55,14 @@ impl Executor {
             mode: invocation.mode,
         };
 
-        let handler = self
-            .elevation_handler
-            .as_mut()
-            .expect("checked elevation handler");
-        match (handler.0)(request) {
+        let result = {
+            let handler = self
+                .elevation_handler
+                .as_mut()
+                .expect("checked elevation handler");
+            (handler.0)(request)
+        };
+        match result {
             Ok(output) => {
                 self.write_buffered_builtin_output(cmd, &output.stdout, &output.stderr)?;
                 Ok(output.status)

@@ -76,6 +76,8 @@ pub(crate) const HELP_TOPICS: &[&str] = &[
     "shift",
     "shopt",
     "source",
+    #[cfg(windows)]
+    "sudo",
     "suspend",
     "test",
     "then",
@@ -221,6 +223,10 @@ where
                 diagnostic_prefix()
             )?;
         }
+        #[cfg(windows)]
+        ["sudo"] => {
+            crate::builtins::sudo::print_help_with_io(stdout)?;
+        }
         _ => {}
     }
     Ok(())
@@ -335,8 +341,16 @@ const HELP_LIST: &[&str] = &[
     " compopt [-o|+o option] [-DEI] [name .>  shift [n]",
     " continue [n]                            shopt [-pqsu] [-o] [optname ...]",
     " coproc [NAME] command [redirections]    source [-p path] filename [argument>",
+    #[cfg(windows)]
+    " sudo [-E] [--inline|--new-window] [--]>  suspend [-f]",
+    #[cfg(not(windows))]
     " declare [-aAfFgiIlnrtux] [name[=value>  suspend [-f]",
+    #[cfg(windows)]
+    " declare [-aAfFgiIlnrtux] [name[=value>  test [expr]",
+    #[cfg(not(windows))]
     " dirs [-clpv] [+N] [-N]                  test [expr]",
+    #[cfg(windows)]
+    " dirs [-clpv] [+N] [-N]                  time [-p] pipeline",
     " disown [-h] [-ar] [jobspec ... | pid >  time [-p] pipeline",
     " echo [-neE] [arg ...]                   times",
     " enable [-a] [-dnps] [-f filename] [na>  trap [-Plp] [[action] signal_spec ..>",

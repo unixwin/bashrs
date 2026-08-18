@@ -100,5 +100,5 @@ pub(in crate::executor) fn is_shell_builtin_name(name: &str) -> bool {
             | "unset"
             | "unsetopt"
             | "wait"
-    )
+    ) || (cfg!(windows) && name == "sudo")
 }

@@ -197,7 +197,7 @@ fn is_shell_builtin(name: &str) -> bool {
             | "unset"
             | "unsetopt"
             | "wait"
-    )
+    ) || (cfg!(windows) && name == "sudo")
 }
 
 fn find_in_path(name: &str, use_standard_path: bool) -> Option<PathBuf> {

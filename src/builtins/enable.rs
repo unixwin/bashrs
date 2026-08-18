@@ -61,6 +61,8 @@ const ALL_BUILTINS: &[&str] = &[
     "shift",
     "shopt",
     "source",
+    #[cfg(windows)]
+    "sudo",
     "suspend",
     "test",
     "times",

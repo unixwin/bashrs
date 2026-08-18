@@ -1,6 +1,4 @@
 mod unit_tests {
-    use crate::executor::alias_helpers::split_shell_words;
-    use crate::executor::parameter_decode::strip_matching_quotes;
     use crate::executor::Executor;
     use crate::lexer::tokenize;
     use crate::parser::parse;

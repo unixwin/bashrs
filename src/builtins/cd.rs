@@ -302,7 +302,10 @@ fn logical_posix_test_dir<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    #[cfg(windows)]
+    use super::resolve_target;
+    #[cfg(windows)]
+    use std::collections::HashMap;
 
     #[cfg(windows)]
     #[test]

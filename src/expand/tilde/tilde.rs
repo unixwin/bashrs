@@ -116,7 +116,6 @@ fn expand_tilde_segment(segment: &str, home: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     #[cfg(windows)]
     #[test]

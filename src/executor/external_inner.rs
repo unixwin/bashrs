@@ -681,12 +681,13 @@ fn apply_env_command_environment(
     }
 }
 
+#[cfg(windows)]
 fn materialize_required_windows_env(
     env_vars: &mut HashMap<String, String>,
     shell_env_vars: &HashMap<String, String>,
     ignore_environment: bool,
 ) {
-    if !cfg!(windows) || ignore_environment {
+    if ignore_environment {
         return;
     }
 
@@ -740,6 +741,14 @@ fn materialize_required_windows_env(
     env_vars
         .entry("LOCALAPPDATA".to_string())
         .or_insert_with(|| format!("{base}\\AppData\\Local"));
+}
+
+#[cfg(not(windows))]
+fn materialize_required_windows_env(
+    _env_vars: &mut HashMap<String, String>,
+    _shell_env_vars: &HashMap<String, String>,
+    _ignore_environment: bool,
+) {
 }
 
 #[cfg(windows)]

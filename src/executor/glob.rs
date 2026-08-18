@@ -359,7 +359,8 @@ fn synthetic_dot_names(pattern: &str, globskipdots: bool) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    #[cfg(windows)]
+    use super::{pathname_expand_word, PathnameExpansion};
     #[cfg(windows)]
     use std::collections::HashMap;
 

@@ -50,8 +50,12 @@ impl Executor {
             "builtin" => self.execute_builtin_direct_command(cmd),
             #[cfg(windows)]
             "sudo" => {
-                self.exit_code = self.execute_sudo(cmd)?;
-                Ok(())
+                if crate::builtins::enable::is_disabled(&self.env_vars, "sudo") {
+                    self.execute_external(cmd)
+                } else {
+                    self.exit_code = self.execute_sudo(cmd)?;
+                    Ok(())
+                }
             }
             "cd" => {
                 if self
