@@ -371,3 +371,20 @@ fn test_hash_empty_table_reports_success() {
     let _ = fs::remove_file(error_path);
     let _ = fs::remove_file(status_path);
 }
+
+#[test]
+fn test_function_and_or_left_command_keeps_heredoc_body() {
+    let output_path = "target/rubash-function-and-or-heredoc-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "foo () {{ cat <<EOF > {output_path} && {{ echo \"$1\"; }}\n$1\nEOF\n}}\nfoo bar"
+    );
+    let ast = parse(&tokenize(&input));
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok(), "function heredoc execution failed: {result:?}");
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "bar\n");
+    let _ = fs::remove_file(output_path);
+}

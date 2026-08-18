@@ -2454,6 +2454,19 @@ Evidence:
   21/21.
 - `cargo check`: passed.
 
+The parser now leaves a trailing heredoc body unconsumed when the compound
+command being finalized has no pending heredoc redirect. This matters for
+lists such as `cat <<EOF && { echo ...; }`: the body belongs to the left
+command, even when the right-hand brace group is parsed first by the compound
+command boundary. Function bodies now retain and execute this heredoc input.
+
+Evidence:
+
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  18/18.
+- `cargo test --lib parser -- --nocapture`: 13/13.
+- `cargo check`: passed.
+
 The next ordered-output slice covers `times`, `shift`, `alias`, and `set`.
 These builtins now buffer their results and diagnostics through the same
 shared redirect owner; `shift` still applies its positional-parameter state
