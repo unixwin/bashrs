@@ -388,3 +388,43 @@ fn test_function_and_or_left_command_keeps_heredoc_body() {
     assert_eq!(fs::read_to_string(output_path).unwrap(), "bar\n");
     let _ = fs::remove_file(output_path);
 }
+
+#[test]
+fn test_redirect_failure_sets_status_without_stopping_script() {
+    let status_path = "target/rubash-redirect-failure-status.txt";
+    let _ = fs::remove_file(status_path);
+    let missing_parent = "target/rubash-redirect-failure-missing-parent/output.txt";
+    let input = format!("a=`` > {missing_parent}; echo $? > {status_path}");
+    let ast = parse(&tokenize(&input));
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok(), "redirect failure aborted script: {result:?}");
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "1\n");
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_empty_command_substitution_word_is_removed() {
+    let status_path = "target/rubash-empty-command-substitution-status.txt";
+    let value_path = "target/rubash-empty-command-substitution-value.txt";
+    let _ = fs::remove_file(status_path);
+    let _ = fs::remove_file(value_path);
+    let input = format!(
+        "v=v; v=`exit 2` `false`; echo Two:$? v:\"[$v]\" > {value_path}; echo $? > {status_path}"
+    );
+    let ast = parse(&tokenize(&input));
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok(), "empty substitution word failed: {result:?}");
+    assert_eq!(
+        fs::read_to_string(value_path).unwrap(),
+        "Two:2 v:[]\n"
+    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(status_path);
+    let _ = fs::remove_file(value_path);
+}

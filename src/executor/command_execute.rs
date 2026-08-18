@@ -136,7 +136,6 @@ impl Executor {
             .map(|metadata| Some(metadata.raw.as_str()))
             .collect();
         let cmd = self.apply_alias_expansion_after_word_expansion(expanded, &original_raws);
-
         // Arithmetic expansion errors are fatal expansion errors in Bash. The
         // failing command is not dispatched and the surrounding command list
         // must stop, including when it is followed by `||` or `&&`.
@@ -162,6 +161,14 @@ impl Executor {
 
         if self.execute_alias_expanded_syntax(&cmd)? {
             return Ok(());
+        }
+
+        // Unquoted command substitutions can disappear during word
+        // expansion. A command that started as `name=$(...)` may therefore
+        // become assignment-only and must still apply the assignment and its
+        // redirections.
+        if cmd.words.is_empty() {
+            return self.execute_empty_words_command(&cmd);
         }
 
         if let Some(result) = self.execute_function_command_invocation(&cmd) {

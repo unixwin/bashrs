@@ -2454,6 +2454,33 @@ Evidence:
   21/21.
 - `cargo check`: passed.
 
+Unquoted command substitutions that expand to an empty field are now removed
+from the command word list. If that leaves an assignment-only command, the
+executor re-enters the assignment path after expansion so the assignment,
+substitution status, and redirects are still applied. This fixes
+`ash-psubst/falsetick2` (`v=\`exit 2\` \`false\``), which must yield
+`Two:2 v:[]` rather than a blank command or a stale assignment.
+
+Evidence:
+
+- `ash-psubst/falsetick2`: `Two:2 v:[]`.
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  20/20.
+
+The command-list executor now converts command-owned `IoError` results into
+status 1 and continues the list unless `errexit` is active. This matches Bash
+for assignment-only commands with a failed output redirect, such as the
+`ash-psubst/falsetick` cases. Previously the raw Rust I/O error escaped the
+AST loop after the first missing redirect and suppressed all following
+status probes.
+
+Evidence:
+
+- `ash-psubst/falsetick`: all 16 expected status lines now emitted.
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  19/19.
+- `cargo check`: passed.
+
 The parser now leaves a trailing heredoc body unconsumed when the compound
 command being finalized has no pending heredoc redirect. This matters for
 lists such as `cat <<EOF && { echo ...; }`: the body belongs to the left
