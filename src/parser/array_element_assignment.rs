@@ -9,11 +9,13 @@ pub(super) fn record_array_element_assignment_for_word(
     word_index: usize,
     word: &str,
     raw: &str,
-) {
+) -> bool {
     if let Some(mut assignment) = array_element_assignment_from_word(word, raw) {
         assignment.word_index = Some(word_index);
         command.array_element_assignments.push(assignment);
+        return true;
     }
+    false
 }
 
 pub(super) fn array_element_subscript_has_escaped_quote(raw: &str) -> bool {

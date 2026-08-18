@@ -85,64 +85,6 @@ impl Executor {
         cmd: &CommandNode,
     ) -> Result<i32, ExecuteError> {
         self.note_return_trap_scope(&cmd.words[1..]);
-        if let Some(redirect) = &cmd.redirect_out {
-            let target = self.expand_word(&redirect.target);
-            let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::trap::execute_with_io(
-                &cmd.words[1..],
-                &mut self.env_vars,
-                &mut file,
-                &mut std::io::stderr().lock(),
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.append {
-            let target = self.expand_word(&redirect.target);
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::trap::execute_with_io(
-                &cmd.words[1..],
-                &mut self.env_vars,
-                &mut file,
-                &mut std::io::stderr().lock(),
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.redirect_err {
-            let target = self.expand_word(&redirect.target);
-            if is_null_device(&target) {
-                return Ok(crate::builtins::trap::execute_with_io(
-                    &cmd.words[1..],
-                    &mut self.env_vars,
-                    &mut std::io::stdout().lock(),
-                    &mut std::io::sink(),
-                )?);
-            }
-            let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::trap::execute_with_io(
-                &cmd.words[1..],
-                &mut self.env_vars,
-                &mut std::io::stdout().lock(),
-                &mut file,
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.redirect_err_append {
-            let target = self.expand_word(&redirect.target);
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::trap::execute_with_io(
-                &cmd.words[1..],
-                &mut self.env_vars,
-                &mut std::io::stdout().lock(),
-                &mut file,
-            )?);
-        }
-
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let status = crate::builtins::trap::execute_with_io(
@@ -159,59 +101,6 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<i32, ExecuteError> {
-        if let Some(redirect) = &cmd.redirect_out {
-            let target = self.expand_word(&redirect.target);
-            let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::help::execute_with_io(
-                &cmd.words[1..],
-                &mut file,
-                &mut std::io::stderr().lock(),
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.append {
-            let target = self.expand_word(&redirect.target);
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::help::execute_with_io(
-                &cmd.words[1..],
-                &mut file,
-                &mut std::io::stderr().lock(),
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.redirect_err {
-            let target = self.expand_word(&redirect.target);
-            if is_null_device(&target) {
-                return Ok(crate::builtins::help::execute_with_io(
-                    &cmd.words[1..],
-                    &mut std::io::stdout().lock(),
-                    &mut std::io::sink(),
-                )?);
-            }
-            let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::help::execute_with_io(
-                &cmd.words[1..],
-                &mut std::io::stdout().lock(),
-                &mut file,
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.redirect_err_append {
-            let target = self.expand_word(&redirect.target);
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::help::execute_with_io(
-                &cmd.words[1..],
-                &mut std::io::stdout().lock(),
-                &mut file,
-            )?);
-        }
-
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let status =
@@ -226,74 +115,6 @@ impl Executor {
         builtin: crate::builtins::pushd::StackBuiltin,
     ) -> Result<i32, ExecuteError> {
         let diagnostic_prefix = self.diagnostic_prefix();
-        if let Some(redirect) = &cmd.redirect_out {
-            let target = self.expand_word(&redirect.target);
-            let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::pushd::execute_with_io(
-                builtin,
-                cmd.words[1..].iter().map(String::as_str),
-                &mut self.env_vars,
-                &diagnostic_prefix,
-                &mut file,
-                &mut std::io::stderr().lock(),
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.append {
-            let target = self.expand_word(&redirect.target);
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::pushd::execute_with_io(
-                builtin,
-                cmd.words[1..].iter().map(String::as_str),
-                &mut self.env_vars,
-                &diagnostic_prefix,
-                &mut file,
-                &mut std::io::stderr().lock(),
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.redirect_err {
-            let target = self.expand_word(&redirect.target);
-            if is_null_device(&target) {
-                return Ok(crate::builtins::pushd::execute_with_io(
-                    builtin,
-                    cmd.words[1..].iter().map(String::as_str),
-                    &mut self.env_vars,
-                    &diagnostic_prefix,
-                    &mut std::io::stdout().lock(),
-                    &mut std::io::sink(),
-                )?);
-            }
-            let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::pushd::execute_with_io(
-                builtin,
-                cmd.words[1..].iter().map(String::as_str),
-                &mut self.env_vars,
-                &diagnostic_prefix,
-                &mut std::io::stdout().lock(),
-                &mut file,
-            )?);
-        }
-
-        if let Some(redirect) = &cmd.redirect_err_append {
-            let target = self.expand_word(&redirect.target);
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::pushd::execute_with_io(
-                builtin,
-                cmd.words[1..].iter().map(String::as_str),
-                &mut self.env_vars,
-                &diagnostic_prefix,
-                &mut std::io::stdout().lock(),
-                &mut file,
-            )?);
-        }
-
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let status = crate::builtins::pushd::execute_with_io(

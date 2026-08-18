@@ -344,6 +344,9 @@ impl Executor {
         }
         if raw_word_is_quoted(raw) {
             if let Some(expanded) = self.expand_backtick_substitution(word) {
+                if expanded.is_empty() && self.removes_unquoted_null_word(cmd, index) {
+                    return Vec::new();
+                }
                 return vec![expanded];
             }
         }

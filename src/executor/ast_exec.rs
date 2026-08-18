@@ -337,6 +337,23 @@ impl Executor {
                 Err(ExecuteError::Break(_) | ExecuteError::Continue(_)) if self.loop_depth == 0 => {
                     self.exit_code = 0;
                 }
+                Err(ExecuteError::IoError(error)) => {
+                    // Bash treats a failed command redirection (and other
+                    // command-owned I/O failures) as the command's status 1.
+                    // It does not abort the surrounding list unless errexit
+                    // is active; propagating the raw I/O error here made a
+                    // script stop after `cmd >/missing/path`.
+                    eprintln!("{}{}", self.diagnostic_prefix(), error);
+                    self.exit_code = 1;
+                    if self.errexit_enabled()
+                        && self.errexit_is_active()
+                        && self.suppress_errexit == 0
+                        && !command.inverted
+                        && command.and_or().is_none()
+                    {
+                        return Err(ExecuteError::ExitCode(1));
+                    }
+                }
                 // Bash runs a subshell with errexit active; when a command
                 // fails inside the subshell the subshell exits with that
                 // status but the parent script continues. Catch the error at

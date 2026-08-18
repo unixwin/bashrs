@@ -23,64 +23,16 @@ impl Executor {
         output
     }
 
-    pub(in crate::executor) fn execute_shift(
-        &mut self,
-        args: &[String],
-    ) -> Result<(), ExecuteError> {
-        // TODO(builtins/shift.def): Bash observes `shift_verbose` for out of
-        // range `$#` shifts. Keep that validation here while positional
-        // parameters live on Executor.
-        let mut stderr = std::io::stderr().lock();
-        self.apply_shift_action_with_stderr(crate::builtins::shift::execute(args)?, &mut stderr)
-    }
-
     pub(in crate::executor) fn execute_shift_command(
         &mut self,
         cmd: &CommandNode,
     ) -> Result<(), ExecuteError> {
-        if let Some(redirect) = &cmd.redirect_out {
-            let target = self.expand_word(&redirect.target);
-            let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
-            let mut stderr = std::io::stderr().lock();
-            let action =
-                crate::builtins::shift::execute_with_io(&cmd.words[1..], &mut file, &mut stderr)?;
-            return self.apply_shift_action_with_stderr(action, &mut stderr);
-        }
-
-        if let Some(redirect) = &cmd.append {
-            let target = self.expand_word(&redirect.target);
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            let mut stderr = std::io::stderr().lock();
-            let action =
-                crate::builtins::shift::execute_with_io(&cmd.words[1..], &mut file, &mut stderr)?;
-            return self.apply_shift_action_with_stderr(action, &mut stderr);
-        }
-
-        if let Some(redirect) = &cmd.redirect_err {
-            let target = self.expand_word(&redirect.target);
-            let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
-            let mut stdout = std::io::stdout().lock();
-            let action =
-                crate::builtins::shift::execute_with_io(&cmd.words[1..], &mut stdout, &mut file)?;
-            return self.apply_shift_action_with_stderr(action, &mut file);
-        }
-
-        if let Some(redirect) = &cmd.redirect_err_append {
-            let target = self.expand_word(&redirect.target);
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            let mut stdout = std::io::stdout().lock();
-            let action =
-                crate::builtins::shift::execute_with_io(&cmd.words[1..], &mut stdout, &mut file)?;
-            return self.apply_shift_action_with_stderr(action, &mut file);
-        }
-
-        self.execute_shift(&cmd.words[1..])
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let action =
+            crate::builtins::shift::execute_with_io(&cmd.words[1..], &mut stdout, &mut stderr)?;
+        self.apply_shift_action_with_stderr(action, &mut stderr)?;
+        self.write_buffered_builtin_output(cmd, &stdout, &stderr)
     }
 
     pub(in crate::executor) fn apply_shift_action_with_stderr<W: Write>(

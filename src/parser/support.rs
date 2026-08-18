@@ -17,17 +17,27 @@ pub(super) fn push_command_word(cmd: &mut CommandNode, token: &Token) {
     record_tilde_expansions_for_word(cmd, word_index, &token.value, &token.raw);
     record_pathname_patterns_for_word(cmd, word_index, &token.value, &token.raw);
     record_word_quotes_for_word(cmd, word_index, &token.raw);
-    record_array_element_assignment_for_word(cmd, word_index, &token.value, &token.raw);
+    let prior_words_are_array_assignments = cmd.words.is_empty()
+        || (!cmd.array_element_assignments.is_empty()
+            && cmd.array_element_assignments.len() == cmd.words.len());
+    let array_element_assignment = if prior_words_are_array_assignments {
+        record_array_element_assignment_for_word(cmd, word_index, &token.value, &token.raw)
+    } else {
+        false
+    };
     // An escaped quote in an ordinary array-assignment word is malformed
     // arithmetic syntax, but Bash accepts the same spelling when it enters
     // through declare/typeset or let, where the argument is evaluated by the
-    // corresponding arithmetic-aware owner.
+    // corresponding arithmetic-aware owner. Quoted assignment-looking strings
+    // passed as arguments, such as eval payloads, must remain ordinary words.
     let arithmetic_aware_command = matches!(
         cmd.words.first().map(String::as_str),
         Some("declare" | "typeset" | "let")
     );
     let embedded_arithmetic = token.raw.contains("$((") || token.raw.contains("$[");
-    if !arithmetic_aware_command
+    if prior_words_are_array_assignments
+        && array_element_assignment
+        && !arithmetic_aware_command
         && !embedded_arithmetic
         && crate::parser::array_element_subscript_has_escaped_quote(&token.raw)
     {

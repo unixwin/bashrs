@@ -2454,6 +2454,61 @@ Evidence:
   21/21.
 - `cargo check`: passed.
 
+Unquoted command substitutions that expand to an empty field are now removed
+from the command word list. If that leaves an assignment-only command, the
+executor re-enters the assignment path after expansion so the assignment,
+substitution status, and redirects are still applied. This fixes
+`ash-psubst/falsetick2` (`v=\`exit 2\` \`false\``), which must yield
+`Two:2 v:[]` rather than a blank command or a stale assignment.
+
+Evidence:
+
+- `ash-psubst/falsetick2`: `Two:2 v:[]`.
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  20/20.
+
+The command-list executor now converts command-owned `IoError` results into
+status 1 and continues the list unless `errexit` is active. This matches Bash
+for assignment-only commands with a failed output redirect, such as the
+`ash-psubst/falsetick` cases. Previously the raw Rust I/O error escaped the
+AST loop after the first missing redirect and suppressed all following
+status probes.
+
+Evidence:
+
+- `ash-psubst/falsetick`: all 16 expected status lines now emitted.
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  19/19.
+- `cargo check`: passed.
+
+The parser now leaves a trailing heredoc body unconsumed when the compound
+command being finalized has no pending heredoc redirect. This matters for
+lists such as `cat <<EOF && { echo ...; }`: the body belongs to the left
+command, even when the right-hand brace group is parsed first by the compound
+command boundary. Function bodies now retain and execute this heredoc input.
+
+Evidence:
+
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  18/18.
+- `cargo test --lib parser -- --nocapture`: 13/13.
+- `cargo check`: passed.
+
+The next ordered-output slice covers `times`, `shift`, `alias`, and `set`.
+These builtins now buffer their results and diagnostics through the same
+shared redirect owner; `shift` still applies its positional-parameter state
+transition before the buffered diagnostic is emitted.
+
+Evidence:
+
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  17/17, including ordered probes for `alias`, `set`, and `times`.
+- `cargo test --test executor_tests command_chaining::part_026 -- --nocapture`:
+  15/15.
+- `cargo test --test executor_tests command_chaining::part_058 -- --nocapture`:
+  16/16.
+- `cargo check`: passed without warnings.
+
 ### 2026-08-17 malformed parameter expansion in arithmetic-for headers
 
 The bridge-free arithmetic-for parser probe found that a malformed braced
@@ -2579,3 +2634,38 @@ Commit: `fix: preserve readonly ordered diagnostic redirects`. Other builtins
 still contain direct I/O redirect branches and require the same treatment
 where a minimal Bash comparison demonstrates an ordered-redirection
 difference.
+
+The same execution-boundary fix now covers `hash`, `shopt`, `umask`, and
+`enable`, whose `execute_with_io` paths previously opened redirect targets
+directly and therefore skipped parse-order fd duplication. A shared regression
+checks `>&2 2>file` for all three output-producing option builtins (plus
+`hash`'s existing redirect coverage).
+
+Evidence:
+
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  15/15.
+- `cargo test --test executor_tests command_chaining::part_022 -- --nocapture`:
+  14/14.
+- `cargo test --test executor_tests command_chaining::part_023 -- --nocapture`:
+  12/12.
+- `cargo test --test executor_tests command_chaining::part_029 -- --nocapture`:
+  10/10.
+- `cargo check`: passed.
+
+Commit: `997c0f93`.
+
+The same boundary has also been applied to `declare`, `kill`, `ulimit`,
+`trap`, `help`, and directory-stack builtins. Their `execute_with_io` output
+is now buffered before the shared fd state is applied, covering another set of
+direct-I/O builtin paths in the redirection family.
+
+Evidence:
+
+- `cargo test --test executor_tests command_chaining::part_021 -- --nocapture`:
+  16/16, including ordered probes for `declare`, `help`, `kill`, and `ulimit`.
+- `cargo test --test executor_tests command_chaining::part_032 -- --nocapture`:
+  11/11.
+- `cargo test --test executor_tests command_chaining::part_058 -- --nocapture`:
+  16/16.
+- `cargo check`: passed.

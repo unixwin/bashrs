@@ -5,9 +5,7 @@ impl Executor {
         crate::builtins::set::shell_option_enabled(&self.env_vars, "braceexpand")
     }
     pub(in crate::executor) fn expand_word_mut(&mut self, word: &str) -> String {
-        if !word.starts_with('\x1d') && !word.starts_with('\x1b') {
-            self.apply_parameter_assignment_expansions_in_word(word);
-        }
+        self.apply_parameter_assignment_expansions_in_word(word);
 
         if let Some(word) = word.strip_prefix('\x1b') {
             return self.expand_embedded_parameters_mut(word);

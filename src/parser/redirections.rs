@@ -11,9 +11,11 @@ pub(super) fn collect_trailing_redirections(
             break;
         };
         if token.kind == TokenKind::HereDocBody {
-            fill_pending_heredoc_body(command, &token.value);
-            *index += 1;
-            continue;
+            if fill_pending_heredoc_body(command, &token.value) {
+                *index += 1;
+                continue;
+            }
+            break;
         }
 
         if token.kind == TokenKind::RedirectIn {

@@ -323,3 +323,43 @@ fn bashdb_help_command_list_is_populated() {
     assert!(!stdout.contains("<empty>"));
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
+
+#[test]
+fn quoted_special_status_parameter_expands_inside_double_quotes() {
+    let output = run_rubash_inline("printf '<%s>\\n' \"$?\"\n");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<0>\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn quoted_assignment_like_argument_is_not_array_assignment_parse_error() {
+    let output = run_rubash_inline(
+        r#"key='D:/path'
+printf '<%s>\n' "m[\"$key\"]+=\" 4 \""
+"#,
+    );
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "<m[\"D:/path\"]+=\" 4 \">\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn eval_can_reparse_quoted_associative_array_append() {
+    let output = run_rubash_inline(
+        r#"typeset -A m=()
+key='D:/path'
+eval "m[\"$key\"]+=\" 4 \""
+printf '<%s>\n' "${m[D:/path]}"
+"#,
+    );
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "< 4 >\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}

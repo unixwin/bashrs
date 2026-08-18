@@ -261,6 +261,54 @@ fn test_option_builtins_preserve_ordered_output_redirects() {
 }
 
 #[test]
+fn test_misc_io_builtins_preserve_ordered_output_redirects() {
+    for (name, command) in [
+        ("declare", "declare -p PATH"),
+        ("help", "help cd"),
+        ("kill", "kill -l"),
+        ("set", "set -o"),
+        ("times", "times"),
+        ("ulimit", "ulimit -a"),
+    ] {
+        let output_path = format!("target/rubash-{name}-ordered-output.txt");
+        let _ = fs::remove_file(&output_path);
+        let input = format!("{command} >&2 2> {output_path}");
+        let tokens = tokenize(&input);
+        let ast = parse(&tokens);
+        let mut executor = Executor::new();
+
+        let result = executor.execute_ast(&ast);
+
+        assert!(result.is_ok(), "{name} execution failed: {result:?}");
+        assert!(fs::metadata(&output_path).is_ok(), "{name} target missing");
+        assert_eq!(
+            fs::read_to_string(&output_path).unwrap(),
+            "",
+            "{name} output bypassed the ordered redirect"
+        );
+        let _ = fs::remove_file(output_path);
+    }
+}
+
+#[test]
+fn test_alias_preserves_ordered_output_redirects() {
+    let output_path = "target/rubash-alias-ordered-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "alias rubash_ordered_alias='echo value'; alias rubash_ordered_alias >&2 2> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok(), "alias execution failed: {result:?}");
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_hash_redirects_output() {
     let output_path = "target/rubash-hash-redirect-output.txt";
     let _ = fs::remove_file(output_path);
@@ -322,4 +370,63 @@ fn test_hash_empty_table_reports_success() {
         .contains("hash: hash table empty"));
     let _ = fs::remove_file(error_path);
     let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_function_and_or_left_command_keeps_heredoc_body() {
+    let output_path = "target/rubash-function-and-or-heredoc-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input =
+        format!("foo () {{ cat <<EOF > {output_path} && {{ echo \"$1\"; }}\n$1\nEOF\n}}\nfoo bar");
+    let ast = parse(&tokenize(&input));
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(
+        result.is_ok(),
+        "function heredoc execution failed: {result:?}"
+    );
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "bar\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_redirect_failure_sets_status_without_stopping_script() {
+    let status_path = "target/rubash-redirect-failure-status.txt";
+    let _ = fs::remove_file(status_path);
+    let missing_parent = "target/rubash-redirect-failure-missing-parent/output.txt";
+    let input = format!("a=`` > {missing_parent}; echo $? > {status_path}");
+    let ast = parse(&tokenize(&input));
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(
+        result.is_ok(),
+        "redirect failure aborted script: {result:?}"
+    );
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "1\n");
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_empty_command_substitution_word_is_removed() {
+    let status_path = "target/rubash-empty-command-substitution-status.txt";
+    let value_path = "target/rubash-empty-command-substitution-value.txt";
+    let _ = fs::remove_file(status_path);
+    let _ = fs::remove_file(value_path);
+    let input = format!(
+        "v=v; v=`exit 2` `false`; echo Two:$? v:\"[$v]\" > {value_path}; echo $? > {status_path}"
+    );
+    let ast = parse(&tokenize(&input));
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok(), "empty substitution word failed: {result:?}");
+    assert_eq!(fs::read_to_string(value_path).unwrap(), "Two:2 v:[]\n");
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "0\n");
+    let _ = fs::remove_file(status_path);
+    let _ = fs::remove_file(value_path);
 }
