@@ -351,7 +351,6 @@ pub(in crate::executor) fn eval_source_for_reparse(source: &str) -> String {
         .replace('\x1e', "")
         .replace('\x1d', "")
         .replace('\x1f', "$")
-        .replace('\x1a', "`")
         .replace('\x17', "'")
 }
 

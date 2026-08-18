@@ -64,7 +64,7 @@ impl Executor {
             // parameter expansion. Keep those two quoted backslashes until
             // `${var@P}` reaches prompt_expansion; ordinary shell escapes
             // still undergo the normal assignment quote-removal pass.
-            preserve_prompt_escapes(&expanded_value)
+            preserve_prompt_escapes(&expanded_value).replace('\x11', "")
         } else {
             unescape_remaining_shell_escapes(&expanded_value)
         };
@@ -326,5 +326,5 @@ fn preserve_prompt_escapes(value: &str) -> String {
             preserved.push(ch);
         }
     }
-    unescape_remaining_shell_escapes(&preserved).replace(PROTECTED_PROMPT_ESCAPE, "\\")
+    preserved.replace(PROTECTED_PROMPT_ESCAPE, "\\")
 }

@@ -102,8 +102,11 @@ impl Executor {
             // firing would let the action's commands overwrite LINENO with
             // their own (synthetic) line before run_debug_trap's guard sees
             // the flag (dbg-support2.tests `print_trap $LINENO`).
+            let debug_trap_in_scope = self.function_depth == 0
+                || crate::builtins::set::shell_option_enabled(&self.env_vars, "functrace")
+                || crate::builtins::shopt::option_enabled(&self.env_vars, "extdebug");
             if !skips_debug_trap
-                && self.function_depth == 0
+                && debug_trap_in_scope
                 && debug_trap_active
                 && !self.debug_trap_running
             {

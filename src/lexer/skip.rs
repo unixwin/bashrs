@@ -8,6 +8,10 @@ impl<'a> Lexer<'a> {
         let mut word_boundary = true;
         let mut current_word_boundary = true;
         while let Some(c) = self.advance() {
+            if c == '\\' {
+                self.advance();
+                continue;
+            }
             if c == '#' && word_boundary {
                 while self.peek().is_some_and(|ch| ch != '\n') {
                     self.advance();
@@ -29,6 +33,10 @@ impl<'a> Lexer<'a> {
                 rest,
             );
             match c {
+                '`' => {
+                    self.skip_backtick();
+                    continue;
+                }
                 '(' if case_depth == 0 => depth += 1,
                 ')' if case_depth == 0 => {
                     depth -= 1;
@@ -203,6 +211,8 @@ impl<'a> Lexer<'a> {
         while let Some(c) = self.advance() {
             if c == '"' {
                 break;
+            } else if c == '`' {
+                self.skip_backtick();
             } else if c == '$' {
                 match self.peek() {
                     Some('{') => {

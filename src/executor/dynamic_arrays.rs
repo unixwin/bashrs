@@ -144,7 +144,19 @@ impl Executor {
     pub(in crate::executor) fn is_assoc_parameter_array(&self, name: &str) -> bool {
         self.resolved_variable_name(name)
             .as_deref()
-            .is_some_and(|name| is_marked_var(&self.env_vars, ASSOC_VARS, name))
+            .is_some_and(|name| {
+                is_marked_var(&self.env_vars, ASSOC_VARS, name)
+                    || self
+                        .shell_state
+                        .variables
+                        .get(name)
+                        .is_some_and(|variable| {
+                            matches!(
+                                variable.value,
+                                crate::shell::ShellValue::AssociativeArray(_)
+                            )
+                        })
+            })
     }
 
     pub(in crate::executor) fn dirstack_storage(&self) -> String {

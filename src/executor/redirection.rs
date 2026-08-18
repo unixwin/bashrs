@@ -339,15 +339,16 @@ impl Executor {
         } else if is_null_device(target) {
             state.fds.insert(fd, OutputTarget::Null);
         } else {
+            let target = self.redirect_output_path_target(target);
             if redirect.append {
                 OpenOptions::new()
                     .create(true)
                     .append(true)
-                    .open(shell_path_to_windows(target, &self.env_vars))?;
+                    .open(shell_path_to_windows(&target, &self.env_vars))?;
             } else {
-                self.create_redirect_output(target, redirect.clobber)?;
+                self.create_redirect_output(&target, redirect.clobber)?;
             }
-            state.fds.insert(fd, OutputTarget::Path(target.to_string()));
+            state.fds.insert(fd, OutputTarget::Path(target));
         }
         state.saw_output_redirect = true;
         Ok(())

@@ -73,6 +73,21 @@ impl Executor {
         self.mark_exported("WINUXCMD_HOME");
     }
 
+    /// Configure an explicit external Bash-compatible shell for text-script
+    /// fallbacks. Rubash does not probe sh or bash on Windows by default;
+    /// host layers must opt in deliberately when they want that compatibility.
+    pub fn set_compatible_shell_path(&mut self, path: impl AsRef<std::path::Path>) {
+        self.env_vars.insert(
+            crate::executor::path::COMPATIBLE_SHELL_PATH_ENV.to_string(),
+            path.as_ref().to_string_lossy().into_owned(),
+        );
+    }
+
+    pub fn clear_compatible_shell_path(&mut self) {
+        self.env_vars
+            .remove(crate::executor::path::COMPATIBLE_SHELL_PATH_ENV);
+    }
+
     /// Resolve a shell-visible path using the executor's current namespace.
     pub fn resolve_shell_path(&self, path: &str) -> std::path::PathBuf {
         Self::resolve_shell_path_from_env(path, &self.env_vars)
@@ -355,11 +370,13 @@ impl Executor {
     }
 
     pub(in crate::executor) fn set_current_command(&mut self, cmd: &CommandNode) {
+        let command = bash_command_text(cmd);
+        self.env_vars
+            .insert("__RUBASH_LAST_COMMAND".to_string(), command.clone());
         if !command_references_bash_command(cmd) {
             self.env_vars.remove("__RUBASH_CURRENT_COMMAND");
             return;
         }
-        let command = bash_command_text(cmd);
         self.env_vars
             .insert("__RUBASH_CURRENT_COMMAND".to_string(), command);
     }

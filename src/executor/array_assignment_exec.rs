@@ -156,7 +156,7 @@ impl Executor {
             self.exit_code = 1;
             return true;
         }
-        if is_marked_var(&self.env_vars, ASSOC_VARS, name) {
+        if is_marked_var(&self.env_vars, ASSOC_VARS, name) || self.is_assoc_parameter_array(name) {
             // TODO(assoc.c/arrayfunc.c): Bash parses associative subscripts
             // with quote removal and expansion. This stores the simple
             // `A[key]=value` form exercised by upstream builtins5.sub.

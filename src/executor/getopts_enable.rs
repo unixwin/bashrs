@@ -113,7 +113,7 @@ impl Executor {
             if !silent && self.env_vars.get("OPTERR").map(String::as_str) != Some("0") {
                 let _ = writeln!(
                     stderr,
-                    "{}illegal option -- {option}",
+                    "{}: illegal option -- {option}",
                     self.script_name_value()
                 );
             } else if silent {
@@ -125,7 +125,7 @@ impl Executor {
         let requires_arg = optspec[spec_index + option.len_utf8()..].starts_with(':');
         if requires_arg {
             let argument = if !consumed_arg {
-                let value = option_chars[offset - 1..].iter().collect::<String>();
+                let value = option_chars[offset..].iter().collect::<String>();
                 optind += 1;
                 offset = 1;
                 Some(value)
@@ -151,7 +151,7 @@ impl Executor {
                 if self.env_vars.get("OPTERR").map(String::as_str) != Some("0") {
                     let _ = writeln!(
                         stderr,
-                        "{}option requires an argument -- {option}",
+                        "{}: option requires an argument -- {option}",
                         self.script_name_value()
                     );
                 }

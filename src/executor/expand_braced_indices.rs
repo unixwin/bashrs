@@ -94,8 +94,15 @@ impl Executor {
         self.env_vars
             .get(var_name)
             .map(|value| {
-                if value.starts_with('(') && value.ends_with(')') {
-                    self.array_length(var_name).to_string()
+                if is_array_storage(value) {
+                    let element_zero = if self.is_assoc_parameter_array(var_name) {
+                        assoc_value_at(value, "0")
+                    } else {
+                        array_value_at(value, 0)
+                    };
+                    element_zero
+                        .map(|value| value.chars().count().to_string())
+                        .unwrap_or_else(|| "0".to_string())
                 } else {
                     value.chars().count().to_string()
                 }

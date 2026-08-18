@@ -191,6 +191,7 @@ pub use crate::builtins::sudo::SudoMode;
 #[derive(Debug, Clone)]
 pub struct ElevationRequest {
     pub command: Vec<String>,
+    pub resolved_program: Option<PathBuf>,
     pub environment: HashMap<String, String>,
     pub current_dir: PathBuf,
     pub preserve_environment: bool,

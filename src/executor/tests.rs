@@ -157,7 +157,7 @@ mod unit_tests {
         use std::cell::RefCell;
         use std::rc::Rc;
 
-        let tokens = tokenize("sudo -E --new-window echo hi");
+        let tokens = tokenize("sudo -E --new-window cmd /C echo hi");
         let ast = parse(&tokens);
         let captured = Rc::new(RefCell::new(None));
         let captured_for_handler = Rc::clone(&captured);
@@ -180,7 +180,22 @@ mod unit_tests {
             .borrow()
             .clone()
             .expect("sudo should call elevation handler");
-        assert_eq!(request.command, vec!["echo".to_string(), "hi".to_string()]);
+        assert_eq!(
+            request.command,
+            vec![
+                "cmd".to_string(),
+                "/C".to_string(),
+                "echo".to_string(),
+                "hi".to_string()
+            ]
+        );
+        assert!(
+            request.resolved_program.as_ref().is_some_and(|path| path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.eq_ignore_ascii_case("cmd"))),
+            "sudo should resolve target command in the unelevated environment"
+        );
         assert_eq!(request.mode, SudoMode::NewWindow);
         assert!(request.preserve_environment);
         assert_eq!(

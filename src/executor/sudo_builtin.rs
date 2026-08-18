@@ -41,6 +41,10 @@ impl Executor {
             return Ok(1);
         }
 
+        let resolved_program = invocation
+            .command
+            .first()
+            .and_then(|name| find_user_command(name, &self.env_vars));
         let environment = if invocation.preserve_environment {
             self.env_vars.clone()
         } else {
@@ -49,6 +53,7 @@ impl Executor {
         let current_dir = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let request = ElevationRequest {
             command: invocation.command,
+            resolved_program,
             environment,
             current_dir,
             preserve_environment: invocation.preserve_environment,

@@ -5,6 +5,8 @@ use std::{fs, path::Path};
 
 use regex::Regex;
 
+#[path = "cli_tests/bashdb_compat.rs"]
+mod bashdb_compat;
 #[path = "cli_tests/compat_issue_regressions.rs"]
 mod compat_issue_regressions;
 #[path = "cli_tests/examples.rs"]

@@ -8,9 +8,6 @@ pub fn execute(args: &[String]) -> (i32, Option<String>) {
     if args.first().is_some_and(|arg| arg == "--") {
         index = 1;
     }
-    if args.get(index).is_some_and(|arg| arg == "--help") {
-        return (0, Some("Usage: sleep number[smhd]...\n".to_string()));
-    }
     if index == args.len() {
         return (1, Some("sleep: missing operand\n".to_string()));
     }
@@ -27,6 +24,17 @@ pub fn execute(args: &[String]) -> (i32, Option<String>) {
     }
     std::thread::sleep(Duration::from_secs_f64(total_seconds));
     (0, None)
+}
+
+pub fn can_execute_fast_path(args: &[String]) -> bool {
+    let mut index = 0;
+    if args.first().is_some_and(|arg| arg == "--") {
+        index = 1;
+    }
+    index < args.len()
+        && args[index..]
+            .iter()
+            .all(|value| parse_duration(value).is_some())
 }
 
 fn parse_duration(value: &str) -> Option<f64> {

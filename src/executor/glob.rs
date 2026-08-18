@@ -18,13 +18,20 @@ fn shopt_enabled(env_vars: &std::collections::HashMap<String, String>, name: &st
 /// Check if a word contains glob or extglob pattern characters.
 fn contains_glob_or_extglob(word: &str) -> bool {
     let chars: Vec<char> = word.chars().collect();
-    for (i, &ch) in chars.iter().enumerate() {
+    let mut index = 0usize;
+    while index < chars.len() {
+        let ch = chars[index];
+        if ch == '\\' || ch == '\x11' {
+            index += 2;
+            continue;
+        }
         if matches!(ch, '*' | '?' | '[') {
             return true;
         }
-        if matches!(ch, '@' | '+' | '!') && chars.get(i + 1) == Some(&'(') {
+        if matches!(ch, '@' | '+' | '!') && chars.get(index + 1) == Some(&'(') {
             return true;
         }
+        index += 1;
     }
     false
 }
@@ -51,7 +58,7 @@ pub(crate) fn pathname_expand_word(
     if !contains_glob_or_extglob(word) {
         return PathnameExpansion::NoMatch;
     }
-    if word.contains('=') || word.contains('{') || word.contains('}') {
+    if word.contains('{') || word.contains('}') {
         return PathnameExpansion::NoMatch;
     }
     if crate::builtins::set::shell_option_enabled(env_vars, "noglob") {
@@ -165,19 +172,25 @@ fn pathname_expand_segments(
                     Ok(entries) => entries,
                     Err(_) => continue,
                 };
-                let include_dotfiles = dotglob || part.starts_with('.');
-                let mut names = synthetic_dot_names(part, globskipdots);
+                let pattern = unescape_glob_pattern_literals(part);
+                let include_dotfiles = dotglob || pattern.starts_with('.');
+                let mut names = synthetic_dot_names(&pattern, globskipdots);
                 names.extend(entries.into_iter().map(|entry| entry.name));
                 for name in names {
                     if !include_dotfiles && name.starts_with('.') {
                         continue;
                     }
-                    if pathname_pattern_matches(part, &name, nocaseglob, extglob) {
+                    if pathname_pattern_matches(&pattern, &name, nocaseglob, extglob) {
                         next.push(join_path_segment(prefix, &name));
                     }
                 }
             } else {
-                let candidate = join_path_segment(prefix, part);
+                let literal_part = if saw_pattern {
+                    unescape_glob_pattern_literals(part)
+                } else {
+                    (*part).to_string()
+                };
+                let candidate = join_path_segment(prefix, &literal_part);
                 if !is_last || !saw_pattern || shell_path_to_windows(&candidate, env_vars).exists()
                 {
                     next.push(candidate);
@@ -206,6 +219,30 @@ fn join_path_segment(prefix: &str, segment: &str) -> String {
     } else {
         format!("{prefix}/{segment}")
     }
+}
+
+fn unescape_glob_pattern_literals(pattern: &str) -> String {
+    let mut output = String::new();
+    let mut chars = pattern.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            match chars.peek().copied() {
+                Some(next @ ('*' | '?' | '[' | ']' | '\\')) => {
+                    output.push('\\');
+                    output.push(next);
+                    chars.next();
+                }
+                Some(next) => {
+                    output.push(next);
+                    chars.next();
+                }
+                None => output.push('\\'),
+            }
+        } else {
+            output.push(ch);
+        }
+    }
+    output
 }
 
 fn pathname_pattern_matches(pattern: &str, word: &str, nocaseglob: bool, extglob: bool) -> bool {

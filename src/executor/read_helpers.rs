@@ -389,7 +389,7 @@ impl Executor {
         raw: bool,
         field_count: usize,
     ) {
-        if names.len() == 1 && field_count == 1 {
+        if names.len() == 1 && field_count == 0 {
             let value = if raw {
                 line.to_string()
             } else {

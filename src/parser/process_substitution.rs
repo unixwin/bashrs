@@ -48,7 +48,14 @@ pub(super) fn any_process_substitution_word_target(
         .or_else(|| output_process_substitution_word_target(tokens, redirect_index))
 }
 
-pub(super) fn process_substitutions_in_word(word: &str) -> Vec<ProcessSubstitution> {
+pub(super) fn process_substitutions_in_word_with_raw(
+    word: &str,
+    raw: &str,
+) -> Vec<ProcessSubstitution> {
+    if !raw_word_has_unquoted_process_substitution(raw) {
+        return Vec::new();
+    }
+
     let tokens = crate::lexer::tokenize(word);
     let mut substitutions = Vec::new();
     let mut index = 0usize;
@@ -65,6 +72,42 @@ pub(super) fn process_substitutions_in_word(word: &str) -> Vec<ProcessSubstituti
     }
 
     substitutions
+}
+
+fn raw_word_has_unquoted_process_substitution(raw: &str) -> bool {
+    let chars = raw.chars().collect::<Vec<_>>();
+    let mut index = 0usize;
+    let mut single = false;
+    let mut double = false;
+    let mut escaped = false;
+    while index < chars.len() {
+        let ch = chars[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+        if ch == '\\' && !single {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+        if ch == '\'' && !double {
+            single = !single;
+            index += 1;
+            continue;
+        }
+        if ch == '"' && !single {
+            double = !double;
+            index += 1;
+            continue;
+        }
+        if !single && !double && matches!(ch, '<' | '>') && chars.get(index + 1) == Some(&'(') {
+            return true;
+        }
+        index += 1;
+    }
+    false
 }
 
 pub(super) fn output_process_substitution_redirect_target(

@@ -218,3 +218,109 @@ fn test_command_v_without_p_uses_current_path_for_external_command() {
     let _ = fs::remove_file(restored_status_path);
     let _ = fs::remove_dir_all(bin_dir);
 }
+
+#[test]
+fn test_path_tool_fast_paths_handle_simple_operands_without_external() {
+    let output_path = "target/rubash-path-tool-fast-path-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "basename /a/b.txt .txt > {output_path}; \
+         dirname /usr/bin/ >> {output_path}; \
+         command basename -- /c/d >> {output_path}; \
+         command dirname -- /c/d >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+    executor.set_env("PATH", "");
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "b\n/usr\nd\n/c\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn test_path_tool_option_calls_fall_back_to_external_commands() {
+    let bin_dir = "target/rubash-path-tool-fallback-bin";
+    let basename_path = test_command_path(bin_dir, "basename");
+    let dirname_path = test_command_path(bin_dir, "dirname");
+    let output_path = "target/rubash-path-tool-fallback-output.txt";
+    let _ = fs::remove_dir_all(bin_dir);
+    fs::create_dir_all(bin_dir).unwrap();
+    write_test_command(
+        &basename_path,
+        r#"printf 'external-basename:%s\n' "$*"
+"#,
+        "@echo off\r\necho external-basename:%*\r\n",
+    )
+    .unwrap();
+    write_test_command(
+        &dirname_path,
+        r#"printf 'external-dirname:%s\n' "$*"
+"#,
+        "@echo off\r\necho external-dirname:%*\r\n",
+    )
+    .unwrap();
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "basename -a alpha/b beta/d > {output_path}; \
+         command basename --help >> {output_path}; \
+         dirname -z /a/b >> {output_path}; \
+         command dirname --version >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+    executor.set_env("PATH", bin_dir);
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        read_normalized(output_path),
+        "external-basename:-a alpha/b beta/d\nexternal-basename:--help\nexternal-dirname:-z /a/b\nexternal-dirname:--version\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_dir_all(bin_dir);
+}
+
+#[test]
+fn test_sleep_fast_path_forwards_option_and_invalid_args_to_external() {
+    let bin_dir = "target/rubash-sleep-fallback-bin";
+    let sleep_path = test_command_path(bin_dir, "sleep");
+    let output_path = "target/rubash-sleep-fallback-output.txt";
+    let _ = fs::remove_dir_all(bin_dir);
+    fs::create_dir_all(bin_dir).unwrap();
+    write_test_command(
+        &sleep_path,
+        r#"printf 'external-sleep:%s\n' "$*"
+"#,
+        "@echo off\r\necho external-sleep:%*\r\n",
+    )
+    .unwrap();
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "sleep 0; echo fast:$? > {output_path}; \
+         sleep --version >> {output_path}; \
+         sleep bad >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+    executor.set_env("PATH", bin_dir);
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        read_normalized(output_path),
+        "fast:0\nexternal-sleep:--version\nexternal-sleep:bad\n"
+    );
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_dir_all(bin_dir);
+}

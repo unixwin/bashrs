@@ -30,6 +30,12 @@ impl Executor {
                 continue;
             }
 
+            if ch == '\\' && chars.peek() == Some(&'`') {
+                chars.next();
+                output.push('\x1a');
+                continue;
+            }
+
             if ch == '`' {
                 let mut source = String::new();
                 let mut escaped = false;

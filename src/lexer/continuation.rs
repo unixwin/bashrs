@@ -2,6 +2,7 @@ use super::heredoc_scan::skip_heredoc_in_chars;
 
 pub(super) fn ends_with_unquoted_backslash(input: &str) -> bool {
     let mut single = false;
+    let mut double = false;
     let mut escaped = false;
     for ch in input.chars() {
         if escaped {
@@ -10,7 +11,8 @@ pub(super) fn ends_with_unquoted_backslash(input: &str) -> bool {
         }
         match ch {
             '\\' if !single => escaped = true,
-            '\'' if !escaped => single = !single,
+            '\'' if !double => single = !single,
+            '"' if !single => double = !double,
             _ => {}
         }
     }
@@ -186,6 +188,11 @@ pub(crate) fn has_unclosed_command_substitution(input: &str) -> bool {
             index += 2;
             continue;
         }
+        if depth > 0 && ch == '`' && !single {
+            index = skip_backtick_substitution(&chars, index);
+            comment_start = false;
+            continue;
+        }
         if ch == '\'' && parameter_depth > 0 && !ansi_single {
             parameter_single = !parameter_single;
             index += 1;
@@ -313,6 +320,29 @@ pub(crate) fn has_unclosed_command_substitution(input: &str) -> bool {
     }
 
     depth > 0 || backtick || ansi_single
+}
+
+fn skip_backtick_substitution(chars: &[char], mut index: usize) -> usize {
+    index += 1;
+    let mut escaped = false;
+    while index < chars.len() {
+        let ch = chars[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+        if ch == '`' {
+            return index + 1;
+        }
+        index += 1;
+    }
+    index
 }
 
 /// Skip a `$((...))` expansion while checking its own parenthesis and quote

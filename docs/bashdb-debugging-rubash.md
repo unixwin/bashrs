@@ -1,0 +1,144 @@
+# Debugging Rubash Scripts with External bashdb
+
+This note documents the supported workflow for running a clean external bashdb
+against scripts executed by `target/debug/rubash.exe`.
+
+## Current Status
+
+Rubash can now run the clean bashdb command loop well enough for the core
+debugger workflow:
+
+- `list` shows the debugged script source.
+- `step` enters shell functions.
+- `next` advances to the next source line.
+- `where` prints a stack trace.
+- `continue` runs the debugged script to completion.
+- `quit` exits the debugger.
+
+The verified fixture is the clean bashdb checkout under:
+
+```sh
+target/bashdb-clean/
+```
+
+The verified launcher is:
+
+```sh
+target/bashdb-clean/bashdb-generated
+```
+
+## What "Launcher Path" Means
+
+The launcher is the top-level bashdb shell script that the user executes. It is
+not part of Rubash. In the local fixture it is named `bashdb-generated`.
+A normal bashdb install may name the same top-level script `bashdb`.
+
+That script must be able to find the bashdb library directory. The library
+directory is the directory containing files such as:
+
+```sh
+bashdb-part2.sh
+dbg-main.sh
+init/
+lib/
+command/
+```
+
+In the local fixture, the generated script has `_Dbg_libdir` pointing at
+`target/bashdb-clean`. If a user moves the checkout or uses a different clean
+bashdb tree, either regenerate the launcher for that location or pass the
+library path explicitly with bashdb's `-L` / `--library` option.
+
+## Quick Start with the Local Fixture
+
+Build Rubash first:
+
+```sh
+cargo build
+```
+
+Run bashdb under Rubash:
+
+```sh
+export TERM=xterm DARK_BG=0
+target/debug/rubash.exe target/bashdb-clean/bashdb-generated --no-highlight target/bashdb-probe-target.sh
+```
+
+For non-interactive smoke testing:
+
+```sh
+export TERM=xterm DARK_BG=0
+printf 'list\nstep\nnext\nwhere\ncontinue\nwhere\nquit\n' | \
+  target/debug/rubash.exe target/bashdb-clean/bashdb-generated --no-highlight target/bashdb-probe-target.sh
+```
+
+A successful smoke test exits `0`, prints the target script source for `list`,
+steps into the `foo` function, prints the stack for `where`, and has empty
+stderr.
+
+## Using a Fresh Official bashdb Checkout
+
+A user should not need to patch bashdb for this workflow. The needed fixes are
+in Rubash compatibility behavior.
+
+For a fresh bashdb checkout, the required user work is:
+
+1. Check out a bashdb version compatible with Bash 5.2, for example the
+   upstream `Trepan-Debuggers/bashdb` `bash-5.2` branch.
+2. Generate or install bashdb normally so there is a top-level launcher script.
+3. Confirm the launcher can locate its library directory, or pass it explicitly
+   with `-L /path/to/bashdb-libdir`.
+4. Invoke that launcher through Rubash:
+
+```sh
+target/debug/rubash.exe /path/to/bashdb --no-highlight /path/to/script.sh
+```
+
+If using a source-tree launcher whose built-in paths are wrong, use:
+
+```sh
+target/debug/rubash.exe /path/to/bashdb --library /path/to/bashdb-libdir --no-highlight /path/to/script.sh
+```
+
+The `bashdb-libdir` path should be the directory that contains `dbg-main.sh`,
+`bashdb-part2.sh`, `init/`, `lib/`, and `command/`.
+
+## User-Facing Expectations
+
+For someone using the checked-out fixture in this repository, the workflow is
+one build plus one command. They do not need to understand Rubash internals.
+
+For someone bringing their own official bashdb checkout, the only extra concept
+is the launcher/library split:
+
+- Run the bashdb launcher script through Rubash.
+- Ensure the launcher finds the bashdb library directory.
+- Use `--no-highlight` for the most stable non-interactive output on Windows.
+
+## Full bashdb Coverage Goal
+
+The current verified state is the core debugger loop: startup, `list`, `step`,
+`next`, `where`, `continue`, and `quit`. This is enough for useful script-level
+compatibility debugging, but it is not a claim that every bashdb command and
+interactive feature has been certified.
+
+The development goal is broader: bashdb should become a full external stress
+program for Rubash. New failing bashdb commands, completion paths, breakpoint
+features, history paths, restart flows, or interactive edge cases should be
+triaged as Rubash compatibility gaps first. Do not patch bashdb to hide those
+failures unless the failure is proven to be a local fixture or launcher setup
+problem.
+
+## Regression Coverage
+
+The focused regression suite for this workflow is:
+
+```sh
+cargo test --test cli_tests bashdb_compat -- --nocapture
+```
+
+It covers the Rubash semantics bashdb depends on: source expansion, command
+word splitting, quoted `$@`, arithmetic commands, multiline arithmetic-for
+headers, DEBUG/EXIT trap behavior, `/dev/stdin`, `tty`, dynamic fd redirects,
+Windows drive paths, `enable -a`, escaped backticks through `eval`, and command
+substitution output capture.

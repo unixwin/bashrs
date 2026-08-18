@@ -673,7 +673,7 @@ impl WordMetadata {
                 substitution
             })
             .collect();
-        let process_substitutions = super::process_substitutions_in_word(&value)
+        let process_substitutions = super::process_substitutions_in_word_with_raw(&value, &raw)
             .into_iter()
             .map(|mut substitution| {
                 substitution.word_index = Some(word_index);

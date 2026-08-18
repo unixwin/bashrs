@@ -30,6 +30,11 @@ pub(super) fn parse_arithmetic_for_command(
             break;
         }
 
+        if tokens[i].kind == TokenKind::Semicolon && tokens[i].line_break {
+            i += 1;
+            continue;
+        }
+
         if paren_depth == 0 && tokens[i].kind == TokenKind::Semicolon {
             part_index += 1;
             if part_index > 2 {

@@ -12,6 +12,22 @@ impl Executor {
             .unwrap_or(1)
     }
 
+    pub(in crate::executor) fn continue_read_line_after_backslash(
+        &mut self,
+        cmd: &CommandNode,
+        read_fd: Option<u32>,
+        mut line: String,
+    ) -> String {
+        while line.ends_with('\\') {
+            line.pop();
+            let Some(next) = self.read_input_for_command(cmd, read_fd, '\n', None, false) else {
+                break;
+            };
+            line.push_str(&next);
+        }
+        line
+    }
+
     pub(in crate::executor) fn read_input_for_command(
         &mut self,
         cmd: &CommandNode,

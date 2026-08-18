@@ -34,19 +34,19 @@ impl Executor {
 
         if let Some(redirect) = &cmd.redirect_err {
             let target = self.expand_word(&redirect.target);
-            if is_null_device(&target) {
-                return Ok(crate::builtins::kill::execute_with_io(
+            let mut stdout = Vec::new();
+            let status = if is_null_device(&target) {
+                crate::builtins::kill::execute_with_io(
                     &cmd.words[1..],
-                    &mut std::io::stdout().lock(),
+                    &mut stdout,
                     &mut std::io::sink(),
-                )?);
-            }
-            let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::kill::execute_with_io(
-                &cmd.words[1..],
-                &mut std::io::stdout().lock(),
-                &mut file,
-            )?);
+                )?
+            } else {
+                let mut file = File::create(shell_path_to_windows(&target, &self.env_vars))?;
+                crate::builtins::kill::execute_with_io(&cmd.words[1..], &mut stdout, &mut file)?
+            };
+            self.write_buffered_builtin_output(cmd, &stdout, &[])?;
+            return Ok(status);
         }
 
         if let Some(redirect) = &cmd.redirect_err_append {
@@ -55,11 +55,11 @@ impl Executor {
                 .create(true)
                 .append(true)
                 .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::kill::execute_with_io(
-                &cmd.words[1..],
-                &mut std::io::stdout().lock(),
-                &mut file,
-            )?);
+            let mut stdout = Vec::new();
+            let status =
+                crate::builtins::kill::execute_with_io(&cmd.words[1..], &mut stdout, &mut file)?;
+            self.write_buffered_builtin_output(cmd, &stdout, &[])?;
+            return Ok(status);
         }
 
         let mut stdout = Vec::new();

@@ -65,7 +65,12 @@ impl Executor {
     }
 
     pub(in crate::executor) fn execute_arithmetic_command(&mut self, cmd: &CommandNode) -> i32 {
-        let expression = cmd.words.get(1).map(String::as_str).unwrap_or_default();
+        let expression = cmd
+            .arithmetic_command
+            .as_ref()
+            .map(|command| command.expression.as_str())
+            .or_else(|| cmd.words.get(1).map(String::as_str))
+            .unwrap_or_default();
         match self.eval_arithmetic_command_value(expression) {
             Some(0) => 1,
             Some(_) => 0,

@@ -45,6 +45,9 @@ pub(crate) fn remove_shell_quotes(raw: &str) -> String {
                     }
                     if quoted == '$' {
                         out.push('\x1f');
+                    } else if matches!(quoted, '*' | '?' | '[' | '@' | '+' | '!') {
+                        out.push('\x11');
+                        out.push(quoted);
                     } else {
                         out.push(quoted);
                     }
@@ -72,6 +75,9 @@ pub(crate) fn remove_shell_quotes(raw: &str) -> String {
                     // Keep a literal backslash distinct from the protected
                     // double-quote marker used by expansion internals.
                     out.push('\x14');
+                } else if matches!(escaped, '*' | '?' | '[' | '@' | '+' | '!') {
+                    out.push('\x11');
+                    out.push(escaped);
                 } else {
                     out.push(escaped);
                 }
@@ -153,6 +159,18 @@ fn remove_double_quoted_into(
             copy_braced_parameter_after_dollar(out, chars);
             continue;
         }
+        if quoted == '$'
+            && matches!(
+                chars.peek().copied(),
+                Some('?' | '$' | '!' | '#' | '-' | '@' | '*' | '0'..='9')
+            )
+        {
+            out.push('$');
+            if let Some(param) = chars.next() {
+                out.push(param);
+            }
+            continue;
+        }
         match quoted {
             '"' => break,
             '`' if preserve_backticks => {
@@ -173,6 +191,10 @@ fn remove_double_quoted_into(
                 } else {
                     out.push('\\');
                 }
+            }
+            _ if matches!(quoted, '*' | '?' | '[' | '@' | '+' | '!') => {
+                out.push('\x11');
+                out.push(quoted);
             }
             _ => out.push(quoted),
         }

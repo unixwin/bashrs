@@ -1656,9 +1656,9 @@ impl Executor {
             }
         }
 
-        // Display prompt if -p was specified
-        if let Some(ref prompt_text) = prompt {
-            let expanded = self.expand_word(prompt_text);
+        // Bash displays read -p prompts only for interactive stdin.
+        if prompt.is_some() && self.read_prompt_should_display(cmd, read_fd) {
+            let expanded = self.expand_word(prompt.as_deref().unwrap_or_default());
             eprint!("{}", expanded);
             let _ = std::io::Write::flush(&mut std::io::stderr());
         }
@@ -1770,7 +1770,7 @@ impl Executor {
             if invalid_name {
                 Vec::new()
             } else {
-                scalar_field_count = 1;
+                scalar_field_count = 0;
                 vec!["REPLY".to_string()]
             }
         } else {
@@ -1789,6 +1789,12 @@ impl Executor {
             let status = if let Some(line) =
                 self.read_input_for_command(cmd, read_fd, delimiter, char_limit, exact_char_limit)
             {
+                let line = if !raw && delimiter == '\n' && char_limit.is_none() && !exact_char_limit
+                {
+                    self.continue_read_line_after_backslash(cmd, read_fd, line)
+                } else {
+                    line
+                };
                 self.assign_read_scalar_names_with_field_count(
                     &scalar_names,
                     &line,
@@ -1818,6 +1824,15 @@ impl Executor {
                         1
                     }
                     Ok((_, line)) => {
+                        let line = if !raw
+                            && delimiter == '\n'
+                            && char_limit.is_none()
+                            && !exact_char_limit
+                        {
+                            self.continue_read_line_after_backslash(cmd, read_fd, line)
+                        } else {
+                            line
+                        };
                         self.assign_read_scalar_names(&scalar_names, &line, raw);
                         0
                     }
@@ -1839,6 +1854,27 @@ impl Executor {
             self.diagnostic_prefix()
         );
         self.finish_read_error(cmd, &stderr, 127)
+    }
+
+    fn read_prompt_should_display(&self, cmd: &CommandNode, read_fd: Option<u32>) -> bool {
+        if self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
+            || self.env_vars.contains_key(FUNCTION_STDIN)
+            || command_redirects_stdin(cmd)
+            || command_closes_stdin(cmd)
+        {
+            return false;
+        }
+
+        let fd = read_fd.unwrap_or(0);
+        !matches!(
+            self.fd_table.read_endpoint(fd),
+            Some(
+                FdReadEndpoint::Text(_)
+                    | FdReadEndpoint::ProcessSubstitution(_)
+                    | FdReadEndpoint::CoprocStdout(_)
+                    | FdReadEndpoint::InheritedProcessStdin
+            )
+        )
     }
 
     fn read_fd_is_available(&self, cmd: &CommandNode, fd: u32) -> bool {

@@ -35,9 +35,11 @@ impl Executor {
         env_vars.remove("__RUBASH_CURRENT_FUNCTION");
         env_vars.remove("__RUBASH_IN_SOURCE");
         env_vars.remove("__RUBASH_SCRIPT_NAME");
+        env_vars.remove(crate::executor::path::COMPATIBLE_SHELL_PATH_ENV);
         env::remove_var("__RUBASH_CURRENT_FUNCTION");
         env::remove_var("__RUBASH_IN_SOURCE");
         env::remove_var("__RUBASH_SCRIPT_NAME");
+        env::remove_var(crate::executor::path::COMPATIBLE_SHELL_PATH_ENV);
         env_vars.remove("BASH_ARGV0");
         env_vars.remove("BASH_EXECUTION_STRING");
         env_vars.entry("PWD".to_string()).or_insert_with(|| {

@@ -135,15 +135,42 @@ impl Executor {
     }
 
     fn external_rm(&mut self, cmd: &CommandNode) -> Result<bool, ExecuteError> {
+        let force = cmd
+            .words
+            .iter()
+            .skip(1)
+            .any(|arg| arg.starts_with('-') && arg.contains('f'));
+        let mut status = 0;
+        let mut stderr = Vec::new();
         for path in cmd.words.iter().skip(1).filter(|arg| !arg.starts_with('-')) {
-            let target = shell_path_to_windows(&self.expand_word(path), &self.env_vars);
-            if target.is_dir() {
-                let _ = fs::remove_dir_all(target);
+            let expanded = self.expand_word(path);
+            let target = shell_path_to_windows(&expanded, &self.env_vars);
+            let result = if target.is_dir() {
+                fs::remove_dir_all(&target)
             } else {
-                let _ = fs::remove_file(target);
+                fs::remove_file(&target)
+            };
+            if let Err(error) = result {
+                if !force {
+                    status = 1;
+                    let message = if matches!(
+                        error.kind(),
+                        io::ErrorKind::NotFound | io::ErrorKind::InvalidInput
+                    ) || (cfg!(windows)
+                        && contains_windows_forbidden_posix_filename_char(&expanded))
+                    {
+                        "No such file or directory".to_string()
+                    } else {
+                        error.to_string()
+                    };
+                    writeln!(&mut stderr, "rm: cannot remove '{}': {message}", expanded)?;
+                }
             }
         }
-        self.exit_code = 0;
+        if !stderr.is_empty() {
+            self.write_buffered_builtin_output(cmd, &[], &stderr)?;
+        }
+        self.exit_code = status;
         Ok(true)
     }
 

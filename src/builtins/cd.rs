@@ -307,6 +307,18 @@ mod tests {
     #[cfg(windows)]
     use std::collections::HashMap;
 
+    #[test]
+    fn cd_d_remains_invalid_bash_option() {
+        let mut stderr = Vec::new();
+
+        let parsed = super::parse_options(&["-d"], &mut stderr).unwrap();
+
+        assert_eq!(parsed, Err(super::EX_USAGE));
+        assert!(String::from_utf8(stderr)
+            .unwrap()
+            .contains("-d: invalid option"));
+    }
+
     #[cfg(windows)]
     #[test]
     fn cd_dash_resolves_oldpwd_through_configured_shell_root() {

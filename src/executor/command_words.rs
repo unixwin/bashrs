@@ -16,9 +16,19 @@ impl Executor {
             return false;
         }
 
-        cmd.word_kinds
+        if cmd
+            .word_kinds
             .get(index)
             .is_some_and(|kind| *kind == TokenKind::Variable)
+        {
+            return true;
+        }
+
+        cmd.word_metadata
+            .get(index)
+            .map(|metadata| metadata.raw.as_str())
+            .or_else(|| cmd.words.get(index).map(String::as_str))
+            .is_some_and(word_has_unquoted_command_substitution)
     }
 
     pub(in crate::executor) fn splits_unquoted_expanded_word(
@@ -34,7 +44,8 @@ impl Executor {
             .word_metadata
             .get(index)
             .map(|metadata| {
-                crate::executor::command_prepare::raw_word_is_quoted(Some(&metadata.raw))
+                !metadata.word_quotes.is_empty()
+                    || crate::executor::command_prepare::raw_word_is_quoted(Some(&metadata.raw))
             })
             .unwrap_or(false);
         let unquoted_variable = cmd

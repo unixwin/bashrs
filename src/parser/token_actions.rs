@@ -227,6 +227,10 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                             );
                         }
                     }
+                    state
+                        .current_cmd
+                        .word_metadata
+                        .push(build_word_metadata(word_index, &word, &raw_word));
                     state.current_cmd.words.push(word);
                     state.current_cmd.word_kinds.push(TokenKind::Word);
                 }

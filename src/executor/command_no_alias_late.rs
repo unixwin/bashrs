@@ -108,12 +108,20 @@ impl Executor {
                 Ok(())
             }
             "dirname" => {
-                self.exit_code = self.execute_dirname(cmd);
-                Ok(())
+                if let Some(status) = self.try_execute_dirname_fast_path(cmd) {
+                    self.exit_code = status;
+                    Ok(())
+                } else {
+                    self.execute_external(cmd)
+                }
             }
             "basename" => {
-                self.exit_code = self.execute_basename(cmd);
-                Ok(())
+                if let Some(status) = self.try_execute_basename_fast_path(cmd) {
+                    self.exit_code = status;
+                    Ok(())
+                } else {
+                    self.execute_external(cmd)
+                }
             }
             _ => self.execute_external(cmd),
         }

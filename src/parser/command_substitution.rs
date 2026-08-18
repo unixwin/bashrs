@@ -117,6 +117,12 @@ fn dollar_command_substitution(
             index += 1;
             continue;
         }
+        if ch == '`' && !single {
+            if let Some((_, next_index)) = backtick_command_substitution(chars, index) {
+                index = next_index;
+                continue;
+            }
+        }
         update_command_substitution_case_depth(
             &chars,
             index,

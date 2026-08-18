@@ -1,5 +1,34 @@
 use super::*;
 
+fn timed_read_value(input: &TimedPipelineInput, start: f64, timeout: f64) -> (String, i32) {
+    if timeout == 0.0 {
+        let ready = input.chunks.iter().any(|(at, _)| *at <= start) || input.eof_at <= start;
+        return (String::new(), if ready { 0 } else { 1 });
+    }
+
+    let deadline = start + timeout;
+    let mut value = String::new();
+    for (at, chunk) in &input.chunks {
+        if *at > deadline {
+            break;
+        }
+        value.push_str(chunk);
+        if let Some(newline) = value.find('\n') {
+            value.truncate(newline);
+            return (value, 0);
+        }
+    }
+
+    if input.eof_at <= deadline {
+        return (
+            value.trim_end_matches('\n').to_string(),
+            if value.is_empty() { 1 } else { 0 },
+        );
+    }
+
+    (value, 142)
+}
+
 #[cfg(windows)]
 fn stdio_from_transferred_handle<T>(handle: T) -> Stdio
 where
@@ -42,6 +71,12 @@ fn wait_for_windows_pipeline_member(
     }
 }
 use crate::executor::external_setup::shared_combined_output_process_substitution;
+
+#[derive(Debug, Clone)]
+struct TimedPipelineInput {
+    chunks: Vec<(f64, String)>,
+    eof_at: f64,
+}
 
 impl Executor {
     pub(in crate::executor) fn execute_and_or_list_command(
@@ -280,6 +315,10 @@ impl Executor {
             return Ok(None);
         }
 
+        if self.execute_timed_read_pipeline(&commands)?.is_some() {
+            return Ok(Some(end + 1));
+        }
+
         if self
             .execute_external_pipeline_concurrently(&commands)?
             .is_some()
@@ -359,6 +398,221 @@ impl Executor {
         };
         self.set_pipestatus(statuses);
         Ok(Some(end + 1))
+    }
+
+    fn execute_timed_read_pipeline(
+        &mut self,
+        commands: &[&CommandNode],
+    ) -> Result<Option<()>, ExecuteError> {
+        if commands.len() != 2 {
+            return Ok(None);
+        }
+        let Some(input) = self.timed_pipeline_input(commands[0]) else {
+            return Ok(None);
+        };
+        let Some(output) = self.timed_read_consumer_output(commands[1], &input) else {
+            return Ok(None);
+        };
+
+        self.write_pipeline_output(commands[1], &output)?;
+        self.exit_code = 0;
+        self.set_pipestatus(vec![0, 0]);
+        Ok(Some(()))
+    }
+
+    fn timed_pipeline_input(&mut self, command: &CommandNode) -> Option<TimedPipelineInput> {
+        let mut at = 0.0f64;
+        let mut chunks = Vec::new();
+        if let Some(group) = &command.brace_group {
+            for command in &group.body {
+                self.timed_pipeline_step(command, &mut at, &mut chunks)?;
+            }
+            return Some(TimedPipelineInput { chunks, eof_at: at });
+        }
+        self.timed_pipeline_step(command, &mut at, &mut chunks)?;
+        Some(TimedPipelineInput { chunks, eof_at: at })
+    }
+
+    fn timed_pipeline_step(
+        &mut self,
+        command: &CommandNode,
+        at: &mut f64,
+        chunks: &mut Vec<(f64, String)>,
+    ) -> Option<()> {
+        if command.brace_group.is_some()
+            || command.subshell_command.is_some()
+            || command.pipeline_command.is_some()
+            || command.and_or_list.is_some()
+            || !command.assignments.is_empty()
+            || command.redirect_in.is_some()
+            || command.redirect_out.is_some()
+            || command.append.is_some()
+        {
+            return None;
+        }
+        let name = self.expand_word(command.words.first()?);
+        match name.as_str() {
+            "true" | ":" => Some(()),
+            "sleep" => {
+                let duration = command
+                    .words
+                    .get(1)
+                    .and_then(|word| self.expand_word(word).parse::<f64>().ok())?;
+                *at += duration;
+                Some(())
+            }
+            "echo" => {
+                let mut args: Vec<String> = command.words[1..]
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(offset, word)| {
+                        let index = offset + 1;
+                        let raw = command
+                            .word_metadata
+                            .get(index)
+                            .map(|metadata| metadata.raw.as_str());
+                        self.expand_command_word(command, index, word, raw)
+                    })
+                    .collect();
+                let newline = !args.first().is_some_and(|arg| arg == "-n");
+                if !newline {
+                    args.remove(0);
+                }
+                let mut output = args.join(" ");
+                if newline {
+                    output.push('\n');
+                }
+                chunks.push((*at, output));
+                Some(())
+            }
+            _ => None,
+        }
+    }
+
+    fn timed_read_consumer_output(
+        &mut self,
+        command: &CommandNode,
+        input: &TimedPipelineInput,
+    ) -> Option<String> {
+        let body = command
+            .subshell_command
+            .as_ref()
+            .map(|command| command.body.as_slice())
+            .or_else(|| {
+                command
+                    .brace_group
+                    .as_ref()
+                    .map(|command| command.body.as_slice())
+            })?;
+        let mut at = 0.0f64;
+        let mut read_name = String::from("REPLY");
+        let mut read_value = String::new();
+        let mut read_status = 0;
+        let mut saw_read = false;
+        let mut output = String::new();
+        for command in body {
+            let name = self.expand_word(command.words.first()?);
+            match name.as_str() {
+                "sleep" if !saw_read => {
+                    at += command
+                        .words
+                        .get(1)
+                        .and_then(|word| self.expand_word(word).parse::<f64>().ok())?;
+                }
+                "read" if !saw_read => {
+                    let (timeout, name) = self.timed_read_options(command)?;
+                    read_name = name;
+                    let (value, status) = timed_read_value(input, at, timeout);
+                    read_value = value;
+                    read_status = status;
+                    saw_read = true;
+                }
+                "echo" if saw_read => {
+                    output.push_str(&self.timed_read_echo_output(
+                        command,
+                        &read_name,
+                        &read_value,
+                        read_status,
+                    ));
+                }
+                _ => return None,
+            }
+        }
+        saw_read.then_some(output)
+    }
+
+    fn timed_read_options(&mut self, command: &CommandNode) -> Option<(f64, String)> {
+        let mut timeout = None;
+        let mut names = Vec::new();
+        let mut index = 1usize;
+        while index < command.words.len() {
+            let word = self.expand_word(command.words.get(index)?);
+            if word == "-t" {
+                index += 1;
+                timeout = command
+                    .words
+                    .get(index)
+                    .and_then(|word| self.expand_word(word).parse::<f64>().ok());
+            } else if let Some(value) = word.strip_prefix("-t").filter(|value| !value.is_empty()) {
+                timeout = value.parse::<f64>().ok();
+            } else if matches!(
+                word.as_str(),
+                "-a" | "-d" | "-i" | "-n" | "-N" | "-p" | "-u"
+            ) {
+                index += 1;
+            } else if word.starts_with('-') {
+            } else {
+                names.push(word);
+            }
+            index += 1;
+        }
+        Some((
+            timeout?,
+            names
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| "REPLY".to_string()),
+        ))
+    }
+
+    fn timed_read_echo_output(
+        &mut self,
+        command: &CommandNode,
+        name: &str,
+        value: &str,
+        status: i32,
+    ) -> String {
+        let saved_status = self.exit_code;
+        let saved_value = self.env_vars.insert(name.to_string(), value.to_string());
+        self.exit_code = status;
+        let mut args: Vec<String> = command.words[1..]
+            .iter()
+            .enumerate()
+            .flat_map(|(offset, word)| {
+                let index = offset + 1;
+                let raw = command
+                    .word_metadata
+                    .get(index)
+                    .map(|metadata| metadata.raw.as_str());
+                self.expand_command_word(command, index, word, raw)
+            })
+            .map(|arg| arg.replace('\x11', ""))
+            .collect();
+        self.exit_code = saved_status;
+        if let Some(saved_value) = saved_value {
+            self.env_vars.insert(name.to_string(), saved_value);
+        } else {
+            self.env_vars.remove(name);
+        }
+        let newline = !args.first().is_some_and(|arg| arg == "-n");
+        if !newline {
+            args.remove(0);
+        }
+        let mut output = args.join(" ");
+        if newline {
+            output.push('\n');
+        }
+        output
     }
 
     /// Connect a pipeline of native external processes with OS pipes.  The
@@ -729,7 +983,15 @@ impl Executor {
             "echo" => {
                 let mut args: Vec<String> = command.words[1..]
                     .iter()
-                    .map(|word| self.expand_word(word))
+                    .enumerate()
+                    .flat_map(|(offset, word)| {
+                        let index = offset + 1;
+                        let raw = command
+                            .word_metadata
+                            .get(index)
+                            .map(|metadata| metadata.raw.as_str());
+                        self.expand_command_word(command, index, word, raw)
+                    })
                     .collect();
                 let newline = !args.first().is_some_and(|arg| arg == "-n");
                 if !newline {
@@ -744,7 +1006,15 @@ impl Executor {
             "printf" => {
                 let args: Vec<String> = command.words[1..]
                     .iter()
-                    .map(|word| self.expand_word(word))
+                    .enumerate()
+                    .flat_map(|(offset, word)| {
+                        let index = offset + 1;
+                        let raw = command
+                            .word_metadata
+                            .get(index)
+                            .map(|metadata| metadata.raw.as_str());
+                        self.expand_command_word(command, index, word, raw)
+                    })
                     .collect();
                 let mut env_vars = self.env_vars.clone();
                 let mut output = Vec::new();

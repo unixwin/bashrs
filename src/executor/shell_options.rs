@@ -1,4 +1,5 @@
 use super::*;
+use crate::executor::glob::{pathname_expand_word, PathnameExpansion};
 
 impl Executor {
     pub(in crate::executor) fn open_input_redirect(&self, target: &str) -> io::Result<File> {
@@ -18,11 +19,19 @@ impl Executor {
                 .write(true)
                 .open(shell_path_to_windows("/dev/null", &self.env_vars));
         }
-        let path = shell_path_to_windows(target, &self.env_vars);
+        let target = self.redirect_output_path_target(target);
+        let path = shell_path_to_windows(&target, &self.env_vars);
         if !clobber && crate::builtins::set::shell_option_enabled(&self.env_vars, "noclobber") {
             return OpenOptions::new().write(true).create_new(true).open(path);
         }
         File::create(path)
+    }
+
+    pub(in crate::executor) fn redirect_output_path_target(&self, target: &str) -> String {
+        match pathname_expand_word(target, &self.env_vars) {
+            PathnameExpansion::Matches(matches) if matches.len() == 1 => matches[0].clone(),
+            _ => target.to_string(),
+        }
     }
 
     pub(in crate::executor) fn open_output_fd_append(&self, target: &str) -> io::Result<File> {
@@ -475,6 +484,10 @@ impl Executor {
                     .open(&path);
             }
             return fs::read_to_string(path).ok();
+        }
+
+        if let Some(input) = self.virtual_fd_stdin_remaining(0) {
+            return Some(input);
         }
 
         let word = cmd.here_string.as_ref()?;

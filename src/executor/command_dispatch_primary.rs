@@ -144,12 +144,16 @@ impl Executor {
                 }
             }
             "sleep" => {
-                let (status, stderr) = crate::builtins::sleep::execute(&cmd.words[1..]);
-                if let Some(stderr) = stderr {
-                    eprint!("{stderr}");
+                if crate::builtins::sleep::can_execute_fast_path(&cmd.words[1..]) {
+                    let (status, stderr) = crate::builtins::sleep::execute(&cmd.words[1..]);
+                    if let Some(stderr) = stderr {
+                        eprint!("{stderr}");
+                    }
+                    self.exit_code = status;
+                    Ok(())
+                } else {
+                    self.execute_external(cmd)
                 }
-                self.exit_code = status;
-                Ok(())
             }
             "env" => {
                 self.execute_env_command(cmd)?;

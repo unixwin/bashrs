@@ -1,7 +1,7 @@
 use super::*;
 
 impl Executor {
-    fn set_fd_input_text(&mut self, fd: u32, input: String, dynamic: bool) {
+    pub(in crate::executor) fn set_fd_input_text(&mut self, fd: u32, input: String, dynamic: bool) {
         self.fd_table
             .open_input(fd, FdReadEndpoint::text(&input), dynamic);
         self.env_vars.insert(fd_stdin_key(fd), input);
@@ -72,7 +72,17 @@ impl Executor {
         self.exit_code = exit_status;
         let tokens = crate::lexer::tokenize(&action);
         let ast = crate::parser::parse(&tokens);
-        match self.execute_ast(&ast) {
+        let saved_trap_command = self.debug_trap_command.clone();
+        if self.debug_trap_command.is_none() {
+            self.debug_trap_command = self
+                .env_vars
+                .get("__RUBASH_LAST_COMMAND")
+                .or_else(|| self.env_vars.get("__RUBASH_CURRENT_COMMAND"))
+                .cloned();
+        }
+        let result = self.execute_ast(&ast);
+        self.debug_trap_command = saved_trap_command;
+        match result {
             Ok(()) => {
                 self.exit_code = exit_status;
                 Ok(exit_status)
@@ -638,6 +648,16 @@ impl Executor {
 
     fn copy_persistent_output_fd(&mut self, target_fd: u32, source_fd: u32) {
         if self.fd_table.is_open_for_write(source_fd) {
+            let source_endpoint = self.fd_table.write_endpoint(source_fd);
+            let target_endpoint = self.fd_table.write_endpoint(target_fd);
+            if target_fd != source_fd
+                && target_endpoint.as_ref().is_some_and(|endpoint| {
+                    matches!(endpoint, FdWriteEndpoint::ProcessSubstitution { .. })
+                })
+                && target_endpoint != source_endpoint
+            {
+                let _ = self.close_persistent_output_fd(target_fd);
+            }
             if self.fd_table.dup_output(target_fd, source_fd).is_ok() {
                 match self.fd_table.output_endpoint(target_fd) {
                     Some(FdWriteEndpoint::Stdout) => {
@@ -838,10 +858,32 @@ impl Executor {
         let ast = crate::parser::parse(&tokens);
         let old_stdin = self.env_vars.get(FUNCTION_STDIN).cloned();
         let old_offset = self.env_vars.get(FUNCTION_STDIN_OFFSET).cloned();
+        let old_fd0 = self.fd_table.entries.get(&0).cloned();
+        let fd0_key = fd_stdin_key(0);
+        let fd0_offset_key = fd_stdin_offset_key(0);
+        let fd0_dynamic_key = fd_dynamic_input_key(0);
+        let fd0_closed_key = fd_closed_key(0);
+        let old_fd0_stdin = self.env_vars.get(&fd0_key).cloned();
+        let old_fd0_offset = self.env_vars.get(&fd0_offset_key).cloned();
+        let old_fd0_dynamic = self.env_vars.get(&fd0_dynamic_key).cloned();
+        let old_fd0_closed = self.env_vars.get(&fd0_closed_key).cloned();
+        self.set_fd_input_text(0, input.clone(), false);
         self.env_vars.insert(FUNCTION_STDIN.to_string(), input);
         self.env_vars
             .insert(FUNCTION_STDIN_OFFSET.to_string(), "0".to_string());
         let result = self.execute_ast(&ast);
+        match old_fd0 {
+            Some(entry) => {
+                self.fd_table.entries.insert(0, entry);
+            }
+            None => {
+                self.fd_table.entries.remove(&0);
+            }
+        }
+        restore_optional_env_var(&mut self.env_vars, &fd0_key, old_fd0_stdin);
+        restore_optional_env_var(&mut self.env_vars, &fd0_offset_key, old_fd0_offset);
+        restore_optional_env_var(&mut self.env_vars, &fd0_dynamic_key, old_fd0_dynamic);
+        restore_optional_env_var(&mut self.env_vars, &fd0_closed_key, old_fd0_closed);
         restore_optional_env_var(&mut self.env_vars, FUNCTION_STDIN, old_stdin);
         restore_optional_env_var(&mut self.env_vars, FUNCTION_STDIN_OFFSET, old_offset);
         result

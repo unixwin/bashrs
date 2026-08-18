@@ -71,7 +71,10 @@ pub(in crate::executor) fn command_needs_process_substitution_materialization(
             .iter()
             .any(word_metadata_needs_process_substitution_materialization)
     {
-        return cmd.words.iter().any(|word| {
+        return cmd.words.iter().enumerate().any(|(index, word)| {
+            if cmd.word_metadata.get(index).is_some() {
+                return false;
+            }
             word.strip_prefix("<(")
                 .or_else(|| word.strip_prefix(">("))
                 .is_some_and(|word| word.ends_with(')'))
@@ -164,6 +167,10 @@ impl Executor {
             if redirect.fd.unwrap_or(0) == 0 {
                 process.stdin(Stdio::from(file));
             }
+        } else if self.env_vars.contains_key(FUNCTION_STDIN)
+            || self.virtual_fd_stdin_remaining(0).is_some()
+        {
+            process.stdin(Stdio::piped());
         } else if self.fd_table.is_closed(0)
             || (self.fd_table.has_entry(0) && !self.fd_table.is_open_for_read(0))
         {
@@ -213,10 +220,12 @@ impl Executor {
                 substitutions
             };
             if substitutions.is_empty() {
-                self.materialize_standalone_process_substitution_word(
-                    &mut rewritten.words[word_index],
-                    &mut files,
-                )?;
+                if metadata.is_none() {
+                    self.materialize_standalone_process_substitution_word(
+                        &mut rewritten.words[word_index],
+                        &mut files,
+                    )?;
+                }
             } else {
                 self.materialize_process_substitution_word(
                     &mut rewritten.words[word_index],
@@ -567,15 +576,32 @@ impl Executor {
         .collect::<Vec<_>>();
 
         for target in targets {
-            let Some(source) = self.assignment_output_process_substitutions.remove(&target) else {
-                continue;
-            };
-            let path = shell_path_to_windows(&target, &self.env_vars);
-            let input = fs::read_to_string(&path).unwrap_or_default();
-            self.execute_persistent_output_process_substitution(&source, input)?;
-            let _ = fs::remove_file(path);
+            self.finish_assignment_output_process_substitution_target(&target)?;
         }
 
+        let remaining_targets = self
+            .assignment_output_process_substitutions
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        for target in remaining_targets {
+            self.finish_assignment_output_process_substitution_target(&target)?;
+        }
+
+        Ok(())
+    }
+
+    fn finish_assignment_output_process_substitution_target(
+        &mut self,
+        target: &str,
+    ) -> Result<(), ExecuteError> {
+        let Some(source) = self.assignment_output_process_substitutions.remove(target) else {
+            return Ok(());
+        };
+        let path = shell_path_to_windows(target, &self.env_vars);
+        let input = fs::read_to_string(&path).unwrap_or_default();
+        self.execute_persistent_output_process_substitution(&source, input)?;
+        let _ = fs::remove_file(path);
         Ok(())
     }
 
@@ -600,10 +626,32 @@ impl Executor {
         let ast = crate::parser::parse(&tokens);
         let old_stdin = self.env_vars.get(FUNCTION_STDIN).cloned();
         let old_offset = self.env_vars.get(FUNCTION_STDIN_OFFSET).cloned();
+        let old_fd0 = self.fd_table.entries.get(&0).cloned();
+        let fd0_key = fd_stdin_key(0);
+        let fd0_offset_key = fd_stdin_offset_key(0);
+        let fd0_dynamic_key = fd_dynamic_input_key(0);
+        let fd0_closed_key = fd_closed_key(0);
+        let old_fd0_stdin = self.env_vars.get(&fd0_key).cloned();
+        let old_fd0_offset = self.env_vars.get(&fd0_offset_key).cloned();
+        let old_fd0_dynamic = self.env_vars.get(&fd0_dynamic_key).cloned();
+        let old_fd0_closed = self.env_vars.get(&fd0_closed_key).cloned();
+        self.set_fd_input_text(0, input.clone(), false);
         self.env_vars.insert(FUNCTION_STDIN.to_string(), input);
         self.env_vars
             .insert(FUNCTION_STDIN_OFFSET.to_string(), "0".to_string());
         let result = self.execute_ast(&ast);
+        match old_fd0 {
+            Some(entry) => {
+                self.fd_table.entries.insert(0, entry);
+            }
+            None => {
+                self.fd_table.entries.remove(&0);
+            }
+        }
+        restore_optional_env_var(&mut self.env_vars, &fd0_key, old_fd0_stdin);
+        restore_optional_env_var(&mut self.env_vars, &fd0_offset_key, old_fd0_offset);
+        restore_optional_env_var(&mut self.env_vars, &fd0_dynamic_key, old_fd0_dynamic);
+        restore_optional_env_var(&mut self.env_vars, &fd0_closed_key, old_fd0_closed);
         restore_optional_env_var(&mut self.env_vars, FUNCTION_STDIN, old_stdin);
         restore_optional_env_var(&mut self.env_vars, FUNCTION_STDIN_OFFSET, old_offset);
         result
@@ -710,5 +758,37 @@ fn sync_ordered_redirect_targets(command: &mut CommandNode) {
 }
 
 fn raw_word_contains_process_substitution(raw: &str) -> bool {
-    raw.contains("<(") || raw.contains(">(")
+    let chars = raw.chars().collect::<Vec<_>>();
+    let mut index = 0usize;
+    let mut single = false;
+    let mut double = false;
+    let mut escaped = false;
+    while index < chars.len() {
+        let ch = chars[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+        if ch == '\\' && !single {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+        if ch == '\'' && !double {
+            single = !single;
+            index += 1;
+            continue;
+        }
+        if ch == '"' && !single {
+            double = !double;
+            index += 1;
+            continue;
+        }
+        if !single && !double && matches!(ch, '<' | '>') && chars.get(index + 1) == Some(&'(') {
+            return true;
+        }
+        index += 1;
+    }
+    false
 }

@@ -107,6 +107,7 @@ impl Executor {
                 };
                 self.exit_code = failure_status;
                 let script_mode_nonfatal = self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
+                    && self.subshell_depth.get() == 0
                     && (!self.errexit_enabled() || !self.errexit_is_active());
                 if self.arithmetic_nonfatal_error.replace(false) || script_mode_nonfatal {
                     status = failure_status;
@@ -132,7 +133,44 @@ impl Executor {
                 }
             }
         }
-        self.apply_no_output_builtin_redirects(cmd)?;
+        match self.apply_no_output_builtin_redirects_with_status(cmd) {
+            Ok(redirect_failed) => {
+                if redirect_failed {
+                    status = 1;
+                }
+            }
+            Err(ExecuteError::IoError(error)) => {
+                let mut stderr = Vec::new();
+                let redirect_target = [
+                    cmd.redirect_in.as_ref(),
+                    cmd.redirect_out.as_ref(),
+                    cmd.append.as_ref(),
+                    cmd.redirect_err.as_ref(),
+                    cmd.redirect_err_append.as_ref(),
+                ]
+                .into_iter()
+                .flatten()
+                .map(|redirect| self.expand_word(&redirect.target))
+                .find(|target| {
+                    cfg!(windows)
+                        && (target.contains('\\')
+                            || contains_windows_forbidden_posix_filename_char(target))
+                });
+                if let Some(target) = redirect_target {
+                    writeln!(
+                        &mut stderr,
+                        "{}{}: No such file or directory",
+                        self.diagnostic_prefix(),
+                        target
+                    )?;
+                } else {
+                    writeln!(&mut stderr, "{}{}", self.diagnostic_prefix(), error)?;
+                }
+                self.write_default_stderr(&stderr)?;
+                status = 1;
+            }
+            Err(error) => return Err(error),
+        }
         self.exit_code = status;
         if self.errexit_enabled() && self.errexit_is_active() && self.exit_code != 0 {
             return Err(ExecuteError::ExitCode(self.exit_code));
@@ -166,7 +204,8 @@ impl Executor {
             || !cmd.process_substitutions.is_empty()
             || cmd.word_metadata.iter().any(|metadata| {
                 !metadata.process_substitutions.is_empty()
-                    || raw_word_contains_process_substitution(Some(&metadata.raw))
+                    || metadata.raw.contains("<(")
+                    || metadata.raw.contains(">(")
             });
         let mut variable_expanded = CommandNode {
             words: Vec::new(),
@@ -218,7 +257,7 @@ impl Executor {
             .collect::<Vec<_>>();
         variable_expanded.words = expanded_words
             .iter()
-            .map(|(word, _)| word.replace('\x15', "\\"))
+            .map(|(word, _)| restore_pathname_escape_markers(&word.replace('\x15', "\\")))
             .collect();
         variable_expanded.word_kinds = Vec::new();
 
@@ -227,11 +266,13 @@ impl Executor {
             let mut words = Vec::new();
             for (word, suppress_glob) in expanded_words {
                 if suppress_glob {
-                    words.push(word.replace('\x15', "\\"));
+                    words.push(restore_pathname_escape_markers(&word.replace('\x15', "\\")));
                 } else {
                     match pathname_expand_word(&word, &self.env_vars) {
                         PathnameExpansion::Matches(matches) => words.extend(matches),
-                        PathnameExpansion::NoMatch => words.push(word.replace('\x15', "\\")),
+                        PathnameExpansion::NoMatch => {
+                            words.push(restore_pathname_escape_markers(&word.replace('\x15', "\\")))
+                        }
                         PathnameExpansion::Fail(pattern) => {
                             self.report_failglob(&pattern);
                             return Err(ExecuteError::ExitCode(1));
@@ -244,7 +285,7 @@ impl Executor {
         Ok(variable_expanded)
     }
 
-    fn expand_command_word(
+    pub(in crate::executor) fn expand_command_word(
         &mut self,
         cmd: &CommandNode,
         index: usize,
@@ -424,6 +465,8 @@ impl Executor {
             &materialized_cmd,
         );
         let finish_result = self.finish_process_substitutions(process_substitution_files);
+        let assignment_finish_result =
+            self.finish_assignment_output_process_substitutions_for_command(&materialized_cmd);
         if self.posix_mode_enabled() {
             self.restore_function_temporary_assignments(
                 temporary_assignments,
@@ -437,7 +480,7 @@ impl Executor {
             POSIX_FUNCTION_EXPORT_TOUCHED,
             old_posix_export_touched,
         );
-        Some(result.and(finish_result))
+        Some(result.and(finish_result).and(assignment_finish_result))
     }
 
     pub(in crate::executor) fn execute_assignment_or_comment_command(
@@ -485,7 +528,42 @@ fn assignment_builtin_receives_assignment_word(
 }
 
 fn raw_word_contains_process_substitution(raw: Option<&str>) -> bool {
-    raw.is_some_and(|raw| raw.contains("<(") || raw.contains(">("))
+    let Some(raw) = raw else {
+        return false;
+    };
+    let chars = raw.chars().collect::<Vec<_>>();
+    let mut index = 0usize;
+    let mut single = false;
+    let mut double = false;
+    let mut escaped = false;
+    while index < chars.len() {
+        let ch = chars[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+        if ch == '\\' && !single {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+        if ch == '\'' && !double {
+            single = !single;
+            index += 1;
+            continue;
+        }
+        if ch == '"' && !single {
+            double = !double;
+            index += 1;
+            continue;
+        }
+        if !single && !double && matches!(ch, '<' | '>') && chars.get(index + 1) == Some(&'(') {
+            return true;
+        }
+        index += 1;
+    }
+    false
 }
 
 fn expanded_word_has_process_substitution(word: &str) -> bool {
@@ -519,6 +597,10 @@ pub(in crate::executor) fn expand_braces_with_optional_raw(
     } else {
         braced
     }
+}
+
+fn restore_pathname_escape_markers(word: &str) -> String {
+    word.replace('\x11', "")
 }
 
 pub(in crate::executor) fn raw_word_suppresses_pathname_expansion(

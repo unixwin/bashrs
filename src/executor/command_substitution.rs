@@ -7,11 +7,12 @@ impl Executor {
     /// marker so tilde expansion is skipped (Bash: `$(printf '%s' "~/repo")`
     /// prints `~/repo`, not the home directory).
     fn expand_protected_tilde(&self, word: &str, was_quoted: Option<bool>) -> String {
-        if was_quoted == Some(true) && word.starts_with('~') {
+        let expanded = if was_quoted == Some(true) && word.starts_with('~') {
             self.expand_word(&format!("\x1b{word}"))
         } else {
             self.expand_word(word)
-        }
+        };
+        unescape_remaining_shell_escapes(&expanded)
     }
 
     pub(in crate::executor) fn expand_command_substitution(&self, source: &str) -> String {
@@ -30,6 +31,10 @@ impl Executor {
         // `$(eval echo b)` so alias-expanded command substitutions participate
         // in word expansion.
         let source = source.trim();
+        if source.is_empty() {
+            self.last_command_substitution_status.set(Some(0));
+            return String::new();
+        }
         let source = source.strip_prefix("eval ").unwrap_or(source);
         if let Some(inner) = strip_wrapping_subshell_group(source) {
             return self.expand_command_substitution_inner(inner);
@@ -203,7 +208,10 @@ impl Executor {
                 let path = self.expand_word(word);
                 match fs::read_to_string(shell_path_to_windows(&path, &self.env_vars)) {
                     Ok(value) => output.push_str(&value),
-                    Err(_) => status = 1,
+                    Err(_) => {
+                        status = 1;
+                        eprintln!("cat: '{}': No such file or directory", path);
+                    }
                 }
             }
             self.last_command_substitution_status.set(Some(status));

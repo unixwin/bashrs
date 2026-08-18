@@ -50,6 +50,12 @@ impl Executor {
                 continue;
             }
 
+            if ch == '\\' && chars.peek() == Some(&'`') {
+                chars.next();
+                output.push('\x1a');
+                continue;
+            }
+
             if ch == '`' {
                 let mut source = String::new();
                 let mut escaped = false;
@@ -593,6 +599,25 @@ fn collect_command_substitution_source(
             word.clear();
             word_boundary = true;
             current_word_boundary = true;
+            continue;
+        }
+        if source_ch == '`' && !single {
+            source.push(source_ch);
+            let mut backtick_escaped = false;
+            for backtick_ch in chars.by_ref() {
+                source.push(backtick_ch);
+                if backtick_escaped {
+                    backtick_escaped = false;
+                    continue;
+                }
+                if backtick_ch == '\\' {
+                    backtick_escaped = true;
+                    continue;
+                }
+                if backtick_ch == '`' {
+                    break;
+                }
+            }
             continue;
         }
         let rest = chars.clone().collect::<String>();

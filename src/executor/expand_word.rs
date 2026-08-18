@@ -125,6 +125,11 @@ impl Executor {
             return format!("{name}={}", unescape_remaining_shell_escapes(&prepared));
         }
         let expanded = self.expand_embedded_parameters(value);
+        let expanded = if quoted {
+            expanded.replace('\x11', "")
+        } else {
+            expanded
+        };
         if !quoted
             && !expanded.contains('=')
             && (self.env_vars.get("__RUBASH_POSIX_MODE").map(String::as_str) != Some("1")
@@ -165,6 +170,11 @@ impl Executor {
             return format!("{name}={marker}{expanded}");
         }
         let expanded = self.expand_embedded_parameters(value);
+        let expanded = if quoted {
+            expanded.replace('\x11', "")
+        } else {
+            expanded
+        };
         if !quoted
             && !expanded.contains('=')
             && (self.env_vars.get("__RUBASH_POSIX_MODE").map(String::as_str) != Some("1")

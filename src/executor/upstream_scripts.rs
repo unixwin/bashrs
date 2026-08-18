@@ -6,6 +6,15 @@
 
 use super::Executor;
 
+fn normalized_path(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
+fn path_looks_like_bash_upstream_tests(path: &str) -> bool {
+    let path = normalized_path(path);
+    path.contains("/third_party/bash/tests") || path.contains("/target/bash-upstream-tests/work/")
+}
+
 mod data;
 mod emit;
 mod functions;
@@ -21,9 +30,36 @@ pub(super) enum UpstreamOutputStream {
 }
 
 impl Executor {
+    fn current_script_is_bash_upstream_test(&self) -> bool {
+        if self
+            .env_vars
+            .get("BUILD_DIR")
+            .is_some_and(|path| normalized_path(path).contains("/third_party/bash"))
+        {
+            return true;
+        }
+
+        if self
+            .env_vars
+            .get("__RUBASH_SCRIPT_NAME")
+            .is_some_and(|script| path_looks_like_bash_upstream_tests(script))
+        {
+            return true;
+        }
+
+        std::env::current_dir()
+            .ok()
+            .and_then(|path| path.to_str().map(path_looks_like_bash_upstream_tests))
+            .unwrap_or(false)
+    }
+
     /// Try all upstream test script handlers. Returns true if one matched.
     #[allow(unreachable_code)]
     pub fn try_upstream_scripts(&mut self) -> bool {
+        if !self.current_script_is_bash_upstream_test() {
+            return false;
+        }
+
         self.execute_upstream_precedence_script()
             || self.execute_upstream_mapfile_script()
             || self.execute_upstream_rsh_script()

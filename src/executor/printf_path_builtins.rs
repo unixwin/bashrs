@@ -45,116 +45,49 @@ impl Executor {
         Ok(status)
     }
 
-    pub(in crate::executor) fn execute_dirname(&mut self, cmd: &CommandNode) -> i32 {
-        let mut paths = Vec::new();
-        for arg in &cmd.words[1..] {
-            if !arg.starts_with('-') {
-                paths.push(self.expand_word(arg));
-            }
+    pub(in crate::executor) fn try_execute_dirname_fast_path(
+        &mut self,
+        cmd: &CommandNode,
+    ) -> Option<i32> {
+        let operands = simple_path_tool_operands(&cmd.words[1..])?;
+        if operands.is_empty() {
+            return None;
         }
-        if paths.is_empty() {
-            eprintln!("{}dirname: missing operand", self.diagnostic_prefix());
-            return 1;
-        }
+
         let mut stdout = Vec::new();
-        for path in &paths {
-            let normalized = path.replace('\\', "/");
-            let dir = if let Some(pos) = normalized.rfind('/') {
-                let d = &normalized[..pos];
-                if d.is_empty() {
-                    "/"
-                } else {
-                    d
-                }
-            } else {
-                "."
-            };
-            stdout.extend_from_slice(dir.as_bytes());
+        for operand in operands {
+            let path = self.expand_word(operand);
+            stdout.extend_from_slice(dirname_value(&path).as_bytes());
             stdout.push(b'\n');
         }
-        if self
-            .write_buffered_builtin_output(cmd, &stdout, &[])
-            .is_err()
-        {
-            return 1;
-        }
-        0
+        Some(self.write_path_tool_output(cmd, &stdout))
     }
 
-    pub(in crate::executor) fn execute_basename(&mut self, cmd: &CommandNode) -> i32 {
-        let mut args = Vec::new();
-        let mut suffix: Option<String> = None;
-        let mut i = 1;
-        while i < cmd.words.len() {
-            match cmd.words[i].as_str() {
-                "-a" | "--multiple" => {
-                    i += 1;
-                }
-                "-s" | "--suffix" => {
-                    suffix = cmd.words.get(i + 1).map(|w| self.expand_word(w));
-                    i += 2;
-                }
-                "-z" | "--zero" => {
-                    i += 1;
-                }
-                "--" => {
-                    i += 1;
-                    break;
-                }
-                arg if arg.starts_with('-') && arg.len() > 1 => {
-                    i += 1;
-                }
-                _ => {
-                    args.push(self.expand_word(&cmd.words[i]));
-                    i += 1;
-                }
-            }
+    pub(in crate::executor) fn try_execute_basename_fast_path(
+        &mut self,
+        cmd: &CommandNode,
+    ) -> Option<i32> {
+        let operands = simple_path_tool_operands(&cmd.words[1..])?;
+        if operands.is_empty() || operands.len() > 2 {
+            return None;
         }
-        while i < cmd.words.len() {
-            args.push(self.expand_word(&cmd.words[i]));
-            i += 1;
+
+        let name = self.expand_word(operands[0]);
+        let mut value = basename_value(&name);
+        if let Some(suffix) = operands.get(1) {
+            let suffix = self.expand_word(suffix);
+            value = strip_basename_suffix(&value, &suffix);
         }
-        if args.is_empty() {
-            eprintln!("{}basename: missing operand", self.diagnostic_prefix());
-            return 1;
-        }
+
         let mut stdout = Vec::new();
-        fn strip_name(name: &str, suf: &str) -> String {
-            if suf.len() < name.len() && name.ends_with(suf) {
-                name[..name.len() - suf.len()].to_string()
-            } else {
-                name.to_string()
-            }
-        }
-        if suffix.is_none() && args.len() == 2 {
-            let normalized = args[0].replace('\\', "/");
-            let name = if let Some(pos) = normalized.rfind('/') {
-                &normalized[pos + 1..]
-            } else {
-                &normalized
-            };
-            let name = if name.is_empty() { "/" } else { name };
-            stdout.extend_from_slice(strip_name(name, &args[1]).as_bytes());
-            stdout.push(b'\n');
-        } else {
-            for arg in &args {
-                let normalized = arg.replace('\\', "/");
-                let name = if let Some(pos) = normalized.rfind('/') {
-                    &normalized[pos + 1..]
-                } else {
-                    &normalized
-                };
-                let name = if name.is_empty() { "/" } else { name };
-                if let Some(suf) = &suffix {
-                    stdout.extend_from_slice(strip_name(name, suf).as_bytes());
-                } else {
-                    stdout.extend_from_slice(name.as_bytes());
-                }
-                stdout.push(b'\n');
-            }
-        }
+        stdout.extend_from_slice(value.as_bytes());
+        stdout.push(b'\n');
+        Some(self.write_path_tool_output(cmd, &stdout))
+    }
+
+    fn write_path_tool_output(&mut self, cmd: &CommandNode, stdout: &[u8]) -> i32 {
         if self
-            .write_buffered_builtin_output(cmd, &stdout, &[])
+            .write_buffered_builtin_output(cmd, stdout, &[])
             .is_err()
         {
             return 1;
@@ -236,5 +169,68 @@ impl Executor {
             &cmd.words[1..],
             &mut self.env_vars,
         )?)
+    }
+}
+
+fn simple_path_tool_operands(args: &[String]) -> Option<Vec<&str>> {
+    let mut operands = Vec::new();
+    let mut parse_options = true;
+    for arg in args {
+        if parse_options && arg == "--" {
+            parse_options = false;
+            continue;
+        }
+        if parse_options && arg.starts_with('-') && arg.len() > 1 {
+            return None;
+        }
+        operands.push(arg.as_str());
+    }
+    Some(operands)
+}
+
+fn basename_value(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    let trimmed = trim_trailing_slashes(&normalized);
+    if trimmed.is_empty() {
+        return "/".to_string();
+    }
+    trimmed
+        .rsplit_once('/')
+        .map(|(_, name)| name)
+        .unwrap_or(&trimmed)
+        .to_string()
+}
+
+fn dirname_value(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    let trimmed = trim_trailing_slashes(&normalized);
+    if trimmed.is_empty() {
+        return "/".to_string();
+    }
+    let Some((dir, _)) = trimmed.rsplit_once('/') else {
+        return ".".to_string();
+    };
+    let dir = trim_trailing_slashes(dir);
+    if dir.is_empty() {
+        "/".to_string()
+    } else {
+        dir
+    }
+}
+
+fn trim_trailing_slashes(value: &str) -> String {
+    let trimmed = value.trim_end_matches('/');
+    if trimmed.is_empty() && value.contains('/') {
+        String::new()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn strip_basename_suffix(name: &str, suffix: &str) -> String {
+    if suffix.len() < name.len() && name.ends_with(suffix) {
+        name[..name.len() - suffix.len()].to_string()
+    } else {
+        name.to_string()
     }
 }

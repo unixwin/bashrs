@@ -135,7 +135,22 @@ impl Executor {
             .iter()
             .map(|metadata| Some(metadata.raw.as_str()))
             .collect();
-        let cmd = self.apply_alias_expansion_after_word_expansion(expanded, &original_raws);
+        let alias_expanded =
+            self.apply_alias_expansion_after_word_expansion(expanded, &original_raws);
+        if alias_expanded.words.is_empty() {
+            if !cmd.assignments.is_empty() {
+                return self.execute_empty_words_command(cmd);
+            }
+            if let Some(status) = self.last_command_substitution_status.get() {
+                self.exit_code = status;
+                self.last_command_substitution_status.set(None);
+            }
+            if self.errexit_enabled() && self.errexit_is_active() && self.exit_code != 0 {
+                return Err(ExecuteError::ExitCode(self.exit_code));
+            }
+            return Ok(());
+        }
+        let cmd = alias_expanded;
 
         // Arithmetic expansion errors are fatal expansion errors in Bash. The
         // failing command is not dispatched and the surrounding command list
@@ -153,6 +168,7 @@ impl Executor {
             };
             self.exit_code = status;
             let script_mode_nonfatal = self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
+                && self.subshell_depth.get() == 0
                 && (!self.errexit_enabled() || !self.errexit_is_active());
             if self.arithmetic_nonfatal_error.replace(false) || script_mode_nonfatal {
                 return Ok(());

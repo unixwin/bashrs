@@ -12,6 +12,8 @@ use std::process::Command;
 
 use super::support_names::split_shell_path;
 
+pub(crate) const COMPATIBLE_SHELL_PATH_ENV: &str = "__RUBASH_COMPATIBLE_SHELL_PATH";
+
 pub(crate) fn shell_path_entries(path: &str) -> Vec<String> {
     split_shell_path(path)
 }
@@ -116,15 +118,26 @@ pub fn standard_path(_env_vars: &HashMap<String, String>) -> String {
 }
 
 pub fn find_shell(env_vars: &HashMap<String, String>) -> Option<PathBuf> {
-    let path_shell = ["sh", "bash"]
-        .into_iter()
-        .find_map(|name| find_user_command(name, env_vars));
+    if let Some(shell) = configured_compatible_shell(env_vars) {
+        return Some(shell);
+    }
 
     if cfg!(windows) {
-        path_shell
-    } else {
-        path_shell.or_else(find_standard_unix_shell)
+        return None;
     }
+
+    ["sh", "bash"]
+        .into_iter()
+        .find_map(|name| find_user_command(name, env_vars))
+        .or_else(find_standard_unix_shell)
+}
+
+fn configured_compatible_shell(env_vars: &HashMap<String, String>) -> Option<PathBuf> {
+    let value = env_vars
+        .get(COMPATIBLE_SHELL_PATH_ENV)
+        .filter(|value| !value.is_empty())?;
+    let candidate = shell_path_to_windows(value, env_vars);
+    executable_candidate(&candidate, env_vars)
 }
 
 pub fn should_run_with_shell(path: &Path) -> bool {
@@ -586,6 +599,12 @@ pub(crate) fn shell_path_to_windows(path: &str, env_vars: &HashMap<String, Strin
         return PathBuf::from(r"\\.\WINUXSH_UNSUPPORTED_DEVICE");
     }
 
+    if cfg!(windows) {
+        if let Some(index) = windows_drive_absolute_tail_index(&normalized) {
+            return PathBuf::from(normalized[index..].replace('/', "\\"));
+        }
+    }
+
     if cfg!(windows)
         && normalized.len() >= 3
         && normalized.as_bytes()[0] == b'/'
@@ -618,6 +637,12 @@ pub(crate) fn shell_path_to_windows(path: &str, env_vars: &HashMap<String, Strin
         }
     }
 
+    if cfg!(windows) {
+        if let Some(mapped) = map_windows_home_path(&normalized, env_vars) {
+            return mapped;
+        }
+    }
+
     if let Some(root) = shell_root {
         if let Some(mapped) = map_logical_path(&normalized, &root) {
             return mapped;
@@ -625,6 +650,27 @@ pub(crate) fn shell_path_to_windows(path: &str, env_vars: &HashMap<String, Strin
     }
 
     PathBuf::from(path)
+}
+
+fn windows_drive_absolute_tail_index(path: &str) -> Option<usize> {
+    let bytes = path.as_bytes();
+    if bytes.len() < 3 {
+        return None;
+    }
+    let mut first = None;
+    for index in 0..=bytes.len() - 3 {
+        if bytes[index].is_ascii_alphabetic()
+            && bytes[index + 1] == b':'
+            && bytes[index + 2] == b'/'
+            && (index == 0 || bytes[index - 1] == b'/')
+        {
+            if index > 0 {
+                return Some(index);
+            }
+            first = Some(index);
+        }
+    }
+    first
 }
 
 pub(crate) fn shell_path_to_windows_for_lookup(
@@ -675,6 +721,67 @@ fn configured_shell_root(env_vars: &HashMap<String, String>) -> Option<PathBuf> 
 
 pub(crate) fn shell_root_configured(env_vars: &HashMap<String, String>) -> bool {
     configured_shell_root(env_vars).is_some()
+}
+
+fn map_windows_home_path(normalized: &str, env_vars: &HashMap<String, String>) -> Option<PathBuf> {
+    if normalized != "/home" && !normalized.starts_with("/home/") {
+        return None;
+    }
+
+    let user_home = windows_real_home_path(env_vars)?;
+    let mut mapped = user_home.parent()?.to_path_buf();
+    let rest = normalized.strip_prefix("/home")?.trim_start_matches('/');
+    for component in rest.split('/') {
+        match component {
+            "" | "." => {}
+            ".." => {
+                mapped.pop();
+            }
+            component => mapped.push(component),
+        }
+    }
+    Some(mapped)
+}
+
+fn windows_real_home_path(env_vars: &HashMap<String, String>) -> Option<PathBuf> {
+    ["HOME", "USERPROFILE"]
+        .into_iter()
+        .filter_map(|name| {
+            env_vars
+                .get(name)
+                .cloned()
+                .or_else(|| std::env::var(name).ok())
+        })
+        .filter(|value| !value.is_empty())
+        .find_map(|value| windows_real_home_candidate(&value))
+}
+
+fn windows_real_home_candidate(value: &str) -> Option<PathBuf> {
+    let normalized = value.replace('\\', "/");
+    if normalized == "/home" || normalized.starts_with("/home/") {
+        return None;
+    }
+
+    if normalized.starts_with("//") {
+        return Some(PathBuf::from(value));
+    }
+
+    if normalized.len() >= 3
+        && normalized.as_bytes()[0] == b'/'
+        && normalized.as_bytes()[2] == b'/'
+        && normalized.as_bytes()[1].is_ascii_alphabetic()
+    {
+        let drive = normalized.as_bytes()[1] as char;
+        return Some(PathBuf::from(
+            format!("{}:\\{}", drive.to_ascii_uppercase(), &normalized[3..]).replace('/', "\\"),
+        ));
+    }
+
+    if normalized.starts_with('/') {
+        return None;
+    }
+
+    Some(PathBuf::from(value))
 }
 
 /// Return the real installation root for a WinuxCmd executable or bin
@@ -771,7 +878,7 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn windows_shell_lookup_uses_path_only() {
+    fn windows_shell_lookup_does_not_probe_path() {
         let bin_dir = std::env::temp_dir().join("rubash-path-only-shell-bin");
         let _ = fs::remove_dir_all(&bin_dir);
         fs::create_dir_all(&bin_dir).unwrap();
@@ -781,9 +888,23 @@ mod tests {
         let mut env_vars = HashMap::new();
         env_vars.insert("PATH".to_string(), bin_dir.to_string_lossy().to_string());
 
-        assert_eq!(find_shell(&env_vars), Some(shell.clone()));
+        assert_eq!(find_shell(&env_vars), None);
         assert_eq!(find_user_command("sh", &env_vars), Some(shell));
         let _ = fs::remove_dir_all(bin_dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_shell_lookup_uses_explicit_internal_shell() {
+        let shell = std::env::current_exe().unwrap();
+        let mut env_vars = HashMap::new();
+        env_vars.insert(
+            COMPATIBLE_SHELL_PATH_ENV.to_string(),
+            shell.to_string_lossy().to_string(),
+        );
+        env_vars.insert("PATH".to_string(), String::new());
+
+        assert_eq!(find_shell(&env_vars), Some(shell));
     }
 
     #[cfg(windows)]
@@ -923,6 +1044,53 @@ mod tests {
         assert_eq!(
             shell_path_to_windows("/dev/fd/1", &env_vars),
             PathBuf::from(r"\\.\WINUXSH_UNSUPPORTED_DEVICE")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_home_path_maps_to_real_user_profiles_parent() {
+        let real_home = std::env::temp_dir()
+            .join("rubash-real-home-paths")
+            .join("alice");
+        let mut env_vars = HashMap::new();
+        env_vars.insert("HOME".to_string(), real_home.to_string_lossy().to_string());
+
+        assert_eq!(
+            shell_path_to_windows("/home", &env_vars),
+            real_home.parent().unwrap()
+        );
+        assert_eq!(
+            shell_path_to_windows("/home/alice/docs", &env_vars),
+            real_home.join("docs")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_home_path_uses_real_profile_before_shell_root() {
+        let shell_root = std::env::temp_dir().join("rubash-home-shell-root");
+        let user_profile = std::env::temp_dir()
+            .join("rubash-real-userprofile")
+            .join("bob");
+        let mut env_vars = HashMap::new();
+        env_vars.insert(
+            "WINUXSH_ROOT".to_string(),
+            shell_root.to_string_lossy().to_string(),
+        );
+        env_vars.insert("HOME".to_string(), "/home/bob".to_string());
+        env_vars.insert(
+            "USERPROFILE".to_string(),
+            user_profile.to_string_lossy().to_string(),
+        );
+
+        assert_eq!(
+            shell_path_to_windows("/home", &env_vars),
+            user_profile.parent().unwrap()
+        );
+        assert_eq!(
+            shell_path_to_windows("/home/bob/project", &env_vars),
+            user_profile.join("project")
         );
     }
 
