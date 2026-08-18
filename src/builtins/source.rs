@@ -120,6 +120,7 @@ where
                 &source,
                 invocation.args,
                 redirect_cmd,
+                None,
             );
         }
     }
@@ -136,7 +137,13 @@ where
         // that generated text directly until process substitution is parsed.
         let source = args.iter().skip(1).cloned().collect::<Vec<_>>().join(" ");
         if !source.is_empty() {
-            return execution::execute_text_maybe_redirected(executor, &source, &[], redirect_cmd);
+            return execution::execute_text_maybe_redirected(
+                executor,
+                &source,
+                &[],
+                redirect_cmd,
+                None,
+            );
         }
     }
 
@@ -177,7 +184,13 @@ where
         }
     };
 
-    execution::execute_text_maybe_redirected(executor, &source, invocation.args, redirect_cmd)
+    execution::execute_text_maybe_redirected(
+        executor,
+        &source,
+        invocation.args,
+        redirect_cmd,
+        Some(filename),
+    )
 }
 
 fn is_null_device(path: &str) -> bool {

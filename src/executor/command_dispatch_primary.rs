@@ -48,6 +48,15 @@ impl Executor {
             }
             "command" => self.execute_command_builtin_command(cmd)?,
             "builtin" => self.execute_builtin_direct_command(cmd),
+            #[cfg(windows)]
+            "sudo" => {
+                if crate::builtins::enable::is_disabled(&self.env_vars, "sudo") {
+                    self.execute_external(cmd)
+                } else {
+                    self.exit_code = self.execute_sudo(cmd)?;
+                    Ok(())
+                }
+            }
             "cd" => {
                 if self
                     .env_vars
@@ -143,7 +152,7 @@ impl Executor {
                 Ok(())
             }
             "env" => {
-                self.do_env()?;
+                self.execute_env_command(cmd)?;
                 Ok(())
             }
             "set" => self.execute_set_command(cmd),

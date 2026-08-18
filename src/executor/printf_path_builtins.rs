@@ -72,7 +72,10 @@ impl Executor {
             stdout.extend_from_slice(dir.as_bytes());
             stdout.push(b'\n');
         }
-        if self.write_buffered_builtin_output(cmd, &stdout, &[]).is_err() {
+        if self
+            .write_buffered_builtin_output(cmd, &stdout, &[])
+            .is_err()
+        {
             return 1;
         }
         0
@@ -150,7 +153,10 @@ impl Executor {
                 stdout.push(b'\n');
             }
         }
-        if self.write_buffered_builtin_output(cmd, &stdout, &[]).is_err() {
+        if self
+            .write_buffered_builtin_output(cmd, &stdout, &[])
+            .is_err()
+        {
             return 1;
         }
         0

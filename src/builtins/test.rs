@@ -223,16 +223,25 @@ fn eval_unary(op: &str, operand: &str, env_vars: &HashMap<String, String>) -> Re
 }
 
 fn virtual_device_test(op: &str, operand: &str) -> Option<bool> {
-    if !crate::executor::path::is_shell_null_device(operand) {
-        return None;
+    if crate::executor::path::is_shell_null_device(operand) {
+        return Some(match op {
+            "-a" | "-e" | "-r" | "-w" | "-c" => true,
+            "-x" | "-s" | "-b" | "-p" | "-S" | "-u" | "-g" | "-k" | "-h" | "-L" | "-O" | "-G"
+            | "-N" => false,
+            _ => return None,
+        });
     }
 
-    Some(match op {
-        "-a" | "-e" | "-r" | "-w" | "-c" => true,
-        "-x" | "-s" | "-b" | "-p" | "-S" | "-u" | "-g" | "-k" | "-h" | "-L" | "-O" | "-G"
-        | "-N" => false,
-        _ => return None,
-    })
+    if matches!(operand, "/dev/stdin" | "/proc/self/fd/0" | "/dev/fd/0") {
+        return Some(match op {
+            "-a" | "-e" | "-r" | "-c" => true,
+            "-w" | "-x" | "-s" | "-b" | "-p" | "-S" | "-u" | "-g" | "-k" | "-h" | "-L" | "-O"
+            | "-G" | "-N" => false,
+            _ => return None,
+        });
+    }
+
+    None
 }
 
 fn test_path(operand: &str, env_vars: &HashMap<String, String>) -> std::path::PathBuf {

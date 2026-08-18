@@ -1,6 +1,4 @@
 mod unit_tests {
-    use crate::executor::alias_helpers::split_shell_words;
-    use crate::executor::parameter_decode::strip_matching_quotes;
     use crate::executor::Executor;
     use crate::lexer::tokenize;
     use crate::parser::parse;
@@ -55,6 +53,21 @@ mod unit_tests {
         let mut executor = Executor::new();
         executor.set_env("TEST_VAR", "hello");
         assert_eq!(executor.get_env("TEST_VAR"), Some("hello"));
+    }
+
+    #[test]
+    fn export_assignment_arg_preserves_quoted_spaces() {
+        let tokens = tokenize(r#"export PATH="$PATH;C:\Program Files\Tool""#);
+        let ast = parse(&tokens);
+        let mut executor = Executor::new();
+        executor.set_env("PATH", r"C:\Base");
+
+        executor.execute_ast(&ast).expect("export PATH assignment");
+
+        assert_eq!(
+            executor.get_env("PATH"),
+            Some(r"C:\Base;C:\Program Files\Tool")
+        );
     }
 
     #[test]
@@ -125,5 +138,57 @@ mod unit_tests {
             .env_vars
             .insert("EUID".to_string(), "1000".to_string());
         assert_eq!(executor.decode_prompt_string("\\$"), "$");
+    }
+
+    #[test]
+    fn prompt_expansion_runs_starship_ps0_arithmetic_assignment() {
+        let mut executor = Executor::new();
+        let rendered = executor
+            .expand_prompt_string_mut("${STARSHIP_START_TIME:$((STARSHIP_START_TIME=12345,0)):0}");
+
+        assert_eq!(rendered, "");
+        assert_eq!(executor.get_env("STARSHIP_START_TIME"), Some("12345"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn sudo_uses_host_elevation_handler() {
+        use crate::executor::{ElevationOutput, SudoMode};
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let tokens = tokenize("sudo -E --new-window echo hi");
+        let ast = parse(&tokens);
+        let captured = Rc::new(RefCell::new(None));
+        let captured_for_handler = Rc::clone(&captured);
+
+        let mut executor = Executor::new();
+        executor.export_env("SUDO_TEST_MARKER", "present");
+        executor.set_elevation_handler(move |request| {
+            *captured_for_handler.borrow_mut() = Some(request.clone());
+            Ok(ElevationOutput {
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+                status: 7,
+            })
+        });
+
+        assert!(executor.execute_ast(&ast).is_ok());
+        assert_eq!(executor.last_exit_code(), 7);
+
+        let request = captured
+            .borrow()
+            .clone()
+            .expect("sudo should call elevation handler");
+        assert_eq!(request.command, vec!["echo".to_string(), "hi".to_string()]);
+        assert_eq!(request.mode, SudoMode::NewWindow);
+        assert!(request.preserve_environment);
+        assert_eq!(
+            request
+                .environment
+                .get("SUDO_TEST_MARKER")
+                .map(String::as_str),
+            Some("present")
+        );
     }
 }

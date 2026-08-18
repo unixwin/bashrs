@@ -179,9 +179,7 @@ fn test_pwd_preserves_ordered_output_redirects() {
     let output_path = "target/rubash-pwd-ordered-output.txt";
     let _ = fs::remove_file(output_path);
 
-    let input = format!(
-        "PWD=/tmp/rubash-pwd-test pwd >&2 2> {output_path}; test -e {output_path}"
-    );
+    let input = format!("PWD=/tmp/rubash-pwd-test pwd >&2 2> {output_path}; test -e {output_path}");
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
     let mut executor = Executor::new();
@@ -200,9 +198,7 @@ fn test_export_preserves_ordered_output_redirects() {
     let output_path = "target/rubash-export-ordered-output.txt";
     let _ = fs::remove_file(output_path);
 
-    let input = format!(
-        "export RUBASH_EXPORT_ORDERED=value; export -p >&2 2> {output_path}"
-    );
+    let input = format!("export RUBASH_EXPORT_ORDERED=value; export -p >&2 2> {output_path}");
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
     let mut executor = Executor::new();

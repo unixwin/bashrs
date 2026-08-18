@@ -61,6 +61,8 @@ const ALL_BUILTINS: &[&str] = &[
     "shift",
     "shopt",
     "source",
+    #[cfg(windows)]
+    "sudo",
     "suspend",
     "test",
     "times",
@@ -184,7 +186,7 @@ where
         return Ok(status);
     }
 
-    if operands.is_empty() || reusable || list_all {
+    if operands.is_empty() && (reusable || list_all || !disable) {
         if special_only {
             let disabled = disabled_builtins(env_vars);
             for name in SPECIAL_BUILTINS {

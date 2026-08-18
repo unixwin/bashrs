@@ -98,29 +98,28 @@ impl Executor {
             }
         }
 
+        // A whole-word `${...}` must go to the braced parameter expander.
+        // Routing it through expand_embedded_parameters_mut re-collects the
+        // same `${...}` and calls expand_word_mut again, recursing forever
+        // (`echo ${foo:-$(echo x)}` overflowed the stack in comsub.tests).
+        // The mutable expander preserves prompt/preexec side effects such as
+        // Starship's `${var:$((var="$(cmd)",0)):0}` PS0 assignment.
+        if word
+            .strip_prefix("${")
+            .and_then(|rest| rest.strip_suffix('}'))
+            .is_some()
+        {
+            if braced_parameter_spans_whole_word(word) {
+                return self.expand_quoted_parameter_word_mut(word);
+            }
+        }
+
         if word.contains("$((") || word.contains("$[") {
             return self.expand_embedded_parameters_mut(word);
         }
 
         if word_contains_current_shell_command_substitution(word) {
             return self.expand_embedded_parameters_mut(word);
-        }
-
-        // A whole-word `${...}` must go to the braced parameter expander.
-        // Routing it through expand_embedded_parameters_mut re-collects the
-        // same `${...}` and calls expand_word_mut again, recursing forever
-        // (`echo ${foo:-$(echo x)}` overflowed the stack in comsub.tests).
-        // The immutable expander still executes `$(...)` inside the braced
-        // word; only `:=`/`=` assignment side effects would be lost, and
-        // those already routed through apply_parameter_assignment_expansion
-        // above.
-        if let Some(name) = word
-            .strip_prefix("${")
-            .and_then(|rest| rest.strip_suffix('}'))
-        {
-            if braced_parameter_spans_whole_word(word) {
-                return self.expand_braced_parameter_word(word, name);
-            }
         }
 
         if let Some(source) = word
@@ -232,6 +231,57 @@ impl Executor {
         // an arithmetic expression after parameter expansion).
         let expression = self.expand_embedded_parameters(&expression);
         let evaluated = eval_conditional_arith_value(&expression, &self.env_vars)?;
+        isize::try_from(evaluated).ok()
+    }
+
+    pub(in crate::executor) fn parse_parameter_substring_mut<'a>(
+        &mut self,
+        name: &'a str,
+    ) -> Option<(&'a str, isize, Option<isize>)> {
+        let (var_name, rest) = name.split_once(':')?;
+        if var_name.is_empty() || matches!(rest.chars().next(), Some('=' | '+' | '?')) {
+            return None;
+        }
+        if rest.starts_with('-') {
+            return None;
+        }
+
+        let (offset, length, has_length) = split_top_level_colon(rest);
+        let offset = offset.trim_start();
+        if offset.is_empty() && length.is_empty() && !has_length {
+            return None;
+        }
+
+        let offset = if offset.is_empty() {
+            0
+        } else {
+            self.eval_parameter_substring_offset_mut(offset)?
+        };
+        let length = if !has_length {
+            None
+        } else if length.is_empty() {
+            Some(0)
+        } else {
+            Some(self.eval_parameter_substring_offset_mut(length)?)
+        };
+
+        Some((var_name, offset, length))
+    }
+
+    fn eval_parameter_substring_offset_mut(&mut self, value: &str) -> Option<isize> {
+        let expression = value
+            .strip_prefix("$((")
+            .and_then(|inner| inner.strip_suffix("))"))
+            .or_else(|| {
+                value
+                    .strip_prefix('(')
+                    .and_then(|inner| inner.strip_suffix(')'))
+            })
+            .unwrap_or(value)
+            .trim();
+        let expression = self.expand_arithmetic_special_parameters(expression);
+        let expression = self.expand_embedded_parameters_mut(&expression);
+        let evaluated = self.eval_arithmetic_expansion_value(&expression)?;
         isize::try_from(evaluated).ok()
     }
 }

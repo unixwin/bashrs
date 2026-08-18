@@ -261,6 +261,14 @@ impl Iterator for StorageWordIter<'_> {
 }
 
 pub(in crate::executor) fn unquote_storage_value(value: &str) -> String {
+    fn restore_quote_markers(value: &str) -> String {
+        value
+            .replace('\x1f', "$")
+            .replace('\x1a', "`")
+            .replace('\x17', "'")
+            .replace('\x14', "\\")
+    }
+
     if value == "\\\"\\" {
         return "\"\"".to_string();
     }
@@ -269,14 +277,14 @@ pub(in crate::executor) fn unquote_storage_value(value: &str) -> String {
         .strip_prefix('\'')
         .and_then(|value| value.strip_suffix('\''))
     {
-        return inner.to_string();
+        return restore_quote_markers(inner);
     }
 
     let Some(inner) = value
         .strip_prefix('"')
         .and_then(|value| value.strip_suffix('"'))
     else {
-        return value.to_string();
+        return restore_quote_markers(value);
     };
 
     let mut unquoted = String::new();
@@ -300,7 +308,7 @@ pub(in crate::executor) fn unquote_storage_value(value: &str) -> String {
     if unquoted == "\\\"\\" {
         return "\"\"".to_string();
     }
-    unquoted
+    restore_quote_markers(&unquoted)
 }
 
 pub(in crate::executor) fn quote_compound_field_value(value: &str) -> String {

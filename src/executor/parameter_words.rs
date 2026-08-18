@@ -154,11 +154,11 @@ impl Executor {
             }
         }
 
-        if let Some(value) = self.expand_braced_special_or_indirect_parameter(name) {
+        if let Some(value) = self.expand_braced_pattern_or_transform_parameter(name) {
             return value;
         }
 
-        if let Some(value) = self.expand_braced_pattern_or_transform_parameter(name) {
+        if let Some(value) = self.expand_braced_special_or_indirect_parameter(name) {
             return value;
         }
 
@@ -247,7 +247,7 @@ impl Executor {
             }
         }
 
-        if let Some((var_name, offset, length)) = self.parse_parameter_substring(name) {
+        if let Some((var_name, offset, length)) = self.parse_parameter_substring_mut(name) {
             return self.expand_braced_substring_parameter(var_name, offset, length);
         }
 
@@ -296,11 +296,11 @@ impl Executor {
             }
         }
 
-        if let Some(value) = self.expand_braced_special_or_indirect_parameter(name) {
+        if let Some(value) = self.expand_braced_pattern_or_transform_parameter(name) {
             return value;
         }
 
-        if let Some(value) = self.expand_braced_pattern_or_transform_parameter(name) {
+        if let Some(value) = self.expand_braced_special_or_indirect_parameter(name) {
             return value;
         }
 

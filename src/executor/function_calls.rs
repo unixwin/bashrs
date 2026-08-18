@@ -146,10 +146,7 @@ impl Executor {
         self.function_depth += 1;
         let old_debug_trap_function_line = self.debug_trap_function_line;
         if self.debug_trap_running {
-            self.debug_trap_function_line = body
-                .commands
-                .first()
-                .and_then(|command| command.line);
+            self.debug_trap_function_line = body.commands.first().and_then(|command| command.line);
         }
         let result = self.execute_ast_inner(body_ast);
         self.debug_trap_function_line = old_debug_trap_function_line;

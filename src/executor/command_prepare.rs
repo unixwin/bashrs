@@ -207,7 +207,8 @@ impl Executor {
             .flat_map(|(index, word)| {
                 let metadata = cmd.word_metadata.get(index);
                 let raw = metadata.map(|metadata| metadata.raw.as_str());
-                let suppress_glob = word.starts_with('\x1b')
+                let suppress_glob = assignment_builtin_receives_assignment_word(cmd, index, word)
+                    || word.starts_with('\x1b')
                     || word.starts_with('\x1d')
                     || raw_word_suppresses_pathname_expansion(raw, metadata);
                 self.expand_command_word(cmd, index, word, raw)
@@ -226,7 +227,7 @@ impl Executor {
             let mut words = Vec::new();
             for (word, suppress_glob) in expanded_words {
                 if suppress_glob {
-                        words.push(word.replace('\x15', "\\"));
+                    words.push(word.replace('\x15', "\\"));
                 } else {
                     match pathname_expand_word(&word, &self.env_vars) {
                         PathnameExpansion::Matches(matches) => words.extend(matches),
@@ -306,6 +307,9 @@ impl Executor {
             }
         }
         let expanded = self.expand_word_mut(word);
+        if assignment_builtin_receives_assignment_word(cmd, index, word) {
+            return vec![expanded];
+        }
         if expanded.is_empty() && self.removes_unquoted_null_word(cmd, index) {
             Vec::new()
         } else if raw_word_contains_process_substitution(raw)
@@ -463,6 +467,20 @@ fn special_readonly_assignment_is_recoverable(name: &str) -> bool {
     matches!(
         name,
         "BASHOPTS" | "BASH_VERSINFO" | "EUID" | "PPID" | "SHELLOPTS" | "UID"
+    )
+}
+
+fn assignment_builtin_receives_assignment_word(
+    cmd: &CommandNode,
+    index: usize,
+    word: &str,
+) -> bool {
+    if index == 0 || split_assignment_word(word).is_none() {
+        return false;
+    }
+    matches!(
+        cmd.words.first().map(String::as_str),
+        Some("export" | "readonly" | "declare" | "typeset" | "local")
     )
 }
 

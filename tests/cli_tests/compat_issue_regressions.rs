@@ -115,7 +115,9 @@ fn parameter_replacement_keeps_escaped_command_substitution_literal() {
 fn printf_integer_conversion_keeps_valid_prefix_before_invalid_suffix() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
-        .arg("printf '%d:%d:%d\\n' '1.2' '08' '10#12'; status=$?; printf 'status=%s\\n' \"$status\"")
+        .arg(
+            "printf '%d:%d:%d\\n' '1.2' '08' '10#12'; status=$?; printf 'status=%s\\n' \"$status\"",
+        )
         .output()
         .expect("run printf integer prefix probe");
 
@@ -125,7 +127,11 @@ fn printf_integer_conversion_keeps_valid_prefix_before_invalid_suffix() {
         "1:0:10\nstatus=1\n"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_eq!(stderr.matches("invalid number").count(), 3, "stderr: {stderr}");
+    assert_eq!(
+        stderr.matches("invalid number").count(),
+        3,
+        "stderr: {stderr}"
+    );
 }
 
 #[test]
@@ -248,7 +254,10 @@ fn arithmetic_empty_quoted_array_subscript_fails_outside_let() {
         String::from_utf8_lossy(&command_output.stdout),
         String::from_utf8_lossy(&command_output.stderr)
     );
-    assert_eq!(String::from_utf8_lossy(&command_output.stdout), "status=1\n");
+    assert_eq!(
+        String::from_utf8_lossy(&command_output.stdout),
+        "status=1\n"
+    );
 
     let expansion_output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
@@ -273,10 +282,7 @@ fn parameter_substring_empty_length_is_zero() {
         .expect("run empty parameter substring length probe");
 
     assert!(output.status.success());
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        "<>|<>|<345>\n"
-    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<>|<>|<345>\n");
     assert!(String::from_utf8_lossy(&output.stderr).is_empty());
 }
 

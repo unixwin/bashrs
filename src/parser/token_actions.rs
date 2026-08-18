@@ -32,6 +32,15 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
             {
                 push_synthetic_process_substitution_word(&mut state.current_cmd, &value, &raw);
                 *i = next_i;
+            } else if state.current_cmd.words.is_empty() {
+                if let Some((value, raw, next_i)) =
+                    collect_split_array_element_assignment_word(tokens, *i)
+                {
+                    push_synthetic_process_substitution_word(&mut state.current_cmd, &value, &raw);
+                    *i = next_i;
+                } else {
+                    push_command_word(&mut state.current_cmd, token);
+                }
             } else {
                 push_command_word(&mut state.current_cmd, token);
             }
@@ -654,6 +663,43 @@ fn collect_adjacent_assignment_process_substitution<'a>(
         return None;
     }
     collect_adjacent_process_substitution_word(tokens, current + 1)
+}
+
+fn collect_split_array_element_assignment_word(
+    tokens: &[Token],
+    start: usize,
+) -> Option<(String, String, usize)> {
+    let first = tokens.get(start)?;
+    if !adjacent_word_token(first) || !first.value.contains('[') || first.value.contains(']') {
+        return None;
+    }
+
+    let mut value = first.value.clone();
+    let mut raw = first.raw.clone();
+    let mut end = first.column + first.raw.len();
+    let mut index = start + 1;
+    while let Some(token) = tokens.get(index) {
+        if token.line_break || !adjacent_word_token(token) {
+            break;
+        }
+        let gap = token.column.saturating_sub(end);
+        if gap == 0 {
+            value.push(' ');
+            raw.push(' ');
+        } else {
+            value.push_str(&" ".repeat(gap));
+            raw.push_str(&" ".repeat(gap));
+        }
+        value.push_str(&token.value);
+        raw.push_str(&token.raw);
+        end = token.column + token.raw.len();
+        if array_element_assignment_from_word(&value, &raw).is_some() {
+            return Some((value, raw, index));
+        }
+        index += 1;
+    }
+
+    None
 }
 
 fn adjacent_word_token(token: &Token) -> bool {

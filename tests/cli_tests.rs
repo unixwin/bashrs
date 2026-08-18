@@ -870,6 +870,116 @@ fn arithmetic_errors_in_assignment_abort_the_script() {
 }
 
 #[test]
+fn quoted_ps0_assignment_preserves_prompt_arithmetic_literal() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            r#"starship_preexec_ps0() { echo 123; }
+PS0='${STARSHIP_START_TIME:$((STARSHIP_START_TIME="$(starship_preexec_ps0)",STARSHIP_PREEXEC_READY=0,0)):0}'"${PS0-}"
+printf '<%s>\n' "$PS0""#,
+        )
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "<${STARSHIP_START_TIME:$((STARSHIP_START_TIME=\"$(starship_preexec_ps0)\",STARSHIP_PREEXEC_READY=0,0)):0}>\n"
+    );
+}
+
+#[test]
+fn command_substitution_preserves_quoted_array_arguments() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"args=(a b c); out=$(printf '<%s>' "${args[@]}"); echo "$out""#)
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<a><b><c>\n");
+}
+
+#[cfg(windows)]
+#[test]
+fn env_assignment_runs_command_in_materialized_environment() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("env FOO=bar cmd.exe /c set FOO")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "FOO=bar\r\n");
+}
+
+#[cfg(windows)]
+#[test]
+fn env_short_option_cluster_runs_command() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("env -vuFOO FOO=bar cmd.exe /c set FOO")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "FOO=bar\r\n");
+}
+
+#[test]
+fn env_null_prints_materialized_environment_without_newlines() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("env -i0 A=1 B=two")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"A=1\0B=two\0");
+}
+
+#[cfg(windows)]
+#[test]
+fn env_command_supplies_windows_profile_vars_from_home() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .env_remove("USERPROFILE")
+        .env_remove("HOMEDRIVE")
+        .env_remove("HOMEPATH")
+        .env_remove("APPDATA")
+        .env_remove("LOCALAPPDATA")
+        .env("HOME", "C:/rubash-home-test")
+        .arg("-c")
+        .arg("env cmd.exe /c set USERPROFILE")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "USERPROFILE=C:\\rubash-home-test\r\n"
+    );
+}
+
+#[test]
+fn env_file_assignments_are_printed_when_no_command_is_given() {
+    let env_file = std::env::temp_dir().join(format!("rubash-env-file-{}.env", std::process::id()));
+    fs::write(&env_file, "A=1\n# ignored\nB=two\n").expect("write env file");
+    let script = format!("env -f {}", shell_test_path(&env_file));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(script)
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("A=1\n"), "{stdout}");
+    assert!(stdout.contains("B=two\n"), "{stdout}");
+    let _ = fs::remove_file(env_file);
+}
+
+#[test]
 fn arithmetic_expansion_error_aborts_the_shell() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
@@ -1134,9 +1244,7 @@ fn stdin_script_stops_after_arithmetic_for_syntax_error_without_errexit() {
         .stdin
         .take()
         .expect("stdin pipe")
-        .write_all(
-            b"for (( ${ case x in x) esac; };; )); do break; done\necho after\n",
-        )
+        .write_all(b"for (( ${ case x in x) esac; };; )); do break; done\necho after\n")
         .expect("write script");
     let output = child.wait_with_output().expect("wait for rubash");
 
@@ -1872,6 +1980,25 @@ fn c_command_echo_applies_output_redirects_left_to_right() {
 
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), "hi\nstatus:0\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(!literal_fd_path.exists());
+}
+
+#[test]
+fn c_command_stderr_to_stdout_does_not_create_literal_ampersand_one() {
+    let literal_fd_path = Path::new("&1");
+    let _ = fs::remove_file(literal_fd_path);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("command-that-does-not-exist 2>&1 >/dev/null; printf 'status:%s\\n' \"$?\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("command not found"), "{stdout}");
+    assert!(stdout.contains("status:127"), "{stdout}");
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     assert!(!literal_fd_path.exists());
 }

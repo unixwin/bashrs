@@ -133,7 +133,10 @@ fn test_pushd_accepts_existing_relative_directory() {
         .unwrap()
         .to_string_lossy()
         .replace('\\', "/");
-    assert_eq!(lines.first().copied(), Some(format!("{cwd} {cwd}").as_str()));
+    assert_eq!(
+        lines.first().copied(),
+        Some(format!("{cwd} {cwd}").as_str())
+    );
     assert_eq!(lines.get(1), Some(&"0"));
     assert_eq!(lines.get(2), Some(&cwd.as_str()));
     let _ = fs::remove_file(output_path);

@@ -438,14 +438,11 @@ fn cmd_compatible_windows_path(path: &Path) -> PathBuf {
     path
 }
 
+#[cfg(windows)]
 pub fn apply_required_windows_child_environment(
     process: &mut Command,
     env_vars: &HashMap<String, String>,
 ) {
-    if !cfg!(windows) {
-        return;
-    }
-
     for name in ["SystemRoot", "WINDIR", "ComSpec"] {
         let value = env_vars
             .get(name)
@@ -457,6 +454,49 @@ pub fn apply_required_windows_child_environment(
             }
         }
     }
+
+    let home = env_vars
+        .get("USERPROFILE")
+        .cloned()
+        .or_else(|| std::env::var("USERPROFILE").ok())
+        .or_else(|| {
+            env_vars.get("HOME").map(|value| {
+                shell_path_to_windows(value, env_vars)
+                    .to_string_lossy()
+                    .into_owned()
+            })
+        });
+
+    if let Some(home) = home.filter(|value| !value.trim().is_empty() && !value.contains('\0')) {
+        let native_home = home.replace('/', "\\");
+        process.env("USERPROFILE", &native_home);
+        process.env("HOME", &native_home);
+        if let Some((drive, path)) = windows_drive_and_home_path(&native_home) {
+            process.env("HOMEDRIVE", drive);
+            process.env("HOMEPATH", path);
+        }
+        let base = native_home.trim_end_matches('\\');
+        process.env("APPDATA", format!("{base}\\AppData\\Roaming"));
+        process.env("LOCALAPPDATA", format!("{base}\\AppData\\Local"));
+    }
+}
+
+#[cfg(not(windows))]
+pub fn apply_required_windows_child_environment(
+    _process: &mut Command,
+    _env_vars: &HashMap<String, String>,
+) {
+}
+
+#[cfg(windows)]
+fn windows_drive_and_home_path(path: &str) -> Option<(String, String)> {
+    let bytes = path.as_bytes();
+    if bytes.len() < 3 || bytes[1] != b':' || !bytes[0].is_ascii_alphabetic() {
+        return None;
+    }
+    let drive = path[..2].to_string();
+    let rest = path[2..].trim_start_matches(['\\', '/']);
+    Some((drive, format!("\\{}", rest.replace('/', "\\"))))
 }
 
 fn executable_candidate(path: &Path, env_vars: &HashMap<String, String>) -> Option<PathBuf> {

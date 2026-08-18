@@ -114,9 +114,12 @@ fn empty_quoted_operand_has_operator(expression: &str) -> bool {
         }
     }
     found_empty
-        && outside
-            .chars()
-            .any(|ch| matches!(ch, '+' | '-' | '*' | '/' | '%' | '<' | '>' | '&' | '|' | '^' | '?' | ':'))
+        && outside.chars().any(|ch| {
+            matches!(
+                ch,
+                '+' | '-' | '*' | '/' | '%' | '<' | '>' | '&' | '|' | '^' | '?' | ':'
+            )
+        })
 }
 
 fn empty_quoted_array_subscript(expression: &str) -> bool {

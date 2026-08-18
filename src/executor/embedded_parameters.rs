@@ -52,9 +52,9 @@ impl Executor {
                 }
                 if closed {
                     output.push_str(&protect_command_substitution_output(
-                        &self.expand_command_substitution(
-                            &decode_backtick_substitution_source(&source),
-                        ),
+                        &self.expand_command_substitution(&decode_backtick_substitution_source(
+                            &source,
+                        )),
                     ));
                 } else {
                     output.push('`');

@@ -787,10 +787,7 @@ impl Executor {
                     .map(|word| self.expand_word(word))
                     .collect::<Vec<_>>();
                 let count = head_line_count(&args).unwrap_or(10);
-                let output = input
-                    .split_inclusive('\n')
-                    .take(count)
-                    .collect::<String>();
+                let output = input.split_inclusive('\n').take(count).collect::<String>();
                 Ok(Some((output, String::new(), 0)))
             }
             "cat" => {
@@ -869,7 +866,11 @@ impl Executor {
                 if args.len() == 2 && matches!(args[0].as_str(), "\\n" | "\n") {
                     Ok(Some((input.replace('\n', &args[1]), String::new(), 0)))
                 } else if args.len() == 2 {
-                    Ok(Some((translate_tr(input, &args[0], &args[1]), String::new(), 0)))
+                    Ok(Some((
+                        translate_tr(input, &args[0], &args[1]),
+                        String::new(),
+                        0,
+                    )))
                 } else {
                     self.execute_external_pipeline_stage(command, input)
                 }
@@ -1009,10 +1010,7 @@ fn expand_tr_set(spec: &str) -> Vec<char> {
     let mut expanded = Vec::new();
     let mut index = 0;
     while index < chars.len() {
-        if index + 2 < chars.len()
-            && chars[index + 1] == '-'
-            && chars[index] <= chars[index + 2]
-        {
+        if index + 2 < chars.len() && chars[index + 1] == '-' && chars[index] <= chars[index + 2] {
             expanded.extend(chars[index]..=chars[index + 2]);
             index += 3;
         } else {

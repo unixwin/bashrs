@@ -197,9 +197,10 @@ impl Executor {
     }
 
     pub(in crate::executor) fn current_bash_source(&self) -> String {
-        self.env_vars
-            .get("__RUBASH_SCRIPT_NAME")
+        self.bash_source_stack
+            .first()
             .cloned()
+            .or_else(|| self.env_vars.get("__RUBASH_SCRIPT_NAME").cloned())
             .unwrap_or_default()
     }
 

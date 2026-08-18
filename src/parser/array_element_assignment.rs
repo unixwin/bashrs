@@ -17,12 +17,14 @@ pub(super) fn record_array_element_assignment_for_word(
 }
 
 pub(super) fn array_element_subscript_has_escaped_quote(raw: &str) -> bool {
-    array_element_raw_subscript(raw).is_some_and(|subscript| {
-        subscript.contains(r#"\""#) || subscript.contains(r#"\'"#)
-    })
+    array_element_raw_subscript(raw)
+        .is_some_and(|subscript| subscript.contains(r#"\""#) || subscript.contains(r#"\'"#))
 }
 
-fn array_element_assignment_from_word(word: &str, raw: &str) -> Option<ArrayElementAssignment> {
+pub(super) fn array_element_assignment_from_word(
+    word: &str,
+    raw: &str,
+) -> Option<ArrayElementAssignment> {
     let open = word.find('[')?;
     let name = &word[..open];
     if !is_shell_name(name) {

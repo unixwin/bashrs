@@ -59,8 +59,7 @@ impl Executor {
         let mut subshell_depth: Option<usize> = None;
         let mut subshell_stdin: Option<(String, String)> = None;
         while index < ast.commands.len() {
-            let protected_coprocs = self
-                .coprocs_referenced_by_command(&ast.commands[index]);
+            let protected_coprocs = self.coprocs_referenced_by_command(&ast.commands[index]);
             self.refresh_background_jobs_with_protected_coprocs(&protected_coprocs)?;
             self.run_pending_signal_traps()?;
 
@@ -413,9 +412,8 @@ impl Executor {
                     if !action.is_empty() {
                         let saved_exit = self.exit_code;
                         let saved_trap_command = self.debug_trap_command.clone();
-                        self.debug_trap_command = Some(
-                            crate::executor::command_text::bash_command_text(command),
-                        );
+                        self.debug_trap_command =
+                            Some(crate::executor::command_text::bash_command_text(command));
                         let tokens = crate::lexer::tokenize(&action);
                         let ast = crate::parser::parse(&tokens);
                         let _ = self.execute_ast(&ast);

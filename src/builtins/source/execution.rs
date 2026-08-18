@@ -11,7 +11,7 @@ pub fn execute_text_with_args(
     args: &[String],
 ) -> Result<(), ExecuteError> {
     let ast = parse_source_ast(source);
-    execute_ast_with_args(executor, ast, args)
+    execute_ast_with_args(executor, ast, args, None)
 }
 
 pub(super) fn execute_text_maybe_redirected(
@@ -19,12 +19,13 @@ pub(super) fn execute_text_maybe_redirected(
     source: &str,
     args: &[String],
     redirect_cmd: Option<&CommandNode>,
+    source_name: Option<&str>,
 ) -> Result<(), ExecuteError> {
     let mut ast = parse_source_ast(source);
     if let Some(redirect_cmd) = redirect_cmd {
         executor.apply_command_output_redirects(redirect_cmd, &mut ast)?;
     }
-    execute_ast_with_args(executor, ast, args)
+    execute_ast_with_args(executor, ast, args, source_name)
 }
 
 fn parse_source_ast(source: &str) -> Ast {
@@ -36,12 +37,16 @@ fn execute_ast_with_args(
     executor: &mut Executor,
     ast: Ast,
     args: &[String],
+    source_name: Option<&str>,
 ) -> Result<(), ExecuteError> {
     let old_positional_params = executor.positional_params();
     let source_positional_params: Vec<String> = args.to_vec();
     let had_source_args = !source_positional_params.is_empty();
     let old_source_marker = executor.get_env("__RUBASH_IN_SOURCE").map(str::to_string);
     executor.set_env("__RUBASH_IN_SOURCE", "1");
+    if let Some(source_name) = source_name {
+        executor.push_bash_source(source_name.to_string());
+    }
     if had_source_args {
         executor.set_positional_params(source_positional_params.clone());
     }
@@ -50,6 +55,10 @@ fn execute_ast_with_args(
     // GNU Bash runs the RETURN trap when a sourced script finishes
     // (builtins/evalfile.c run_return_trap after source_file).
     executor.run_return_trap()?;
+
+    if source_name.is_some() {
+        executor.pop_bash_source();
+    }
 
     match old_source_marker {
         Some(value) => executor.set_env("__RUBASH_IN_SOURCE", &value),
