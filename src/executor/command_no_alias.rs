@@ -88,6 +88,11 @@ impl Executor {
             "recho" => self.execute_recho_command(cmd),
             "command" => self.execute_command_builtin_without_aliases(cmd),
             "builtin" => self.execute_builtin_direct_command(cmd),
+            #[cfg(windows)]
+            "sudo" => {
+                self.exit_code = self.execute_sudo(cmd)?;
+                Ok(())
+            }
             "printf" => {
                 if crate::builtins::enable::is_disabled(&self.env_vars, "printf") {
                     return self.execute_external(cmd);

@@ -48,6 +48,11 @@ impl Executor {
             }
             "command" => self.execute_command_builtin_command(cmd)?,
             "builtin" => self.execute_builtin_direct_command(cmd),
+            #[cfg(windows)]
+            "sudo" => {
+                self.exit_code = self.execute_sudo(cmd)?;
+                Ok(())
+            }
             "cd" => {
                 if self
                     .env_vars

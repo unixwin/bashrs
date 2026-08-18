@@ -148,6 +148,11 @@ impl Executor {
             }
             "eval" => self.execute_eval(&builtin_cmd),
             "command" => self.execute_command_without_aliases(&builtin_cmd),
+            #[cfg(windows)]
+            "sudo" => {
+                self.exit_code = self.execute_sudo(&builtin_cmd)?;
+                Ok(())
+            }
             "source" | "." => self.execute_source_command(&builtin_cmd),
             "return" => self.execute_return(&builtin_cmd),
             "break" => self.execute_loop_control(&builtin_cmd, LoopControlKind::Break),
