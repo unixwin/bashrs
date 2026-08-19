@@ -309,7 +309,8 @@ pub(in crate::executor) fn valid_alias_assignment_name(name: &str) -> bool {
 pub(in crate::executor) fn shell_display_path(path: &str) -> String {
     if cfg!(windows) {
         let path = path.strip_prefix("//?/").unwrap_or(path);
-        return windows_slash_drive_display_to_native(path).unwrap_or_else(|| path.to_string());
+        let path = crate::executor::path::shell_path_display_from_windows(path);
+        return windows_slash_drive_display_to_native(&path).unwrap_or(path);
     }
     path.to_string()
 }

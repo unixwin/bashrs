@@ -40,7 +40,7 @@ pub(crate) fn shell_directory_entries(
         Ok(directory) => {
             for entry in directory {
                 let entry = entry?;
-                let name = shell_filename_from_windows(&entry.file_name().to_string_lossy());
+                let name = shell_path_display_from_windows(&entry.file_name().to_string_lossy());
                 let file_type = entry.file_type()?;
                 entries.push(ShellDirectoryEntry {
                     name,
@@ -669,7 +669,7 @@ fn shell_path_from_shell_name(path: &str) -> String {
     }
 }
 
-fn shell_filename_from_windows(name: &str) -> String {
+pub(crate) fn shell_path_display_from_windows(name: &str) -> String {
     if cfg!(windows) {
         name.replace(WINDOWS_LITERAL_STAR, "*")
             .replace(WINDOWS_LITERAL_QUESTION, "?")
@@ -885,6 +885,15 @@ mod tests {
         env_vars.insert("PATH".to_string(), "target/rubash-isolated-bin".to_string());
 
         assert!(find_shell(&env_vars).is_some());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_display_path_decodes_literal_glob_markers() {
+        assert_eq!(
+            shell_path_display_from_windows("C:/tmp/%RUBASH_QMARK%/%RUBASH_STAR%"),
+            "C:/tmp/?/*"
+        );
     }
 
     #[cfg(windows)]
