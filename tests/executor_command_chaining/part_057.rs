@@ -161,6 +161,37 @@ fn test_getopts_invalid_builtin_option_redirects_stderr() {
 }
 
 #[test]
+fn test_getopts_invalid_user_option_diagnostic_styles() {
+    let bash_error_path = "target/rubash-getopts-bash-invalid-error.txt";
+    let ash_error_path = "target/rubash-getopts-ash-invalid-error.txt";
+    let _ = fs::remove_file(bash_error_path);
+    let _ = fs::remove_file(ash_error_path);
+
+    let input = format!(
+        "getopts ab opt -c 2> {bash_error_path}; \
+         OPTIND=1; __RUBASH_SHELL_NAME=ash; getopts ab opt -c 2> {ash_error_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+    executor.set_env("__RUBASH_SCRIPT_NAME", "./getopt_simple.tests");
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(
+        fs::read_to_string(bash_error_path).unwrap(),
+        "./getopt_simple.tests: illegal option -- c\n"
+    );
+    assert_eq!(
+        fs::read_to_string(ash_error_path).unwrap(),
+        "Illegal option -c\n"
+    );
+    let _ = fs::remove_file(bash_error_path);
+    let _ = fs::remove_file(ash_error_path);
+}
+
+#[test]
 fn test_builtin_and_command_getopts_update_shell_state() {
     let output_path = "target/rubash-getopts-command-output.txt";
     let _ = fs::remove_file(output_path);

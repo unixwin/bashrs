@@ -111,11 +111,7 @@ impl Executor {
             self.remove_env("OPTARG");
             self.apply_shell_assignment(variable, "?".to_string());
             if !silent && self.env_vars.get("OPTERR").map(String::as_str) != Some("0") {
-                let _ = writeln!(
-                    stderr,
-                    "{}: illegal option -- {option}",
-                    self.script_name_value()
-                );
+                let _ = writeln!(stderr, "{}", self.getopts_invalid_option_diagnostic(option));
             } else if silent {
                 self.apply_shell_assignment("OPTARG", option.to_string());
             }
@@ -171,6 +167,20 @@ impl Executor {
         0
     }
 
+    pub(in crate::executor) fn getopts_invalid_option_diagnostic(&self, option: char) -> String {
+        if self.getopts_uses_ash_diagnostics() {
+            format!("Illegal option -{option}")
+        } else {
+            format!("{}: illegal option -- {option}", self.script_name_value())
+        }
+    }
+
+    fn getopts_uses_ash_diagnostics(&self) -> bool {
+        self.env_vars
+            .get("__RUBASH_SHELL_NAME")
+            .is_some_and(|name| is_ash_shell_name(name))
+    }
+
     pub(in crate::executor) fn finish_getopts_scan(
         &mut self,
         variable: &str,
@@ -205,4 +215,9 @@ impl Executor {
         self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
         Ok(status)
     }
+}
+
+fn is_ash_shell_name(name: &str) -> bool {
+    let leaf = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    matches!(leaf.to_ascii_lowercase().as_str(), "ash" | "ash.exe")
 }

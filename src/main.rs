@@ -29,6 +29,9 @@ fn run_main() -> i32 {
         run_internal_pipeline_utility(name, &args[2..]);
     }
     let mut executor = Executor::new();
+    if let Some(shell_name) = args.first() {
+        executor.set_env("__RUBASH_SHELL_NAME", shell_name);
+    }
 
     if args.len() > 1 {
         return run_args(&mut executor, &args[1..]);
