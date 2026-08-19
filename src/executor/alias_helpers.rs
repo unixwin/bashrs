@@ -45,6 +45,8 @@ pub(in crate::executor) fn split_shell_words_with_quote_info(source: &str) -> Ve
                 word_quoted = true;
             }
             (q, Some(active)) if q == active => quote = None,
+            ('$', Some('\'')) => current.push('\x1f'),
+            ('`', Some('\'')) => current.push('\x1a'),
             (' ' | '\t', None) => {
                 if !current.is_empty() {
                     words.push((std::mem::take(&mut current), word_quoted));

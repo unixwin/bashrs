@@ -59,21 +59,82 @@ impl Executor {
         if quoted {
             return body.to_string();
         }
-        self.expand_embedded_parameters(&remove_heredoc_quoted_newlines(body))
+        let source = prepare_unquoted_heredoc_expansion(body);
+        restore_heredoc_expansion_markers(&self.expand_embedded_parameters(&source))
+    }
+
+    pub(in crate::executor) fn unquoted_heredoc_expansion_source(
+        &self,
+        body: &str,
+    ) -> Option<String> {
+        let quoted = body.starts_with('\x1e');
+        let body = strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(body));
+        (!quoted).then(|| prepare_unquoted_heredoc_expansion(body))
     }
 }
 
-fn remove_heredoc_quoted_newlines(body: &str) -> String {
+fn prepare_unquoted_heredoc_expansion(body: &str) -> String {
     let mut output = String::with_capacity(body.len());
     let mut chars = body.chars().peekable();
+    let mut dollar_paren_depth = 0usize;
+    let mut single_in_dollar_paren = false;
     while let Some(ch) = chars.next() {
-        if ch == '\\' && chars.peek() == Some(&'\n') {
+        if dollar_paren_depth > 0 {
+            if ch == '\'' {
+                single_in_dollar_paren = !single_in_dollar_paren;
+                output.push(ch);
+                continue;
+            }
+            if single_in_dollar_paren {
+                output.push(ch);
+                continue;
+            }
+            if ch == ')' {
+                dollar_paren_depth = dollar_paren_depth.saturating_sub(1);
+                output.push(ch);
+                continue;
+            }
+        }
+
+        if ch == '$' && chars.peek().copied() == Some('(') {
             chars.next();
+            dollar_paren_depth += 1;
+            output.push('$');
+            output.push('(');
             continue;
         }
-        output.push(ch);
+
+        if ch != '\\' {
+            output.push(ch);
+            continue;
+        }
+        match chars.peek().copied() {
+            Some('\n') => {
+                chars.next();
+            }
+            Some('\\') => {
+                chars.next();
+                output.push('\x15');
+            }
+            Some('$') => {
+                chars.next();
+                output.push('\x1f');
+            }
+            Some('`') => {
+                chars.next();
+                output.push('\x1a');
+            }
+            _ => output.push('\\'),
+        }
     }
     output
+}
+
+fn restore_heredoc_expansion_markers(value: &str) -> String {
+    value
+        .replace('\x1a', "`")
+        .replace('\x1f', "$")
+        .replace('\x15', "\\")
 }
 
 #[allow(dead_code)]

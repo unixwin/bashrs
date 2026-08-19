@@ -463,12 +463,7 @@ impl Executor {
         cmd: &CommandNode,
     ) -> Option<String> {
         if let Some(body) = &cmd.heredoc {
-            let quoted = body.starts_with('\x1e');
-            let body = strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(body));
-            if quoted {
-                return Some(body.to_string());
-            }
-            return Some(self.expand_embedded_parameters(body));
+            return Some(self.expand_heredoc_body(body));
         }
 
         if let Some(redirect) = &cmd.redirect_in {

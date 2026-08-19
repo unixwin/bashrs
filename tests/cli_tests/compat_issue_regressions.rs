@@ -49,6 +49,20 @@ fn quoted_parameter_pattern_braces_match_bash() {
 }
 
 #[test]
+fn heredoc_parameter_error_writes_to_stderr_and_continues() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("M=AAA; cat <<EOF; echo Y\n${D?$M}\nEOF")
+        .output()
+        .expect("run heredoc parameter error probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "Y\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("D: AAA"), "stderr was {stderr:?}");
+}
+
+#[test]
 fn malformed_script_preserves_valid_prefix_before_status_two() {
     let script = concat!(
         env!("CARGO_MANIFEST_DIR"),

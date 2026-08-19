@@ -189,7 +189,9 @@ pub(in crate::executor) fn decode_parameter_pattern_quotes(pattern: &str) -> Str
             if escaped {
                 quoted.push('\\');
             }
-            output.push_str(&decode_ansi_c_escapes(&quoted));
+            for ch in decode_ansi_c_escapes(&quoted).chars() {
+                push_quoted_parameter_pattern_char(&mut output, ch);
+            }
             continue;
         }
 
@@ -207,12 +209,12 @@ pub(in crate::executor) fn decode_parameter_pattern_quotes(pattern: &str) -> Str
                     {
                         index += 1;
                         if escaped != '\n' {
-                            output.push(escaped);
+                            push_quoted_parameter_pattern_char(&mut output, escaped);
                         }
                         continue;
                     }
                 }
-                output.push(ch);
+                push_quoted_parameter_pattern_char(&mut output, ch);
             }
             continue;
         }
@@ -226,7 +228,7 @@ pub(in crate::executor) fn decode_parameter_pattern_quotes(pattern: &str) -> Str
                 if let Some(close_offset) = chars[index + 1..].iter().position(|ch| *ch == '\'') {
                     let close = index + 1 + close_offset;
                     for ch in &chars[index + 1..close] {
-                        output.push(*ch);
+                        push_quoted_parameter_pattern_char(&mut output, *ch);
                     }
                     index = close + 1;
                 } else {
@@ -253,7 +255,7 @@ pub(in crate::executor) fn decode_parameter_pattern_quotes(pattern: &str) -> Str
                         {
                             index += 1;
                             if escaped != '\n' {
-                                output.push(escaped);
+                                push_quoted_parameter_pattern_char(&mut output, escaped);
                             }
                             continue;
                         }
@@ -283,4 +285,15 @@ pub(in crate::executor) fn decode_parameter_pattern_quotes(pattern: &str) -> Str
         }
     }
     output
+}
+
+fn push_quoted_parameter_pattern_char(output: &mut String, ch: char) {
+    match ch {
+        '\\' => output.push('\x18'),
+        '*' | '?' | '[' => {
+            output.push('\\');
+            output.push(ch);
+        }
+        _ => output.push(ch),
+    }
 }

@@ -12,7 +12,11 @@ impl Executor {
         } else {
             self.expand_word(word)
         };
-        unescape_remaining_shell_escapes(&expanded)
+        if was_quoted == Some(true) {
+            expanded
+        } else {
+            unescape_remaining_shell_escapes(&expanded)
+        }
     }
 
     pub(in crate::executor) fn expand_command_substitution(&self, source: &str) -> String {

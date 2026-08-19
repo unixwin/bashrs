@@ -240,7 +240,7 @@ impl Executor {
             input.push('\n');
             return Some(input);
         }
-        Some(strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(body)).to_string())
+        Some(self.expand_heredoc_body(body))
     }
 
     pub(in crate::executor) fn execute_mapfile_callback(

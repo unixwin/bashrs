@@ -99,27 +99,22 @@ fn tokenize_with_heredocs(input: &str) -> Vec<Token> {
 
         for delimiter in delimiters {
             let mut body = String::new();
-            let mut continued_body_line = String::new();
+            let mut continued_comparable = String::new();
+            let mut pending_continued_body = String::new();
             let mut found_delimiter = false;
             for body_line in lines.by_ref() {
                 position += body_line.len() + 1;
                 line_number += 1;
-                let mut comparable = if delimiter.strip_tabs {
+                let continuing = !delimiter.quoted && !continued_comparable.is_empty();
+                let content_line = if delimiter.strip_tabs && !continuing {
                     body_line.trim_start_matches('\t')
                 } else {
                     body_line
-                }
-                .to_string();
+                };
+                let mut comparable = content_line.to_string();
 
-                if !delimiter.quoted {
-                    if let Some(stripped) = comparable.strip_suffix('\\') {
-                        continued_body_line.push_str(stripped);
-                        continue;
-                    }
-                    if !continued_body_line.is_empty() {
-                        continued_body_line.push_str(&comparable);
-                        comparable = std::mem::take(&mut continued_body_line);
-                    }
+                if continuing {
+                    comparable = format!("{}{}", continued_comparable, comparable);
                 }
 
                 if comparable == delimiter.value
@@ -131,16 +126,31 @@ fn tokenize_with_heredocs(input: &str) -> Vec<Token> {
                     found_delimiter = true;
                     break;
                 }
-                body.push_str(&comparable);
-                body.push('\n');
+
+                if continuing {
+                    body.push_str(&pending_continued_body);
+                    pending_continued_body.clear();
+                }
+
+                if !delimiter.quoted && ends_with_unescaped_backslash(&comparable) {
+                    pending_continued_body.push_str(content_line);
+                    pending_continued_body.push('\n');
+                    comparable.pop();
+                    continued_comparable = comparable;
+                } else {
+                    body.push_str(content_line);
+                    body.push('\n');
+                    continued_comparable.clear();
+                }
+            }
+            if !found_delimiter && !pending_continued_body.is_empty() {
+                body.push_str(&pending_continued_body);
             }
             if !found_delimiter {
                 body.insert(0, '\x1f');
             }
             if delimiter.quoted {
                 body.insert(0, '\x1e');
-            } else {
-                body = body.replace("\\\n", "");
             }
             output.push(Token::new(TokenKind::HereDocBody, &body, position));
         }
@@ -161,6 +171,10 @@ fn tokenize_with_heredocs(input: &str) -> Vec<Token> {
     }
 
     output
+}
+
+fn ends_with_unescaped_backslash(value: &str) -> bool {
+    value.chars().rev().take_while(|ch| *ch == '\\').count() % 2 == 1
 }
 
 pub fn has_unclosed_input_syntax(input: &str) -> bool {

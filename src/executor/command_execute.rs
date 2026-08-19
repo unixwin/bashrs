@@ -113,6 +113,20 @@ impl Executor {
             return self.execute_empty_words_command(cmd);
         }
 
+        if let Some((name, message, status)) = self.parameter_heredoc_expansion_error(cmd) {
+            let mut stderr = Vec::new();
+            writeln!(
+                &mut stderr,
+                "{}{}: {}",
+                self.diagnostic_prefix(),
+                name,
+                message
+            )?;
+            self.write_default_stderr(&stderr)?;
+            self.exit_code = status;
+            return Ok(());
+        }
+
         self.validate_command_parameter_expansions(cmd)?;
 
         if self.execute_parser_level_alias(cmd)? {

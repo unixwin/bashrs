@@ -130,6 +130,30 @@ impl Executor {
         None
     }
 
+    pub(in crate::executor) fn parameter_heredoc_expansion_error(
+        &self,
+        cmd: &CommandNode,
+    ) -> Option<(String, String, i32)> {
+        if let Some(heredoc) = &cmd.heredoc {
+            if let Some(source) = self.unquoted_heredoc_expansion_source(heredoc) {
+                if let Some(error) = self.parameter_expansion_error_in_word(&source) {
+                    return Some(error);
+                }
+            }
+        }
+        for redirect in &cmd.heredoc_redirects {
+            let Some(body) = &redirect.body else {
+                continue;
+            };
+            if let Some(source) = self.unquoted_heredoc_expansion_source(body) {
+                if let Some(error) = self.parameter_expansion_error_in_word(&source) {
+                    return Some(error);
+                }
+            }
+        }
+        None
+    }
+
     pub(in crate::executor) fn parameter_expansion_error_in_word(
         &self,
         word: &str,
