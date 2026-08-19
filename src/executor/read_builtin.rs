@@ -1733,30 +1733,38 @@ impl Executor {
                 return 0;
             }
 
-            let (value, typed_values) = if let Some(line) =
-                self.read_input_for_command(cmd, read_fd, delimiter, char_limit, exact_char_limit)
-            {
-                let values = if raw {
-                    split_read_array_words(&line, self.env_vars.get("IFS").map(String::as_str))
-                } else {
-                    split_read_array_words_with_backslashes(
-                        &line,
-                        self.env_vars.get("IFS").map(String::as_str),
-                    )
-                };
-                (read_array_storage(&values), Some(values))
-            } else {
-                // TODO(builtins/read.def/redir.c): This preserves the existing
-                // bridge for `read -a c < <(echo 1 2 3)` until process
-                // substitution creates a real stdin stream.
-                ("(1 2 3)".to_string(), None)
-            };
-            if let Some(values) = typed_values {
+            let Some(line) = self.read_input_for_command(
+                cmd,
+                read_fd,
+                delimiter,
+                char_limit,
+                exact_char_limit,
+            ) else {
                 let _ = self
                     .shell_state
                     .variables
-                    .replace_indexed_array(&name, values);
-            }
+                    .replace_indexed_array(&name, std::iter::empty::<String>());
+                self.env_vars.insert(name.clone(), read_array_storage(&[]));
+                mark_env_name(&mut self.env_vars, "__RUBASH_ARRAY_VARS", &name);
+                return if invalid_name {
+                    self.finish_read_error(cmd, &stderr, 1)
+                } else {
+                    1
+                };
+            };
+            let values = if raw {
+                split_read_array_words(&line, self.env_vars.get("IFS").map(String::as_str))
+            } else {
+                split_read_array_words_with_backslashes(
+                    &line,
+                    self.env_vars.get("IFS").map(String::as_str),
+                )
+            };
+            let value = read_array_storage(&values);
+            let _ = self
+                .shell_state
+                .variables
+                .replace_indexed_array(&name, values);
             self.env_vars.insert(name.clone(), value);
             mark_env_name(&mut self.env_vars, "__RUBASH_ARRAY_VARS", &name);
             return if invalid_name {

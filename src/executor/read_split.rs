@@ -1,22 +1,14 @@
 use super::*;
 
 pub(in crate::executor) fn read_array_storage(values: &[String]) -> String {
-    if values
+    let rendered = values
         .iter()
-        .any(|value| value.is_empty() || value.contains(['\n', '\r']))
-    {
-        let rendered = values
-            .iter()
-            .enumerate()
-            .map(|(index, value)| format!("[{index}]={}", render_read_array_element(value)))
-            .collect::<Vec<_>>()
-            .join(" ");
-        return format!("\x1d({rendered})");
-    }
-
-    format!("({})", values.join(" "))
+        .enumerate()
+        .map(|(index, value)| format!("[{index}]={}", render_read_array_element(value)))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("\x1d({rendered})")
 }
-
 pub(in crate::executor) fn render_read_array_element(value: &str) -> String {
     if value.contains(['\n', '\r']) {
         let mut rendered = String::from("$'");

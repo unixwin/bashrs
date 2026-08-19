@@ -91,10 +91,14 @@ impl Executor {
             //   - not inside function bodies (Bash fires it once at the
             //     function entry, see execute_function_internal)
             //   - suppressed while a trap action is already running
+            // A subshell compound command is not itself a DEBUG stop point.
+            // Its body is evaluated at the incremented BASH_SUBSHELL depth
+            // below; only functrace/extdebug make DEBUG inherit into that body.
             let skips_debug_trap = command.function_command.is_some()
                 || command.if_command.is_some()
                 || command.loop_command.is_some()
-                || command.for_command.is_some();
+                || command.for_command.is_some()
+                || command.subshell_command.is_some();
             let debug_trap_active = crate::builtins::trap::get_trap_action(&self.env_vars, "DEBUG")
                 .is_some_and(|action| !action.is_empty());
             // Do not fire for commands inside the trap action itself: Bash
@@ -102,9 +106,11 @@ impl Executor {
             // firing would let the action's commands overwrite LINENO with
             // their own (synthetic) line before run_debug_trap's guard sees
             // the flag (dbg-support2.tests `print_trap $LINENO`).
-            let debug_trap_in_scope = self.function_depth == 0
-                || crate::builtins::set::shell_option_enabled(&self.env_vars, "functrace")
-                || crate::builtins::shopt::option_enabled(&self.env_vars, "extdebug");
+            let tracing_subshells =
+                crate::builtins::set::shell_option_enabled(&self.env_vars, "functrace")
+                    || crate::builtins::shopt::option_enabled(&self.env_vars, "extdebug");
+            let debug_trap_in_scope =
+                (self.subshell_depth.get() == 0 && self.function_depth == 0) || tracing_subshells;
             if !skips_debug_trap
                 && debug_trap_in_scope
                 && debug_trap_active
@@ -337,6 +343,9 @@ impl Executor {
                 Err(ExecuteError::Break(_) | ExecuteError::Continue(_)) if self.loop_depth == 0 => {
                     self.exit_code = 0;
                 }
+                Err(ExecuteError::IoError(error)) if is_closed_output_io_error(&error) => {
+                    return Err(ExecuteError::IoError(error));
+                }
                 Err(ExecuteError::IoError(error)) => {
                     // Bash treats a failed command redirection (and other
                     // command-owned I/O failures) as the command's status 1.
@@ -431,13 +440,13 @@ impl Executor {
                 {
                     if !action.is_empty() {
                         let saved_exit = self.exit_code;
-                        let saved_trap_command = self.debug_trap_command.clone();
-                        self.debug_trap_command =
+                        let saved_trap_command = self.debug_trap_command.borrow().clone();
+                        *self.debug_trap_command.borrow_mut() =
                             Some(crate::executor::command_text::bash_command_text(command));
                         let tokens = crate::lexer::tokenize(&action);
                         let ast = crate::parser::parse(&tokens);
                         let _ = self.execute_ast(&ast);
-                        self.debug_trap_command = saved_trap_command;
+                        *self.debug_trap_command.borrow_mut() = saved_trap_command;
                         self.exit_code = saved_exit;
                     }
                 }
@@ -542,4 +551,8 @@ impl Executor {
             _ => None,
         }
     }
+}
+
+fn is_closed_output_io_error(error: &std::io::Error) -> bool {
+    error.kind() == std::io::ErrorKind::BrokenPipe || error.raw_os_error() == Some(232)
 }

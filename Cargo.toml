@@ -24,6 +24,10 @@ exclude = [
     "!third_party/bash/tests/*.right",
 ]
 
+[[bin]]
+name = "bash"
+path = "src/bin/bash.rs"
+
 [dependencies]
 regex = "1"
 ctrlc = "3"

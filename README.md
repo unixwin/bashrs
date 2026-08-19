@@ -59,6 +59,10 @@ target/debug/rubash --version
 cargo install rubash
 ```
 
+Windows-native 安装由 Winuxsh/WinuxCmd 安装器和 WPM 负责，`cargo install` 只适合 Rust 开发环境。安装器应在选定的 WinuxCmd 根目录创建 `usr/bin/`、`bin/` 和 `usr/local/bin/`，并将 `rubash.exe` 与 `bash.exe` shim 放入 `usr/bin/`；`bash.exe` 仅转发到同一安装中的 `winuxsh.exe`，不应放入 `.wpm/` 私有状态目录。WPM 负责包载荷和目标目录同步，Winuxsh 负责将真实 bin 目录加入 `PATH`。完整布局见 [`docs/windows-native-install-layout.md`](docs/windows-native-install-layout.md) 和 [`docs/windows-logical-root.md`](docs/windows-logical-root.md)。
+
+当前源码 checkout 为 `D:/repo/rubash`；历史记录中的 `J:/caponAVIS2019` 仅用于追溯，不是安装器、WPM 或运行时应依赖的路径。
+
 ### 运行脚本
 
 ```bash

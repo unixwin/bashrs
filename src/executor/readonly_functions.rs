@@ -122,7 +122,24 @@ impl Executor {
             .collect::<Vec<_>>();
         let last_index = printable_commands.len().saturating_sub(1);
         let mut indent_level = 1usize;
+        let mut previous_first_word: Option<String> = None;
         for (index, command) in printable_commands.iter().enumerate() {
+            let first_word = command.words.first().map(String::as_str);
+            let next_first_word = printable_commands
+                .get(index + 1)
+                .and_then(|next| next.words.first())
+                .map(String::as_str);
+            let indent = "    ".repeat(indent_level);
+            if function_definition_condition_needs_if_keyword(
+                previous_first_word.as_deref(),
+                first_word,
+                next_first_word,
+            ) {
+                writeln!(stdout, "{indent}if")?;
+            } else if function_definition_condition_needs_while_keyword(first_word, next_first_word) {
+                writeln!(stdout, "{indent}while")?;
+            }
+
             if let Some(if_command) = &command.if_command {
                 self.write_if_function_definition(if_command, stdout, indent_level)?;
                 continue;
@@ -145,7 +162,7 @@ impl Executor {
                 writeln!(
                     stdout,
                     "{indent}{} <<< {}{}",
-                    command.words.join(" "),
+                    function_definition_source_line(command.words.join(" ")),
                     function_here_string_text(here_string, printable_commands.len() > 1),
                     terminator
                 )?;
@@ -155,6 +172,7 @@ impl Executor {
                 let line = self
                     .function_command_description_line(command, false)
                     .unwrap_or_else(|| command.words.join(" "));
+                let line = function_definition_source_line(line);
                 writeln!(stdout, "{indent}{line}")?;
                 write_function_definition_heredoc_body(command, stdout)?;
             } else {
@@ -163,6 +181,7 @@ impl Executor {
                 } else {
                     command.words.join(" ")
                 };
+                let line = function_definition_source_line(line);
                 if line.trim().is_empty() {
                     continue;
                 }
@@ -171,6 +190,7 @@ impl Executor {
             if function_definition_command_opens_nested_body(command) {
                 indent_level += 1;
             }
+            previous_first_word = first_word.map(str::to_string);
         }
         writeln!(stdout, "}}")
     }
@@ -214,13 +234,14 @@ impl Executor {
             return Ok(());
         };
 
-        let mut first = first.clone();
-        first.words.insert(0, keyword.to_string());
         let line = self
-            .function_command_description_line(&first, false)
+            .function_command_description_line(first, false)
             .unwrap_or_else(|| first.words.join(" "));
+        let line = function_definition_source_line(line);
+        let line = function_definition_prefix_condition_keyword(keyword, line);
+        let line = function_definition_condition_line(line);
         writeln!(stdout, "{indent}{line}")?;
-        write_function_definition_heredoc_body(&first, stdout)?;
+        write_function_definition_heredoc_body(first, stdout)?;
         for command in rest {
             self.write_function_definition_command(command, stdout, indent_level)?;
         }
@@ -282,13 +303,14 @@ impl Executor {
             return Ok(());
         };
 
-        let mut first = first.clone();
-        first.words.insert(0, keyword.to_string());
         let line = self
-            .function_command_description_line(&first, false)
+            .function_command_description_line(first, false)
             .unwrap_or_else(|| first.words.join(" "));
+        let line = function_definition_source_line(line);
+        let line = function_definition_prefix_condition_keyword(keyword, line);
+        let line = function_definition_condition_line(line);
         writeln!(stdout, "{indent}{line}")?;
-        write_function_definition_heredoc_body(&first, stdout)?;
+        write_function_definition_heredoc_body(first, stdout)?;
         for command in rest {
             self.write_function_definition_command(command, stdout, indent_level)?;
         }
@@ -309,6 +331,7 @@ impl Executor {
             let line = self
                 .function_command_description_line(command, false)
                 .unwrap_or_else(|| command.words.join(" "));
+            let line = function_definition_source_line(line);
             writeln!(stdout, "{indent}{line}")?;
             write_function_definition_heredoc_body(command, stdout)
         } else {
@@ -317,6 +340,7 @@ impl Executor {
             } else {
                 command.words.join(" ")
             };
+            let line = function_definition_source_line(line);
             if line.trim().is_empty() {
                 return Ok(());
             }
@@ -367,4 +391,42 @@ impl Executor {
         }
         value.to_string()
     }
+}
+
+fn function_definition_source_line(line: String) -> String {
+    eval_source_for_reparse(&line)
+}
+
+fn function_definition_prefix_condition_keyword(keyword: &str, line: String) -> String {
+    if line.trim_start().starts_with(keyword) {
+        line
+    } else {
+        format!("{keyword} {line}")
+    }
+}
+
+fn function_definition_condition_line(line: String) -> String {
+    if line.trim_end().ends_with(';') {
+        line
+    } else {
+        format!("{line};")
+    }
+}
+
+fn function_definition_condition_needs_if_keyword(
+    previous_first_word: Option<&str>,
+    first_word: Option<&str>,
+    next_first_word: Option<&str>,
+) -> bool {
+    next_first_word == Some("then")
+        && previous_first_word != Some("elif")
+        && !matches!(first_word, Some("if" | "elif" | "then" | "else" | "fi"))
+}
+
+fn function_definition_condition_needs_while_keyword(
+    first_word: Option<&str>,
+    next_first_word: Option<&str>,
+) -> bool {
+    next_first_word == Some("do")
+        && !matches!(first_word, Some("for" | "while" | "until" | "select" | "do" | "done"))
 }

@@ -72,16 +72,17 @@ impl Executor {
         self.exit_code = exit_status;
         let tokens = crate::lexer::tokenize(&action);
         let ast = crate::parser::parse(&tokens);
-        let saved_trap_command = self.debug_trap_command.clone();
-        if self.debug_trap_command.is_none() {
-            self.debug_trap_command = self
+        let saved_trap_command = self.debug_trap_command.borrow().clone();
+        let has_command = self.debug_trap_command.borrow().is_none();
+        if has_command {
+            *self.debug_trap_command.borrow_mut() = self
                 .env_vars
                 .get("__RUBASH_LAST_COMMAND")
                 .or_else(|| self.env_vars.get("__RUBASH_CURRENT_COMMAND"))
                 .cloned();
         }
         let result = self.execute_ast(&ast);
-        self.debug_trap_command = saved_trap_command;
+        *self.debug_trap_command.borrow_mut() = saved_trap_command;
         match result {
             Ok(()) => {
                 self.exit_code = exit_status;
@@ -111,7 +112,7 @@ impl Executor {
             return Ok(false);
         }
         self.debug_trap_running = true;
-        self.debug_trap_command = Some(command_text.to_string());
+        *self.debug_trap_command.borrow_mut() = Some(command_text.to_string());
         let call_line = self
             .env_vars
             .get("__RUBASH_CURRENT_LINE")
@@ -124,7 +125,7 @@ impl Executor {
             }
         }
         let result = self.execute_ast(&ast);
-        self.debug_trap_command = None;
+        *self.debug_trap_command.borrow_mut() = None;
         self.debug_trap_running = false;
         result?;
         let skip_command = self.exit_code == 2;

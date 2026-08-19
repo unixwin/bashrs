@@ -40,6 +40,7 @@ impl Executor {
             ),
             "BASH_COMMAND" => Some(
                 self.debug_trap_command
+                    .borrow()
                     .clone()
                     .or_else(|| self.env_vars.get("__RUBASH_CURRENT_COMMAND").cloned())
                     .unwrap_or_default(),

@@ -1477,6 +1477,22 @@ fn declare_quoted_array_element_assignment_targets_index_zero() {
 }
 
 #[test]
+fn declare_print_unmarked_indexed_array_is_reparseable() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"typeset array=("a b" c); out=$(typeset -p array); eval "$out"; typeset -p array; printf '<%s><%s>\n' "${array[0]}" "${array[1]}""#)
+        .output()
+        .expect("run unmarked indexed array serialization probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "declare -a array=([0]=\"a b\" [1]=\"c\")\n<a b><c>\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn malformed_parameter_expansions_return_status_two() {
     for script in ["echo ${x", "echo ${x/foo", "echo ${x:?"] {
         let output = Command::new(env!("CARGO_BIN_EXE_rubash"))

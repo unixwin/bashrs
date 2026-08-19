@@ -106,6 +106,7 @@ fn run_args(executor: &mut Executor, args: &[String]) -> i32 {
         expanded_args.push(arg.clone());
     }
     let args = &expanded_args;
+    let mut init_file: Option<String> = None;
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
@@ -125,6 +126,19 @@ fn run_args(executor: &mut Executor, args: &[String]) -> i32 {
                     eprintln!("rubash: {}: option requires an argument", args[index]);
                     return 2;
                 }
+            }
+            "--init-file" => {
+                if let Some(path) = args.get(index + 1) {
+                    init_file = Some(path.clone());
+                    index += 2;
+                } else {
+                    eprintln!("rubash: --init-file: option requires an argument");
+                    return 2;
+                }
+            }
+            "--debugger" => {
+                // Bash accepts this when starting a debugger-enabled shell.
+                index += 1;
             }
             "--posix" => {
                 executor.set_env("__RUBASH_POSIX_MODE", "1");
@@ -153,14 +167,14 @@ fn run_args(executor: &mut Executor, args: &[String]) -> i32 {
                         executor.set_env("__RUBASH_SCRIPT_NAME", command_name);
                         executor.set_positional_params(args[index + 3..].to_vec());
                     }
-                    return run_command_string(executor, command);
+                    return run_command_string_with_init(executor, command, init_file.as_deref());
                 }
                 eprintln!("rubash: -c: option requires an argument");
                 return 2;
             }
             "-s" => {
                 executor.set_positional_params(args[index + 1..].to_vec());
-                return run_stdin_script(executor);
+                return run_stdin_script_with_init(executor, init_file.as_deref());
             }
             "--" => {
                 index += 1;
@@ -172,11 +186,18 @@ fn run_args(executor: &mut Executor, args: &[String]) -> i32 {
             option if apply_cli_shell_flags(executor, option) => {
                 index += 1;
             }
-            script => return run_script_file(executor, script, &args[index + 1..]),
+            script => {
+                return run_script_file_with_init(
+                    executor,
+                    script,
+                    &args[index + 1..],
+                    init_file.as_deref(),
+                );
+            }
         }
     }
 
-    0
+    run_no_script_with_init(executor, init_file.as_deref())
 }
 
 fn apply_cli_shell_flags(executor: &mut Executor, option: &str) -> bool {
@@ -212,13 +233,25 @@ fn cli_shell_flag_name(flag: char) -> Option<&'static str> {
     }
 }
 
-fn run_command_string(executor: &mut Executor, command: &str) -> i32 {
+fn run_command_string_with_init(
+    executor: &mut Executor,
+    command: &str,
+    init_file: Option<&str>,
+) -> i32 {
     executor.inherit_process_stdin();
+    if let Some(init_file) = init_file {
+        let _ = run_init_file(executor, init_file);
+    }
     let status = run_source(executor, command, false);
     finish_shell(executor, status, false)
 }
 
-fn run_script_file(executor: &mut Executor, script: &str, args: &[String]) -> i32 {
+fn run_script_file_with_init(
+    executor: &mut Executor,
+    script: &str,
+    args: &[String],
+    init_file: Option<&str>,
+) -> i32 {
     let path = executor.resolve_shell_path(script);
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
@@ -231,8 +264,50 @@ fn run_script_file(executor: &mut Executor, script: &str, args: &[String]) -> i3
     executor.set_env("__RUBASH_SCRIPT_NAME", script);
     executor.inherit_process_stdin();
     executor.set_positional_params(args.to_vec());
+    if let Some(init_file) = init_file {
+        let _ = run_init_file(executor, init_file);
+    }
     let status = run_source(executor, &contents, false);
     finish_shell(executor, status, false)
+}
+
+fn run_no_script_with_init(executor: &mut Executor, init_file: Option<&str>) -> i32 {
+    executor.inherit_process_stdin();
+    if let Some(init_file) = init_file {
+        let _ = run_init_file(executor, init_file);
+    }
+    if io::stdin().is_terminal() {
+        run_repl(executor);
+        0
+    } else {
+        run_stdin_script(executor)
+    }
+}
+
+fn run_stdin_script_with_init(executor: &mut Executor, init_file: Option<&str>) -> i32 {
+    executor.inherit_process_stdin();
+    if let Some(init_file) = init_file {
+        let _ = run_init_file(executor, init_file);
+    }
+    run_stdin_script(executor)
+}
+
+fn run_init_file(executor: &mut Executor, init_file: &str) -> i32 {
+    let path = executor.resolve_shell_path(init_file);
+    if std::env::var_os("DSH_DEBUG_INIT").is_some() {
+        eprintln!("RUBASH_INIT path={:?}", path);
+    }
+    let contents = match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(e) => {
+            eprintln!("rubash: {}: {}", init_file, e);
+            return 1;
+        }
+    };
+    if std::env::var_os("DSH_DEBUG_INIT").is_some() {
+        eprintln!("RUBASH_INIT_CONTENT {:?}", contents);
+    }
+    run_source(executor, &contents, false)
 }
 
 fn run_repl(executor: &mut Executor) {

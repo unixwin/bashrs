@@ -76,6 +76,14 @@ pub fn find_user_command(name: &str, env_vars: &HashMap<String, String>) -> Opti
         if let Some(found) = find_winuxcmd_absolute_command(name, env_vars) {
             return Some(found);
         }
+        if is_standard_unix_bash_path(name) {
+            if let Some(found) = configured_compatible_shell(env_vars) {
+                return Some(found);
+            }
+            if let Some(found) = find_user_command("bash", env_vars) {
+                return Some(found);
+            }
+        }
         return None;
     }
 
@@ -582,6 +590,10 @@ fn find_standard_unix_shell() -> Option<PathBuf> {
 
 fn has_path_separator(name: &str) -> bool {
     name.contains('/') || name.contains('\\')
+}
+
+fn is_standard_unix_bash_path(name: &str) -> bool {
+    matches!(name.replace('\\', "/").as_str(), "/bin/bash" | "/usr/bin/bash")
 }
 
 pub(crate) fn shell_path_to_windows(path: &str, env_vars: &HashMap<String, String>) -> PathBuf {

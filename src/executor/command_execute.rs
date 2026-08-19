@@ -36,6 +36,9 @@ impl Executor {
                     }
                 }
             }
+            if std::env::var_os("DSH_DEBUG_PARSE").is_some() {
+                eprintln!("RUBASH_PARSE_ASSIGNMENTS {:?}", cmd.assignments);
+            }
             let message = cmd
                 .assignments
                 .get("__RUBASH_PARSE_ERROR__")
@@ -78,6 +81,9 @@ impl Executor {
                 .iter()
                 .any(|metadata| unterminated_extglob(&metadata.raw))
         {
+            if std::env::var_os("DSH_DEBUG_EXTGLOB").is_some() {
+                eprintln!("RUBASH_EXTGLOB words={:?} metadata={:?} patterns={:?}", cmd.words, cmd.word_metadata, cmd.extglob_patterns);
+            }
             self.mark_parse_error();
             eprintln!(
                 "{}syntax error near unexpected token `('",
@@ -98,6 +104,9 @@ impl Executor {
             && cmd.conditional_command.is_none()
             && cmd.case_command.is_none()
         {
+            if std::env::var_os("DSH_DEBUG_EXTGLOB").is_some() {
+                eprintln!("RUBASH_EXTGLOB words={:?} metadata={:?} patterns={:?}", cmd.words, cmd.word_metadata, cmd.extglob_patterns);
+            }
             self.mark_parse_error();
             eprintln!(
                 "{}syntax error near unexpected token `('",
@@ -149,7 +158,9 @@ impl Executor {
         }
 
         let expanded = self.expand_command_words(cmd)?;
-        if self.last_command_substitution_status.get() == Some(2) {
+        if self.last_command_substitution_status.get() == Some(2)
+            && self.last_command_substitution_parse_error.get()
+        {
             self.mark_parse_error();
             eprintln!(
                 "{}syntax error in command substitution",
@@ -164,8 +175,14 @@ impl Executor {
             .iter()
             .map(|metadata| Some(metadata.raw.as_str()))
             .collect();
+        let original_words_had_command_substitution = original_raws
+            .iter()
+            .flatten()
+            .any(|raw| raw.contains("$(") || raw.contains('`'));
+        let pre_alias_words = expanded.words.clone();
         let alias_expanded =
             self.apply_alias_expansion_after_word_expansion(expanded, &original_raws);
+        let alias_expansion_changed_words = alias_expanded.words != pre_alias_words;
         if alias_expanded.words.is_empty() {
             if !cmd.assignments.is_empty() {
                 return self.execute_empty_words_command(cmd);
@@ -204,7 +221,10 @@ impl Executor {
             return Err(ExecuteError::ExitCode(status));
         }
 
-        if self.execute_alias_expanded_syntax(&cmd)? {
+        if alias_expansion_changed_words
+            && !original_words_had_command_substitution
+            && self.execute_alias_expanded_syntax(&cmd)?
+        {
             return Ok(());
         }
 

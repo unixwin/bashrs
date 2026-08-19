@@ -58,6 +58,13 @@ where
                 format_array_value(value)
             )
         }
+    } else if value.starts_with("\x1d(") {
+        let attrs = declaration_array_attrs(attrs);
+        writeln!(
+            stdout,
+            "declare {attrs} {name}={}",
+            format_array_value(value)
+        )
     } else if let Some(array_value) = parse_single_element_array(value) {
         let attrs = declaration_array_attrs(attrs);
         writeln!(

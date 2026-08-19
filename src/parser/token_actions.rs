@@ -575,6 +575,12 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                     "__RUBASH_PARSE_ERROR__".to_string(),
                     "unexpected token `('".to_string(),
                 );
+                if let Some(source) = parse_error_source_line(tokens, *i) {
+                    state
+                        .current_cmd
+                        .assignments
+                        .insert("__RUBASH_PARSE_SOURCE__".to_string(), source);
+                }
                 *i += 1;
                 return TokenAction::Continue;
             }

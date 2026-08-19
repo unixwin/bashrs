@@ -80,6 +80,9 @@ where
         } else if attrs.has_scalar_attribute() || declared_unset.contains(&name) {
             print_unset_declaration(&name, attrs, stdout)?;
         } else {
+            if std::env::var_os("DSH_TRACE_DECLARE_MISS").is_some() {
+                eprintln!("TRACE_DECLARE_MISS name={name:?}");
+            }
             writeln!(
                 stderr,
                 "{}declare: {}: not found",

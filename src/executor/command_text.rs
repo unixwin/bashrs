@@ -141,6 +141,8 @@ pub(in crate::executor) fn function_definition_command_uses_source_text(
         || command.inverted_command.is_some()
         || command.arithmetic_command.is_some()
         || command.for_command.is_some()
+        || command.if_command.is_some()
+        || command.loop_command.is_some()
         || command.conditional_command.is_some()
         || command.subshell_command.is_some()
         || command.case_command.is_some()
@@ -293,9 +295,12 @@ fn command_word_needs_process_line_env(word: &str) -> bool {
 pub(in crate::executor) fn bash_command_text(cmd: &CommandNode) -> String {
     let mut parts = Vec::new();
     for (name, value) in &cmd.assignments {
+        // Assignment values may carry the lexer's private quoted-RHS marker.
+        // BASH_COMMAND exposes shell source, never that expansion sentinel.
+        let value = value.strip_prefix('\x1c').unwrap_or(value);
         parts.push(format!("{name}={value}"));
     }
-    let words = command_words_source_text(&cmd.words, &cmd.word_metadata);
+    let words = command_words_source_text_for_command(cmd);
     if !words.is_empty() {
         parts.push(words);
     }
@@ -325,6 +330,25 @@ pub(in crate::executor) fn bash_command_text(cmd: &CommandNode) -> String {
     parts.join(" ")
 }
 
+fn command_words_source_text_for_command(cmd: &CommandNode) -> String {
+    let mut rendered = cmd
+        .words
+        .iter()
+        .enumerate()
+        .map(|(index, word)| command_word_source_text(index, word, &cmd.word_metadata))
+        .collect::<Vec<_>>();
+
+    for assignment in &cmd.compound_assignments {
+        if let Some(index) = assignment.word_index {
+            if let Some(word) = rendered.get_mut(index) {
+                *word = compound_assignment_source_text(assignment);
+            }
+        }
+    }
+
+    rendered.join(" ")
+}
+
 pub(in crate::executor) fn command_words_source_text(
     words: &[String],
     metadata: &[WordMetadata],
@@ -332,15 +356,21 @@ pub(in crate::executor) fn command_words_source_text(
     words
         .iter()
         .enumerate()
-        .map(|(index, word)| {
-            metadata
-                .get(index)
-                .filter(|metadata| metadata.value == *word && !metadata.raw.is_empty())
-                .map(|metadata| metadata.raw.clone())
-                .unwrap_or_else(|| shell_single_quote_assignment_value(word))
-        })
+        .map(|(index, word)| command_word_source_text(index, word, metadata))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn command_word_source_text(index: usize, word: &str, metadata: &[WordMetadata]) -> String {
+    metadata
+        .get(index)
+        .filter(|metadata| metadata.value == *word && !metadata.raw.is_empty())
+        .map(|metadata| metadata.raw.clone())
+        .unwrap_or_else(|| shell_single_quote_assignment_value(word))
+}
+
+fn compound_assignment_source_text(assignment: &crate::parser::CompoundAssignment) -> String {
+    format!("{}{}{}", assignment.name, assignment.operator, assignment.value)
 }
 
 pub(in crate::executor) fn bash_command_sequence_text(commands: &[CommandNode]) -> String {

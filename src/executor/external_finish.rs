@@ -84,15 +84,10 @@ impl Executor {
         }
         let command_name = expanded_command_name;
         let normalized_command = command_name.replace('\\', "/");
-        let normalized_this_sh = self.env_vars.get("THIS_SH").map(|this_sh| {
-            shell_display_path(&shell_path_to_windows(this_sh, &self.env_vars).to_string_lossy())
-                .replace('\\', "/")
-        });
         let normalized_current_exe = env::current_exe()
             .ok()
             .map(|path| shell_display_path(&path.to_string_lossy()).replace('\\', "/"));
         if !command_uses_this_shell
-            && normalized_this_sh.as_deref() != Some(normalized_command.as_str())
             && normalized_current_exe.as_deref() != Some(normalized_command.as_str())
             && !normalized_command.ends_with("/rubash-wrapper")
             && normalized_command != "rubash-wrapper"

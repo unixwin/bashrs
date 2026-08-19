@@ -17,9 +17,15 @@ impl Executor {
 
     pub(in crate::executor) fn expand_command_substitution(&self, source: &str) -> String {
         self.last_command_substitution_status.set(Some(0));
+        self.last_command_substitution_parse_error.set(false);
         let old_depth = self.subshell_depth.get();
+        let saved_command = self.debug_trap_command.borrow().clone();
         self.subshell_depth.set(old_depth + 1);
+        // Bash evaluates BASH_COMMAND in a command substitution against the
+        // substitution's own command source, rather than the outer word.
+        *self.debug_trap_command.borrow_mut() = Some(source.trim().to_string());
         let result = self.expand_command_substitution_inner(source);
+        *self.debug_trap_command.borrow_mut() = saved_command;
         self.subshell_depth.set(old_depth);
         result
     }
@@ -370,12 +376,16 @@ impl Executor {
         let ast = crate::parser::parse(&tokens);
 
         if ast.commands.iter().any(command_has_parse_error) {
+            self.last_command_substitution_parse_error.set(true);
             self.last_command_substitution_status.set(Some(2));
             return Some(String::new());
         }
 
         let saved_dir = env::current_dir().ok();
         let mut subshell = self.command_substitution_executor();
+        // Keep the command source visible to BASH_COMMAND while the parsed
+        // substitution body runs, including DEBUG trap actions.
+        *subshell.debug_trap_command.borrow_mut() = Some(source.trim().to_string());
         subshell.stdout_capture = Some(Vec::new());
 
         let result = subshell.execute_ast(&ast);
@@ -436,9 +446,10 @@ impl Executor {
             debug_trap_running: false,
             return_trap_running: false,
             signal_trap_running: false,
-            debug_trap_command: None,
+            debug_trap_command: std::cell::RefCell::new(None),
             debug_trap_function_line: None,
             last_command_substitution_status: Cell::new(None),
+            last_command_substitution_parse_error: Cell::new(false),
             stdout_capture: None,
             stderr_capture: None,
             host_external_command_handler: None,

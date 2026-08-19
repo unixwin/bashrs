@@ -1,5 +1,11 @@
 use super::*;
 
+fn clean_serialized_function_text(text: &str) -> String {
+    text.chars()
+        .filter(|ch| !matches!(*ch, '\x1a' | '\x1b' | '\x1c' | '\x1d' | '\x1e'))
+        .collect()
+}
+
 impl Executor {
     pub(in crate::executor) fn write_function_description<W>(
         &self,
@@ -71,7 +77,7 @@ impl Executor {
         terminates_plain_commands: bool,
     ) -> Option<String> {
         if function_definition_command_uses_source_text(command) {
-            let line = bash_command_source_text(command);
+            let line = clean_serialized_function_text(&bash_command_source_text(command));
             if !line.trim().is_empty() {
                 return Some(line);
             }
@@ -81,7 +87,8 @@ impl Executor {
             return None;
         }
 
-        let mut line = command.words.join(" ").replace("$(<x1)", "$(< x1)");
+        let mut line =
+            clean_serialized_function_text(&command.words.join(" ").replace("$(<x1)", "$(< x1)"));
         if !command_has_redirect(command) && command.heredoc.is_none() {
             if terminates_plain_commands {
                 line.push(';');
