@@ -73,13 +73,16 @@ impl Executor {
                 .or_else(|| cmd.words.get(index).map(String::as_str))
                 .is_some_and(raw_word_has_unquoted_parameter_expansion);
 
-        let field_split_would_split = self.field_split_values(expanded).len() > 1;
+        let field_split_values = self.field_split_values(expanded);
+        let field_split_would_change_word = field_split_values.len() != 1
+            || field_split_values
+                .first()
+                .is_some_and(|field| field != expanded);
 
-        ((unquoted_variable && !unquoted_dynamic_parameter && field_split_would_split)
-            || (unquoted_embedded_parameter && field_split_would_split)
-            || (unquoted_command_substitution && expanded.contains(char::is_whitespace))
-            || (unquoted_indirect_name_list && expanded.contains(char::is_whitespace)))
-            && (field_split_would_split || expanded.split_whitespace().nth(1).is_some())
+        (unquoted_variable && !unquoted_dynamic_parameter && field_split_would_change_word)
+            || (unquoted_embedded_parameter && field_split_would_change_word)
+            || (unquoted_command_substitution && field_split_would_change_word)
+            || (unquoted_indirect_name_list && field_split_would_change_word)
     }
 
     pub(in crate::executor) fn expand_for_word_values_result(

@@ -131,27 +131,17 @@ pub(super) fn field_split_values_with_ifs(value: &str, ifs: Option<&str>) -> Vec
     }
 
     if ifs.chars().any(is_ifs_whitespace) {
-        let mut fields = split_mixed_ifs(value, ifs);
-        while fields.first().is_some_and(|field| field.is_empty()) {
-            fields.remove(0);
-        }
-        while fields.last().is_some_and(|field| field.is_empty()) {
-            fields.pop();
-        }
-        return fields;
+        return split_mixed_ifs(value, ifs);
     }
 
-    // Non-whitespace IFS: every separator produces a field. Bash keeps empty
-    // fields between separators (`IFS=:; set -- a:b::c` => 4 fields) and
-    // drops only leading/trailing empty fields (POSIX word splitting).
+    // Non-whitespace IFS: every separator produces a field. Bash keeps leading
+    // and internal empty fields (`IFS=:; set -- :a::b`) and drops only the
+    // final empty field produced by a trailing delimiter.
     let mut fields: Vec<String> = value
         .split(|ch| ifs.contains(ch))
         .map(str::to_string)
         .collect();
-    while fields.first().is_some_and(|field| field.is_empty()) {
-        fields.remove(0);
-    }
-    while fields.last().is_some_and(|field| field.is_empty()) {
+    if fields.last().is_some_and(|field| field.is_empty()) && fields.len() > 1 {
         fields.pop();
     }
     fields
@@ -208,6 +198,19 @@ pub(super) fn field_split_positional_values_with_ifs(
 #[cfg(test)]
 mod field_split_tests {
     use super::field_split_values_with_ifs;
+
+    #[test]
+    fn non_whitespace_ifs_keeps_leading_empty_fields() {
+        assert_eq!(field_split_values_with_ifs(":", Some(":")), vec![""]);
+        assert_eq!(field_split_values_with_ifs("::", Some(":")), vec!["", ""]);
+        assert_eq!(field_split_values_with_ifs(":a:", Some(":")), vec!["", "a"]);
+    }
+
+    #[test]
+    fn mixed_ifs_keeps_leading_empty_fields() {
+        assert_eq!(field_split_values_with_ifs(" : ", Some(": ")), vec![""]);
+        assert_eq!(field_split_values_with_ifs(": :", Some(": ")), vec!["", ""]);
+    }
 
     #[test]
     fn custom_newline_ifs_preserves_spaces_inside_fields() {

@@ -1,6 +1,19 @@
 use std::{env, fs, process::Command};
 
 #[test]
+fn unquoted_parameter_expansion_splits_on_custom_ifs_empty_fields() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"IFS=":"; x=":a:"; set x $x; shift; printf "[%s](%s)(%s)\n" "$#" "$1" "$2"; IFS=" "; x="  "; set x $x; shift; printf "[%s]\n" "$#""#)
+        .output()
+        .expect("run custom IFS field-splitting probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "[2]()(a)\n[0]\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn escaped_brace_expansion_preserves_literal_suffix() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
