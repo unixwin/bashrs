@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::{env, fs, process::Command};
 
 #[test]
 fn escaped_brace_expansion_preserves_literal_suffix() {
@@ -528,6 +528,52 @@ fn redirection_target_glob_uses_single_match() {
 
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(String::from_utf8_lossy(&output.stdout), "<TEST>\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn posix_redirection_target_does_not_glob() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("--posix")
+        .arg("-c")
+        .arg(
+            r#"rm -f z.tmp '?.tmp'; >z.tmp; echo TEST >?.tmp; printf 'z.tmp:<%s>\n' "$(cat z.tmp)"; printf '?.tmp:<%s>\n' "$(cat '?.tmp')"; rm -f z.tmp '?.tmp'"#,
+        )
+        .output()
+        .expect("run posix redirection glob probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "z.tmp:<>\n?.tmp:<TEST>\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn ash_named_invocation_uses_posix_redirection_glob_rules() {
+    let dir = env::temp_dir().join(format!("rubash-ash-glob-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create ash invocation temp dir");
+    let ash_path = dir.join(if cfg!(windows) { "ash.exe" } else { "ash" });
+    fs::copy(env!("CARGO_BIN_EXE_rubash"), &ash_path).expect("copy rubash as ash");
+
+    let output = Command::new(&ash_path)
+        .arg("-c")
+        .arg(
+            r#"rm -f z.tmp '?.tmp'; >z.tmp; echo TEST >?.tmp; printf 'z.tmp:<%s>\n' "$(cat z.tmp)"; printf '?.tmp:<%s>\n' "$(cat '?.tmp')"; rm -f z.tmp '?.tmp'"#,
+        )
+        .current_dir(&dir)
+        .output()
+        .expect("run ash-named redirection glob probe");
+
+    let _ = fs::remove_dir_all(&dir);
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "z.tmp:<>\n?.tmp:<TEST>\n"
+    );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 

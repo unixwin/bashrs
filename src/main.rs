@@ -32,6 +32,7 @@ fn run_main() -> i32 {
     if let Some(shell_name) = args.first() {
         executor.set_env("__RUBASH_SHELL_NAME", shell_name);
     }
+    apply_invocation_shell_mode(&mut executor, args.first().map(String::as_str));
 
     if args.len() > 1 {
         return run_args(&mut executor, &args[1..]);
@@ -47,6 +48,23 @@ fn run_main() -> i32 {
 
 fn print_usage() {
     println!("Usage: rubash [-c command] [script]");
+}
+
+fn apply_invocation_shell_mode(executor: &mut Executor, argv0: Option<&str>) {
+    let Some(name) = argv0.and_then(invocation_shell_name) else {
+        return;
+    };
+
+    if matches!(name.as_str(), "sh" | "ash") {
+        executor.set_env("__RUBASH_POSIX_MODE", "1");
+        executor.set_shell_option("posix", true);
+    }
+}
+
+fn invocation_shell_name(argv0: &str) -> Option<String> {
+    let basename = argv0.rsplit(['/', '\\']).next()?;
+    let stem = basename.strip_suffix(".exe").unwrap_or(basename);
+    Some(stem.to_ascii_lowercase())
 }
 
 fn run_args(executor: &mut Executor, args: &[String]) -> i32 {

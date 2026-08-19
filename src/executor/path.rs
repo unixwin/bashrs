@@ -40,7 +40,7 @@ pub(crate) fn shell_directory_entries(
         Ok(directory) => {
             for entry in directory {
                 let entry = entry?;
-                let name = entry.file_name().to_string_lossy().into_owned();
+                let name = shell_filename_from_windows(&entry.file_name().to_string_lossy());
                 let file_type = entry.file_type()?;
                 entries.push(ShellDirectoryEntry {
                     name,
@@ -649,7 +649,33 @@ pub(crate) fn shell_path_to_windows(path: &str, env_vars: &HashMap<String, Strin
         }
     }
 
-    PathBuf::from(path)
+    PathBuf::from(shell_path_from_shell_name(path))
+}
+
+const WINDOWS_LITERAL_STAR: &str = "%RUBASH_STAR%";
+const WINDOWS_LITERAL_QUESTION: &str = "%RUBASH_QMARK%";
+
+fn shell_path_from_shell_name(path: &str) -> String {
+    if cfg!(windows) {
+        path.chars()
+            .map(|ch| match ch {
+                '*' => WINDOWS_LITERAL_STAR.to_string(),
+                '?' => WINDOWS_LITERAL_QUESTION.to_string(),
+                _ => ch.to_string(),
+            })
+            .collect()
+    } else {
+        path.to_string()
+    }
+}
+
+fn shell_filename_from_windows(name: &str) -> String {
+    if cfg!(windows) {
+        name.replace(WINDOWS_LITERAL_STAR, "*")
+            .replace(WINDOWS_LITERAL_QUESTION, "?")
+    } else {
+        name.to_string()
+    }
 }
 
 fn windows_drive_absolute_tail_index(path: &str) -> Option<usize> {

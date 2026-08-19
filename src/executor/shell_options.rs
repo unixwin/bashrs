@@ -28,6 +28,10 @@ impl Executor {
     }
 
     pub(in crate::executor) fn redirect_output_path_target(&self, target: &str) -> String {
+        if self.posix_mode_enabled() {
+            return target.to_string();
+        }
+
         match pathname_expand_word(target, &self.env_vars) {
             PathnameExpansion::Matches(matches) if matches.len() == 1 => matches[0].clone(),
             _ => target.to_string(),
