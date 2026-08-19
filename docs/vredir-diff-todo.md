@@ -86,7 +86,7 @@ does not belong to `FdTable` or redirection execution.
 
 Evidence: `vredir4.*`, `vredir5.*`, and `vredir7.*` in the latest artifact.
 
-Status: open output-format TODO; no fd semantic regression is indicated.
+Status: fd semantics and function output format closed by `8f92f15`; local `/dev/tty` diagnostic policy remains host-owned.
 
 ## TODO
 
@@ -113,8 +113,8 @@ Status: open output-format TODO; no fd semantic regression is indicated.
       focused regression is `c_dynamic_fd_closed_redirect_preserves_source_token_diagnostic`.
 - [ ] Define a Windows fixture or explicit host-owned policy for `/dev/tty`
       and its localized OS diagnostic.
-- [ ] Decide whether function pretty-print spacing/semicolons is part of the
-      actual-output contract; if so, assign it to the function renderer.
+- [x] Decide whether function pretty-print spacing/semicolons is part of the
+      actual-output contract; yes, and `8f92f15` assigns it to the function renderer.
 - [ ] Refresh the official actual-output row without relying on `.right`,
       recording the host-owned `/dev/tty` difference and the two output-format
       decisions above.

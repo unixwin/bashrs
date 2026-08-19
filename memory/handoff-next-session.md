@@ -1,7 +1,27 @@
 # 会话交接（2026-08-04）→ 新会话从这里继续
 
-> 本文件是**会话交接文档**：新会话打开后先读本文件 + `docs/bash-mastery-plan.md`（阶段计划）+ `memory/compat-fixes-20260803.md`（根因记录）+ `AGENTS.md`（铁律：GNU Bash C 源码是唯一权威，先查 `docs/bash-source-map.md` 映射再动手）。
-> 目标（docs/bash-mastery-plan.md）：通过全部套件（差分 26 + bash 官方 83 + 上游 87 + oil 684 + mksh 436 + ksh93 46 + busybox 143），解决远程全部 7 个 issue（#20-#26）。
+> 本文件是会话交接文档：新会话打开后先读本文件 + docs/bash-mastery-plan.md + memory/compat-fixes-20260803.md + AGENTS.md。
+
+## 0. 2026-08-19 已验证继续点
+
+已推送 origin/master 到 8f92f15（此前远程为 bb46a25）：
+
+- 8021f39 fix: decode literal glob markers in display paths（#49 相关）
+- 8f92f15 fix: align type output separators with Bash（vredir 输出格式 slice）
+
+独立验证与结论：
+
+- cargo test --lib 215/215；cargo test test_type_ 16/16；cargo check --locked
+- BusyBox set-n1 单 case：Bash 与 Rubash rc=0，stdout 完全一致
+- BusyBox ash-redir/redir_stdin1：CRLF 归一化后完全一致，真实语义无差异
+- BusyBox ash-vars/var_bash7：ANSI-C 前缀删除展开（x=AB，右侧 ANSI-C 引号内 x41）输出 B，Bash 与 Rubash 一致
+- 完整 executor_tests 仍有 26 个失败；在 bb46a25 干净基线重跑得到完全相同的 26 项，确认为既有环境/非确定性失败，不是本次改动引入
+
+未收口：
+
+- 主 worktree 有大量未提交 WIP（declare/executor/tests/bashdb），与远程 master 已落后一个代码波；合并后用户 WIP 可能需 rebase/解冲突
+- BusyBox issue 尚无可关闭证据；后续优先从 ash-misc/set-n1、ash-vars、ash-redir 的剩余 .tests/.right 中找最小真实差异
+- vredir8 的 /dev/tty 路径与 Windows 本地化诊断仍是 host-owned
 
 ## 一、当前精确状态（2026-08-04 会话结束时）
 
