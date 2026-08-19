@@ -527,13 +527,13 @@ impl Executor {
                     read_status = status;
                     saw_read = true;
                 }
-                "echo" if saw_read => {
-                    output.push_str(&self.timed_read_echo_output(
+                _ if saw_read => {
+                    output.push_str(&self.timed_read_followup_output(
                         command,
                         &read_name,
                         &read_value,
                         read_status,
-                    ));
+                    )?);
                 }
                 _ => return None,
             }
@@ -575,44 +575,28 @@ impl Executor {
         ))
     }
 
-    fn timed_read_echo_output(
+    fn timed_read_followup_output(
         &mut self,
         command: &CommandNode,
         name: &str,
         value: &str,
         status: i32,
-    ) -> String {
+    ) -> Option<String> {
         let saved_status = self.exit_code;
         let saved_value = self.env_vars.insert(name.to_string(), value.to_string());
         self.exit_code = status;
-        let mut args: Vec<String> = command.words[1..]
-            .iter()
-            .enumerate()
-            .flat_map(|(offset, word)| {
-                let index = offset + 1;
-                let raw = command
-                    .word_metadata
-                    .get(index)
-                    .map(|metadata| metadata.raw.as_str());
-                self.expand_command_word(command, index, word, raw)
-            })
-            .map(|arg| arg.replace('\x11', ""))
-            .collect();
+        let result = self
+            .execute_pipeline_stage(command, "", false)
+            .ok()
+            .flatten();
         self.exit_code = saved_status;
         if let Some(saved_value) = saved_value {
             self.env_vars.insert(name.to_string(), saved_value);
         } else {
             self.env_vars.remove(name);
         }
-        let newline = !args.first().is_some_and(|arg| arg == "-n");
-        if !newline {
-            args.remove(0);
-        }
-        let mut output = args.join(" ");
-        if newline {
-            output.push('\n');
-        }
-        output
+        let (stdout, stderr, _) = result?;
+        stderr.is_empty().then(|| stdout.replace('\x11', ""))
     }
 
     /// Connect a pipeline of native external processes with OS pipes.  The

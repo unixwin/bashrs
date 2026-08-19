@@ -705,6 +705,19 @@ fn read_timeout_keeps_partial_pipeline_input() {
 }
 
 #[test]
+fn read_timeout_followup_printf_sees_partial_status() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"{ echo -n te; sleep 2; echo st; } | (read -t 1 reply; printf ">%s<[%s]\n" "$reply" "$?")"#)
+        .output()
+        .expect("run read timeout printf follow-up probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), ">te<[142]\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn read_timeout_zero_reports_pipe_readiness() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
