@@ -86,7 +86,7 @@ impl Executor {
                 .map(|value| {
                     remove_matching_prefix(
                         value,
-                        &self.expand_embedded_parameters(pattern),
+                        &self.expand_parameter_pattern_word(pattern),
                         match_length,
                     )
                 })
@@ -112,7 +112,7 @@ impl Executor {
                 .map(|value| {
                     remove_matching_suffix(
                         value,
-                        &self.expand_embedded_parameters(pattern),
+                        &self.expand_parameter_pattern_word(pattern),
                         match_length,
                     )
                 })

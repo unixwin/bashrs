@@ -550,6 +550,12 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                     "__RUBASH_PARSE_ERROR__".to_string(),
                     format!("unexpected token `{}`", token.value),
                 );
+                if let Some(source) = parse_error_source_line(tokens, *i) {
+                    state
+                        .current_cmd
+                        .assignments
+                        .insert("__RUBASH_PARSE_SOURCE__".to_string(), source);
+                }
                 state
                     .ast
                     .commands
@@ -704,6 +710,71 @@ fn collect_split_array_element_assignment_word(
     }
 
     None
+}
+
+fn parse_error_source_line(tokens: &[Token], index: usize) -> Option<String> {
+    tokens.get(index)?;
+    let mut start = index;
+    while start > 0 {
+        let previous = &tokens[start - 1];
+        if previous.line_break || previous.kind == TokenKind::HereDocBody {
+            break;
+        }
+        start -= 1;
+    }
+
+    let mut source = String::new();
+    let mut previous_kind = None;
+    for token in tokens.iter().skip(start) {
+        if token.kind == TokenKind::HereDocBody || (!source.is_empty() && token.line_break) {
+            break;
+        }
+        append_parse_source_token(&mut source, previous_kind.as_ref(), token);
+        previous_kind = Some(token.kind.clone());
+        if token.line_break {
+            break;
+        }
+    }
+
+    let source = source.trim().to_string();
+    (!source.is_empty()).then_some(source)
+}
+
+fn append_parse_source_token(source: &mut String, previous: Option<&TokenKind>, token: &Token) {
+    if token.raw.is_empty() {
+        return;
+    }
+    if !source.is_empty() && parse_source_needs_space(previous, &token.kind) {
+        source.push(' ');
+    }
+    source.push_str(&token.raw);
+}
+
+fn parse_source_needs_space(previous: Option<&TokenKind>, current: &TokenKind) -> bool {
+    if previous.is_none() {
+        return false;
+    }
+    if matches!(
+        current,
+        TokenKind::Semicolon | TokenKind::Background | TokenKind::Pipe | TokenKind::PipeErr
+    ) {
+        return false;
+    }
+    if matches!(
+        previous,
+        Some(
+            TokenKind::HereDoc
+                | TokenKind::HereString
+                | TokenKind::RedirectIn
+                | TokenKind::RedirectOut
+                | TokenKind::Append
+                | TokenKind::RedirectErr
+                | TokenKind::RedirectErrAppend
+        )
+    ) {
+        return false;
+    }
+    true
 }
 
 fn adjacent_word_token(token: &Token) -> bool {

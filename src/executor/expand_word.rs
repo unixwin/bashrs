@@ -32,9 +32,11 @@ impl Executor {
 
         let expanded = self.expand_embedded_parameters(word);
         if word.contains("$(") || word.contains('`') {
-            restore_protected_replacement_quotes(&unescape_remaining_shell_escapes(&expanded))
-                .replace("\\\\'", "'")
-                .replace("\\'", "'")
+            restore_command_substitution_output(
+                &restore_protected_replacement_quotes(&unescape_remaining_shell_escapes(&expanded))
+                    .replace("\\\\'", "'")
+                    .replace("\\'", "'"),
+            )
         } else {
             restore_protected_replacement_quotes(&expanded)
         }
@@ -188,7 +190,9 @@ impl Executor {
 
     fn expand_substitution_word(&self, word: &str) -> Option<String> {
         if let Some(expanded) = self.expand_backtick_substitution(word) {
-            return Some(command_substitution_word_split(&expanded).replace('\\', "\x15"));
+            return Some(restore_command_substitution_output(
+                &command_substitution_word_split(&expanded),
+            ));
         }
 
         if let Some(value) = self.expand_dirstack_tilde(word) {

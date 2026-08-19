@@ -113,7 +113,7 @@ impl Executor {
                 // Bash exposes the about-to-run command's line via LINENO
                 // inside the DEBUG trap action (dbg-support2.tests).
                 self.set_current_line(command);
-                let command_text = self.xtrace_command_text(command);
+                let command_text = crate::executor::command_text::bash_command_source_text(command);
                 if self.run_debug_trap(&command_text)? {
                     index += 1;
                     continue;

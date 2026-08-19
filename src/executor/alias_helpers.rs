@@ -45,8 +45,7 @@ pub(in crate::executor) fn split_shell_words_with_quote_info(source: &str) -> Ve
                 word_quoted = true;
             }
             (q, Some(active)) if q == active => quote = None,
-            ('$', Some('\'')) => current.push('\x1f'),
-            ('`', Some('\'')) => current.push('\x1a'),
+            (ch, Some('\'')) => push_single_quoted_shell_word_char(&mut current, ch),
             (' ' | '\t', None) => {
                 if !current.is_empty() {
                     words.push((std::mem::take(&mut current), word_quoted));
@@ -174,6 +173,15 @@ fn copy_backtick_word_part(
         } else if ch == '`' {
             break;
         }
+    }
+}
+
+fn push_single_quoted_shell_word_char(current: &mut String, ch: char) {
+    match ch {
+        '$' => current.push('\x1f'),
+        '`' => current.push('\x1a'),
+        '\\' => current.push('\x15'),
+        _ => current.push(ch),
     }
 }
 

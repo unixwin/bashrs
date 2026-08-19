@@ -59,63 +59,76 @@ impl Executor {
         if quoted {
             return body.to_string();
         }
-        let source = prepare_unquoted_heredoc_expansion(body);
-        restore_heredoc_expansion_markers(&self.expand_embedded_parameters(&source))
-    }
-
-    pub(in crate::executor) fn unquoted_heredoc_expansion_source(
-        &self,
-        body: &str,
-    ) -> Option<String> {
-        let quoted = body.starts_with('\x1e');
-        let body = strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(body));
-        (!quoted).then(|| prepare_unquoted_heredoc_expansion(body))
+        restore_command_substitution_output(
+            &self.expand_embedded_parameters(&prepare_unquoted_heredoc_expansion(body)),
+        )
     }
 }
 
 fn prepare_unquoted_heredoc_expansion(body: &str) -> String {
     let mut output = String::with_capacity(body.len());
     let mut chars = body.chars().peekable();
-    let mut dollar_paren_depth = 0usize;
-    let mut single_in_dollar_paren = false;
+    let mut command_depth = 0usize;
+    let mut single = false;
+    let mut double = false;
     while let Some(ch) = chars.next() {
-        if dollar_paren_depth > 0 {
-            if ch == '\'' {
-                single_in_dollar_paren = !single_in_dollar_paren;
-                output.push(ch);
-                continue;
-            }
-            if single_in_dollar_paren {
-                output.push(ch);
-                continue;
-            }
-            if ch == ')' {
-                dollar_paren_depth = dollar_paren_depth.saturating_sub(1);
-                output.push(ch);
-                continue;
-            }
-        }
-
-        if ch == '$' && chars.peek().copied() == Some('(') {
+        if ch == '$' && !single && chars.peek() == Some(&'(') {
             chars.next();
-            dollar_paren_depth += 1;
             output.push('$');
             output.push('(');
+            command_depth += 1;
             continue;
+        }
+
+        if command_depth > 0 {
+            match ch {
+                '\'' if !double => single = !single,
+                '"' if !single => double = !double,
+                '(' if !single && !double => command_depth += 1,
+                ')' if !single && !double => command_depth = command_depth.saturating_sub(1),
+                _ => {}
+            }
         }
 
         if ch != '\\' {
             output.push(ch);
             continue;
         }
+
+        if command_depth > 0 && single {
+            output.push('\\');
+            continue;
+        }
+
+        let mut slash_count = 1usize;
+        while chars.peek() == Some(&'\\') {
+            chars.next();
+            slash_count += 1;
+        }
+
+        if matches!(chars.peek(), Some('\n') | Some('\r')) {
+            for _ in 0..(slash_count / 2) {
+                output.push('\\');
+            }
+            if slash_count % 2 == 1 {
+                if chars.peek() == Some(&'\r') {
+                    chars.next();
+                }
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+            }
+            continue;
+        }
+
+        for _ in 0..(slash_count / 2) {
+            output.push('\x14');
+        }
+        if slash_count % 2 == 0 {
+            continue;
+        }
+
         match chars.peek().copied() {
-            Some('\n') => {
-                chars.next();
-            }
-            Some('\\') => {
-                chars.next();
-                output.push('\x15');
-            }
             Some('$') => {
                 chars.next();
                 output.push('\x1f');
@@ -124,17 +137,11 @@ fn prepare_unquoted_heredoc_expansion(body: &str) -> String {
                 chars.next();
                 output.push('\x1a');
             }
+            Some('\\') => unreachable!("backslash runs are consumed above"),
             _ => output.push('\\'),
         }
     }
     output
-}
-
-fn restore_heredoc_expansion_markers(value: &str) -> String {
-    value
-        .replace('\x1a', "`")
-        .replace('\x1f', "$")
-        .replace('\x15', "\\")
 }
 
 #[allow(dead_code)]

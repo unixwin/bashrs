@@ -61,17 +61,21 @@ impl Executor {
         if !index.ends_with(']') || !is_shell_name(name) {
             return false;
         }
-        let raw_subscript = cmd
-            .array_element_assignments
-            .iter()
-            .find(|assignment| {
-                assignment
-                    .word_index
-                    .and_then(|word_index| cmd.words.get(word_index))
-                    .is_some_and(|word| word == &cmd.words[0])
-                    && assignment.name == name
-            })
-            .map(|assignment| assignment.subscript_metadata.raw.as_str());
+        let element_assignment = cmd.array_element_assignments.iter().find(|assignment| {
+            assignment
+                .word_index
+                .and_then(|word_index| cmd.words.get(word_index))
+                .is_some_and(|word| word == &cmd.words[0])
+                && assignment.name == name
+        });
+        let raw_subscript =
+            element_assignment.map(|assignment| assignment.subscript_metadata.raw.as_str());
+        let value_is_syntactic_compound_list = element_assignment.is_some_and(|assignment| {
+            let raw_value = assignment.value.trim();
+            raw_value.starts_with('(')
+                && raw_value.ends_with(')')
+                && assignment.word_quotes.is_empty()
+        });
         let name = match self.nameref_resolution(name) {
             NamerefResolution::Target(target) => target,
             NamerefResolution::Circular => {
@@ -142,7 +146,7 @@ impl Executor {
         }
 
         let index = index.trim_end_matches(']');
-        if value.starts_with('(') && value.ends_with(')') {
+        if value_is_syntactic_compound_list {
             eprintln!(
                 "{}{}: cannot assign list to array member",
                 self.diagnostic_prefix(),

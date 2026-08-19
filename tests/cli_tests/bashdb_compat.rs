@@ -363,3 +363,254 @@ printf '<%s>\n' "${m[D:/path]}"
     assert_eq!(String::from_utf8_lossy(&output.stdout), "< 4 >\n");
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
+
+#[test]
+fn compound_assignment_splits_unquoted_associative_array_element() {
+    let output = run_rubash_inline(
+        r#"typeset -A map=()
+source_file='D:/repo/rubash/target/bashdb-probe-target.sh'
+map["$source_file"]=' 1 '
+brkpt_nos=(${map["$source_file"]})
+printf '<%s:%s>\n' "${#brkpt_nos[@]}" "${brkpt_nos[0]}"
+"#,
+    );
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<1:1>\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn declare_assignment_can_shadow_readonly_caller_local() {
+    let output = run_rubash_inline(
+        r#"outer(){ typeset -r del=1; inner 2; echo outer:$del; }
+inner(){ typeset -i del=$1; echo inner:$del; }
+outer
+"#,
+    );
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "inner:2\nouter:1\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn bashdb_delete_removes_breakpoint_entry() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("target/bashdb-clean/bashdb-generated")
+        .arg("--no-highlight")
+        .arg("target/bashdb-probe-target.sh")
+        .env("TERM", "xterm")
+        .env("DARK_BG", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run rubash bashdb");
+
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"break 4\ninfo breakpoints\ndelete 1\ninfo breakpoints\nquit\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(output.status.success());
+    assert!(stdout.contains("Breakpoint 1 set"));
+    assert!(stdout.contains("Deleted breakpoint 1"));
+    assert!(stdout.contains("No breakpoints have been set."));
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn eval_compound_assignment_does_not_leak_field_split_marker() {
+    let output = run_rubash_inline(
+        r#"typeset -A map=()
+key='D:/repo/rubash/target/bashdb-probe-target.sh'
+map["$key"]=' 4 '
+eval "via_eval=(${map[\"$key\"]})"
+printf '<%s:%s:%s>\n' "${#via_eval[@]}" "${via_eval[0]}" "$(( via_eval[0] == 4 ))"
+"#,
+    );
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<1:4:1>\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn bashdb_clear_removes_breakpoint_by_file_line() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("target/bashdb-clean/bashdb-generated")
+        .arg("--no-highlight")
+        .arg("target/bashdb-probe-target.sh")
+        .env("TERM", "xterm")
+        .env("DARK_BG", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run rubash bashdb");
+
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"break 4\nclear 4\ninfo breakpoints\nquit\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(output.status.success());
+    assert!(stdout.contains("Breakpoint 1 set"));
+    assert!(stdout.contains("Removed 1 breakpoint(s)."));
+    assert!(stdout.contains("No breakpoints have been set."));
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn unset_array_subscript_preserves_arithmetic_side_effects() {
+    let output = run_rubash_inline(
+        r#"a=([0]=10 [1]=20)
+i=1
+unset a[i--]
+printf '<%s:%s:%s>\n' "$i" "${a[0]}" "${a[1]-}"
+"#,
+    );
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<0:10:>\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn bashdb_commands_block_consumes_secondary_input_without_fd_loop() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("target/bashdb-clean/bashdb-generated")
+        .arg("--no-highlight")
+        .arg("target/bashdb-probe-target.sh")
+        .env("TERM", "xterm")
+        .env("DARK_BG", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run rubash bashdb");
+
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"break 4\ncommands 1\nsilent\nend\nquit\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(output.status.success());
+    assert!(stdout.contains("Type commands for when breakpoint 1 hit"));
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn assignment_builtin_strips_syntactic_quotes_from_quoted_command_substitution() {
+    let output = run_rubash_inline(
+        r#"u(){ builtin echo -n -e "$@"; }
+typeset -r e="$(u x)"
+typeset -r q="$(builtin printf '\"x\"')"
+typeset literal='"x"'
+declare -p e q literal
+"#,
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(output.status.success());
+    assert!(stdout.contains("declare -r e=\"x\""));
+    assert!(stdout.contains("declare -r q=\"\\\"x\\\"\""));
+    assert!(stdout.contains("declare -- literal=\"\\\"x\\\"\""));
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn bashdb_examine_prints_debugged_local_variable() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("target/bashdb-clean/bashdb-generated")
+        .arg("--no-highlight")
+        .arg("target/bashdb-probe-target.sh")
+        .env("TERM", "xterm")
+        .env("DARK_BG", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run rubash bashdb");
+
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"step\nnext\nexamine x\nquit\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(output.status.success());
+    assert!(stdout.contains("declare -- x=\"41\""));
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn array_element_assignment_preserves_quoted_parenthesized_scalar_values() {
+    let output = run_rubash_inline(
+        r#"declare -A map=()
+line='declare -A BASH_ALIASES=([0]="()" )'
+if [[ $line =~ ^([^=]+)=(.*)$ ]]; then
+  map["${BASH_REMATCH[1]}"]="${BASH_REMATCH[2]}"
+fi
+v='(x)'
+map[k]=$v
+arr=()
+arr[0]="(z)"
+printf '<%s:%s:%s>\n' "${map["declare -A BASH_ALIASES"]}" "${map[k]}" "${arr[0]}"
+"#,
+    );
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "<([0]=\"()\" ):(x):(z)>\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn bashdb_info_variables_runs_without_assoc_value_errors() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("target/bashdb-clean/bashdb-generated")
+        .arg("--no-highlight")
+        .arg("target/bashdb-probe-target.sh")
+        .env("TERM", "xterm")
+        .env("DARK_BG", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run rubash bashdb");
+
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"info variables\nquit\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(output.status.success());
+    assert!(stdout.contains("declare -A BASH_ALIASES"));
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}

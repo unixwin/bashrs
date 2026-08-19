@@ -160,7 +160,7 @@ impl Executor {
 
         if is_marked_array_var(&self.env_vars, array_name) || is_array_storage(&current) {
             let subscript = self.expand_arithmetic_special_parameters(subscript);
-            let Some(index) = eval_conditional_arith_value(&subscript, &self.env_vars) else {
+            let Some(index) = self.eval_arithmetic_expansion_value(&subscript) else {
                 return false;
             };
             let Some(index) = resolve_indexed_array_subscript(&current, index) else {

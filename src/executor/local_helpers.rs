@@ -67,16 +67,13 @@ pub(in crate::executor) fn local_assignment_name(arg: &str) -> Option<&str> {
     }
 }
 
-pub(in crate::executor) fn local_names_without_assignment(args: &[String]) -> Vec<String> {
+pub(in crate::executor) fn local_names(args: &[String]) -> Vec<String> {
     let mut names = Vec::new();
     for arg in args {
         if arg == "--" {
             continue;
         }
         if (arg.starts_with('-') || arg.starts_with('+')) && arg != "-" && arg != "+" {
-            continue;
-        }
-        if arg.contains('=') {
             continue;
         }
         if let Some(name) = local_assignment_name(arg) {

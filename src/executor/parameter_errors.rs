@@ -127,31 +127,20 @@ impl Executor {
                 return Some(error);
             }
         }
+
         None
     }
 
-    pub(in crate::executor) fn parameter_heredoc_expansion_error(
+    pub(in crate::executor) fn parameter_expansion_error_in_heredoc_body(
         &self,
-        cmd: &CommandNode,
+        body: &str,
     ) -> Option<(String, String, i32)> {
-        if let Some(heredoc) = &cmd.heredoc {
-            if let Some(source) = self.unquoted_heredoc_expansion_source(heredoc) {
-                if let Some(error) = self.parameter_expansion_error_in_word(&source) {
-                    return Some(error);
-                }
-            }
+        if body.starts_with('\x1e') {
+            return None;
         }
-        for redirect in &cmd.heredoc_redirects {
-            let Some(body) = &redirect.body else {
-                continue;
-            };
-            if let Some(source) = self.unquoted_heredoc_expansion_source(body) {
-                if let Some(error) = self.parameter_expansion_error_in_word(&source) {
-                    return Some(error);
-                }
-            }
-        }
-        None
+        let body = strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(body));
+        self.parameter_expansion_error_in_word(body)
+            .map(|(name, message, status)| (name, message, if status == 127 { 1 } else { status }))
     }
 
     pub(in crate::executor) fn parameter_expansion_error_in_word(

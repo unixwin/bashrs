@@ -189,9 +189,7 @@ pub(in crate::executor) fn decode_parameter_pattern_quotes(pattern: &str) -> Str
             if escaped {
                 quoted.push('\\');
             }
-            for ch in decode_ansi_c_escapes(&quoted).chars() {
-                push_quoted_parameter_pattern_char(&mut output, ch);
-            }
+            push_quoted_pattern_str(&mut output, &decode_ansi_c_escapes(&quoted));
             continue;
         }
 
@@ -209,12 +207,12 @@ pub(in crate::executor) fn decode_parameter_pattern_quotes(pattern: &str) -> Str
                     {
                         index += 1;
                         if escaped != '\n' {
-                            push_quoted_parameter_pattern_char(&mut output, escaped);
+                            push_quoted_pattern_char(&mut output, escaped);
                         }
                         continue;
                     }
                 }
-                push_quoted_parameter_pattern_char(&mut output, ch);
+                push_quoted_pattern_char(&mut output, ch);
             }
             continue;
         }
@@ -228,7 +226,7 @@ pub(in crate::executor) fn decode_parameter_pattern_quotes(pattern: &str) -> Str
                 if let Some(close_offset) = chars[index + 1..].iter().position(|ch| *ch == '\'') {
                     let close = index + 1 + close_offset;
                     for ch in &chars[index + 1..close] {
-                        push_quoted_parameter_pattern_char(&mut output, *ch);
+                        push_quoted_pattern_char(&mut output, *ch);
                     }
                     index = close + 1;
                 } else {
@@ -255,12 +253,12 @@ pub(in crate::executor) fn decode_parameter_pattern_quotes(pattern: &str) -> Str
                         {
                             index += 1;
                             if escaped != '\n' {
-                                push_quoted_parameter_pattern_char(&mut output, escaped);
+                                push_quoted_pattern_char(&mut output, escaped);
                             }
                             continue;
                         }
                     }
-                    output.push(ch);
+                    push_quoted_pattern_char(&mut output, ch);
                 }
             }
             '\\' => {
@@ -268,7 +266,7 @@ pub(in crate::executor) fn decode_parameter_pattern_quotes(pattern: &str) -> Str
                     if *ch == '\\' {
                         output.push('\x18');
                     } else {
-                        output.push(*ch);
+                        push_quoted_pattern_char(&mut output, *ch);
                     }
                     index += 2;
                 } else {
@@ -287,13 +285,15 @@ pub(in crate::executor) fn decode_parameter_pattern_quotes(pattern: &str) -> Str
     output
 }
 
-fn push_quoted_parameter_pattern_char(output: &mut String, ch: char) {
-    match ch {
-        '\\' => output.push('\x18'),
-        '*' | '?' | '[' => {
-            output.push('\\');
-            output.push(ch);
-        }
-        _ => output.push(ch),
+fn push_quoted_pattern_str(output: &mut String, value: &str) {
+    for ch in value.chars() {
+        push_quoted_pattern_char(output, ch);
     }
+}
+
+fn push_quoted_pattern_char(output: &mut String, ch: char) {
+    if matches!(ch, '*' | '?' | '[' | '\\') {
+        output.push('\x11');
+    }
+    output.push(ch);
 }

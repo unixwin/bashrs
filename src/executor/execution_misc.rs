@@ -347,11 +347,46 @@ pub(in crate::executor) fn current_epoch_micros() -> i64 {
 }
 
 pub(in crate::executor) fn eval_source_for_reparse(source: &str) -> String {
-    source
+    let source = source
         .replace('\x1e', "")
         .replace('\x1d', "")
+        .replace('\x1c', "")
         .replace('\x1f', "$")
-        .replace('\x17', "'")
+        .replace('\x17', "'");
+    protect_unmatched_double_quoted_backticks(&source)
+}
+
+fn protect_unmatched_double_quoted_backticks(source: &str) -> String {
+    let mut output = String::with_capacity(source.len());
+    let mut chars = source.char_indices().peekable();
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+    while let Some((_index, ch)) = chars.next() {
+        if escaped {
+            output.push(ch);
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            output.push(ch);
+            escaped = true;
+            continue;
+        }
+        match ch {
+            '\'' if !in_double => {
+                in_single = !in_single;
+                output.push(ch);
+            }
+            '"' if !in_single => {
+                in_double = !in_double;
+                output.push(ch);
+            }
+            '`' if in_double && !in_single => output.push('\x1a'),
+            _ => output.push(ch),
+        }
+    }
+    output
 }
 
 pub(in crate::executor) fn next_random_from_state(state: &Cell<u32>) -> u32 {
@@ -382,6 +417,14 @@ pub(in crate::executor) fn protect_command_substitution_output(value: &str) -> S
         .replace('`', "\x1a")
         .replace('$', "\x1f")
         .replace('\\', "\x15")
+}
+
+pub(in crate::executor) fn restore_command_substitution_output(value: &str) -> String {
+    value
+        .replace('\x1a', "`")
+        .replace('\x1f', "$")
+        .replace('\x15', "\\")
+        .replace('\x14', "\\")
 }
 
 pub(in crate::executor) fn unescape_storage_command_substitution_source(source: &str) -> String {

@@ -352,7 +352,9 @@ impl Executor {
         }
         let expanded = self.expand_word_mut(word);
         if assignment_builtin_receives_assignment_word(cmd, index, word) {
-            return vec![expanded];
+            return vec![strip_assignment_builtin_command_subst_quotes(
+                &expanded, raw,
+            )];
         }
         if expanded.is_empty() && self.removes_unquoted_null_word(cmd, index) {
             Vec::new()
@@ -567,6 +569,29 @@ fn raw_word_contains_process_substitution(raw: Option<&str>) -> bool {
         index += 1;
     }
     false
+}
+
+fn strip_assignment_builtin_command_subst_quotes(expanded: &str, raw: Option<&str>) -> String {
+    let Some(raw_value) = raw.and_then(|raw| raw.split_once('=').map(|(_, value)| value)) else {
+        return expanded.to_string();
+    };
+    let raw_value = raw_value.trim();
+    if !(raw_value.starts_with('"')
+        && raw_value.ends_with('"')
+        && (raw_value.contains("$(") || raw_value.contains('`')))
+    {
+        return expanded.to_string();
+    }
+    let Some((name, value)) = expanded.split_once('=') else {
+        return expanded.to_string();
+    };
+    let Some(value) = value
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+    else {
+        return expanded.to_string();
+    };
+    format!("{}={}", name, value)
 }
 
 fn expanded_word_has_process_substitution(word: &str) -> bool {

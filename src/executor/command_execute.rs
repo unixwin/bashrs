@@ -19,14 +19,21 @@ impl Executor {
         }
         self.set_current_command(cmd);
         self.report_command_heredoc_errors(cmd)?;
+        if let Some((name, message, status)) = self.parameter_heredoc_expansion_error(cmd) {
+            eprintln!("{}{}: {}", self.diagnostic_prefix(), name, message);
+            self.exit_code = status;
+            return Ok(());
+        }
 
         if cmd.assignments.contains_key("__RUBASH_PARSE_ERROR__") {
             self.mark_parse_error();
             if let Some(source) = cmd.assignments.get("__RUBASH_PARSE_SOURCE__") {
-                if let Some(reparsed) = self.reparse_reserved_word_aliases(source) {
-                    let tokens = crate::lexer::tokenize(&reparsed);
-                    let ast = crate::parser::parse(&tokens);
-                    return self.execute_ast(&ast);
+                if !source.contains("<<") {
+                    if let Some(reparsed) = self.reparse_reserved_word_aliases(source) {
+                        let tokens = crate::lexer::tokenize(&reparsed);
+                        let ast = crate::parser::parse(&tokens);
+                        return self.execute_ast(&ast);
+                    }
                 }
             }
             let message = cmd
@@ -34,7 +41,15 @@ impl Executor {
                 .get("__RUBASH_PARSE_ERROR__")
                 .map(String::as_str)
                 .unwrap_or("unexpected token");
+            let message = bash_style_unexpected_token_message(message);
             eprintln!("{}syntax error near {message}", self.diagnostic_prefix(),);
+            if let Some(source) = cmd.assignments.get("__RUBASH_PARSE_SOURCE__") {
+                eprintln!(
+                    "{}`{}'",
+                    self.diagnostic_prefix(),
+                    parse_error_source_display(source)
+                );
+            }
             self.exit_code = 2;
             return Err(ExecuteError::ExitCode(2));
         }
@@ -223,6 +238,44 @@ impl Executor {
             self.command_with_process_substitution_files(&cmd)?;
         self.execute_materialized_command(&materialized_cmd, process_substitution_files)
     }
+}
+
+impl Executor {
+    fn parameter_heredoc_expansion_error(
+        &self,
+        cmd: &CommandNode,
+    ) -> Option<(String, String, i32)> {
+        if let Some(body) = &cmd.heredoc {
+            if let Some(error) = self.parameter_expansion_error_in_heredoc_body(body) {
+                return Some(error);
+            }
+        }
+        for redirect in &cmd.heredoc_redirects {
+            if let Some(body) = &redirect.body {
+                if let Some(error) = self.parameter_expansion_error_in_heredoc_body(body) {
+                    return Some(error);
+                }
+            }
+        }
+        None
+    }
+}
+
+fn bash_style_unexpected_token_message(message: &str) -> String {
+    if let Some(token) = message
+        .strip_prefix("unexpected token `")
+        .and_then(|rest| rest.strip_suffix('`'))
+    {
+        return format!("unexpected token `{token}'");
+    }
+    message.to_string()
+}
+
+fn parse_error_source_display(source: &str) -> String {
+    source
+        .trim()
+        .replace(";then", "; then")
+        .replace("then<W", "then <W")
 }
 
 fn is_dynamic_fd_exec_command(cmd: &CommandNode) -> bool {

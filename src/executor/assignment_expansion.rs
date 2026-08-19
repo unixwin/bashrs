@@ -273,8 +273,23 @@ impl Executor {
         value: &str,
     ) -> Option<String> {
         let inner = value.strip_prefix('(')?.strip_suffix(')')?.trim();
-        let name = single_unquoted_parameter_name(inner)?;
-        let value = self.shell_variable_value(name).unwrap_or_default();
+        let unquoted_inner = strip_matching_quotes(inner);
+        let parameter = if unquoted_inner == inner {
+            inner
+        } else {
+            &unquoted_inner
+        };
+        let value = if let Some(name) = single_unquoted_parameter_name(parameter) {
+            self.shell_variable_value(name).unwrap_or_default()
+        } else if let Some(name) = parameter
+            .strip_prefix("${")
+            .and_then(|name| name.strip_suffix('}'))
+        {
+            let name = name.replace("\\\"", "\"").replace("\\'", "'");
+            self.array_element_parameter_value(&name)?
+        } else {
+            return None;
+        };
         let values =
             field_split_values_with_ifs(&value, self.env_vars.get("IFS").map(String::as_str))
                 .into_iter()

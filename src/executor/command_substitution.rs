@@ -12,11 +12,7 @@ impl Executor {
         } else {
             self.expand_word(word)
         };
-        if was_quoted == Some(true) {
-            expanded
-        } else {
-            unescape_remaining_shell_escapes(&expanded)
-        }
+        restore_old_style_backtick_markers(&unescape_remaining_shell_escapes(&expanded))
     }
 
     pub(in crate::executor) fn expand_command_substitution(&self, source: &str) -> String {
@@ -520,6 +516,13 @@ fn command_substitution_has_unclosed_compound(source: &str) -> bool {
         }
         _ => false,
     }
+}
+fn restore_old_style_backtick_markers(value: &str) -> String {
+    value
+        .replace('\x1f', "$")
+        .replace('\x1a', "`")
+        .replace('\x15', "\\")
+        .replace('\x14', "\\")
 }
 
 fn readfile_path_is_quoted(path: &str) -> bool {

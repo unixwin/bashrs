@@ -159,8 +159,18 @@ impl Executor {
     }
 
     pub(in crate::executor) fn assoc_subscript_key(&self, key: &str) -> String {
-        let expanded = self.expand_embedded_parameters(key);
-        strip_matching_quotes(&expanded).to_string()
+        let mut expanded = self
+            .expand_embedded_parameters(key)
+            .replace("\\\"", "\"")
+            .replace("\\'", "'");
+        loop {
+            let trimmed = expanded.trim_matches('\x1d');
+            let stripped = strip_matching_quotes(trimmed);
+            if stripped == trimmed {
+                return stripped.trim_matches('\x1d').to_string();
+            }
+            expanded = stripped.to_string();
+        }
     }
 
     pub(in crate::executor) fn apply_array_element_parameter_assignment(

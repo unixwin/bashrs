@@ -917,3 +917,76 @@ fn separated_double_parentheses_parse_as_nested_subshells() {
         "abc\ndef\nghi\nafter\n"
     );
 }
+
+#[test]
+fn quoted_parameter_pattern_glob_chars_are_literal() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"x='*'; printf '<%s>\n' "${x#'*'}"; x='a*b'; printf '<%s>\n' "${x#'a*'}""#)
+        .output()
+        .expect("run quoted parameter pattern glob probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<>\n<b>\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn unquoted_heredoc_backslash_and_parameter_errors_match_bash() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(concat!(
+            "cat <<EOF\n",
+            "a\\\n",
+            "b\n",
+            "c\\\\\n",
+            "d\n",
+            "EOF\n",
+            "x='*'; printf '<%s>\\n' \"${x#'*'}\"\n",
+            "M=ERR; cat <<EOF; printf 'status=%s\\n' \"$?\"\n",
+            "${D?$M}\n",
+            "EOF\n",
+            "printf 'after\\n'\n",
+        ))
+        .output()
+        .expect("run heredoc backslash and parameter error probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "ab\nc\\\nd\n<>\nstatus=1\nafter\n"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("D: ERR"));
+}
+
+#[test]
+fn heredoc_old_style_backticks_preserve_single_quoted_literals() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(concat!(
+            "a=qwerty\n",
+            "cat <<EOF\n",
+            "`echo '$a \\` \\*'`\n",
+            "EOF\n",
+        ))
+        .output()
+        .expect("run heredoc old-style backtick quote probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "$a ` \\*\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn malformed_heredoc_reports_offending_source_line() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("<<EOF; then <W")
+        .output()
+        .expect("run malformed heredoc diagnostic probe");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("syntax error near unexpected token `then'"));
+    assert!(stderr.contains("`<<EOF; then <W'"));
+}

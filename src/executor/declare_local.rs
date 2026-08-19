@@ -123,6 +123,9 @@ impl Executor {
             && !declare_args_request_print(&args)
         {
             self.save_local_names(&args);
+            if !local_args_request_inherit(&args) {
+                self.initialize_non_inherited_locals(&args);
+            }
         }
         let global_local_values = self.begin_global_declare_for_local_names(&args);
         let posix_function_export_unsets = self.posix_function_declare_unset_export_names(&args);
@@ -254,7 +257,7 @@ impl Executor {
         if crate::builtins::shopt::option_enabled(&self.env_vars, "localvar_inherit") {
             return;
         }
-        for name in local_names_without_assignment(args) {
+        for name in local_names(args) {
             if is_marked_var(&self.env_vars, EXPORTED_VARS, &name) {
                 if let Some(value) = self.env_vars.get(&name).cloned() {
                     set_local_export_env_value(&mut self.env_vars, &name, value);

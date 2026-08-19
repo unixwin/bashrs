@@ -141,7 +141,10 @@ impl Executor {
         if let Some(values) = self.array_at_word_values(word) {
             return values;
         }
-        vec![strip_matching_quotes(&self.expand_word(word)).to_string()]
+        vec![strip_matching_quotes(&restore_command_substitution_output(
+            &self.expand_word(word),
+        ))
+        .to_string()]
     }
 
     pub(in crate::executor) fn command_describe_substitution_output(

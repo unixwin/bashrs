@@ -66,6 +66,10 @@ fn case_pattern_atom_matches(
 ) -> (bool, usize) {
     match pattern[pattern_index] {
         '\x18' => (candidate == '\\', pattern_index + 1),
+        '\x11' if pattern_index + 1 < pattern.len() => (
+            chars_match(pattern[pattern_index + 1], candidate, nocase),
+            pattern_index + 2,
+        ),
         '?' => (true, pattern_index + 1),
         '[' => {
             if let Some((matched, next_index)) = case_bracket_expression_matches_with_case(
