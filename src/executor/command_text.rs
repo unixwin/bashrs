@@ -84,10 +84,6 @@ pub(in crate::executor) fn command_has_redirect(cmd: &CommandNode) -> bool {
         || cmd.redirect_err_append.is_some()
 }
 
-pub(in crate::executor) fn function_body_needs_command_terminators(body: &[CommandNode]) -> bool {
-    body.iter().any(command_or_compound_has_heredoc)
-}
-
 pub(in crate::executor) fn function_definition_command_is_printable(command: &CommandNode) -> bool {
     !command.words.is_empty()
         || command.pipeline_command.is_some()
@@ -106,69 +102,6 @@ pub(in crate::executor) fn function_definition_command_is_printable(command: &Co
         || command.brace_group.is_some()
         || command.coproc_command.is_some()
         || command.function_command.is_some()
-}
-
-fn command_or_compound_has_heredoc(command: &CommandNode) -> bool {
-    command.heredoc.is_some()
-        || command.if_command.as_ref().is_some_and(|if_command| {
-            if_command
-                .condition
-                .iter()
-                .any(command_or_compound_has_heredoc)
-                || if_command
-                    .then_body
-                    .iter()
-                    .any(command_or_compound_has_heredoc)
-                || if_command.elif_branches.iter().any(|branch| {
-                    branch.condition.iter().any(command_or_compound_has_heredoc)
-                        || branch.body.iter().any(command_or_compound_has_heredoc)
-                })
-                || if_command
-                    .else_body
-                    .as_ref()
-                    .is_some_and(|body| body.iter().any(command_or_compound_has_heredoc))
-        })
-        || command.loop_command.as_ref().is_some_and(|loop_command| {
-            loop_command
-                .condition
-                .iter()
-                .any(command_or_compound_has_heredoc)
-                || loop_command
-                    .body
-                    .iter()
-                    .any(command_or_compound_has_heredoc)
-        })
-        || command
-            .subshell_command
-            .as_ref()
-            .is_some_and(|subshell_command| {
-                subshell_command
-                    .body
-                    .iter()
-                    .any(command_or_compound_has_heredoc)
-            })
-        || command
-            .brace_group
-            .as_ref()
-            .is_some_and(|brace_group| brace_group.body.iter().any(command_or_compound_has_heredoc))
-        || command.and_or_list.as_ref().is_some_and(|and_or_list| {
-            and_or_list
-                .commands
-                .iter()
-                .any(command_or_compound_has_heredoc)
-        })
-        || command
-            .time_command
-            .as_ref()
-            .is_some_and(|time_command| command_or_compound_has_heredoc(&time_command.command))
-        || command
-            .background_command
-            .as_ref()
-            .is_some_and(|background| command_or_compound_has_heredoc(&background.command))
-        || command
-            .inverted_command
-            .as_ref()
-            .is_some_and(|inverted| command_or_compound_has_heredoc(&inverted.command))
 }
 
 pub(in crate::executor) fn function_definition_command_omits_terminator(
@@ -242,11 +175,16 @@ pub(in crate::executor) fn append_function_redirect(
         return;
     };
 
-    line.push(' ');
+    // A dynamic varredir already contributes its fd word (for example
+    // {fd}<&0); Bash keeps the operator adjacent to that word.
+    if redirect.fd_var.is_none() {
+        line.push(' ');
+    }
     let target = redirect.target.as_str();
     if target.starts_with('&') {
         // Bash keeps fd duplication operators adjacent to their raw token.
         if redirect.fd.is_none()
+            && redirect.fd_var.is_none()
             && matches!(op, "<" | ">")
             && target[1..].chars().all(|ch| ch.is_ascii_digit())
         {

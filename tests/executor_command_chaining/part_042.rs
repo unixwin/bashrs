@@ -1779,6 +1779,27 @@ fn test_type_prints_nested_function_definition_body() {
 }
 
 #[test]
+fn test_type_prints_dynamic_fd_variables_with_bash_separators() {
+    let output_path = "target/rubash-type-dynamic-fd-variable-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "f() {{ exec {{fd0}}<&0; exec {{fd1}}>&1; exec {{stdin}}<&$fd0-; exec {{stdout}}>&$fd1-; }}; type f > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "f is a function\nf () \n{ \n    exec {fd0}<&0;\n    exec {fd1}>&1;\n    exec {stdin}<&$fd0-;\n    exec {stdout}>&$fd1-\n}\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+#[test]
 fn test_type_prints_canonical_fd_duplication_and_combined_redirects() {
     let output_path = "target/rubash-type-fd-render-output.txt";
     let _ = fs::remove_file(output_path);
@@ -1795,7 +1816,7 @@ fn test_type_prints_canonical_fd_duplication_and_combined_redirects() {
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(
         fs::read_to_string(output_path).unwrap(),
-        "f is a function\nf () \n{ \n    echo input 0<&0\n    echo output 1>&1\n    echo named <&$fd\n    echo combined &> out\n    echo append &>> out\n}\n"
+        "f is a function\nf () \n{ \n    echo input 0<&0;\n    echo output 1>&1;\n    echo named <&$fd;\n    echo combined &> out;\n    echo append &>> out\n}\n"
     );
     let _ = fs::remove_file(output_path);
 }

@@ -13,8 +13,8 @@ impl Executor {
         writeln!(stdout, "{name} is a function")?;
         writeln!(stdout, "{name} () ")?;
         writeln!(stdout, "{{ ")?;
-        let terminates_plain_commands = function_body_needs_command_terminators(body);
-        for command in body {
+        for (index, command) in body.iter().enumerate() {
+            let terminates_plain_commands = index + 1 < body.len() && command.heredoc.is_none();
             if command.assignments.contains_key("v") {
                 writeln!(stdout, "    v='^A'")?;
                 continue;
@@ -45,8 +45,8 @@ impl Executor {
         let _ = writeln!(stdout, "{name} is a function");
         let _ = writeln!(stdout, "{name} () ");
         let _ = writeln!(stdout, "{{ ");
-        let terminates_plain_commands = function_body_needs_command_terminators(body);
-        for command in body {
+        for (index, command) in body.iter().enumerate() {
+            let terminates_plain_commands = index + 1 < body.len() && command.heredoc.is_none();
             if command.assignments.contains_key("v") {
                 let _ = writeln!(stdout, "    v='^A'");
                 continue;
@@ -82,7 +82,7 @@ impl Executor {
         }
 
         let mut line = command.words.join(" ").replace("$(<x1)", "$(< x1)");
-        if command.heredoc.is_none() && !command_has_redirect(command) {
+        if !command_has_redirect(command) && command.heredoc.is_none() {
             if terminates_plain_commands {
                 line.push(';');
             }
@@ -143,6 +143,9 @@ impl Executor {
                     .unwrap_or("2>"),
             );
             append_function_redirect(&mut line, command.redirect_err_append.as_ref(), "2>>");
+        }
+        if command.heredoc.is_none() && terminates_plain_commands {
+            line.push(';');
         }
         Some(line)
     }
