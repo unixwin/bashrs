@@ -25,6 +25,7 @@ impl Iterator for StorageWordIter<'_> {
 
         let mut word = String::new();
         let mut in_double = false;
+        let mut in_single = false;
         let mut escaped = false;
         for (relative, ch) in self.input[self.offset..].char_indices() {
             if escaped {
@@ -37,12 +38,17 @@ impl Iterator for StorageWordIter<'_> {
                 escaped = true;
                 continue;
             }
-            if ch == '"' {
+            if ch == '\'' && !in_double {
+                in_single = !in_single;
+                word.push(ch);
+                continue;
+            }
+            if ch == '"' && !in_single {
                 in_double = !in_double;
                 word.push(ch);
                 continue;
             }
-            if ch.is_ascii_whitespace() && !in_double {
+            if ch.is_ascii_whitespace() && !in_double && !in_single {
                 self.offset += relative + ch.len_utf8();
                 return Some(word);
             }
@@ -54,11 +60,22 @@ impl Iterator for StorageWordIter<'_> {
 }
 
 pub(in crate::builtins::declare) fn unquote_storage_value(value: &str) -> String {
+    if let Some(inner) = value
+        .strip_prefix("$'")
+        .and_then(|value| value.strip_suffix('\''))
+    {
+        return unquote_ansi_c_storage(inner);
+    }
+
     let Some(inner) = value
         .strip_prefix('"')
         .and_then(|value| value.strip_suffix('"'))
     else {
-        return value.to_string();
+        return value
+            .strip_prefix('\'')
+            .and_then(|value| value.strip_suffix('\''))
+            .unwrap_or(value)
+            .to_string();
     };
 
     let mut unquoted = String::new();
@@ -78,6 +95,28 @@ pub(in crate::builtins::declare) fn unquote_storage_value(value: &str) -> String
     }
     unquoted
 }
+
+fn unquote_ansi_c_storage(value: &str) -> String {
+    let mut output = String::new();
+    let mut chars = value.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            output.push(ch);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => output.push('\n'),
+            Some('r') => output.push('\r'),
+            Some('t') => output.push('\t'),
+            Some('\\') => output.push('\\'),
+            Some('\x27') => output.push('\x27'),
+            Some(other) => output.push(other),
+            None => output.push('\\'),
+        }
+    }
+    output
+}
+
 pub(in crate::builtins::declare) fn parse_array_tokens(value: &str) -> Vec<String> {
     let Some(inner) = value
         .strip_prefix('(')

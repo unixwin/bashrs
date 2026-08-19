@@ -647,7 +647,8 @@ parse --no-highlight target/bashdb-probe-target.sh
 
 #[test]
 fn command_substitution_status_two_is_not_reported_as_syntax_error() {
-    let output = run_rubash_inline("f() { return 2; }\nx=$(f)\nprintf 'after status=%s\n' \"$?\"\n");
+    let output =
+        run_rubash_inline("f() { return 2; }\nx=$(f)\nprintf 'after status=%s\n' \"$?\"\n");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), "after status=2\n");
@@ -690,7 +691,12 @@ fn bashdb_info_files_reports_source_files_without_command_substitution_error() {
         .stderr(Stdio::piped())
         .spawn()
         .expect("run rubash bashdb");
-    child.stdin.as_mut().unwrap().write_all(b"info files\nquit\n").unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"info files\nquit\n")
+        .unwrap();
     let output = child.wait_with_output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
@@ -735,9 +741,12 @@ fn bashdb_debug_nested_shell_preserves_typeset_array_quotes() {
         .stderr(Stdio::piped())
         .spawn()
         .expect("run rubash bashdb");
-    child.stdin.as_mut().unwrap().write_all(
-        b"debug target/bashdb-probe-target.sh\nquit\nquit\n",
-    ).unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"debug target/bashdb-probe-target.sh\nquit\nquit\n")
+        .unwrap();
     let output = child.wait_with_output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
@@ -762,9 +771,12 @@ fn bashdb_shell_nested_bash_uses_compatible_shim() {
         .stderr(Stdio::piped())
         .spawn()
         .expect("run rubash bashdb");
-    child.stdin.as_mut().unwrap().write_all(
-        b"shell --shell /usr/bin/bash --norc\nexit\nquit\n",
-    ).unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"shell --norc\nexit\nquit\n")
+        .unwrap();
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");

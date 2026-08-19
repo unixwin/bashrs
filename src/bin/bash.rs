@@ -28,7 +28,11 @@ fn main() {
     match status {
         Ok(status) => std::process::exit(status.code().unwrap_or(1)),
         Err(error) => {
-            let _ = writeln!(io::stderr(), "bash shim: failed to start {}: {error}", shell.display());
+            let _ = writeln!(
+                io::stderr(),
+                "bash shim: failed to start {}: {error}",
+                shell.display()
+            );
             std::process::exit(126);
         }
     }
@@ -65,9 +69,9 @@ fn locate_winuxsh() -> Option<PathBuf> {
 
 fn find_on_path(name: &str) -> Option<PathBuf> {
     env::var_os("PATH").and_then(|path| {
-        env::split_paths(&path).map(|directory| directory.join(name)).find(|candidate| {
-            is_executable_file(candidate) && !same_as_current_exe(candidate)
-        })
+        env::split_paths(&path)
+            .map(|directory| directory.join(name))
+            .find(|candidate| is_executable_file(candidate) && !same_as_current_exe(candidate))
     })
 }
 
@@ -76,7 +80,14 @@ fn is_executable_file(path: &Path) -> bool {
 }
 
 fn same_as_current_exe(path: &Path) -> bool {
-    let Ok(current) = env::current_exe() else { return false; };
-    let Ok(candidate) = path.canonicalize() else { return false; };
-    current.canonicalize().ok().is_some_and(|current| current == candidate)
+    let Ok(current) = env::current_exe() else {
+        return false;
+    };
+    let Ok(candidate) = path.canonicalize() else {
+        return false;
+    };
+    current
+        .canonicalize()
+        .ok()
+        .is_some_and(|current| current == candidate)
 }

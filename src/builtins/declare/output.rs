@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 
 use super::storage::{
-    format_array_value, format_assoc_value, parse_single_element_array, quote_double,
+    format_array_value, format_assoc_value, parse_single_element_array, quote_declare_value,
 };
 
 #[derive(Clone, Copy)]
@@ -69,20 +69,20 @@ where
         let attrs = declaration_array_attrs(attrs);
         writeln!(
             stdout,
-            "declare {} {}=([0]=\"{}\")",
+            "declare {} {}=([0]={})",
             attrs,
             name,
-            quote_double(array_value)
+            quote_declare_value(array_value)
         )
     } else if let Some(attrs) = declaration_scalar_attrs(attrs) {
         writeln!(
             stdout,
-            "declare {attrs} {}=\"{}\"",
+            "declare {attrs} {}={}",
             name,
-            quote_double(value)
+            quote_declare_value(value)
         )
     } else {
-        writeln!(stdout, "declare -- {}=\"{}\"", name, quote_double(value))
+        writeln!(stdout, "declare -- {}={}", name, quote_declare_value(value))
     }
 }
 

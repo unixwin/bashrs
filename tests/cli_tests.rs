@@ -9,6 +9,8 @@ use regex::Regex;
 mod bashdb_compat;
 #[path = "cli_tests/compat_issue_regressions.rs"]
 mod compat_issue_regressions;
+#[path = "cli_tests/declare_output.rs"]
+mod declare_output;
 #[path = "cli_tests/examples.rs"]
 mod examples;
 #[path = "cli_tests/fd_redirects.rs"]

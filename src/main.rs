@@ -294,9 +294,6 @@ fn run_stdin_script_with_init(executor: &mut Executor, init_file: Option<&str>) 
 
 fn run_init_file(executor: &mut Executor, init_file: &str) -> i32 {
     let path = executor.resolve_shell_path(init_file);
-    if std::env::var_os("DSH_DEBUG_INIT").is_some() {
-        eprintln!("RUBASH_INIT path={:?}", path);
-    }
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(e) => {
@@ -304,9 +301,6 @@ fn run_init_file(executor: &mut Executor, init_file: &str) -> i32 {
             return 1;
         }
     };
-    if std::env::var_os("DSH_DEBUG_INIT").is_some() {
-        eprintln!("RUBASH_INIT_CONTENT {:?}", contents);
-    }
     run_source(executor, &contents, false)
 }
 

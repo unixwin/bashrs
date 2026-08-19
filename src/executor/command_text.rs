@@ -370,7 +370,10 @@ fn command_word_source_text(index: usize, word: &str, metadata: &[WordMetadata])
 }
 
 fn compound_assignment_source_text(assignment: &crate::parser::CompoundAssignment) -> String {
-    format!("{}{}{}", assignment.name, assignment.operator, assignment.value)
+    format!(
+        "{}{}{}",
+        assignment.name, assignment.operator, assignment.value
+    )
 }
 
 pub(in crate::executor) fn bash_command_sequence_text(commands: &[CommandNode]) -> String {

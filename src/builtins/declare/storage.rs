@@ -19,13 +19,13 @@ pub(super) fn format_array_value(value: &str) -> String {
 
     let elements = parse_array_words(value);
     if elements.is_empty() {
-        return format!("([0]=\"{}\")", quote_double(value));
+        return format!("([0]={})", quote_declare_value(value));
     }
 
     elements
         .iter()
         .enumerate()
-        .map(|(index, value)| format!("[{index}]=\"{}\"", quote_double(value)))
+        .map(|(index, value)| format!("[{index}]={}", quote_declare_value(value)))
         .collect::<Vec<_>>()
         .join(" ")
         .pipe_parenthesized()
@@ -34,7 +34,7 @@ pub(super) fn format_array_value(value: &str) -> String {
 pub(super) fn format_assoc_value(value: &str) -> String {
     let entries = parse_assoc_words(value);
     if entries.is_empty() {
-        return format!("([0]=\"{}\" )", quote_double(value));
+        return format!("([0]={} )", quote_declare_value(value));
     }
 
     let order: &[&str] = if entries.iter().any(|(key, _)| key == "four") {
@@ -52,18 +52,18 @@ pub(super) fn format_assoc_value(value: &str) -> String {
             .find_map(|(entry_key, entry_value)| (entry_key == *key).then_some(entry_value))
         {
             rendered.push(format!(
-                "[{}]=\"{}\"",
+                "[{}]={}",
                 quote_assoc_key(key),
-                quote_double(value)
+                quote_declare_value(value)
             ));
         }
     }
     for (key, value) in entries {
         if !order.contains(&key.as_str()) {
             rendered.push(format!(
-                "[{}]=\"{}\"",
+                "[{}]={}",
                 quote_assoc_key(&key),
-                quote_double(&value)
+                quote_declare_value(&value)
             ));
         }
     }
@@ -102,6 +102,21 @@ impl Parenthesized for String {
     fn pipe_parenthesized(self) -> String {
         format!("({self})")
     }
+}
+
+pub(super) fn quote_declare_value(value: &str) -> String {
+    if value.contains(['\n', '\r', '\'']) {
+        return format!("$'{}'", quote_ansi_c(value));
+    }
+    format!("\"{}\"", quote_double(value))
+}
+
+fn quote_ansi_c(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\'', "\\'")
 }
 
 pub(super) fn quote_double(value: &str) -> String {

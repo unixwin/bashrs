@@ -68,6 +68,18 @@ pub fn find_user_command(name: &str, env_vars: &HashMap<String, String>) -> Opti
     }
 
     if has_path_separator(name) {
+        if is_standard_unix_bash_path(name) {
+            if let Some(found) = configured_compatible_shell(env_vars) {
+                return Some(found);
+            }
+            #[cfg(windows)]
+            if let Some(found) = configured_shell_root_winuxsh(env_vars) {
+                return Some(found);
+            }
+            if let Some(found) = find_user_command("bash", env_vars) {
+                return Some(found);
+            }
+        }
         let candidate = shell_path_to_windows(name, env_vars);
         if let Some(found) = executable_candidate(&candidate, env_vars) {
             return Some(found);
@@ -75,14 +87,6 @@ pub fn find_user_command(name: &str, env_vars: &HashMap<String, String>) -> Opti
         #[cfg(windows)]
         if let Some(found) = find_winuxcmd_absolute_command(name, env_vars) {
             return Some(found);
-        }
-        if is_standard_unix_bash_path(name) {
-            if let Some(found) = configured_compatible_shell(env_vars) {
-                return Some(found);
-            }
-            if let Some(found) = find_user_command("bash", env_vars) {
-                return Some(found);
-            }
         }
         return None;
     }
@@ -145,6 +149,12 @@ fn configured_compatible_shell(env_vars: &HashMap<String, String>) -> Option<Pat
         .get(COMPATIBLE_SHELL_PATH_ENV)
         .filter(|value| !value.is_empty())?;
     let candidate = shell_path_to_windows(value, env_vars);
+    executable_candidate(&candidate, env_vars)
+}
+
+#[cfg(windows)]
+fn configured_shell_root_winuxsh(env_vars: &HashMap<String, String>) -> Option<PathBuf> {
+    let candidate = configured_shell_root(env_vars)?.join("winuxsh.exe");
     executable_candidate(&candidate, env_vars)
 }
 
@@ -593,7 +603,10 @@ fn has_path_separator(name: &str) -> bool {
 }
 
 fn is_standard_unix_bash_path(name: &str) -> bool {
-    matches!(name.replace('\\', "/").as_str(), "/bin/bash" | "/usr/bin/bash")
+    matches!(
+        name.replace('\\', "/").as_str(),
+        "/bin/bash" | "/usr/bin/bash"
+    )
 }
 
 pub(crate) fn shell_path_to_windows(path: &str, env_vars: &HashMap<String, String>) -> PathBuf {

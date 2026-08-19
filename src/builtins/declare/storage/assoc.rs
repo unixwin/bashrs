@@ -111,6 +111,10 @@ pub(in crate::builtins::declare) fn quote_assoc_key(key: &str) -> String {
 }
 
 fn quote_assoc_storage_value(value: &str) -> String {
+    if value.contains(['\n', '\r', '\'']) {
+        return super::quote_declare_value(value);
+    }
+
     if !value.is_empty()
         && !value
             .chars()

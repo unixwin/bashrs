@@ -136,7 +136,8 @@ impl Executor {
                 next_first_word,
             ) {
                 writeln!(stdout, "{indent}if")?;
-            } else if function_definition_condition_needs_while_keyword(first_word, next_first_word) {
+            } else if function_definition_condition_needs_while_keyword(first_word, next_first_word)
+            {
                 writeln!(stdout, "{indent}while")?;
             }
 
@@ -239,7 +240,11 @@ impl Executor {
             .unwrap_or_else(|| first.words.join(" "));
         let line = function_definition_source_line(line);
         let line = function_definition_prefix_condition_keyword(keyword, line);
-        let line = function_definition_condition_line(line);
+        let line = if first.heredoc.is_some() {
+            line
+        } else {
+            function_definition_condition_line(line)
+        };
         writeln!(stdout, "{indent}{line}")?;
         write_function_definition_heredoc_body(first, stdout)?;
         for command in rest {
@@ -308,7 +313,11 @@ impl Executor {
             .unwrap_or_else(|| first.words.join(" "));
         let line = function_definition_source_line(line);
         let line = function_definition_prefix_condition_keyword(keyword, line);
-        let line = function_definition_condition_line(line);
+        let line = if first.heredoc.is_some() {
+            line
+        } else {
+            function_definition_condition_line(line)
+        };
         writeln!(stdout, "{indent}{line}")?;
         write_function_definition_heredoc_body(first, stdout)?;
         for command in rest {
@@ -428,5 +437,8 @@ fn function_definition_condition_needs_while_keyword(
     next_first_word: Option<&str>,
 ) -> bool {
     next_first_word == Some("do")
-        && !matches!(first_word, Some("for" | "while" | "until" | "select" | "do" | "done"))
+        && !matches!(
+            first_word,
+            Some("for" | "while" | "until" | "select" | "do" | "done")
+        )
 }

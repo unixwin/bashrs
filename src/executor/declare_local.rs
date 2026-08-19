@@ -122,9 +122,14 @@ impl Executor {
             && !declare_args_force_global(&args)
             && !declare_args_request_print(&args)
         {
+            let prefix_assignment_names = cmd
+                .assignments
+                .keys()
+                .map(|name| assignment_name_and_append(name).0.to_string())
+                .collect::<Vec<_>>();
             self.save_local_names(&args);
             if !local_args_request_inherit(&args) {
-                self.initialize_non_inherited_locals(&args);
+                self.initialize_non_inherited_locals(&args, &prefix_assignment_names);
             }
         }
         let global_local_values = self.begin_global_declare_for_local_names(&args);
@@ -141,6 +146,18 @@ impl Executor {
                 &mut stdout,
                 &mut stderr,
             )?;
+            let stderr = if self.stdout_capture.is_some()
+                && declare_args_request_print(&args)
+                && !args.iter().any(|arg| {
+                    (arg.starts_with('-') || arg.starts_with('+'))
+                        && (arg.contains('f') || arg.contains('F'))
+                })
+                && status != 0
+            {
+                Vec::new()
+            } else {
+                stderr
+            };
             self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
             Ok(status)
         })();
@@ -207,9 +224,14 @@ impl Executor {
                 args = self.evaluate_declare_integer_assignment_args(&args);
             }
             if !declare_args_request_print(&args) {
+                let prefix_assignment_names = cmd
+                    .assignments
+                    .keys()
+                    .map(|name| assignment_name_and_append(name).0.to_string())
+                    .collect::<Vec<_>>();
                 self.save_local_names(&args);
                 if !local_args_request_inherit(&args) {
-                    self.initialize_non_inherited_locals(&args);
+                    self.initialize_non_inherited_locals(&args, &prefix_assignment_names);
                 }
             }
             self.write_local_compound_readonly_assignment_errors(&args, &mut stderr)?;
@@ -253,11 +275,18 @@ impl Executor {
         Ok(())
     }
 
-    pub(in crate::executor) fn initialize_non_inherited_locals(&mut self, args: &[String]) {
+    pub(in crate::executor) fn initialize_non_inherited_locals(
+        &mut self,
+        args: &[String],
+        preserve_names: &[String],
+    ) {
         if crate::builtins::shopt::option_enabled(&self.env_vars, "localvar_inherit") {
             return;
         }
         for name in local_names(args) {
+            if preserve_names.iter().any(|preserve| preserve == &name) {
+                continue;
+            }
             if is_marked_var(&self.env_vars, EXPORTED_VARS, &name) {
                 if let Some(value) = self.env_vars.get(&name).cloned() {
                     set_local_export_env_value(&mut self.env_vars, &name, value);

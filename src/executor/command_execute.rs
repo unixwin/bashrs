@@ -36,9 +36,6 @@ impl Executor {
                     }
                 }
             }
-            if std::env::var_os("DSH_DEBUG_PARSE").is_some() {
-                eprintln!("RUBASH_PARSE_ASSIGNMENTS {:?}", cmd.assignments);
-            }
             let message = cmd
                 .assignments
                 .get("__RUBASH_PARSE_ERROR__")
@@ -81,9 +78,6 @@ impl Executor {
                 .iter()
                 .any(|metadata| unterminated_extglob(&metadata.raw))
         {
-            if std::env::var_os("DSH_DEBUG_EXTGLOB").is_some() {
-                eprintln!("RUBASH_EXTGLOB words={:?} metadata={:?} patterns={:?}", cmd.words, cmd.word_metadata, cmd.extglob_patterns);
-            }
             self.mark_parse_error();
             eprintln!(
                 "{}syntax error near unexpected token `('",
@@ -104,9 +98,6 @@ impl Executor {
             && cmd.conditional_command.is_none()
             && cmd.case_command.is_none()
         {
-            if std::env::var_os("DSH_DEBUG_EXTGLOB").is_some() {
-                eprintln!("RUBASH_EXTGLOB words={:?} metadata={:?} patterns={:?}", cmd.words, cmd.word_metadata, cmd.extglob_patterns);
-            }
             self.mark_parse_error();
             eprintln!(
                 "{}syntax error near unexpected token `('",

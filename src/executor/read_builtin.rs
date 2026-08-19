@@ -1733,13 +1733,9 @@ impl Executor {
                 return 0;
             }
 
-            let Some(line) = self.read_input_for_command(
-                cmd,
-                read_fd,
-                delimiter,
-                char_limit,
-                exact_char_limit,
-            ) else {
+            let Some(line) =
+                self.read_input_for_command(cmd, read_fd, delimiter, char_limit, exact_char_limit)
+            else {
                 let _ = self
                     .shell_state
                     .variables

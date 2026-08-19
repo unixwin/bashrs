@@ -46,7 +46,12 @@ pub(crate) fn sync_typed_assignments(
 ) {
     let arrays = marked_vars(variables, ARRAY_VARS);
     let assocs = marked_vars(variables, ASSOC_VARS);
+    let mut parse_options = true;
     for arg in args {
+        if parse_options && arg == "--" {
+            parse_options = false;
+            continue;
+        }
         let Some((raw_name, _)) = arg.split_once('=') else {
             continue;
         };
@@ -171,8 +176,17 @@ where
     let mut unset_readonly = false;
     let mut names = Vec::new();
 
+    let mut parse_options = true;
     for arg in args {
-        if (arg.starts_with('-') || arg.starts_with('+')) && arg != "-" && arg != "+" {
+        if parse_options && arg == "--" {
+            parse_options = false;
+            continue;
+        }
+        if parse_options
+            && (arg.starts_with('-') || arg.starts_with('+'))
+            && arg != "-"
+            && arg != "+"
+        {
             let set_attr = arg.starts_with('-');
             for option in arg[1..].chars() {
                 match option {
