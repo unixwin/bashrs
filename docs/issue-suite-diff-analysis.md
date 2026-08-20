@@ -2683,3 +2683,21 @@ Evidence:
 - `cargo test --test executor_tests command_chaining::part_058 -- --nocapture`:
   16/16.
 - `cargo check`: passed.
+
+## 2026-08-20 Issue #57: ash-z_slow/many_ifs classification
+
+The closure audit row for ash-z_slow/many_ifs was DIFF with bash_rc=124 and rubash_rc=124 under BUSYBOX_TEST_TIMEOUT=8. The fixture generates 6,856 read/set IFS cases and is an ash-specific stress oracle; its comments expect ash behavior and are not independently valid Bash expected output.
+
+Bounded reproduction used the BusyBox fixture at target/issue-suites/busybox/shell/ash_test/ash-z_slow/many_ifs.tests:
+
+| Shell | Timeout | Result | Stdout |
+|---|---:|---|---|
+| Git Bash | 8s | rc 124 | empty |
+| Rubash | 8s | rc 124 | 148 generated mismatch lines |
+| Git Bash | 30s | rc 124 | empty |
+| Rubash | 30s | rc 124 | 209 generated mismatch lines |
+| Git Bash | 120s | rc 124 | empty |
+| Rubash | 60s | rc 0 | 265 lines, final # tests 6856 passed 6328 failed 528 |
+
+A minimal exact pipeline confirms the reported read result is not a Rubash semantic defect: both Git Bash and Rubash produce x=, y=: for printf "%s\n" "::" | ( IFS=": "; read x y; ... ). Therefore the audit DIFF is classified as a harness/reference timeout plus ash-fixture expectation artifact, with Rubash performance slower than the 8s budget but completing within 60s. No Rust fix or focused semantic regression is justified by this evidence. The remaining 528 generated lines are fixture-specific residuals, not Bash-vs-Rubash proof until the suite is run under a BusyBox ash reference (or its expected-output contract is explicitly separated from Bash).
+
