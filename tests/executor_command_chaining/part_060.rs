@@ -88,6 +88,31 @@ fn test_return_trap_registered_inside_function_fires_without_tracing() {
 }
 
 #[test]
+fn test_return_in_signal_trap_unwinds_function_after_subshell_status() {
+    let output_path = "target/rubash-return-in-signal-trap-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "a() {{ (exit 2); echo a:$? >> {output_path}; \
+         (kill -s USR1 $$; echo b:$? >> {output_path}; exit 3); \
+         echo c:$? >> {output_path}; (exit 4); }}; \
+         trap 'echo Trap >> {output_path}; return' USR1; a; echo d:$? >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "a:2\nb:0\nTrap\nd:3\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_noclobber_prevents_output_overwrite() {
     let output_path = "target/rubash-noclobber-output.txt";
     let _ = fs::remove_file(output_path);

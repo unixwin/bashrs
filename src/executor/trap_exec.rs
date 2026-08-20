@@ -156,7 +156,10 @@ impl Executor {
     }
 
     pub(crate) fn run_pending_signal_traps(&mut self) -> Result<(), ExecuteError> {
-        if self.signal_trap_running {
+        if self.signal_trap_running || self.subshell_depth.get() > 0 {
+            // Pending signals belong to the shell process. A subshell can target
+            // the parent with $$, but must not consume its mailbox or dispatch
+            // the parent's traps after resetting caught dispositions.
             return Ok(());
         }
 
