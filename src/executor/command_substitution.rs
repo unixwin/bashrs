@@ -102,6 +102,13 @@ impl Executor {
         // list. Word-based shortcuts cannot preserve reserved-word boundaries
         // such as `if x; then ...`, so route these forms through the real AST
         // parser before dispatching a simple command shortcut.
+        if source.contains(">&2") || source.contains("2>") {
+            if let Some(output) = self.command_list_substitution_output(source) {
+                return output;
+            }
+            return String::new();
+        }
+
         if command_substitution_needs_command_list(source, &words) {
             if command_substitution_has_unclosed_compound(source) {
                 self.last_command_substitution_status.set(Some(2));

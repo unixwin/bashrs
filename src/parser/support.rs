@@ -117,6 +117,12 @@ pub(super) fn is_case_end_keyword(tokens: &[Token], index: usize) -> bool {
 }
 
 fn case_pattern_starts_with_esac(tokens: &[Token], index: usize) -> bool {
+    // A clause terminator proves this is the case command's closing esac,
+    // even when the following subshell close is adjacent (esac)).
+    if index > 0 && is_case_clause_terminator_token(&tokens[index - 1]) {
+        return false;
+    }
+
     if !matches!(
         tokens.get(index + 1).map(|token| token.value.as_str()),
         Some(")" | "|")

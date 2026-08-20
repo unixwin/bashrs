@@ -1160,6 +1160,19 @@ fn malformed_case_reserved_word_boundaries_are_syntax_errors() {
 }
 
 #[test]
+fn sequential_compact_case_subshells_preserve_closing_esac() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("(case m in (m) echo first;; esac)\n(case m in (m) echo second;; esac)\ncase w in `echo case-stderr >&2`) echo skip;; `echo`w) echo redirected;; esac")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "first\nsecond\nredirected\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "case-stderr\n");
+}
+
+#[test]
 fn loop_numbered_heredoc_expands_variables_in_its_receiver_context() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
