@@ -8,6 +8,23 @@ fn shell_display_test_path(path: &Path) -> String {
 }
 
 #[test]
+fn test_numbered_redirect_is_visible_inside_subshell() {
+    let output_path = "target/rubash-numbered-redirect-subshell.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!("exec 1>{output_path}; (echo OK >&22) 22>&1");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "OK\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_combined_stdout_stderr_redirect_captures_brace_group() {
     let output_path = "target/rubash-combined-redirect-output.txt";
     let _ = fs::remove_file(output_path);

@@ -377,11 +377,68 @@ impl Executor {
         let mut body = Ast {
             commands: subshell_command.body.clone(),
         };
+        // Numbered redirects are duplicated in parser stdio fields. Keep only
+        // true stdio fields in compound preparation; the original redirect
+        // list is applied to each body command below.
+        let mut stdio_redirect_cmd = redirect_cmd.clone();
+        let is_numbered = |redirect: &Redirect| {
+            redirect
+                .operator
+                .chars()
+                .next()
+                .is_some_and(|ch| ch.is_ascii_digit())
+        };
+        if stdio_redirect_cmd
+            .redirect_in
+            .as_ref()
+            .is_some_and(is_numbered)
+        {
+            stdio_redirect_cmd.redirect_in = None;
+        }
+        if stdio_redirect_cmd
+            .redirect_out
+            .as_ref()
+            .is_some_and(is_numbered)
+        {
+            stdio_redirect_cmd.redirect_out = None;
+        }
+        if stdio_redirect_cmd
+            .append
+            .as_ref()
+            .is_some_and(is_numbered)
+        {
+            stdio_redirect_cmd.append = None;
+        }
+        if stdio_redirect_cmd
+            .redirect_err
+            .as_ref()
+            .is_some_and(is_numbered)
+        {
+            stdio_redirect_cmd.redirect_err = None;
+        }
+        if stdio_redirect_cmd
+            .redirect_err_append
+            .as_ref()
+            .is_some_and(is_numbered)
+        {
+            stdio_redirect_cmd.redirect_err_append = None;
+        }
+        self.apply_command_output_redirects(&stdio_redirect_cmd, &mut body)?;
+        // Preserve numbered redirects on every body command so its virtual fd
+        // state sees the same left-to-right ordering.
+        let numbered_redirects = redirect_cmd
+            .redirects
+            .iter()
+            .filter(|redirect| is_numbered(redirect))
+            .cloned()
+            .collect::<Vec<_>>();
+        if !numbered_redirects.is_empty() {
+            for command in &mut body.commands {
+                command.redirects.splice(0..0, numbered_redirects.clone());
+            }
+        }
         let result = self
-            .apply_command_output_redirects(&redirect_cmd, &mut body)
-            .and_then(|()| {
-                self.with_command_input_redirects(cmd, |executor| executor.execute_ast(&body))
-            });
+            .with_command_input_redirects(cmd, |executor| executor.execute_ast(&body));
         // Bash runs a subshell with errexit active; a failing command exits
         // the subshell with that status but the parent script continues.
         // Catch ExitCode errors at the subshell boundary.

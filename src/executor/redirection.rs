@@ -233,7 +233,7 @@ impl Executor {
                 crate::parser::RedirectKind::Output
                 | crate::parser::RedirectKind::Append
                 | crate::parser::RedirectKind::ClobberOutput => {
-                    let fd = redirect.fd.unwrap_or(1);
+                    let fd = redirect_fd_or_default(redirect, 1);
                     let target = self.expand_word(&redirect.target);
                     if let Some(source_fd) = redirect_target_fd(&target) {
                         let Some(source_target) = state.fd_target(source_fd).cloned() else {
@@ -268,7 +268,7 @@ impl Executor {
                     state.fds.insert(2, stdout_target);
                 }
                 crate::parser::RedirectKind::DuplicateOutput => {
-                    let target_fd = redirect.fd.unwrap_or(1);
+                    let target_fd = redirect_fd_or_default(redirect, 1);
                     let target = self.expand_word(&redirect.target);
                     if is_closed_redirect_target(&target) {
                         state.fds.insert(target_fd, OutputTarget::Closed);
@@ -317,7 +317,7 @@ impl Executor {
                 crate::parser::RedirectKind::CloseOutput => {
                     state
                         .fds
-                        .insert(redirect.fd.unwrap_or(1), OutputTarget::Closed);
+                        .insert(redirect_fd_or_default(redirect, 1), OutputTarget::Closed);
                     state.saw_output_redirect = true;
                 }
                 _ => {}
@@ -402,6 +402,18 @@ impl Executor {
             self.write_default_stderr(&stderr)
         }
     }
+}
+
+fn redirect_fd_or_default(redirect: &Redirect, default_fd: u32) -> u32 {
+    redirect.fd.unwrap_or_else(|| {
+        redirect
+            .operator
+            .chars()
+            .take_while(|ch| ch.is_ascii_digit())
+            .collect::<String>()
+            .parse()
+            .unwrap_or(default_fd)
+    })
 }
 
 impl OutputFdState {
