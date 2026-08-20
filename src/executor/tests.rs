@@ -88,6 +88,20 @@ mod unit_tests {
     }
 
     #[test]
+    fn command_substitution_lexes_comments_at_word_boundaries() {
+        let executor = Executor::new();
+
+        assert_eq!(
+            executor.expand_word("$(echo Ok1 #comment is ignored)"),
+            "Ok1"
+        );
+        assert_eq!(
+            executor.expand_word("`echo Ok2 #comment is ignored`"),
+            "Ok2"
+        );
+    }
+
+    #[test]
     fn quoted_command_substitution_preserves_internal_newlines() {
         let tokens = tokenize("echo \"$(printf 'echo foo\\necho bar\\n')\"");
         let ast = parse(&tokens);

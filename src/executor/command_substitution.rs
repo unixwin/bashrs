@@ -93,7 +93,8 @@ impl Executor {
         if source == "type -p e" {
             return "./e".to_string();
         }
-        let word_parts = split_shell_words_with_quote_info(source);
+        let word_source = strip_command_substitution_comments(source);
+        let word_parts = split_shell_words_with_quote_info(&word_source);
         let words: Vec<String> = word_parts.iter().map(|(word, _)| word.clone()).collect();
         let words = self.expand_aliases(&words);
 
@@ -531,6 +532,57 @@ fn command_substitution_has_unclosed_compound(source: &str) -> bool {
         _ => false,
     }
 }
+fn strip_command_substitution_comments(source: &str) -> String {
+    let mut output = String::with_capacity(source.len());
+    let mut single = false;
+    let mut double = false;
+    let mut comment = false;
+    let mut boundary = true;
+    let mut escaped = false;
+
+    for ch in source.chars() {
+        if comment {
+            if ch == '\n' {
+                comment = false;
+                boundary = true;
+                output.push(ch);
+            }
+            continue;
+        }
+        if escaped {
+            escaped = false;
+            boundary = false;
+            output.push(ch);
+            continue;
+        }
+        if ch == '\\' && !single {
+            escaped = true;
+            output.push(ch);
+            continue;
+        }
+        if !double && ch == '\'' {
+            single = !single;
+            boundary = false;
+            output.push(ch);
+            continue;
+        }
+        if !single && ch == '"' {
+            double = !double;
+            boundary = false;
+            output.push(ch);
+            continue;
+        }
+        if !single && !double && ch == '#' && boundary {
+            comment = true;
+            continue;
+        }
+        boundary = ch.is_whitespace();
+        output.push(ch);
+    }
+
+    output
+}
+
 fn restore_old_style_backtick_markers(value: &str) -> String {
     value
         .replace('\x1f', "$")
