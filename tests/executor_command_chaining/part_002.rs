@@ -22,6 +22,25 @@ fn test_pipefail_status_uses_rightmost_failing_command() {
 }
 
 #[test]
+fn test_pipeline_exit_builtins_publish_stage_statuses() {
+    let output_path = "target/rubash-pipeline-exit-status-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "set -o pipefail; exit 2 | exit 3 | exit 4; echo $? > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "4\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_pipefail_status_keeps_pipestatus_entries() {
     let output_path = "target/rubash-pipefail-pipestatus-output.txt";
     let _ = fs::remove_file(output_path);

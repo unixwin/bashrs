@@ -196,7 +196,11 @@ impl Executor {
         let status = subshell.last_exit_code();
 
         crate::executor::shell_options::restore_stdout_capture(saved_capture);
-        result?;
+        let status = match result {
+            Ok(()) => status,
+            Err(ExecuteError::ExitCode(code)) => code,
+            Err(error) => return Err(error),
+        };
         Ok(Some((
             String::from_utf8_lossy(&output).into_owned(),
             String::from_utf8_lossy(&stderr).into_owned(),
