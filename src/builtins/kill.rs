@@ -345,15 +345,9 @@ fn deliver_rubash_signal(pid: u32, signal: i32) -> io::Result<bool> {
     if !signal_marker_path(pid).is_file() {
         return Ok(false);
     }
-    #[cfg(windows)]
-    if pid != std::process::id()
-        && std::env::var("__RUBASH_SHELL_PID")
-            .ok()
-            .and_then(|value| value.parse::<u32>().ok())
-            != Some(pid)
-    {
-        return Ok(false);
-    }
+    // A background Rubash process owns its own mailbox even though it
+    // inherits the parent shell identity for expansion semantics. Do not
+    // reject that child merely because the marker names the parent.
     // SIGKILL is not trappable. STOP/TSTP/CONT must use the native Windows
     // process-state backend rather than a mailbox event.
     if matches!(signal, 9 | 17 | 18 | 19) {

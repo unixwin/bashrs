@@ -1003,3 +1003,19 @@ fn malformed_heredoc_reports_offending_source_line() {
     assert!(stderr.contains("syntax error near unexpected token `then'"));
     assert!(stderr.contains("`<<EOF; then <W'"));
 }
+
+#[test]
+fn grouped_background_trap_receives_kill_from_parent() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"{ trap "echo got TERM" TERM; sleep 2; }& sleep 1; kill $!; wait; echo "Done: $?""#)
+        .output()
+        .expect("run grouped background trap probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "got TERM\nDone: 0\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
