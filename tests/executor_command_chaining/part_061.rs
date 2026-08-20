@@ -76,6 +76,33 @@ fn test_braced_positional_count_supports_pattern_removal() {
 }
 
 #[test]
+fn test_parameter_plus_allows_newline_word() {
+    let output_path = "target/rubash-param-plus-newline-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = r#"exec > OUTPUT
+echo Unquoted: H${$+
+}H
+echo Quoted: "H${$+
+}H"
+echo Ok:$?"#
+        .to_string()
+        .replace("OUTPUT", output_path);
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "Unquoted: H H\nQuoted: H\nH\nOk:0\n"
+    );
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_special_parameter_length_expands() {
     let output_path = "target/rubash-special-length-output.txt";
     let _ = fs::remove_file(output_path);

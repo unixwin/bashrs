@@ -2,15 +2,64 @@ use super::token::{Token, TokenKind};
 
 pub(super) fn has_unclosed_brace_group(input: &str) -> bool {
     let trimmed = input.trim_start();
-    if !(trimmed.starts_with('{')
+    let has_group = trimmed.starts_with('{')
         || input.contains("&& {")
         || input.contains("|| {")
-        || input.contains("; {"))
-    {
-        return false;
-    }
+        || input.contains("; {");
 
-    unquoted_brace_group_depth(input) > 0
+    (has_group && unquoted_brace_group_depth(input) > 0) || has_unclosed_parameter_expansion(input)
+}
+
+fn has_unclosed_parameter_expansion(input: &str) -> bool {
+    let chars = input.chars().collect::<Vec<_>>();
+    let mut index = 0usize;
+    while index + 1 < chars.len() {
+        if chars[index] != '$' || chars[index + 1] != '{' {
+            index += 1;
+            continue;
+        }
+
+        let mut depth = 1usize;
+        let mut single = false;
+        let mut double = false;
+        let mut escaped = false;
+        let mut cursor = index + 2;
+        while cursor < chars.len() {
+            let ch = chars[cursor];
+            if escaped {
+                escaped = false;
+                cursor += 1;
+                continue;
+            }
+            if ch == '\\' && !single {
+                escaped = true;
+                cursor += 1;
+                continue;
+            }
+            if ch == '\'' && !double {
+                single = !single;
+            } else if ch == '"' && !single {
+                double = !double;
+            } else if !single && !double {
+                if ch == '$' && chars.get(cursor + 1) == Some(&'{') {
+                    depth += 1;
+                    cursor += 1;
+                } else if ch == '}' {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        break;
+                    }
+                }
+            }
+            cursor += 1;
+        }
+
+        if depth != 0 {
+            return true;
+        }
+        index = cursor + 1;
+    }
+    false
 }
 
 pub(super) fn opens_function_body_after_previous_signature(input: &str, output: &[Token]) -> bool {
