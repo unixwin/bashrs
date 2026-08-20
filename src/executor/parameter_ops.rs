@@ -450,7 +450,10 @@ pub(in crate::executor) fn positional_parameter_substring(
 pub(in crate::executor) fn parse_parameter_replacement(
     name: &str,
 ) -> Option<(&str, &str, &str, bool)> {
-    if let Some((var_name, rest)) = name.split_once("//") {
+    if let Some((var_name, rest)) = name
+        .split_once("//")
+        .filter(|(var_name, _)| !var_name.ends_with('\\') && !var_name.ends_with('\x14'))
+    {
         // A slash immediately after `//` is part of the pattern. This is
         // ambiguous with the pattern/replacement separator, so skip it and
         // find the next unescaped slash (`${v////-}`, `${v///r/-}`).
@@ -476,7 +479,7 @@ fn split_unescaped_parameter_separator(value: &str) -> Option<(&str, &str)> {
             escaped = false;
             continue;
         }
-        if ch == '\\' {
+        if ch == '\\' || ch == '\x14' {
             escaped = true;
             continue;
         }
@@ -517,6 +520,14 @@ mod tests {
         assert_eq!(decode_parameter_replacement_quotes("\x14n"), "n");
         assert_eq!(decode_parameter_replacement_quotes("\x14\x14n"), r"\n");
         assert_eq!(decode_parameter_replacement_quotes(r"\&"), r"\&");
+    }
+
+    #[test]
+    fn encoded_backslash_does_not_split_escaped_slash_pattern() {
+        assert_eq!(
+            parse_parameter_replacement("v/b\x14//x"),
+            Some(("v", "b\x14/", "x", false))
+        );
     }
 
     #[test]
