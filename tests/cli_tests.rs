@@ -2842,3 +2842,58 @@ fn c_command_set_o_invalid_name_returns_usage_status() {
     assert_eq!(String::from_utf8_lossy(&output.stdout), "status:2\n");
     assert!(String::from_utf8_lossy(&output.stderr).contains("invalid option name"));
 }
+
+#[test]
+fn oversized_continue_targets_outermost_active_loop() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("for v in a b c; do echo A:$v; continue 666; done; echo OK")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "A:a\nA:b\nA:c\nOK\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn subshell_break_does_not_escape_parent_loop() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("for v in a b c; do echo A:$v; (echo B; break; echo C); echo D; done; echo status:$?")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "A:a\nB\nC\nD\nA:b\nB\nC\nD\nA:c\nB\nC\nD\nstatus:0\n"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr)
+            .matches("break: only meaningful")
+            .count(),
+        3
+    );
+}
+
+#[test]
+fn command_substitution_break_uses_subshell_loop_context() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("for v in a b; do out=$(echo B; break; echo C); printf '%s:%s\\n' \"$v\" \"$out\"; done")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "a:B\nC\nb:B\nC\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr)
+            .matches("break: only meaningful")
+            .count(),
+        2
+    );
+}

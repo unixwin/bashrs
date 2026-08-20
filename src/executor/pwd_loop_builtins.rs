@@ -61,10 +61,13 @@ impl Executor {
         }
 
         match loop_control_level(&cmd.words[1..]) {
-            Ok(level) => match kind {
-                LoopControlKind::Break => Err(ExecuteError::Break(level)),
-                LoopControlKind::Continue => Err(ExecuteError::Continue(level)),
-            },
+            Ok(level) => {
+                let level = level.min(self.loop_depth);
+                match kind {
+                    LoopControlKind::Break => Err(ExecuteError::Break(level)),
+                    LoopControlKind::Continue => Err(ExecuteError::Continue(level)),
+                }
+            }
             Err(LoopControlError::TooManyArguments) => {
                 writeln!(
                     &mut stderr,

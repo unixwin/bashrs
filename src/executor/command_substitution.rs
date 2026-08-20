@@ -429,7 +429,7 @@ impl Executor {
             local_attr_scopes: self.local_attr_scopes.clone(),
             local_typed_scopes: self.local_typed_scopes.clone(),
             expanding_aliases: self.expanding_aliases.clone(),
-            loop_depth: self.loop_depth,
+            loop_depth: 0,
             function_depth: self.function_depth,
             random_state: Cell::new(self.random_state.get()),
             shell_pid: self.shell_pid,

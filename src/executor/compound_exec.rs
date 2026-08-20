@@ -367,7 +367,9 @@ impl Executor {
         let saved_pipestatus = self.pipestatus.clone();
         let saved_depth = self.subshell_depth.get();
         crate::builtins::trap::reset_for_subshell(&mut self.env_vars);
+        let saved_loop_depth = self.loop_depth;
         self.subshell_depth.set(saved_depth + 1);
+        self.loop_depth = 0;
 
         let mut redirect_cmd = cmd.clone();
         let group_outputs =
@@ -390,6 +392,7 @@ impl Executor {
                 self.restore_shell_env(saved_env);
                 self.pipestatus = saved_pipestatus;
                 self.subshell_depth.set(saved_depth);
+                self.loop_depth = saved_loop_depth;
                 return Err(error);
             }
         };
@@ -397,6 +400,7 @@ impl Executor {
         self.restore_shell_env(saved_env);
         self.pipestatus = saved_pipestatus;
         self.subshell_depth.set(saved_depth);
+        self.loop_depth = saved_loop_depth;
         let finish_result = self.finish_compound_output_process_substitutions(group_outputs);
         self.exit_code = status;
         finish_result?;
