@@ -379,7 +379,11 @@ impl Executor {
         if !word.starts_with("${") {
             if let Some(values) = raw.and_then(|raw| {
                 quoted_positional_at_segments(raw).map(|segments| {
-                    expand_quoted_positional_at_segments(&segments, &self.positional_params)
+                    expand_quoted_positional_at_segments(
+                        &segments,
+                        &self.positional_params,
+                        |literal| self.expand_embedded_parameters(literal),
+                    )
                 })
             }) {
                 return Some(values);
@@ -747,7 +751,7 @@ fn push_quoted_positional_literal_segment(
         return Some(());
     }
     let raw = chars.iter().collect::<String>();
-    if raw.contains(['$', '`', '\\']) {
+    if raw.contains(['`', '\\']) {
         return None;
     }
     segments.push(QuotedPositionalAtSegment::Literal(
@@ -756,18 +760,32 @@ fn push_quoted_positional_literal_segment(
     Some(())
 }
 
-fn expand_quoted_positional_at_segments(
+fn expand_quoted_positional_at_segments<F>(
     segments: &[QuotedPositionalAtSegment],
     positional_params: &[String],
-) -> Vec<String> {
+    expand_literal: F,
+) -> Vec<String>
+where
+    F: Fn(&str) -> String,
+{
     let mut words = Vec::new();
     let mut current = String::new();
     let mut current_present = false;
 
-    for segment in segments {
+    for (segment_index, segment) in segments.iter().enumerate() {
         match segment {
             QuotedPositionalAtSegment::Literal(value) => {
-                current.push_str(value);
+                let expanded = expand_literal(value);
+                if segment_index > 0
+                    && matches!(
+                        segments.get(segment_index - 1),
+                        Some(QuotedPositionalAtSegment::PositionalAt)
+                    )
+                {
+                    current.push_str(expanded.trim_end_matches([' ', '\t', '\n']));
+                } else {
+                    current.push_str(&expanded);
+                }
                 current_present = true;
             }
             QuotedPositionalAtSegment::PositionalAt => {

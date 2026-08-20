@@ -1,6 +1,19 @@
 use std::{env, fs, process::Command};
 
 #[test]
+fn quoted_positional_at_keeps_suffix_expansion_unquoted() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"set -- a ""; space=" "; printf '<%s>\n' "$@"$space"#)
+        .output()
+        .expect("run quoted positional suffix probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<a>\n<>\n");
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn unquoted_parameter_expansion_splits_on_custom_ifs_empty_fields() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
