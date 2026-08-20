@@ -305,6 +305,26 @@ fn trap_key(signal: &str) -> String {
     format!("{TRAP_PREFIX}{signal}")
 }
 
+/// Reset caught signal traps when entering a subshell. Bash preserves ignored
+/// dispositions (`trap ''`) but restores non-empty handlers to defaults.
+pub(crate) fn reset_for_subshell(env_vars: &mut HashMap<String, String>) {
+    let mut signals = trap_list(env_vars);
+    signals.retain(|signal| {
+        // DEBUG and RETURN are tracing hooks, not OS signal dispositions;
+        // functrace/extdebug controls their inheritance separately.
+        if matches!(signal.as_str(), "DEBUG" | "RETURN") {
+            return true;
+        }
+        let key = trap_key(signal);
+        let keep = env_vars.get(&key).is_some_and(String::is_empty);
+        if !keep {
+            env_vars.remove(&key);
+        }
+        keep
+    });
+    store_trap_list(env_vars, signals);
+}
+
 fn trap_list(env_vars: &HashMap<String, String>) -> BTreeSet<String> {
     env_vars
         .get(TRAP_LIST)

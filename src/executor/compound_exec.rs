@@ -366,6 +366,7 @@ impl Executor {
         let saved_env = self.env_vars.clone();
         let saved_pipestatus = self.pipestatus.clone();
         let saved_depth = self.subshell_depth.get();
+        crate::builtins::trap::reset_for_subshell(&mut self.env_vars);
         self.subshell_depth.set(saved_depth + 1);
 
         let mut redirect_cmd = cmd.clone();

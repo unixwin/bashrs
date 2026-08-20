@@ -312,6 +312,7 @@ impl Executor {
 
             if command.subshell && subshell_env.is_none() {
                 subshell_env = Some(self.env_vars.clone());
+                crate::builtins::trap::reset_for_subshell(&mut self.env_vars);
                 subshell_pipestatus = Some(self.pipestatus.clone());
                 let old_depth = self.subshell_depth.get();
                 subshell_depth = Some(old_depth);

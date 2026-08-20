@@ -1581,6 +1581,22 @@ fn escaped_ifs_space_in_parameter_assignment_stays_one_field() {
 }
 
 #[test]
+fn subshell_resets_nonempty_signal_traps_but_preserves_ignored_traps() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("trap 'echo bad' TERM; trap '' HUP; (trap)")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "trap -- '' SIGHUP\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn help_and_trap_pipeline_output_is_captured() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
