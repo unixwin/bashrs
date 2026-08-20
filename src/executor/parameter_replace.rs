@@ -10,6 +10,12 @@ pub(in crate::executor) fn replace_parameter_pattern(
         return value.to_string();
     }
 
+    // Bash's glob `*` also matches an empty parameter value. Handle this
+    // before the replacement loop so an empty match cannot loop forever.
+    if value.is_empty() && case_pattern_matches(pattern, "") {
+        return replacement.to_string();
+    }
+
     if global && replacement.is_empty() {
         if let Some(class) = parse_negated_bracket_filter(pattern) {
             return value
@@ -288,6 +294,16 @@ fn expand_replacement_amp(matched: &str, replacement: &str) -> String {
 }
 
 /// Plain-string pattern replacement honoring `&` expansion.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn glob_replacement_matches_empty_value() {
+        assert_eq!(replace_parameter_pattern("", "*", "w", false), "w");
+    }
+}
+
 fn replace_with_amp(value: &str, pattern: &str, replacement: &str, global: bool) -> String {
     let mut output = String::new();
     let mut last = 0;

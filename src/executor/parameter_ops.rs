@@ -451,12 +451,20 @@ pub(in crate::executor) fn parse_parameter_replacement(
     name: &str,
 ) -> Option<(&str, &str, &str, bool)> {
     if let Some((var_name, rest)) = name.split_once("//") {
-        let (pattern, replacement) =
-            split_unescaped_parameter_separator(rest).unwrap_or((rest, ""));
+        // A slash immediately after `//` is part of the pattern. This is
+        // ambiguous with the pattern/replacement separator, so skip it and
+        // find the next unescaped slash (`${v////-}`, `${v///r/-}`).
+        let separator = if rest.starts_with('/') {
+            split_unescaped_parameter_separator(&rest[1..])
+                .map(|(pattern, replacement)| (&rest[..pattern.len() + 1], replacement))
+        } else {
+            split_unescaped_parameter_separator(rest)
+        };
+        let (pattern, replacement) = separator.unwrap_or((rest, ""));
         return Some((var_name, pattern, replacement, true));
     }
 
-    let (var_name, rest) = split_unescaped_parameter_separator(name)?;
+    let (var_name, rest) = name.split_once('/')?;
     let (pattern, replacement) = split_unescaped_parameter_separator(rest).unwrap_or((rest, ""));
     Some((var_name, pattern, replacement, false))
 }
@@ -509,5 +517,17 @@ mod tests {
         assert_eq!(decode_parameter_replacement_quotes("\x14n"), "n");
         assert_eq!(decode_parameter_replacement_quotes("\x14\x14n"), r"\n");
         assert_eq!(decode_parameter_replacement_quotes(r"\&"), r"\&");
+    }
+
+    #[test]
+    fn global_replacement_accepts_slash_at_pattern_start() {
+        assert_eq!(
+            parse_parameter_replacement("v////-"),
+            Some(("v", "/", "-", true))
+        );
+        assert_eq!(
+            parse_parameter_replacement("v///r/-"),
+            Some(("v", "/r", "-", true))
+        );
     }
 }

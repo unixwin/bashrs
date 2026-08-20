@@ -6,7 +6,12 @@ impl Executor {
         name: &str,
     ) -> Option<String> {
         let (var_name, pattern, replacement, global) = parse_parameter_replacement(name)?;
-        let pattern = self.expand_parameter_pattern_word(&pattern.replace(r"\/", "/"));
+        let pattern = self.expand_parameter_pattern_word(
+            &pattern
+                .replace(r"\/", "/")
+                .replace('\x14', "/")
+                .replace('\x18', "/"),
+        );
         let replacement = decode_parameter_replacement_quotes(
             &self.expand_embedded_parameters_preserving_escaped_single_quotes(replacement),
         );
