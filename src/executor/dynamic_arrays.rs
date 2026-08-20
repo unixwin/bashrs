@@ -228,6 +228,7 @@ impl Executor {
     pub(in crate::executor) fn script_name_value(&self) -> String {
         self.env_vars
             .get("BASH_ARGV0")
+            .or_else(|| self.env_vars.get("__RUBASH_TOP_LEVEL_NAME"))
             .or_else(|| self.env_vars.get("__RUBASH_SCRIPT_NAME"))
             .cloned()
             .unwrap_or_else(|| "rubash".to_string())

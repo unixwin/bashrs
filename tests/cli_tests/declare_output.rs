@@ -1,6 +1,21 @@
 use std::process::Command;
 
 #[test]
+fn plain_declare_lists_name_value_pairs() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("declare")
+        .output()
+        .expect("run plain declare probe");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    assert!(stdout.contains("BASH_ALIASES=()"));
+    assert!(stdout.contains("BASH="));
+    assert!(!stdout.contains("declare -A BASH_ALIASES"));
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn declare_double_dash_output_is_reparseable() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

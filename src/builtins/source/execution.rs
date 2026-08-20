@@ -43,9 +43,22 @@ fn execute_ast_with_args(
     let source_positional_params: Vec<String> = args.to_vec();
     let had_source_args = !source_positional_params.is_empty();
     let old_source_marker = executor.get_env("__RUBASH_IN_SOURCE").map(str::to_string);
+    let old_script_name = executor.get_env("__RUBASH_SCRIPT_NAME").map(str::to_string);
+    let old_bash_argv0 = executor.get_env("BASH_ARGV0").map(str::to_string);
     executor.set_env("__RUBASH_IN_SOURCE", "1");
+    if executor.get_env("__RUBASH_TOP_LEVEL_NAME").is_none() {
+        let top_level_name = old_bash_argv0
+            .as_deref()
+            .or(old_script_name.as_deref())
+            .unwrap_or("rubash");
+        executor.set_env("__RUBASH_TOP_LEVEL_NAME", top_level_name);
+    }
     if let Some(source_name) = source_name {
         executor.push_bash_source(source_name.to_string());
+        if let Some(top_level_name) = old_script_name.as_deref().or(old_bash_argv0.as_deref()) {
+            executor.set_env("BASH_ARGV0", top_level_name);
+        }
+        executor.set_env("__RUBASH_SCRIPT_NAME", source_name);
     }
     if had_source_args {
         executor.set_positional_params(source_positional_params.clone());
@@ -63,6 +76,14 @@ fn execute_ast_with_args(
     match old_source_marker {
         Some(value) => executor.set_env("__RUBASH_IN_SOURCE", &value),
         None => executor.remove_env("__RUBASH_IN_SOURCE"),
+    }
+    match old_script_name {
+        Some(value) => executor.set_env("__RUBASH_SCRIPT_NAME", &value),
+        None => executor.remove_env("__RUBASH_SCRIPT_NAME"),
+    }
+    match old_bash_argv0 {
+        Some(value) => executor.set_env("BASH_ARGV0", &value),
+        None => executor.remove_env("BASH_ARGV0"),
     }
 
     if had_source_args {

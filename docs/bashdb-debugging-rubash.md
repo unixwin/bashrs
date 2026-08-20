@@ -15,6 +15,16 @@ debugger workflow:
 - `continue` runs the debugged script to completion.
 - `quit` exits the debugger.
 
+Boundary status (2026-08):
+
+- `info files` uses one canonical `/d/...` source identity on Windows.
+- Numeric source breakpoints such as `continue 4` stop at the requested source line.
+- `info functions`, `info functions foo`, `list foo`, `info files`, and `info variables` without filters have been exercised.
+- `shell --no-vars --no-fns` works. `shell --shell /usr/bin/bash --norc` still produces `--init-file: command not found`; native Bash reproduces the same clean bashdb failure, so this is not currently a Rubash fix target.
+- `info variables -a` and `info variables -A` now return indexed and associative variables; the declaration option path is covered by regression tests.
+- Sourced-file command errors now retain the sourced filename and line number, while `$0` remains the top-level script name.
+- A bounded command matrix covers `help`, `break`/`clear`, `display`, `eval`, `set`/`show`, `info files`, `info functions`, and `info variables`. `watch` requires a variable that exists in the current frame; clean bashdb has no top-level `unwatch` command. `restart` with a relative Windows launcher path remains a separate path-resolution edge case.
+
 The verified fixture is the clean bashdb checkout under:
 
 ```sh

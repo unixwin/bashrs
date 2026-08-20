@@ -83,6 +83,15 @@ pub(super) fn shell_display_path(path: &Path) -> String {
     }
 }
 
+pub(super) fn shell_pwd_display_path(path: &str) -> String {
+    let value = path.replace('\\', "/");
+    if cfg!(windows) && value.len() >= 3 && value.as_bytes()[1] == b':' && value.as_bytes()[2] == b'/' {
+        let drive = (value.as_bytes()[0] as char).to_ascii_lowercase();
+        return format!("/{drive}/{}", &value[3..]);
+    }
+    if value.is_empty() { "/".to_string() } else { value }
+}
+
 fn windows_slash_drive_display_to_native(path: &str) -> Option<String> {
     if !cfg!(windows) {
         return None;

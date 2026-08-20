@@ -4,7 +4,7 @@ use std::io::{self, Write};
 use super::attrs::DeclareOptions;
 use super::diagnostic::diagnostic_prefix;
 use super::marks::{exported_vars, marked_vars};
-use super::output::{print_declaration, print_unset_declaration, DeclarationAttrs};
+use super::output::{print_declaration, print_plain_declaration, print_unset_declaration, DeclarationAttrs};
 use super::{
     ARRAY_VARS, ASSOC_VARS, DECLARED_UNSET_VARS, EXECUTION_FAILURE, INTEGER_VARS, LOWERCASE_VARS,
     NAMEREF_VARS, READONLY_VARS, UPPERCASE_VARS,
@@ -14,6 +14,7 @@ pub(super) fn print_declare_names<W, E>(
     names: &[&str],
     variables: &HashMap<String, String>,
     options: DeclareOptions,
+    plain: bool,
     mut status: i32,
     stdout: &mut W,
     stderr: &mut E,
@@ -76,7 +77,11 @@ where
             nameref: namerefs.contains(&name),
         };
         if let Some(value) = variables.get(&name) {
-            print_declaration(&name, value, attrs, stdout)?;
+            if plain {
+                print_plain_declaration(&name, value, attrs, stdout)?;
+            } else {
+                print_declaration(&name, value, attrs, stdout)?;
+            }
         } else if attrs.has_scalar_attribute() || declared_unset.contains(&name) {
             print_unset_declaration(&name, attrs, stdout)?;
         } else {

@@ -177,6 +177,7 @@ where
     let mut names = Vec::new();
 
     let mut parse_options = true;
+    let mut saw_option = false;
     for arg in args {
         if parse_options && arg == "--" {
             parse_options = false;
@@ -188,6 +189,7 @@ where
             && arg != "+"
         {
             let set_attr = arg.starts_with('-');
+            saw_option = true;
             for option in arg[1..].chars() {
                 match option {
                     'p' => print = true,
@@ -334,6 +336,7 @@ where
     };
     attr_status = apply_declare_attrs(&names, variables, options, attr_status, stderr)?;
 
+    let plain = names.is_empty() && !had_name_args && !print && !saw_option;
     if names.is_empty() && !had_name_args {
         print = true;
     }
@@ -342,7 +345,7 @@ where
         return Ok(attr_status);
     }
 
-    print::print_declare_names(&names, variables, options, attr_status, stdout, stderr)
+    print::print_declare_names(&names, variables, options, plain, attr_status, stdout, stderr)
 }
 
 fn print_declare_usage<W>(command_name: &str, stderr: &mut W) -> io::Result<()>

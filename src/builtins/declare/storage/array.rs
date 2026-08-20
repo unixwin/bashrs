@@ -59,7 +59,9 @@ pub(in crate::builtins::declare) fn append_array_value(
 
         let quoted_token = token.starts_with('"') && token.ends_with('"');
         let token = unquote_storage_value(&token);
-        if token.contains(char::is_whitespace) && !quoted_token {
+        let unquoted_command_substitution = token.starts_with('\x1d');
+        let token = token.strip_prefix('\x1d').unwrap_or(&token);
+        if token.contains(char::is_whitespace) && (!quoted_token || unquoted_command_substitution) {
             for value in token.split_whitespace() {
                 entries.insert(next_index, value.to_string());
                 next_index += 1;
@@ -76,7 +78,7 @@ pub(in crate::builtins::declare) fn append_array_value(
             };
             entries.insert(0, appended);
         } else {
-            entries.insert(next_index, token);
+            entries.insert(next_index, token.to_string());
             next_index += 1;
         }
     }

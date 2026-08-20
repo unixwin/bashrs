@@ -34,6 +34,9 @@ pub(super) fn format_array_value(value: &str) -> String {
 pub(super) fn format_assoc_value(value: &str) -> String {
     let entries = parse_assoc_words(value);
     if entries.is_empty() {
+        if value == "()" {
+            return "()".to_string();
+        }
         return format!("([0]={} )", quote_declare_value(value));
     }
 

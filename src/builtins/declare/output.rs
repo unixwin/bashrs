@@ -86,6 +86,25 @@ where
     }
 }
 
+pub(super) fn print_plain_declaration<W>(
+    name: &str,
+    value: &str,
+    attrs: DeclarationAttrs,
+    stdout: &mut W,
+) -> io::Result<()>
+where
+    W: Write,
+{
+    let rendered = if attrs.assoc {
+        format_assoc_value(value)
+    } else if attrs.array {
+        format_array_value(value)
+    } else {
+        quote_declare_value(value)
+    };
+    writeln!(stdout, "{name}={rendered}")
+}
+
 pub(super) fn print_unset_declaration<W>(
     name: &str,
     attrs: DeclarationAttrs,

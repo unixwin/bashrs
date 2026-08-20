@@ -310,27 +310,17 @@ pub(in crate::executor) fn shell_display_path(path: &str) -> String {
     if cfg!(windows) {
         let path = path.strip_prefix("//?/").unwrap_or(path);
         let path = crate::executor::path::shell_path_display_from_windows(path);
-        return windows_slash_drive_display_to_native(&path).unwrap_or(path);
+        return windows_native_to_slash_drive_display(&path);
     }
     path.to_string()
 }
 
-fn windows_slash_drive_display_to_native(path: &str) -> Option<String> {
-    if !cfg!(windows) {
-        return None;
+fn windows_native_to_slash_drive_display(path: &str) -> String {
+    if path.len() >= 3 && path.as_bytes()[1] == b':' && path.as_bytes()[2] == b'/' {
+        let drive = (path.as_bytes()[0] as char).to_ascii_lowercase();
+        return format!("/{drive}/{}", &path[3..]);
     }
-
-    let bytes = path.as_bytes();
-    if bytes.len() == 2 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() {
-        let drive = (bytes[1] as char).to_ascii_uppercase();
-        return Some(format!("{drive}:/"));
-    }
-    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[2] == b'/' && bytes[1].is_ascii_alphabetic() {
-        let drive = (bytes[1] as char).to_ascii_uppercase();
-        return Some(format!("{drive}:{}", &path[2..]));
-    }
-
-    None
+    path.to_string()
 }
 
 pub(in crate::executor) fn current_epoch_seconds() -> i64 {

@@ -284,6 +284,12 @@ enum LoopControlKind {
 
 type FunctionBody = Rc<Ast>;
 
+#[derive(Clone, Debug)]
+struct FunctionDefinitionLocation {
+    line: usize,
+    source: String,
+}
+
 impl LoopControlKind {
     fn name(self) -> &'static str {
         match self {
@@ -368,6 +374,7 @@ pub struct Executor {
     aliases: HashMap<String, Alias>,
     functions: HashMap<String, FunctionBody>,
     function_definition_redirects: HashMap<String, CommandNode>,
+    function_definition_locations: HashMap<String, FunctionDefinitionLocation>,
     positional_params: Vec<String>,
     pipestatus: Vec<i32>,
     function_name_stack: Vec<String>,

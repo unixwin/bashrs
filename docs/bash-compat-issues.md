@@ -149,3 +149,17 @@ external materialization 根因。
 - **2026-08-03 修复进展**：族 D（语法宽松 a= (1 2)/[[ ) ]]）、族 C（$* IFS/$@ 多词/空字段）、族 F（数组 +=）、族 G（算术错误码传播）、族 H（alias 单引号/管道）、族 I（& 替换/嵌套 slice）、族 K §1.5（进程替换嵌套）已修；进制字面量/$LINENO-[[ ]] 验证通过；heredoc_huge（族 A 面 2）与 coproc fd 映射（族 K §2.1）为剩余 P0
 - **验收量化门槛（引用 winuxsh#48）**：bash 官方 83/83、oil 684→0、mksh 436→0、ksh93 错误数→0、手动 31 项复测、cloc rubash/src ≥80%（当前 60,708 / bash 132,879 ≈ 45.7%）
 - 结论：距完整 GNU Bash 支持仍有**中-大规模差距**，集中在：heredoc 机制（含大输入挂起）、coproc fd 映射、语法错误处理（解析器报错机制）、内置族完整语义（umask/trap/kill 等 120 项）、路径转换（/tmp 映射 winuxcmd 侧）（ksh 特有语法不在目标内）
+
+## 六、bashdb 外部调试边界（2026-08）
+
+bashdb 是 Rubash 的外部压力工具，不是 Rubash 的产品依赖。当前已验证的核心调试链路包括：`list`、`list foo`、`step`、`next`、`continue`、数字位置断点、`where`、`eval`、`info functions`、`info files`、nested `debug` 和 nested `shell --norc`。Windows source identity 已统一为 `/d/...`，`continue 4` 能稳定停在目标源码第 4 行。
+
+已定位的边界：
+
+- `shell --shell /usr/bin/bash --norc` 报 `--init-file: command not found`；native Bash 运行同一份 clean bashdb 也复现，因此归因于 bashdb 的 `OPTARG`/`OPTLARG` 组合，不作为 Rubash 修复目标。
+- `shell --no-vars --no-fns` 已通过。
+- `info variables` 无过滤参数、`info variables -a` 和 `info variables -A` 均已通过；根因是普通 `declare` 与显式属性过滤的输出模式混淆，现已分离并加入回归测试。
+- sourced 文件错误现在保留 sourced 文件和真实行号，同时不再改变 `$0`；已加入 focused regression。
+- 有界命令矩阵已覆盖 `help`、`break/clear`、`display`、`eval`、`set/show`、`info files`、`info functions` 和 `info variables`。`watch` 需要当前 frame 中已有变量；clean bashdb 没有顶层 `unwatch` 命令。`restart` 使用 Windows 相对 launcher 路径时仍有独立路径解析边界。
+
+后续验收要求：每个边界命令必须同时记录 Rubash 输出、native Bash 输出、stderr、退出状态和超时情况；确认是 Rubash-owned 后才修改 Rust，确认是 bashdb-owned 则保留复现证据并在文档中明确排除。

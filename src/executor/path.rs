@@ -708,7 +708,8 @@ fn windows_drive_absolute_tail_index(path: &str) -> Option<usize> {
     if bytes.len() < 3 {
         return None;
     }
-    let mut first = None;
+
+    let mut leading_drive = None;
     for index in 0..=bytes.len() - 3 {
         if bytes[index].is_ascii_alphabetic()
             && bytes[index + 1] == b':'
@@ -718,10 +719,11 @@ fn windows_drive_absolute_tail_index(path: &str) -> Option<usize> {
             if index > 0 {
                 return Some(index);
             }
-            first = Some(index);
+            leading_drive = Some(index);
         }
     }
-    first
+
+    leading_drive
 }
 
 pub(crate) fn shell_path_to_windows_for_lookup(
@@ -1096,6 +1098,10 @@ mod tests {
         assert_eq!(
             shell_path_to_windows("C:/Users/example", &env_vars),
             PathBuf::from(r"C:/Users/example")
+        );
+        assert_eq!(
+            shell_path_to_windows("Z:/nope/D:/repo/rubash/target/bashdb-probe-target.sh", &env_vars),
+            PathBuf::from(r"D:/repo/rubash/target/bashdb-probe-target.sh")
         );
         assert_eq!(
             shell_path_to_windows("/dev/null", &env_vars),

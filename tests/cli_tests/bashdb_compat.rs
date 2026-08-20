@@ -204,6 +204,7 @@ fn history_read_write_accept_file_operands() {
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
+#[cfg(windows)]
 #[test]
 fn windows_drive_absolute_tail_is_treated_as_absolute_path() {
     let file_path = Path::new("target").join("rubash-cli-drive-tail.txt");
@@ -620,7 +621,7 @@ fn bashdb_info_variables_runs_without_assoc_value_errors() {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(output.status.success());
-    assert!(stdout.contains("declare -A BASH_ALIASES"));
+    assert!(stdout.contains("BASH_ALIASES=()"));
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
@@ -679,6 +680,55 @@ fn debug_trap_respects_subshell_and_command_substitution_inheritance() {
 }
 
 #[test]
+fn bashdb_info_variables_filters_indexed_and_associative_arrays() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("target/bashdb-clean/bashdb-generated")
+        .arg("--no-highlight")
+        .arg("target/bashdb-probe-target.sh")
+        .env("TERM", "xterm")
+        .env("DARK_BG", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run rubash bashdb");
+    child.stdin.as_mut().unwrap().write_all(b"info variables -A\ninfo variables -a\nquit\n").unwrap();
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    assert!(stdout.contains("BASH_ALIASES=()"));
+    assert!(stdout.contains("BASH_ARGC=()") || stdout.contains("BASH_ARGC=([0]="));
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn bashdb_sourced_command_errors_name_sourced_file() {
+    let outer = Path::new("target/bashdb-source-diagnostic-outer.sh");
+    let inner = Path::new("target/bashdb-source-diagnostic-inner.sh");
+    fs::write(outer, "source target/bashdb-source-diagnostic-inner.sh\n").unwrap();
+    fs::write(inner, "command_that_does_not_exist\n").unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("target/bashdb-clean/bashdb-generated")
+        .arg("--no-highlight")
+        .arg(outer)
+        .env("TERM", "xterm")
+        .env("DARK_BG", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run rubash bashdb");
+    child.stdin.as_mut().unwrap().write_all(b"continue\nquit\n").unwrap();
+    let output = child.wait_with_output().unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let _ = fs::remove_file(outer);
+    let _ = fs::remove_file(inner);
+    assert!(output.status.success());
+    assert!(stderr.contains("target/bashdb-source-diagnostic-inner.sh: line 1:"));
+    assert!(!stderr.contains("bashdb-generated: line 2:"));
+}
+
+#[test]
 fn bashdb_info_files_reports_source_files_without_command_substitution_error() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("target/bashdb-clean/bashdb-generated")
@@ -701,6 +751,31 @@ fn bashdb_info_files_reports_source_files_without_command_substitution_error() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(stdout.contains("Source files which we have recorded info about:"));
+    assert!(stdout.contains("/d/repo/rubash/target/bashdb-probe-target.sh:"));
+    assert!(!stdout.contains("D:/repo/rubash/D:/repo/rubash/"));
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn bashdb_continue_numeric_location_hits_function_source_line() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("target/bashdb-clean/bashdb-generated")
+        .arg("--no-highlight")
+        .arg("target/bashdb-probe-target.sh")
+        .env("TERM", "xterm")
+        .env("DARK_BG", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run rubash bashdb");
+    child.stdin.as_mut().unwrap().write_all(b"continue 4\nquit\n").unwrap();
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    assert!(stdout.contains("One-time breakpoint 1 set in file /d/repo/rubash/target/bashdb-probe-target.sh, line 4."));
+    assert!(stdout.contains("(/d/repo/rubash/target/bashdb-probe-target.sh:4):"));
+    assert!(!stdout.contains("D:/repo/rubash/D:/repo/rubash/"));
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
@@ -779,5 +854,61 @@ fn bashdb_shell_nested_bash_uses_compatible_shim() {
         .unwrap();
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn declare_f_named_reports_extdebug_source_location() {
+    let output = run_rubash_inline(
+        "source target/bashdb-probe-target.sh >/dev/null\ndeclare -F foo\nshopt -s extdebug\ndeclare -F foo\nall=$(declare -F)\ncase $all in *'declare -f foo'*) printf 'declare -f foo\\n';; esac\n",
+    );
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "foo\nfoo 2 target/bashdb-probe-target.sh\ndeclare -f foo\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn local_array_assignment_splits_unquoted_command_substitution_output() {
+    let output = run_rubash_inline(
+        "source target/bashdb-probe-target.sh >/dev/null\nshopt -s extdebug\nf(){ local -a word=( $(declare -F foo) ); printf '<%s:%s:%s:%s>\\n' \"${#word[@]}\" \"${word[0]}\" \"${word[1]}\" \"${word[2]}\"; }\nf\n",
+    );
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "<3:foo:2:target/bashdb-probe-target.sh>\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn bashdb_list_function_name_uses_extdebug_declare_metadata() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("target/bashdb-clean/bashdb-generated")
+        .arg("--no-highlight")
+        .arg("target/bashdb-probe-target.sh")
+        .env("TERM", "xterm")
+        .env("DARK_BG", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run rubash bashdb");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"list foo\nquit\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+    assert!(stdout.contains("  2:    foo() {"));
+    assert!(stdout.contains("  4:      echo $((x + 1))"));
+    assert!(!stdout.contains("Invalid line specification: foo"));
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }

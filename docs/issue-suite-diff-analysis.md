@@ -3,6 +3,20 @@
 > Date: 2026-08-12
 > Scope: issue #20-#26 compatibility suites, local reruns, and implementation ownership.
 
+## Platform Scope Decision (2026-08-19)
+
+Rubash and Winuxsh are Windows-first products. Before 1.0, complete GNU/Linux
+compatibility is explicitly deferred and is not an acceptance gate. Linux CI
+failure evidence must still be recorded, but Linux-only expectations should be
+platform-gated or marked deferred rather than driving changes that regress
+Windows/Winuxsh semantics.
+
+The required release gate is the Windows/Winuxsh focused Rust and integration
+test set. Windows path display, native device aliases, signal/mailbox behavior,
+coproc behavior, and host integration must remain green. Linux signal, coproc,
+and device differences require a separate follow-up when Linux support becomes
+a release objective.
+
 This document is the durable version of the issue-suite run notes. Files under
 `target/issue-suites/results/` are raw run artifacts; this document is the
 tracked summary used to decide what to fix and where.

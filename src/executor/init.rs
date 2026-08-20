@@ -1,6 +1,18 @@
 use super::*;
 use crate::shell::VariableStore;
 
+fn shell_pwd_display(path: &str) -> String {
+    #[cfg(windows)]
+    {
+        let bytes = path.as_bytes();
+        if bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' {
+            let drive = (bytes[0] as char).to_ascii_lowercase();
+            return format!("/{drive}/{}", &path[3..]);
+        }
+    }
+    path.to_string()
+}
+
 impl Executor {
     pub fn new() -> Self {
         let process_env_snapshot: HashMap<String, String> = std::env::vars().collect();
@@ -46,9 +58,13 @@ impl Executor {
         env_vars.remove("BASH_EXECUTION_STRING");
         env_vars.entry("PWD".to_string()).or_insert_with(|| {
             std::env::current_dir()
-                .map(|path| shell_display_path(&path.to_string_lossy().replace('\\', "/")))
+                .map(|path| shell_pwd_display(&path.to_string_lossy().replace('\\', "/")))
                 .unwrap_or_else(|_| "/".to_string())
         });
+        #[cfg(windows)]
+        if let Some(pwd) = env_vars.get("PWD").cloned() {
+            env_vars.insert("PWD".to_string(), shell_pwd_display(&pwd));
+        }
         env_vars
             .entry("TMPDIR".to_string())
             .or_insert_with(safe_temp_dir_string);
@@ -139,6 +155,7 @@ impl Executor {
             aliases: HashMap::new(),
             functions: imported_functions,
             function_definition_redirects: HashMap::new(),
+            function_definition_locations: HashMap::new(),
             positional_params: Vec::new(),
             pipestatus: vec![0],
             function_name_stack: Vec::new(),

@@ -112,12 +112,12 @@ impl Executor {
             return String::new();
         }
 
-        if let Some(output) = self.timed_command_substitution_output(&words) {
+        if let Some((output, status)) = self.command_substitution_pipeline_output(&words) {
+            self.last_command_substitution_status.set(Some(status));
             return output;
         }
 
-        if let Some((output, status)) = self.command_substitution_pipeline_output(&words) {
-            self.last_command_substitution_status.set(Some(status));
+        if let Some(output) = self.timed_command_substitution_output(&words) {
             return output;
         }
 
@@ -415,6 +415,7 @@ impl Executor {
             aliases: self.aliases.clone(),
             functions: self.functions.clone(),
             function_definition_redirects: self.function_definition_redirects.clone(),
+            function_definition_locations: self.function_definition_locations.clone(),
             positional_params: self.positional_params.clone(),
             pipestatus: self.pipestatus.clone(),
             function_name_stack: self.function_name_stack.clone(),

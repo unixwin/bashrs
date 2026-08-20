@@ -95,7 +95,7 @@ impl Executor {
                 if exported_only {
                     writeln!(stdout, "declare -fx {name}")?;
                 } else {
-                    writeln!(stdout, "{name}")?;
+                    self.write_function_name(name, stdout)?;
                 }
             } else {
                 self.write_function_definition(
@@ -107,6 +107,18 @@ impl Executor {
             }
         }
         Ok(status)
+    }
+
+    fn write_function_name<W>(&self, name: &str, stdout: &mut W) -> io::Result<()>
+    where
+        W: Write,
+    {
+        if crate::builtins::shopt::option_enabled(&self.env_vars, "extdebug") {
+            if let Some(location) = self.function_definition_locations.get(name) {
+                return writeln!(stdout, "{} {} {}", name, location.line, location.source);
+            }
+        }
+        writeln!(stdout, "{name}")
     }
 
     pub(in crate::executor) fn execute_declare(

@@ -27,6 +27,17 @@ impl Executor {
                 commands: function.body.clone(),
             }),
         );
+        if let Some(line) = cmd.line {
+            self.function_definition_locations.insert(
+                function.name.clone(),
+                FunctionDefinitionLocation {
+                    line,
+                    source: self.current_bash_source(),
+                },
+            );
+        } else {
+            self.function_definition_locations.remove(&function.name);
+        }
         if command_has_input_or_output_redirects(cmd) {
             let mut redirects = CommandNode::new();
             redirects.redirect_in = cmd.redirect_in.clone();

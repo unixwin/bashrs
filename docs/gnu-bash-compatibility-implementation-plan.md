@@ -5,6 +5,15 @@
 > Goal: make rubash reach GNU Bash observable compatibility while staying usable
 > as the Bash syntax/execution library embedded by Winuxsh.
 
+## Release Platform Scope
+
+Rubash/Winuxsh is Windows-first. Complete Linux support is deferred until after
+1.0 and is not a pre-1.0 acceptance gate. Keep Linux-only suite differences
+explicitly marked or platform-gated; do not alter Windows-native path, device,
+signal, coproc, or host semantics solely to satisfy Ubuntu CI. The pre-1.0
+acceptance gate is the Windows/Winuxsh focused test suite, which must remain
+green.
+
 ## Migration Map Contract
 
 `docs/semantic-ownership.tsv` is the canonical v2 map. Every compatibility
