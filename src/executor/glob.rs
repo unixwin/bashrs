@@ -246,6 +246,12 @@ fn unescape_glob_pattern_literals(pattern: &str) -> String {
 }
 
 fn pathname_pattern_matches(pattern: &str, word: &str, nocaseglob: bool, extglob: bool) -> bool {
+    // Bash's CTLESC marker (0x81) quotes a filename character from pathname
+    // expansion. Treat it as an indivisible literal, so `?` and `*` cannot
+    // consume it while a direct literal redirect/read remains valid.
+    if cfg!(windows) && word.contains('\u{81}') && contains_glob_or_extglob(pattern) {
+        return false;
+    }
     if extglob && contains_extglob(pattern) {
         extglob_pattern_matches(pattern, word, nocaseglob)
     } else if nocaseglob {
@@ -397,7 +403,7 @@ fn synthetic_dot_names(pattern: &str, globskipdots: bool) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     #[cfg(windows)]
-    use super::{pathname_expand_word, PathnameExpansion};
+    use super::{pathname_expand_word, pathname_pattern_matches, PathnameExpansion};
     #[cfg(windows)]
     use std::collections::HashMap;
 
@@ -421,5 +427,15 @@ mod tests {
         assert_eq!(matches, vec!["/etc/config".to_string()]);
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn ctlesc_filename_is_not_consumed_by_pathname_wildcards() {
+        let marker_name = "uni\u{81}code";
+
+        assert!(pathname_pattern_matches(marker_name, marker_name, false, false));
+        assert!(!pathname_pattern_matches("uni?code", marker_name, false, false));
+        assert!(!pathname_pattern_matches("uni*code", marker_name, false, false));
     }
 }
