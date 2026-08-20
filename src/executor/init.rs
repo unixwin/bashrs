@@ -4,6 +4,9 @@ use crate::shell::VariableStore;
 fn shell_pwd_display(path: &str) -> String {
     #[cfg(windows)]
     {
+        if std::env::var_os("WINUXSH_SHELL_PATH_STYLE").is_some() {
+            return path.to_string();
+        }
         let bytes = path.as_bytes();
         if bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' {
             let drive = (bytes[0] as char).to_ascii_lowercase();
