@@ -164,9 +164,13 @@ where
     }
 
     let signals = normalized_signals(&args[index..], stderr)?;
-    if action == "-" {
+    if action == "-" || action == "0" {
         for signal in signals.signals {
             remove_trap(env_vars, &signal);
+        }
+        // Bash treats the numeric zero action as clearing the EXIT trap too.
+        if action == "0" {
+            remove_trap(env_vars, "EXIT");
         }
         return Ok(i32::from(signals.invalid));
     }

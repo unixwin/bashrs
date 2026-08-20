@@ -208,7 +208,9 @@ impl Executor {
                     .strip_prefix("<(")
                     .and_then(|rest| rest.strip_suffix(')'))
                 {
-                    output.push_str(&self.expand_command_substitution(source));
+                    let mut executor = self.command_substitution_executor();
+                    crate::builtins::trap::reset_for_subshell(&mut executor.env_vars);
+                    output.push_str(&executor.expand_command_substitution(source));
                     continue;
                 }
                 let path = self.expand_word(word);

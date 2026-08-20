@@ -255,6 +255,7 @@ impl Executor {
 
         let saved_dir = env::current_dir().ok();
         let mut subshell = self.command_substitution_executor();
+        crate::builtins::trap::reset_for_subshell(&mut subshell.env_vars);
         subshell.stdout_capture = Some(Vec::new());
         let result = subshell.execute_ast(&ast);
         let output = subshell.stdout_capture.take().unwrap_or_default();
