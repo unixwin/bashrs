@@ -302,6 +302,15 @@ impl Executor {
 }
 
 fn split_top_level_pattern_operator(name: &str) -> Option<(&str, &str, PatternRemoval)> {
+    // In `${##word}` and `${#%word}`, the first `#` names `$#`; the
+    // following operator must retain that special-parameter name.
+    if let Some(pattern) = name.strip_prefix("##") {
+        return Some(("#", pattern, PatternRemoval::LongestPrefix));
+    }
+    if let Some(pattern) = name.strip_prefix("#%") {
+        return Some(("#", pattern, PatternRemoval::ShortestSuffix));
+    }
+
     let chars = name.char_indices().collect::<Vec<_>>();
     let mut nested = 0usize;
     let mut quote = None;

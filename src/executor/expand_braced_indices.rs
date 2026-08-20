@@ -39,6 +39,14 @@ impl Executor {
                     .to_string(),
             );
         }
+        // `${#}` is the braced spelling of `$#`; `${##...}` and `${#%...}`
+        // are prefix/suffix removal on `$#`, not length expansions.
+        if name == "#" {
+            return Some(self.expand_parameter_named_value("#"));
+        }
+        if name.starts_with("##") || name.starts_with("#%") {
+            return None;
+        }
         if let Some(var_name) = name.strip_prefix('#') {
             return Some(self.expand_braced_length_parameter(var_name));
         }
