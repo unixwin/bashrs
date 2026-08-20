@@ -663,6 +663,19 @@ fn escaped_glob_in_parameter_alternate_stays_literal() {
 }
 
 #[test]
+fn parameter_alternate_preserves_nested_literal_double_quotes() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"x=a; printf '<%s>\n' ${x:+"b c" d}; printf '<%s>\n' "${x:+"b c" d}""#)
+        .output()
+        .expect("run nested quote parameter alternate probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<b c>\n<d>\n<b c d>\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn quoted_process_substitution_stays_literal() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

@@ -303,6 +303,12 @@ impl Executor {
         {
             return vec![word.to_string()];
         }
+        // A fully single-quoted raw word has already had its outer quotes
+        // removed by the lexer. Any double quotes left in its value are
+        // literal data, including inside parameter alternate words.
+        if raw_word_is_fully_single_quoted(raw) {
+            return vec![word.to_string()];
+        }
         if let Some(values) = self.braced_alternate_word_values(word) {
             return values;
         }
@@ -639,6 +645,13 @@ pub(in crate::executor) fn raw_word_suppresses_pathname_expansion(
         && metadata
             .map(|metadata| metadata.pathname_patterns.is_empty())
             .unwrap_or(true)
+}
+
+fn raw_word_is_fully_single_quoted(raw: Option<&str>) -> bool {
+    let Some(raw) = raw else {
+        return false;
+    };
+    raw.len() >= 2 && raw.starts_with('\'') && raw.ends_with('\'')
 }
 
 pub(in crate::executor) fn raw_word_is_quoted(raw: Option<&str>) -> bool {

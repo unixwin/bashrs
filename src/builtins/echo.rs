@@ -81,10 +81,6 @@ fn remove_residual_shell_quotes(arg: &str, unescape_alias_quotes: bool) -> Strin
         return arg[1..arg.len() - 1].to_string();
     }
 
-    if let Some(stripped) = arg.strip_prefix('"') {
-        return stripped.to_string();
-    }
-
     arg.to_string()
 }
 
