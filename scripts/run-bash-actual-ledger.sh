@@ -42,6 +42,16 @@ for src in "$tests_dir"/*.tests; do
   printf '%s\t%s\t%s\t%s\n' "$name" "$status" "$brc" "$rrc" >> "$out/results.tsv"
 done
 
-awk -F '\t' 'NR > 1 { total++; counts[$2]++ } END { printf "TOTAL=%d PASS=%d DIFF=%d\n", total, counts["PASS"] + 0, counts["DIFF"] + 0 }' \
-  "$out/results.tsv" | tee "$out/summary.txt"
+total=0
+pass=0
+diff_count=0
+while IFS=$'\t' read -r name status bash_rc rubash_rc; do
+  [[ $name == test ]] && continue
+  total=$(expr "$total" + 1)
+  case $status in
+    PASS) pass=$(expr "$pass" + 1) ;;
+    DIFF) diff_count=$(expr "$diff_count" + 1) ;;
+  esac
+done < "$out/results.tsv"
+printf 'TOTAL=%s PASS=%s DIFF=%s\n' "$total" "$pass" "$diff_count" | tee "$out/summary.txt"
 printf 'completed=yes\n' >> "$out/manifest.txt"

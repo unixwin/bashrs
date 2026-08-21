@@ -2839,7 +2839,10 @@ independent Rubash root causes. The old `83/68` count is now historical.
 
 The tracked runner `scripts/run-bash-actual-ledger.sh` now supports a unique
 output directory, GNU Bash/Rubash selection, CRLF-to-LF normalization, engine
-wrappers, per-test timeout, and `BASH_LEDGER_TEST_FILTER` smoke mode. A two-file
+wrappers, per-test timeout, and `BASH_LEDGER_TEST_FILTER` smoke mode. Its
+summary uses Bash builtins and `expr`, not `awk` or shell arithmetic expansion,
+because the current Winuxsh host rewrites those forms before the runner sees
+them. A two-file
 smoke (`arith,coproc`) completed normally with `TOTAL=2 PASS=0 DIFF=2`; its raw
 output is under `target/issue-suites/results/bash-ledger-smoke2-b5e3f7b3/`.
 The complete ledger index and status pairs are tracked under
@@ -2848,7 +2851,10 @@ The complete ledger index and status pairs are tracked under
 Initial per-family classification is tracked in
 `docs/evidence/bash-ledger-b5e3f7b3-classification.tsv`; it explicitly marks
 `arith` and `invocation` runner/fixture-limited until a valid nested launcher
-and CLI integration comparison exists.
+and CLI integration comparison exists. A current focused rerun at `9f22ca80` is archived under
+`target/issue-suites/results/bash-ledger-case-assoc-9f22ca80-r3/`: it completed
+with `TOTAL=2 PASS=0 DIFF=2`, retaining the remaining `assoc` and `case` rows
+for separate classification.
 
 A bounded four-file refresh at `b5e3f7b3` is archived under
 `target/issue-suites/results/bash-refresh-manual/`. `arith.tests` completed with
