@@ -11,7 +11,6 @@ impl Executor {
             .chain(command.redirect_err_append.iter())
             .chain(command.redirects.iter())
             .map(|redirect| redirect.target.as_str())
-            .chain(command.words.iter().map(String::as_str))
             .collect::<Vec<_>>();
         self.env_vars
             .iter()

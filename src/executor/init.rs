@@ -142,16 +142,8 @@ impl Executor {
             .and_then(|value| value.parse::<u32>().ok())
             .unwrap_or_else(std::process::id);
         env_vars.remove("__RUBASH_SHELL_PID");
-        let owns_signal_mailbox = if env_vars.get("__RUBASH_COPROC_CHILD").map(String::as_str)
-            == Some("1")
-        {
-            // A coprocess child may block in a pipe read. Its parent must be
-            // able to terminate it natively rather than queueing TERM in a
-            // mailbox that the blocked child cannot consume.
-            false
-        } else {
-            crate::builtins::kill::register_signal_mailbox(std::process::id()).is_ok()
-        };
+        let owns_signal_mailbox =
+            crate::builtins::kill::register_signal_mailbox(std::process::id()).is_ok();
 
         Self {
             shell_state: ShellState {
