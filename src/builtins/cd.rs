@@ -121,11 +121,11 @@ where
     };
 
     set_shell_env(env_vars, "OLDPWD", shell_display_path(&old_pwd));
-    set_shell_env(
-        env_vars,
-        "PWD",
-        shell_pwd_display_path(&new_pwd.to_string_lossy()),
-    );
+    let pwd_value = match mode {
+        Mode::Logical => new_pwd_display.clone(),
+        Mode::Physical => shell_pwd_display_path(&new_pwd.to_string_lossy()),
+    };
+    set_shell_env(env_vars, "PWD", pwd_value);
     env_vars.remove("__RUBASH_PHYSICAL_PWD");
 
     match target.print {
@@ -321,6 +321,38 @@ mod tests {
         assert!(String::from_utf8(stderr)
             .unwrap()
             .contains("-d: invalid option"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn logical_cd_writes_logical_root_to_pwd() {
+        use super::execute_with_io;
+
+        let root =
+            std::env::temp_dir().join(format!("rubash-cd-logical-root-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        let previous = std::env::current_dir().unwrap();
+        let mut env_vars = HashMap::new();
+        env_vars.insert(
+            "RUBASH_ROOT".to_string(),
+            root.to_string_lossy().to_string(),
+        );
+        env_vars.insert("PWD".to_string(), "C:/Users/Administrator".to_string());
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        assert_eq!(
+            execute_with_io(["/"], &mut env_vars, &mut stdout, &mut stderr).unwrap(),
+            0
+        );
+        assert_eq!(env_vars.get("PWD").map(String::as_str), Some("/"));
+        assert_eq!(
+            execute_with_io(["/bin"], &mut env_vars, &mut stdout, &mut stderr).unwrap(),
+            0
+        );
+        assert_eq!(env_vars.get("PWD").map(String::as_str), Some("/bin"));
+        let _ = std::env::set_current_dir(previous);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[cfg(windows)]
