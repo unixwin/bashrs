@@ -666,6 +666,12 @@ impl Executor {
                 child.env(key, value);
             }
         }
+        // Coprocess children own a shell-created stdin pipe. Keep builtin
+        // readers attached to it and let TERM use native termination when a
+        // blocked read cannot consume the shell signal mailbox.
+        child.env(INHERIT_PROCESS_STDIN, "1");
+        child.env("__RUBASH_COPROC_CHILD", "1");
+
         // Create pipes for bidirectional communication
         let stdin_result = std::io::pipe();
         let stdout_result = std::io::pipe();

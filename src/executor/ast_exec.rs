@@ -2,7 +2,7 @@ use super::*;
 
 impl Executor {
     fn coprocs_referenced_by_command(&self, command: &CommandNode) -> Vec<u32> {
-        let redirect_sources = command
+        let mut redirect_sources = command
             .redirect_in
             .iter()
             .chain(command.redirect_out.iter())
@@ -12,6 +12,9 @@ impl Executor {
             .chain(command.redirects.iter())
             .map(|redirect| redirect.target.as_str())
             .collect::<Vec<_>>();
+        if command.words.first().map(String::as_str) == Some("wait") {
+            redirect_sources.extend(command.words.iter().map(String::as_str));
+        }
         self.env_vars
             .iter()
             .filter_map(|(key, value)| {
