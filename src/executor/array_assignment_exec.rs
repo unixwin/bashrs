@@ -223,7 +223,7 @@ impl Executor {
         let index = if index.trim().is_empty() { "0" } else { index };
         if index.trim() == "*" {
             eprintln!(
-                "{}{}: cannot assign to non-numeric index",
+                "{}{}: bad array subscript",
                 self.diagnostic_prefix(),
                 cmd.words[0]
             );

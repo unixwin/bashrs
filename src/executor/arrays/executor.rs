@@ -73,15 +73,34 @@ impl Executor {
     ) -> Option<String> {
         let (array_name, key) = parse_array_subscript(expression)?;
         let storage_name = self.resolved_variable_name(array_name)?;
-        let storage = self.parameter_array_storage(array_name)?;
+        let storage = self.parameter_array_storage(array_name).unwrap_or_default();
         if is_marked_var(&self.env_vars, ASSOC_VARS, &storage_name) {
             let key = self.assoc_subscript_key(key);
             return assoc_value_at(&storage, &key);
         }
         let key = strip_matching_quotes(&self.expand_embedded_parameters(key)).to_string();
-        eval_conditional_arith_value(&key, &self.env_vars)
-            .and_then(|index| resolve_indexed_array_subscript(&storage, index))
-            .and_then(|index| array_value_at(&storage, index))
+        if key.trim() == "*" || key.trim() == "@" {
+            return None;
+        }
+        let Some(index) = eval_conditional_arith_value(&key, &self.env_vars) else {
+            self.arithmetic_nonfatal_error.set(true);
+            eprintln!(
+                "{}{}: bad array subscript",
+                self.diagnostic_prefix(),
+                array_name
+            );
+            return None;
+        };
+        let Some(index) = resolve_indexed_array_subscript(&storage, index) else {
+            self.arithmetic_nonfatal_error.set(true);
+            eprintln!(
+                "{}{}: bad array subscript",
+                self.diagnostic_prefix(),
+                array_name
+            );
+            return None;
+        };
+        array_value_at(&storage, index)
     }
 
     pub(in crate::executor) fn array_length(&self, name: &str) -> usize {

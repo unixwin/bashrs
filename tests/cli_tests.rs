@@ -1546,28 +1546,22 @@ fn malformed_parameter_expansions_return_status_two() {
 }
 
 #[test]
-fn array_element_assignment_reports_bash_subscript_errors() {
+fn array_subscript_diagnostics_match_bash_for_assignment_and_expansion() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
-        .arg("-c")
-        .arg(
-            "unset b c d; b[]=bcde; printf 'b=%s\\n' \"$?\"; \
-             b[*]=aaa; printf 'star=%s\\n' \"$?\"; \
-             c[-2]=4; printf 'negative=%s\\n' \"$?\"; \
-             d[7]=(x y); printf 'list=%s\\n' \"$?\"",
-        )
+        .arg("target/issue-suites/results/arith-array-probes-20220822/array-probe.sh")
         .output()
         .expect("run rubash");
 
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "b=1\nstar=1\nnegative=1\nlist=1\n"
+        "b=<this is a test> b0=<this>\ncneg=<>\n"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("b[]=bcde: bad array subscript"));
-    assert!(stderr.contains("b[*]=aaa: cannot assign to non-numeric index"));
+    assert!(stderr.contains("b[*]=aaa: bad array subscript"));
     assert!(stderr.contains("c[-2]=4: bad array subscript"));
-    assert!(stderr.contains("d[7]=(x y): cannot assign list to array member"));
+    assert!(stderr.contains("c: bad array subscript"));
 }
 
 #[test]
