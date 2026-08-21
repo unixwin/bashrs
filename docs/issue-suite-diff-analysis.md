@@ -548,7 +548,7 @@ Notes:
 Latest local rerun:
 
 ```text
-TOTAL=83 PASS=15 DIFF=68
+TOTAL=83 PASS=13 DIFF=70 (current isolated raw ledger; the 15/68 line is historical)
 ```
 
 Exit-code shape:
@@ -1044,7 +1044,7 @@ pass these GNU Bash slices: `run-arith`, `run-array`, `run-parser`,
 `run-heredoc`, `run-redir`, `run-alias`, `run-builtins`, `run-attr`,
 `run-trap`, `run-jobs`, and `run-vredir` (each 1/1).
 
-The refreshed actual-output runner still reports 15/83 exact matches, but its
+The historical actual-output runner reported 15/83 exact matches. The current isolated ledger reports 13/83 exact matches, but its
 remaining differences include nested test-driver invocations, Windows path
 lookup, command availability, and timeout-dependent job/process cases. One
 reproducible semantic lead remains: Bash rejects a newline-separated `for`
@@ -2845,6 +2845,10 @@ output is under `target/issue-suites/results/bash-ledger-smoke2-b5e3f7b3/`.
 The complete ledger index and status pairs are tracked under
 `docs/evidence/bash-ledger-b5e3f7b3-diff-index.tsv` and
 `docs/evidence/bash-ledger-b5e3f7b3-status-pairs.tsv`.
+Initial per-family classification is tracked in
+`docs/evidence/bash-ledger-b5e3f7b3-classification.tsv`; it explicitly marks
+`arith` and `invocation` runner/fixture-limited until a valid nested launcher
+and CLI integration comparison exists.
 
 A bounded four-file refresh at `b5e3f7b3` is archived under
 `target/issue-suites/results/bash-refresh-manual/`. `arith.tests` completed with
