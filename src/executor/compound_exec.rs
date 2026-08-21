@@ -666,6 +666,9 @@ impl Executor {
                 child.env(key, value);
             }
         }
+        // The coprocess stdin is a shell-owned pipe; let builtin cat stream it.
+        child.env(INHERIT_PROCESS_STDIN, "1");
+        child.env("__RUBASH_COPROC_CHILD", "1");
 
         // Create pipes for bidirectional communication
         let stdin_result = std::io::pipe();
