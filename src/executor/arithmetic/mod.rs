@@ -379,8 +379,18 @@ pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<
     }
 
     if expression.contains('?') && expression.contains(':') && expression.contains('=') {
+        let branch = expression
+            .split_once(':')
+            .map(|(_, branch)| branch)
+            .unwrap_or("");
+        let equals = branch.find('=').unwrap_or(0);
+        let token_start = equals
+            .checked_sub(1)
+            .filter(|index| "+-*/%&^|<>".contains(branch.as_bytes()[*index] as char))
+            .unwrap_or(equals);
+        let token = branch[token_start..].trim();
         return Some(format!(
-            "{expression}: attempted assignment to non-variable (error token is \"=9 \")"
+            "{expression}: attempted assignment to non-variable (error token is \"{token}\")"
         ));
     }
 

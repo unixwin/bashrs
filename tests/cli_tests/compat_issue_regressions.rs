@@ -529,9 +529,9 @@ fn arithmetic_assignment_error_continues_without_errexit() {
 
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(String::from_utf8_lossy(&output.stdout), "after:1 y: x:2\n");
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains("attempted assignment to non-variable")
-    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("attempted assignment to non-variable"));
+    assert!(stderr.contains("error token is \"+=2\""), "stderr: {stderr}");
 }
 
 #[test]
