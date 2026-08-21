@@ -39,7 +39,7 @@ A status pair or raw DIFF is not an independent bug.
 
 Remaining candidates after bounded probes:
 
-- `array 1/2`: real empty/`*`/negative subscript diagnostic and error-propagation mismatch; current uncommitted patch still fails the full focused regression with status 1 and is not integrated.
+- `array 1/2`: fixed by `65120574`; invalid empty/`*`/negative subscripts now report Bash-compatible diagnostics while invalid parameter expansion remains nonfatal, preserving `cneg=<>` and status 0. Focused regression passes.
 - `comsub-posix`: valid output mismatch (`abc )` versus `abc eof )`), artifact-backed and not yet fixed.
 - `posixexp2`: fixed by `8001a04a`; the braced-parameter scanner now ignores closing braces inside single quotes. Focused regression and artifact rerun produce Bash-compatible `1 }z`, rc=0.
 - `quotearray`: associative quoted subscript/value mismatch and arithmetic diagnostic divergence, not yet fixed.
