@@ -1305,6 +1305,22 @@ fn test_exec_dynamic_input_fd_move_closes_source_and_reuses_slot() {
 }
 
 #[test]
+fn test_read_here_string_scalar_expansion_has_no_assignment_marker() {
+    let output_path = "target/rubash-read-here-string-scalar-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "exec {{fd}}<<<alpha; read -u $fd value; printf 'x=%s\\n' \"$value\" > {output_path}; exec {{fd}}<&-"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    assert!(executor.execute_ast(&ast).is_ok());
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "x=alpha\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_exec_dynamic_fd_array_element_keeps_input_and_output_owners() {
     let input_path = "target/rubash-dynamic-array-fd-input.txt";
     let output_path = "target/rubash-dynamic-array-fd-output.txt";

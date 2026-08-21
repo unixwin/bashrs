@@ -634,6 +634,15 @@ pub(in crate::executor) fn expand_braces_with_optional_raw(
 }
 
 fn restore_pathname_escape_markers(word: &str) -> String {
+    let word = crate::expand::tilde::tilde::strip_assignment_quote_marker(word);
+    let word = word
+        .split_once('=')
+        .and_then(|(name, value)| {
+            value
+                .strip_prefix(crate::expand::tilde::tilde::QUOTED_ASSIGNMENT_VALUE)
+                .map(|value| format!("{name}={value}"))
+        })
+        .unwrap_or_else(|| word.to_string());
     word.replace('\x11', "")
 }
 
