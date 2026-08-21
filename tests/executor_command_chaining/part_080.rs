@@ -1324,15 +1324,16 @@ fn test_read_here_string_scalar_expansion_has_no_assignment_marker() {
 fn test_unquoted_array_field_split_preserves_each_element() {
     let output_path = "target/rubash-array-field-split-marker-output.txt";
     let _ = fs::remove_file(output_path);
-    let input = format!(
-        "IFS=,; arr=(alpha beta); printf '<%s>\\n' ${{arr[@]}} > {output_path}"
-    );
+    let input = format!("IFS=,; arr=(alpha beta); printf '<%s>\\n' ${{arr[@]}} > {output_path}");
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
     let mut executor = Executor::new();
 
     assert!(executor.execute_ast(&ast).is_ok());
-    assert_eq!(fs::read_to_string(output_path).unwrap(), "<alpha>\n<beta>\n");
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "<alpha>\n<beta>\n"
+    );
     let _ = fs::remove_file(output_path);
 }
 
@@ -1568,7 +1569,7 @@ fn test_embedded_assignment_output_process_substitution_keeps_surrounding_text()
     let side_path = "target/rubash-embedded-assignment-output-process-substitution-side.txt";
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_file(side_path);
-    let input = format!("p=x>(cat > {side_path})y; printf '%s\\n' \"$p\" > {output_path}");
+    let input = format!("p=x>(printf payload > {side_path})y; printf '%s\\n' \"$p\" > {output_path}");
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
     let mut executor = Executor::new();
