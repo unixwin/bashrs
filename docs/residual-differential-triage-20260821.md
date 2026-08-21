@@ -54,7 +54,7 @@ semantic defect.
 | Residual | GNU Bash result | Rubash result | Owner | Host/harness artifact? |
 |---|---|---|---|---|
 | Dynamic marker | Dynamic move control is `moved=alpha source=10 reused=10`, with closed-source status 0. | Current checkout also returns `moved=alpha source=10 reused=10` and `closed-status:0`; focused test passes 1/1. Historical `\x1c` output is covered by `bfadaeb8` and `63c2d7ea`. | Quoted-assignment marker decoding and dynamic array-field splitting; not an open fd-table defect. | No. Fixed and verified. |
-| Side-file | Complete `p=>(...)` creates and cleans a side file; embedded `p=x>(...)y` prints `/dev/fd/63`. | Rubash also cleans the complete form, while the embedded form prints a Windows temp path and does not expose a `/dev/fd/N` side file. | Process-substitution representation/materialization at the Windows host boundary; no cleanup owner is confirmed. | Yes. Probe artifact `target/ps-cleanup-probe/`; do not change Rust or expected output without a product-level `/dev/fd` contract. |
+| Side-file | Complete `p=>(...)` creates and cleans a side file; embedded `p=x>(...)y` starts the producer, creates the side file, and prints `/dev/fd/63`. | Rubash cleans the complete form, but the embedded form does not start the producer, does not create the side file, and prints a Windows temp path concatenated into the word. | Process-substitution embedded-assignment lifecycle/materialization in `external_setup.rs` and expansion/execution handoff. | No. Confirmed semantic candidate; probe artifact `target/ps-cleanup-probe/`. Keep the focused regression unchanged until Bash lifecycle behavior is implemented. |
 | Coproc failures | Owner matrix matches Bash for descriptors, output read, wait status, and simple coproc probes. GNU sequential `cat -` returns `flop\n`, rc 0. | Focused slice is 12/17. Persistent-stderr test lacks asserted `done=127`; sequential `cat -` times out after 8s with empty stdout/stderr; three other failures are `\x1c` marker assertions. | Split ownership: variable expansion for markers; coproc external-child stdin/EOF materialization for sequential `cat -`; coproc status/CLI test contract for persistent stderr. | No for sequential timeout or markers. Persistent-stderr is unresolved, not safe to label harness noise. |
 | run-minimal FAIL | GNU expected `/usr`, `/tmp`, and literal escaped tilde display. | Runner exits 0 but ledger records FAIL: Rubash/Windows emits `D:/usr`, `D:/tmp`, and differs in escaped-tilde display. | Upstream runner/fixture normalization; retain raw diff and do not change GNU expectations globally. | Yes. Known Windows host/path and harness classification difference. |
 
@@ -81,11 +81,11 @@ for part_080. The historical part_080 marker failure was `moved=\x1calpha source
 2. External child/coprocess owner: trace inherited stdin, writer close, and
    endpoint retirement for the sequential `cat -` reproducer. Preserve a
    bounded timeout and archive stdout/stderr/rc for Bash and Rubash.
-3. Process-substitution is currently classified as a host representation
-   difference: `target/ps-cleanup-probe/` shows cleanup parity for the complete
-   form and `/dev/fd/N` versus Windows temp-path output for the embedded form.
-   Keep the raw probe; do not modify Rust until the Windows `/dev/fd` contract is
-   explicitly defined.
+3. Process-substitution owner: fix the embedded-assignment lifecycle.
+   `target/ps-cleanup-probe/` shows cleanup parity for the complete form, but
+   Bash starts the embedded producer and creates the side file while Rubash does
+   not. Preserve the focused regression and implement the producer/materialization
+   handoff before changing expected output.
 4. Runner/fixture owner: make `run-minimal` platform-aware for known Windows
    paths and escaped tilde display, while keeping the raw diff and exit status.
 5. Test owner: resolve the persistent-stderr assertion only after recording the
