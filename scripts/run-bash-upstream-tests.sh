@@ -16,6 +16,11 @@ TIMEOUT_KILL_AFTER="${BASH_UPSTREAM_KILL_AFTER:-5}"
 RUN_ID="${BASH_UPSTREAM_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 RAW_OUT_DIR="$ROOT_DIR/target/issue-suites/results/bash-upstream-tests/$RUN_ID"
 
+if [[ ! "$RUN_ID" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+  echo "BASH_UPSTREAM_RUN_ID contains unsafe filename characters: $RUN_ID" >&2
+  exit 125
+fi
+
 validate_timeout() {
   [[ "$TIMEOUT_SECONDS" =~ ^[1-9][0-9]*([.][0-9]+)?$ ]] || {
     echo "BASH_UPSTREAM_TIMEOUT must be a positive number of seconds: $TIMEOUT_SECONDS" >&2
@@ -204,6 +209,8 @@ for runner in "${RUNNERS[@]}"; do
   # TODO(tests/redir.c): replace this harness normalization once the test
   # workspace checkout is forced to LF independent of host git attributes.
   sed -i 's/\r$//' "$expected_dir"/*.right "$test_workdir"/*.right
+  # The copied driver must expand BASH_TSTOUT at test runtime, not here.
+  # shellcheck disable=SC2016
   sed -i 's@^TEST_FILE="/tmp/${TEST_NAME}\.check"$@TEST_FILE="${BASH_TSTOUT}"@' \
     "$test_workdir"/run-dbg-support*
   refuse_unsafe_dir "$test_workdir"
