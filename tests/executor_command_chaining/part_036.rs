@@ -441,6 +441,30 @@ fn test_fg_without_job_control_returns_failure() {
 }
 
 #[test]
+fn test_fg_invalid_option_without_job_control_returns_failure() {
+    let error_path = "target/rubash-fg-invalid-option-error.txt";
+    let status_path = "target/rubash-fg-invalid-option-status.txt";
+    let _ = fs::remove_file(error_path);
+    let _ = fs::remove_file(status_path);
+    let input = format!("fg -Z 2> {error_path}; echo $? > {status_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(status_path).unwrap(), "1\n");
+    assert_eq!(
+        fs::read_to_string(error_path).unwrap(),
+        "rubash: fg: no job control\n"
+    );
+    let _ = fs::remove_file(error_path);
+    let _ = fs::remove_file(status_path);
+}
+
+#[test]
 fn test_bg_without_job_control_returns_failure() {
     let error_path = "target/rubash-bg-error.txt";
     let status_path = "target/rubash-bg-status.txt";

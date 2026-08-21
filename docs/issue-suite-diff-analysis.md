@@ -21,6 +21,21 @@ This document is the durable version of the issue-suite run notes. Files under
 `target/issue-suites/results/` are raw run artifacts; this document is the
 tracked summary used to decide what to fix and where.
 
+## Runner Infrastructure Checkpoint (2026-08-21)
+
+The Bash upstream runner preserves the caller toolchain, validates positive
+timeouts, applies a kill-after grace period to each upstream `run-*` driver,
+and archives the unfiltered log plus generated workspace under
+`target/issue-suites/results/bash-upstream-tests/<run-id>/<runner>/`. CI uploads
+this directory so focused runs do not erase issue-triage evidence.
+
+A bounded `run-minimal` smoke completed with runner exit 0 and one classified
+output difference: Windows displayed `D:/usr` and `D:/tmp` instead of `/usr` and
+`/tmp`, plus a tilde escaping difference. This remains an environment/semantic
+diff to triage for #25; expected output was not changed. Shellcheck passes at
+warning severity; the remaining info-level SC2016 note is the existing upstream
+`TEST_FILE` sed expression. No Rubash semantic owner was modified.
+
 The concrete implementation playbook for future agents is
 [`docs/gnu-bash-compatibility-implementation-plan.md`](gnu-bash-compatibility-implementation-plan.md).
 
@@ -2739,6 +2754,39 @@ A minimal GNU Bash comparison (set -Z and umask -Z) showed matching diagnostics 
 Evidence:
 
 - GNU Bash: set -Z and umask -Z, both rc 2.
+
+## 2026-08-20 Job-control diagnostic precedence: fg/bg
+
+In non-interactive Bash with no background jobs, fg -Z and bg -Z report only no job control and return 1. Rubash parsed the invalid option first, emitted usage diagnostics, and returned 2. The executor now gives the no-job-control condition precedence and clears the preempted option diagnostic. With an active job, builtin option validation remains responsible for the usage error.
+
+Focused regression: tests/executor_command_chaining/part_036.rs::test_fg_invalid_option_without_job_control_returns_failure.
 - Rubash after fix: same probes, both rc 2.
 - cargo test --lib set umask -- --nocapture passed (bounded builtin tests).
 
+## 2026-08-20 Heredoc, substitution, process-substitution, and coproc owner probe
+
+A fresh GNU Bash/Rubash probe was run before considering source changes for Issues #20/#21/#26. Raw scripts: target/issue-suites/results/heredoc-huge-owner.sh, target/issue-suites/results/owner-probe.sh, and target/issue-suites/results/wait-probe.sh. Every shell invocation used timeout 15s or timeout 20s; the final process check used ps -W | grep -Ei rubash|bash|cargo and returned no matching processes.
+
+Evidence:
+
+- timeout 20s D:/Git/bin/bash.exe target/issue-suites/results/heredoc-huge-owner.sh: rc 0, done; timeout 20s target/debug/rubash.exe target/issue-suites/results/heredoc-huge-owner.sh: rc 0, done. The 120,000-byte heredoc did not hang, leave a .tmp, or leave a shell process.
+- Nested command substitution, command-substitution status, input process substitution (cat <(...)), and output process substitution (exec 9> >(...)) matched Bash output and status.
+- Named coproc descriptors were distinct and numeric in both shells; reading C[0] returned coproc-output, and wait C_PID returned 7.
+- Repeated wait retained completed status (3 for a background child and 4 for coproc); invalid PID returned 127 with the expected diagnostic in both shells.
+
+Conclusion: this bounded owner-level matrix produced no new Rubash-owned heredoc hang, nested substitution state-pollution, process-substitution fd-lifetime, coproc fd-mapping, or wait-status defect. No Rust change or regression was justified by these probes. Existing official-suite bridge/fixture differences remain tracked separately; this probe does not close the broader #20/#21/#26 suites.
+
+A bounded focused rerun, `timeout 120s cargo test --test cli_tests coproc -- --nocapture`, completed in 11.88s but reported 5/17 failures. Three failures are control-marker expectations (`\x1c`) in existing CLI assertions, one is the known persistent-stderr `done=127` case, and one (`c_command_starts_cat_dash_coproc_after_waiting_for_previous_coproc`) timed out internally with no output. No residual shell or Cargo processes remained. These failures are recorded as follow-up evidence rather than silently treating the direct probe as suite closure.
+
+## 2026-08-20 Persistent stdin virtual-fd cursor
+
+A focused reproducer compared GNU Bash and Rubash for `exec <file; read first; exec {fd}<&0; read -u $fd second`. The root cause was `read_input_for_command` calling `stdin_string_for_command` before the fd-table reader; `stdin_string_for_command` uses the legacy `virtual_fd_stdin_remaining` snapshot and does not advance the shared `FdTable` cursor. The fix in `src/executor/read_io.rs` limits that helper to here-strings and routes persistent virtual fd stdin through `FdTable::read_text`.
+
+Evidence and artifacts:
+
+- Probe script: `target/vredir-isolate.sh`; input: `target/vredir-input.txt`; output: `target/vredir-output.txt`. Before the fix Rubash produced `alpha/alpha`; after the fix it matched Bash with `alpha/beta`.
+- `cargo test --test executor_tests command_chaining::part_080 -- --nocapture`: 151 passed, 2 failed. The fixed `test_exec_dynamic_input_fd_copies_persistent_stdin_redirect` passes. Remaining failures are `test_exec_dynamic_input_fd_move_closes_source_and_reuses_slot` (control marker `\x1c` in moved value) and the pre-existing embedded output process-substitution cleanup case.
+- `BASH_RUNNER=D:/Git/bin/bash.exe D:/Git/bin/bash.exe scripts/run-bash-upstream-tests.sh run-vredir`: PASS 1/1, artifact table `target/bash-upstream-tests/results.tsv`, logs under `target/bash-upstream-tests/logs/`.
+- The same `run-redir` command was blocked before execution by the concurrent incomplete parser change: `src/parser/case_command.rs:302` references missing `strip_case_quote_markers`; no redir result was produced.
+
+Remaining fd risk: dynamic move still exposes a `\x1c` storage/control marker instead of the scalar value `alpha`; this needs a separate variable-storage/nameref boundary investigation.

@@ -589,10 +589,21 @@ impl Executor {
             &self.diagnostic_prefix(),
             &mut stderr,
         )?;
+        let has_job_control = self.job_table.jobs.values().any(|job| job.background);
         let status = match action {
+            // Bash reports the non-interactive job-control failure before
+            // validating fg/bg operands or options when no jobs exist.
+            crate::builtins::fg_bg::FgBgAction::Complete(_status) if !has_job_control => {
+                stderr.clear();
+                crate::builtins::fg_bg::write_no_job_control(
+                    builtin,
+                    &self.diagnostic_prefix(),
+                    &mut stderr,
+                )?
+            }
             crate::builtins::fg_bg::FgBgAction::Complete(status) => status,
             crate::builtins::fg_bg::FgBgAction::Jobs(jobs) => {
-                if !self.job_table.jobs.values().any(|job| job.background) {
+                if !has_job_control {
                     crate::builtins::fg_bg::write_no_job_control(
                         builtin,
                         &self.diagnostic_prefix(),
