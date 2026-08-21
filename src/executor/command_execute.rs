@@ -188,9 +188,9 @@ impl Executor {
             return Ok(());
         }
         let cmd = alias_expanded;
-        // Arithmetic expansion errors are fatal expansion errors in Bash. The
-        // failing command is not dispatched and the surrounding command list
-        // must stop, including when it is followed by `||` or `&&`.
+        // An arithmetic expansion fails the current command. Ordinary words
+        // continue the surrounding list without errexit; arithmetic commands
+        // and assignment contexts retain their own status handling above.
         if self.arithmetic_expansion_error.get() {
             self.arithmetic_expansion_error.set(false);
             let status = if self
@@ -206,7 +206,14 @@ impl Executor {
             let script_mode_nonfatal = self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
                 && self.subshell_depth.get() == 0
                 && (!self.errexit_enabled() || !self.errexit_is_active());
-            if self.arithmetic_nonfatal_error.replace(false) || script_mode_nonfatal {
+            let ordinary_word_error = cmd.assignments.is_empty()
+                && !cmd.words.is_empty()
+                && cmd.arithmetic_command.is_none()
+                && (!self.errexit_enabled() || !self.errexit_is_active());
+            if self.arithmetic_nonfatal_error.replace(false)
+                || script_mode_nonfatal
+                || ordinary_word_error
+            {
                 return Ok(());
             }
             return Err(ExecuteError::ExitCode(status));

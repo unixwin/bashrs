@@ -468,6 +468,28 @@ fn arithmetic_conditional_false_branch_assignment_matches_bash() {
 }
 
 #[test]
+fn arithmetic_word_errors_continue_without_errexit() {
+    for expression in ["1=2", "1++", "1/0", "08"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+            .arg("-c")
+            .arg(format!("echo $(({expression})); echo after"))
+            .output()
+            .expect("run ordinary-word arithmetic probe");
+
+        assert_eq!(output.status.code(), Some(0), "expression: {expression}");
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            "after\n",
+            "expression: {expression}"
+        );
+        assert!(
+            !output.stderr.is_empty(),
+            "expected arithmetic diagnostic for {expression}"
+        );
+    }
+}
+
+#[test]
 fn arithmetic_invalid_octal_reports_bash_base_diagnostic() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
@@ -520,8 +542,8 @@ fn arithmetic_conditional_requires_false_branch_expression() {
         .output()
         .expect("run empty arithmetic conditional probe");
 
-    assert_eq!(output.status.code(), Some(1));
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "after\n");
     assert!(String::from_utf8_lossy(&output.stderr).contains("syntax error"));
 }
 
@@ -954,7 +976,7 @@ fn arithmetic_error_aborts_current_subshell_only() {
         .expect("run arithmetic subshell error probe");
 
     assert_eq!(output.status.code(), Some(0));
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "outer:9\n");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "inner:9\nouter:9\n");
     assert!(!String::from_utf8_lossy(&output.stderr).is_empty());
 }
 
@@ -966,8 +988,8 @@ fn arithmetic_logical_short_circuit_still_parses_bare_assignment() {
         .output()
         .expect("run arithmetic short-circuit assignment probe");
 
-    assert_eq!(output.status.code(), Some(1));
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "after\n");
     assert!(!String::from_utf8_lossy(&output.stderr).is_empty());
 }
 

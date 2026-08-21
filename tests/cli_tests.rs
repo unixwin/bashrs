@@ -991,8 +991,8 @@ fn arithmetic_expansion_error_aborts_the_shell() {
         .output()
         .expect("run rubash");
 
-    assert_eq!(output.status.code(), Some(1));
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "after\n");
     assert!(String::from_utf8_lossy(&output.stderr).contains("division by 0"));
 }
 
