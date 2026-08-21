@@ -151,6 +151,11 @@ impl Executor {
             .strip_prefix('\x1b')
             .or_else(|| word.strip_prefix('\x1d'))
             .unwrap_or(word);
+        // Preserve Rubash's nested current-shell extension; its `${| ... }`
+        // marker disambiguates the legacy enclosing form from this Bash error.
+        if word.contains("${|") {
+            return None;
+        }
         if crate::builtins::set::shell_option_enabled(&self.env_vars, "nounset") {
             if let Some(name) = self.nounset_unbound_parameter(word) {
                 return Some((name, "unbound variable".to_string(), 127));
@@ -167,6 +172,18 @@ impl Executor {
                 ));
             };
             let inner = &after_start[..end];
+            // `${ command; }` is not Bash command substitution. Rubash also
+            // supports the distinct `${| command; }` current-shell form, so
+            // reject only the whitespace-led form as a bad substitution.
+            if inner.chars().next().is_some_and(char::is_whitespace)
+                && !inner.contains("${|")
+            {
+                return Some((
+                    format!("${{{inner}}}"),
+                    "bad substitution".to_string(),
+                    1,
+                ));
+            }
             if let Some((name, message, require_non_empty)) = parse_parameter_error_operator(inner)
             {
                 let value = self.parameter_error_value(name);

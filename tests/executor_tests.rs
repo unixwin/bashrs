@@ -85,6 +85,18 @@ mod simple_execution {
     }
 
     #[test]
+    fn test_whitespace_braced_substitution_is_bad_substitution() {
+        let tokens = tokenize("echo ${ printf x; }");
+        let ast = parse(&tokens);
+        let mut executor = Executor::new();
+
+        let result = executor.execute_ast(&ast);
+
+        assert!(matches!(result, Err(ExecuteError::ExitCode(1))));
+        assert_eq!(executor.last_exit_code(), 1);
+    }
+
+    #[test]
     fn test_echo_multiple_args() {
         let input = "echo hello world";
         let tokens = tokenize(input);
