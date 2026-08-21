@@ -2790,3 +2790,9 @@ Evidence and artifacts:
 - The same `run-redir` command was blocked before execution by the concurrent incomplete parser change: `src/parser/case_command.rs:302` references missing `strip_case_quote_markers`; no redir result was produced.
 
 Remaining fd risk: dynamic move still exposes a `\x1c` storage/control marker instead of the scalar value `alpha`; this needs a separate variable-storage/nameref boundary investigation.
+
+### Focused coproc rerun evidence
+
+After the parser change `581da9d2` was committed, a bounded `timeout 120s cargo test --test cli_tests coproc -- --nocapture` completed in 11.88s with 12/17 tests passing. The five failures are classified as three pre-existing `\x1c` control-marker assertions, one persistent-stderr completion status (`done=127`), and one sequential `cat -` coprocess timeout. Separate owner probes for nested command substitution, input/output process substitution, coprocess descriptors, and repeated/invalid `wait` matched GNU Bash. The raw 120KB heredoc and coprocess probe artifacts remain under `target/issue-suites/results/`.
+
+Post-parser rerun: `timeout 120s cargo test --test cli_tests coproc -- --nocapture` compiled and ran 17 tests in 11.21s, with 12 passed and 5 failed. The failures were three \x1c quoted-assignment marker leaks, persistent-stderr `done=127`, and sequential coproc timeout. GNU Bash returned `flop` rc 0 for the sequential probe; direct Rubash remained timeout rc 124. No residual rubash/bash/cargo processes remained. The marker leaks cross variable storage/expansion; the sequential timeout crosses internal cat/stdin streaming. No parser modification was made here.
