@@ -519,11 +519,19 @@ impl Executor {
             pipeline.push(next);
         }
 
-        if let Some(status) = self.evaluate_status_only_pipeline(&pipeline) {
-            self.exit_code = invert_exit_status(status);
+        // The parser stores the complete pipeline on the first inverted command.
+        // Execute that pipeline through the normal stage executor so output,
+        // PIPESTATUS, pipefail, and command failures retain their real semantics.
+        if let Some(pipeline_command) = &command.pipeline_command {
+            self.with_errexit_suppressed(|executor| {
+                executor.execute_pipeline_command(pipeline_command)
+            })?;
+            self.exit_code = invert_exit_status(self.exit_code);
             return Ok(Some(end + 1));
         }
 
+        // Keep the flattened fallback for parser forms that do not yet expose a
+        // PipelineCommand, but do not use it when the real pipeline is available.
         for command in pipeline {
             self.execute_command(command)?;
         }

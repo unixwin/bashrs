@@ -76,6 +76,25 @@ fn test_pipefail_status_preserves_pipeline_output() {
 }
 
 #[test]
+fn test_inverted_pipeline_preserves_output_and_stage_statuses() {
+    let output_path = "target/rubash-inverted-pipeline-real-status.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "set -o pipefail; ! printf 'payload\\n' | grep missing > {output_path}; printf 'rc=%s ps=%s\\n' \"$?\" \"${{PIPESTATUS[*]}}\" >> {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "rc=0 ps=0 1\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_inverted_pipeline_uses_pipefail_status() {
     let output_path = "target/rubash-pipefail-invert-output.txt";
     let _ = fs::remove_file(output_path);
