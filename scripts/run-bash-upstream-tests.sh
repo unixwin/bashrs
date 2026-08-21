@@ -426,11 +426,11 @@ EOF
   if [[ "$status" -eq 0 && ! -s "$unexpected_log" ]]; then
     PASS=$((PASS + 1))
     printf "%s\tPASS\t%s\t%s\t%s\n" "$runner" "$status" "$log" "$raw_runner_dir" >> "$RESULTS_TSV"
-    printf "PASS %s\n" "$runner"
+    printf "PASS %s (raw %s)\n" "$runner" "$raw_runner_dir"
   else
     FAIL=$((FAIL + 1))
     printf "%s\tFAIL\t%s\t%s\t%s\n" "$runner" "$status" "$log" "$raw_runner_dir" >> "$RESULTS_TSV"
-    printf "FAIL %s (exit %s, log %s)\n" "$runner" "$status" "$log"
+    printf "FAIL %s (exit %s, log %s, raw %s)\n" "$runner" "$status" "$log" "$raw_runner_dir"
   fi
 done
 
