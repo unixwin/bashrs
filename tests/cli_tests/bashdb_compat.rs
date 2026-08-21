@@ -692,7 +692,12 @@ fn bashdb_info_variables_filters_indexed_and_associative_arrays() {
         .stderr(Stdio::piped())
         .spawn()
         .expect("run rubash bashdb");
-    child.stdin.as_mut().unwrap().write_all(b"info variables -A\ninfo variables -a\nquit\n").unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"info variables -A\ninfo variables -a\nquit\n")
+        .unwrap();
     let output = child.wait_with_output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
@@ -718,7 +723,12 @@ fn bashdb_sourced_command_errors_name_sourced_file() {
         .stderr(Stdio::piped())
         .spawn()
         .expect("run rubash bashdb");
-    child.stdin.as_mut().unwrap().write_all(b"continue\nquit\n").unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"continue\nquit\n")
+        .unwrap();
     let output = child.wait_with_output().unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
     let _ = fs::remove_file(outer);
@@ -769,11 +779,18 @@ fn bashdb_continue_numeric_location_hits_function_source_line() {
         .stderr(Stdio::piped())
         .spawn()
         .expect("run rubash bashdb");
-    child.stdin.as_mut().unwrap().write_all(b"continue 4\nquit\n").unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"continue 4\nquit\n")
+        .unwrap();
     let output = child.wait_with_output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
-    assert!(stdout.contains("One-time breakpoint 1 set in file /d/repo/rubash/target/bashdb-probe-target.sh, line 4."));
+    assert!(stdout.contains(
+        "One-time breakpoint 1 set in file /d/repo/rubash/target/bashdb-probe-target.sh, line 4."
+    ));
     assert!(stdout.contains("(/d/repo/rubash/target/bashdb-probe-target.sh:4):"));
     assert!(!stdout.contains("D:/repo/rubash/D:/repo/rubash/"));
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");

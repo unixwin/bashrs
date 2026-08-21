@@ -4,7 +4,9 @@ use std::io::{self, Write};
 use super::attrs::DeclareOptions;
 use super::diagnostic::diagnostic_prefix;
 use super::marks::{exported_vars, marked_vars};
-use super::output::{print_declaration, print_plain_declaration, print_unset_declaration, DeclarationAttrs};
+use super::output::{
+    print_declaration, print_plain_declaration, print_unset_declaration, DeclarationAttrs,
+};
 use super::{
     ARRAY_VARS, ASSOC_VARS, DECLARED_UNSET_VARS, EXECUTION_FAILURE, INTEGER_VARS, LOWERCASE_VARS,
     NAMEREF_VARS, READONLY_VARS, UPPERCASE_VARS,

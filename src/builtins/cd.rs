@@ -9,8 +9,8 @@ mod paths;
 use crate::expand::tilde::tilde::home_value;
 use paths::{
     current_logical_pwd, filesystem_path_for_display, logical_destination,
-    logical_destination_display, set_shell_env, shell_display_path, shell_pwd_display_path, shell_var,
-    starts_with_dot_component,
+    logical_destination_display, set_shell_env, shell_display_path, shell_pwd_display_path,
+    shell_var, starts_with_dot_component,
 };
 use std::env;
 use std::io::{self, Write};

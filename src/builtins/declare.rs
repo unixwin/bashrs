@@ -345,7 +345,15 @@ where
         return Ok(attr_status);
     }
 
-    print::print_declare_names(&names, variables, options, plain, attr_status, stdout, stderr)
+    print::print_declare_names(
+        &names,
+        variables,
+        options,
+        plain,
+        attr_status,
+        stdout,
+        stderr,
+    )
 }
 
 fn print_declare_usage<W>(command_name: &str, stderr: &mut W) -> io::Result<()>

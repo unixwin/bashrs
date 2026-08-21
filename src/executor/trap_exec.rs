@@ -394,11 +394,14 @@ impl Executor {
         if let Some(redirect) = &cmd.redirect_out {
             let target = self.expand_word(&redirect.target);
             let mut file = self.create_redirect_output(&target, redirect.clobber)?;
-            return Ok(crate::builtins::exec::execute_with_io(
+            let child_stdout = Stdio::from(file.try_clone()?);
+            return Ok(crate::builtins::exec::execute_with_child_stdio(
                 &cmd.words[1..],
                 &self.env_vars,
                 &mut file,
                 &mut std::io::stderr().lock(),
+                child_stdout,
+                Stdio::inherit(),
             )?);
         }
 
@@ -408,22 +411,28 @@ impl Executor {
                 .create(true)
                 .append(true)
                 .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::exec::execute_with_io(
+            let child_stdout = Stdio::from(file.try_clone()?);
+            return Ok(crate::builtins::exec::execute_with_child_stdio(
                 &cmd.words[1..],
                 &self.env_vars,
                 &mut file,
                 &mut std::io::stderr().lock(),
+                child_stdout,
+                Stdio::inherit(),
             )?);
         }
 
         if let Some(redirect) = &cmd.redirect_err {
             let target = self.expand_word(&redirect.target);
             let mut file = self.create_redirect_output(&target, redirect.clobber)?;
-            return Ok(crate::builtins::exec::execute_with_io(
+            let child_stderr = Stdio::from(file.try_clone()?);
+            return Ok(crate::builtins::exec::execute_with_child_stdio(
                 &cmd.words[1..],
                 &self.env_vars,
                 &mut std::io::stdout().lock(),
                 &mut file,
+                Stdio::inherit(),
+                child_stderr,
             )?);
         }
 
@@ -433,11 +442,14 @@ impl Executor {
                 .create(true)
                 .append(true)
                 .open(shell_path_to_windows(&target, &self.env_vars))?;
-            return Ok(crate::builtins::exec::execute_with_io(
+            let child_stderr = Stdio::from(file.try_clone()?);
+            return Ok(crate::builtins::exec::execute_with_child_stdio(
                 &cmd.words[1..],
                 &self.env_vars,
                 &mut std::io::stdout().lock(),
                 &mut file,
+                Stdio::inherit(),
+                child_stderr,
             )?);
         }
 

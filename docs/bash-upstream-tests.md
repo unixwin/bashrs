@@ -116,9 +116,14 @@ The runner writes:
 - `target/bash-upstream-tests/results.tsv`
 - `target/bash-upstream-tests/logs/*.log`
 
-By default the upstream progress run is non-blocking and exits successfully even
-when upstream tests fail. Set `BASH_UPSTREAM_STRICT=1` to make any upstream
-failure fail the command.
+By default ordinary upstream compatibility differences are non-blocking and the
+progress run exits successfully even when tests fail. Set
+`BASH_UPSTREAM_STRICT=1` to make any upstream failure fail the command. Every
+runner has a 60-second timeout by default; override it with
+`BASH_UPSTREAM_TIMEOUT`. A timeout always fails the command, even when strict
+mode is disabled. The runner validates `BASH_UPSTREAM_TIMEOUT_BIN` with a
+short probe and rejects simplified timeout stubs unless they return GNU
+timeout status `124`.
 
 ## Windows Troubleshooting
 
@@ -154,7 +159,8 @@ Current local baseline:
 |-------------|-------|--------|--------|-----------|
 | Windows + Git Bash full upstream run | 87 | 87 | 0 | 100.00% |
 
-The runner still stays non-strict in CI so it can serve as a progress signal,
-but the current local baseline passes the full upstream runner set that ships in
-the submodule. When Bash adds new `run-*` scripts or the submodule advances,
-re-run the suite and update this table.
+The runner stays non-strict for ordinary compatibility differences in CI so it
+can serve as a progress signal, but timeout failures and invalid timeout
+implementations are always blocking. The current local baseline passes the full
+upstream runner set that ships in the submodule. When Bash adds new `run-*`
+scripts or the submodule advances, re-run the suite and update this table.

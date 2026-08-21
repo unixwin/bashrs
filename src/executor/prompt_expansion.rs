@@ -264,6 +264,7 @@ impl Executor {
             ('f', "noglob"),
             ('h', "hashall"),
             ('k', "keyword"),
+            ('n', "noexec"),
             ('p', "privileged"),
             ('t', "onecmd"),
             ('u', "nounset"),

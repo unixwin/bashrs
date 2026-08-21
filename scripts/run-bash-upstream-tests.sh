@@ -8,6 +8,25 @@ BASH_UPSTREAM_DIR="$ROOT_DIR/third_party/bash"
 BASH_TEST_DIR="$BASH_UPSTREAM_DIR/tests"
 OUT_DIR="$ROOT_DIR/target/bash-upstream-tests"
 STRICT="${BASH_UPSTREAM_STRICT:-0}"
+TIMEOUT_BIN="${BASH_UPSTREAM_TIMEOUT_BIN:-timeout}"
+TIMEOUT_SECONDS="${BASH_UPSTREAM_TIMEOUT:-60}"
+
+validate_timeout() {
+  command -v "$TIMEOUT_BIN" >/dev/null 2>&1 || {
+    echo "Bash upstream runner requires a GNU timeout binary: $TIMEOUT_BIN" >&2
+    exit 125
+  }
+  set +e
+  "$TIMEOUT_BIN" 1 -- sh -c 'sleep 2' >/dev/null 2>&1
+  local timeout_rc=$?
+  set -e
+  [[ "$timeout_rc" -eq 124 ]] || {
+    echo "Bash upstream runner rejected timeout implementation $TIMEOUT_BIN (expected rc 124, got $timeout_rc)" >&2
+    exit 125
+  }
+}
+
+validate_timeout
 
 real_path() {
   local resolved
@@ -140,6 +159,7 @@ fi
 TOTAL=0
 PASS=0
 FAIL=0
+TIMEOUT_FAIL=0
 
 RESULTS_TSV="$OUT_DIR/results.tsv"
 SUMMARY_MD="$OUT_DIR/summary.md"
@@ -283,10 +303,13 @@ EOF
       BASH_TSTOUT="$tmpdir/bashtst.out" \
       TMPDIR="$tmpdir" \
       PATH="$guard_bin:$BASH_TEST_DIR:$PATH" \
-      sh "./$runner"
+      "$TIMEOUT_BIN" "$TIMEOUT_SECONDS" sh "./$runner"
   ) >"$log" 2>&1
   status=$?
   set -e
+  if [[ "$status" -eq 124 ]]; then
+    TIMEOUT_FAIL=$((TIMEOUT_FAIL + 1))
+  fi
 
   unexpected_log="$OUT_DIR/logs/$runner.unexpected.log"
   grep -v -x \
@@ -389,6 +412,7 @@ done
   echo "- Total: $TOTAL"
   echo "- Passed: $PASS"
   echo "- Failed: $FAIL"
+  echo "- Timed out: $TIMEOUT_FAIL"
   if [[ "$TOTAL" -gt 0 ]]; then
     awk -v pass="$PASS" -v total="$TOTAL" 'BEGIN { printf "- Pass rate: %.2f%%\n", (pass * 100.0) / total }'
   else
@@ -403,6 +427,10 @@ done
 } > "$SUMMARY_MD"
 
 cat "$SUMMARY_MD"
+
+if [[ "$TIMEOUT_FAIL" -gt 0 ]]; then
+  exit 1
+fi
 
 if [[ "$STRICT" == "1" && "$FAIL" -gt 0 ]]; then
   exit 1

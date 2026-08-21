@@ -2137,6 +2137,62 @@ fn c_command_exec_numeric_fd_copies_default_stdin_for_read_u() {
 }
 
 #[test]
+fn c_command_exec_streams_child_stdout_before_child_exit() {
+    use std::io::BufRead;
+
+    let rubash = shell_test_path(Path::new(env!("CARGO_BIN_EXE_rubash")));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(format!(
+            r#"exec {rubash} -c "printf 'exec-ready\n'; sleep 2""#
+        ))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn rubash exec streaming probe");
+
+    let stdout = child.stdout.take().expect("capture rubash stdout");
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut reader = std::io::BufReader::new(stdout);
+        let mut line = String::new();
+        let result = reader.read_line(&mut line).map(|_| line);
+        let _ = tx.send(result);
+    });
+
+    let line = match rx.recv_timeout(Duration::from_secs(1)) {
+        Ok(Ok(line)) => line,
+        Ok(Err(error)) => panic!("failed to read exec child stdout: {error}"),
+        Err(error) => {
+            let _ = wait_for_child_exit(&mut child, Duration::from_secs(4));
+            panic!("exec child stdout was buffered until exit: {error}");
+        }
+    };
+
+    assert_eq!(line, "exec-ready\n");
+    assert!(
+        child
+            .try_wait()
+            .expect("poll rubash exec streaming probe")
+            .is_none(),
+        "exec child exited before the streaming assertion"
+    );
+    assert!(
+        wait_for_child_exit(&mut child, Duration::from_secs(4)),
+        "exec streaming probe did not exit"
+    );
+    let output = child
+        .wait_with_output()
+        .expect("collect rubash exec streaming probe");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn c_command_read_dev_null_reports_eof() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
@@ -2790,6 +2846,52 @@ fn cli_shell_flags_apply_before_command_string() {
     assert!(String::from_utf8_lossy(&output.stdout)
         .trim_end()
         .contains('u'));
+}
+
+#[test]
+fn cli_noexec_flag_parses_without_executing_command_string() {
+    let output_path = Path::new("target").join("rubash-cli-noexec-should-not-exist.txt");
+    let _ = fs::remove_file(&output_path);
+    let script = format!("printf should-not-run > {}", shell_test_path(&output_path));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-n")
+        .arg("-c")
+        .arg(script)
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(!output_path.exists());
+}
+
+#[test]
+fn cli_noexec_flag_parses_script_file_without_executing() {
+    let script_path = Path::new("target").join("rubash-cli-noexec-script.sh");
+    let output_path = Path::new("target").join("rubash-cli-noexec-script-should-not-exist.txt");
+    let _ = fs::remove_file(&output_path);
+    fs::write(
+        &script_path,
+        format!(
+            "printf should-not-run > {}\n",
+            shell_test_path(&output_path)
+        ),
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-n")
+        .arg(&script_path)
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(!output_path.exists());
+    let _ = fs::remove_file(script_path);
 }
 
 #[test]

@@ -65,7 +65,7 @@ impl Executor {
         let source = self.background_command_source(&background_command.command);
         let display_source = bash_command_source_text(&background_command.command);
         let mut child = Command::new(&exe);
-        child.arg("--").arg("-c").arg(&source);
+        child.arg("-c").arg(&source);
         child.stdin(Stdio::null());
         for (key, value) in &self.env_vars {
             if !key.starts_with("__RUBASH_") {
@@ -402,11 +402,7 @@ impl Executor {
         {
             stdio_redirect_cmd.redirect_out = None;
         }
-        if stdio_redirect_cmd
-            .append
-            .as_ref()
-            .is_some_and(is_numbered)
-        {
+        if stdio_redirect_cmd.append.as_ref().is_some_and(is_numbered) {
             stdio_redirect_cmd.append = None;
         }
         if stdio_redirect_cmd
@@ -437,8 +433,7 @@ impl Executor {
                 command.redirects.splice(0..0, numbered_redirects.clone());
             }
         }
-        let result = self
-            .with_command_input_redirects(cmd, |executor| executor.execute_ast(&body));
+        let result = self.with_command_input_redirects(cmd, |executor| executor.execute_ast(&body));
         // Bash runs a subshell with errexit active; a failing command exits
         // the subshell with that status but the parent script continues.
         // Catch ExitCode errors at the subshell boundary.
@@ -637,12 +632,11 @@ impl Executor {
             // Compound command body: coproc [NAME] { body; } or ( body )
             let body_text = bash_command_sequence_text(body);
             let mut child = Command::new(&exe);
-            child.arg("--").arg("-c").arg(&body_text);
+            child.arg("-c").arg(&body_text);
             child
         } else if !coproc_cmd.words.is_empty() {
             // Simple command: coproc [NAME] command [args...]
             let mut child = Command::new(&exe);
-            child.arg("--");
             if coproc_cmd
                 .words
                 .first()

@@ -49,7 +49,7 @@ jobs:
     name: Bash upstream test progress
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    continue-on-error: true
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4

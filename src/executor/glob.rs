@@ -434,8 +434,23 @@ mod tests {
     fn ctlesc_filename_is_not_consumed_by_pathname_wildcards() {
         let marker_name = "uni\u{81}code";
 
-        assert!(pathname_pattern_matches(marker_name, marker_name, false, false));
-        assert!(!pathname_pattern_matches("uni?code", marker_name, false, false));
-        assert!(!pathname_pattern_matches("uni*code", marker_name, false, false));
+        assert!(pathname_pattern_matches(
+            marker_name,
+            marker_name,
+            false,
+            false
+        ));
+        assert!(!pathname_pattern_matches(
+            "uni?code",
+            marker_name,
+            false,
+            false
+        ));
+        assert!(!pathname_pattern_matches(
+            "uni*code",
+            marker_name,
+            false,
+            false
+        ));
     }
 }

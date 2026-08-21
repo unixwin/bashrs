@@ -228,6 +228,7 @@ fn cli_shell_flag_name(flag: char) -> Option<&'static str> {
         'C' => Some("noclobber"),
         'f' => Some("noglob"),
         'h' => Some("hashall"),
+        'n' => Some("noexec"),
         'B' => Some("braceexpand"),
         _ => None,
     }

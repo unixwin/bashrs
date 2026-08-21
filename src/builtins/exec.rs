@@ -15,7 +15,14 @@ const EXPORTED_VARS: &str = "__RUBASH_EXPORTED_VARS";
 pub fn execute(args: &[String], env_vars: &HashMap<String, String>) -> io::Result<i32> {
     let mut stdout = io::stdout().lock();
     let mut stderr = io::stderr().lock();
-    execute_with_io(args, env_vars, &mut stdout, &mut stderr)
+    execute_with_child_stdio(
+        args,
+        env_vars,
+        &mut stdout,
+        &mut stderr,
+        Stdio::inherit(),
+        Stdio::inherit(),
+    )
 }
 
 pub(crate) fn replaces_shell(args: &[String]) -> bool {
@@ -27,6 +34,41 @@ pub(crate) fn execute_with_io<W, E>(
     env_vars: &HashMap<String, String>,
     stdout: &mut W,
     stderr: &mut E,
+) -> io::Result<i32>
+where
+    W: Write,
+    E: Write,
+{
+    execute_impl(args, env_vars, stdout, stderr, None)
+}
+
+pub(crate) fn execute_with_child_stdio<W, E>(
+    args: &[String],
+    env_vars: &HashMap<String, String>,
+    stdout: &mut W,
+    stderr: &mut E,
+    child_stdout: Stdio,
+    child_stderr: Stdio,
+) -> io::Result<i32>
+where
+    W: Write,
+    E: Write,
+{
+    execute_impl(
+        args,
+        env_vars,
+        stdout,
+        stderr,
+        Some((child_stdout, child_stderr)),
+    )
+}
+
+fn execute_impl<W, E>(
+    args: &[String],
+    env_vars: &HashMap<String, String>,
+    stdout: &mut W,
+    stderr: &mut E,
+    child_stdio: Option<(Stdio, Stdio)>,
 ) -> io::Result<i32>
 where
     W: Write,
@@ -65,7 +107,18 @@ where
             writeln!(stderr, "rubash: exec: {command}: not found")?;
             return Ok(EX_NOTFOUND);
         };
-        return run_external_exec(&program, operands, env_vars, clean_env, stdout, stderr);
+        return match child_stdio {
+            Some((child_stdout, child_stderr)) => run_external_exec_with_stdio(
+                &program,
+                operands,
+                env_vars,
+                clean_env,
+                child_stdout,
+                child_stderr,
+                stderr,
+            ),
+            None => run_external_exec(&program, operands, env_vars, clean_env, stdout, stderr),
+        };
     }
 
     Ok(EXECUTION_SUCCESS)
@@ -154,18 +207,7 @@ where
     W: Write,
     E: Write,
 {
-    let (mut process, _) = crate::executor::path::external_command_for_named_program(
-        program,
-        program.file_stem().and_then(|stem| stem.to_str()),
-        operands,
-        env_vars,
-    );
-
-    process.env_clear();
-    if !clean_env {
-        apply_exported_environment(&mut process, env_vars);
-        crate::executor::path::apply_required_windows_child_environment(&mut process, env_vars);
-    }
+    let mut process = external_exec_process(program, operands, env_vars, clean_env);
     process.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     match process.output() {
@@ -179,6 +221,51 @@ where
             Ok(126)
         }
     }
+}
+
+fn run_external_exec_with_stdio<E>(
+    program: &std::path::Path,
+    operands: &[String],
+    env_vars: &HashMap<String, String>,
+    clean_env: bool,
+    child_stdout: Stdio,
+    child_stderr: Stdio,
+    stderr: &mut E,
+) -> io::Result<i32>
+where
+    E: Write,
+{
+    let mut process = external_exec_process(program, operands, env_vars, clean_env);
+    process.stdout(child_stdout).stderr(child_stderr);
+
+    match process.status() {
+        Ok(status) => Ok(status.code().unwrap_or(1)),
+        Err(error) => {
+            writeln!(stderr, "rubash: exec: {}: {}", program.display(), error)?;
+            Ok(126)
+        }
+    }
+}
+
+fn external_exec_process(
+    program: &std::path::Path,
+    operands: &[String],
+    env_vars: &HashMap<String, String>,
+    clean_env: bool,
+) -> Command {
+    let (mut process, _) = crate::executor::path::external_command_for_named_program(
+        program,
+        program.file_stem().and_then(|stem| stem.to_str()),
+        operands,
+        env_vars,
+    );
+
+    process.env_clear();
+    if !clean_env {
+        apply_exported_environment(&mut process, env_vars);
+        crate::executor::path::apply_required_windows_child_environment(&mut process, env_vars);
+    }
+    process
 }
 
 fn apply_exported_environment(process: &mut Command, env_vars: &HashMap<String, String>) {
