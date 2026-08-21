@@ -107,7 +107,7 @@ pub(super) fn parse_case_command(tokens: &[Token], start: usize) -> Option<(Comm
                             } else {
                                 &tokens[i].raw
                             };
-                        current_pattern.push_str(pattern_text);
+                        current_pattern.push_str(&strip_case_quote_markers(pattern_text));
                         current_raw_pattern.push_str(&tokens[i].raw);
                     }
                 }
@@ -296,13 +296,20 @@ fn collect_case_word(tokens: &[Token], index: usize) -> Option<(String, String, 
         } else {
             word.clone()
         };
-        return Some((word, raw, next_i));
+        // The lexer protects quoted glob operators with an internal marker so
+        // matching can distinguish them from active pattern syntax. That
+        // marker is not part of the parser's public structured text.
+        return Some((strip_case_quote_markers(&word), raw, next_i));
     }
 
     tokens
         .get(index)
         .filter(|token| token.kind == TokenKind::Keyword)
         .map(|token| (token.value.clone(), token.raw.clone(), index + 1))
+}
+
+fn strip_case_quote_markers(value: &str) -> String {
+    value.replace('\x11', "")
 }
 
 fn case_pattern_nodes(
