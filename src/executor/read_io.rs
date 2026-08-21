@@ -152,6 +152,17 @@ impl Executor {
             }
         }
 
+        // Persistent fd 0 owns the shared cursor. The legacy mirror can be
+        // present for external setup, but must not reset a shell read to offset 0.
+        if matches!(
+            self.fd_table.read_endpoint(0),
+            Some(FdReadEndpoint::Text(_) | FdReadEndpoint::ProcessSubstitution(_))
+        ) {
+            if let Some(line) = self.read_virtual_fd_stdin(0, delimiter, char_limit, exact_char_limit) {
+                return Some(line);
+            }
+        }
+
         // If FUNCTION_STDIN is set (from heredoc or redirect), only read from it.
         // Do NOT fall through to process stdin - that would block on the terminal.
         if self.env_vars.contains_key(FUNCTION_STDIN) {
