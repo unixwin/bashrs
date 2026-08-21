@@ -551,6 +551,22 @@ fn arithmetic_assignment_error_continues_without_errexit() {
 }
 
 #[test]
+fn associative_arithmetic_subscript_preserves_escaped_command_substitution() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("declare -A a; key=\"x],b[\\$(echo uname >&2)\"; (( a[$key]++ )); declare -p a")
+        .output()
+        .expect("run associative arithmetic subscript probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "declare -A a=([\"x],b[$(echo uname >&2)\"]=\"1\" )\n"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn arithmetic_conditional_requires_false_branch_expression() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

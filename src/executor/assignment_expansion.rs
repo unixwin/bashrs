@@ -14,6 +14,10 @@ impl Executor {
         let value = value
             .strip_prefix(COMPOUND_ASSIGNMENT_MARKER)
             .unwrap_or(value);
+        if value.contains("\\$(") {
+            let literal = if quoted { strip_matching_quotes(value) } else { value };
+            return unescape_remaining_shell_escapes(literal);
+        }
         if quoted && value.contains(":$((") {
             return self.expand_quoted_prompt_arithmetic_assignment(value);
         }

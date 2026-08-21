@@ -10,11 +10,15 @@ use std::cell::Cell;
 use std::collections::HashMap;
 
 use super::Executor;
+use crate::executor::{is_marked_var, ASSOC_VARS};
 
 impl Executor {
     pub(crate) fn eval_arithmetic_command_value(&mut self, expression: &str) -> Option<i128> {
-        let expression =
-            normalize_arithmetic_quotes(&self.expand_arithmetic_special_parameters(expression));
+        let expression = if self.has_associative_parameter_subscript(expression) {
+            normalize_arithmetic_quotes(expression)
+        } else {
+            normalize_arithmetic_quotes(&self.expand_arithmetic_special_parameters(expression))
+        };
         if crate::builtins::set::shell_option_enabled(&self.env_vars, "nounset") {
             if let Some(name) = arithmetic_unbound_variable(&expression, &self.env_vars) {
                 self.env_vars
@@ -85,6 +89,32 @@ impl Executor {
         if !self.arithmetic_expansion_error.replace(true) {
             eprintln!("{}{}: readonly variable", self.diagnostic_prefix(), name);
         }
+    }
+
+    fn has_associative_parameter_subscript(&self, expression: &str) -> bool {
+        let bytes = expression.as_bytes();
+        let mut index = 0;
+        while index < bytes.len() {
+            if !(bytes[index].is_ascii_alphabetic() || bytes[index] == 95) {
+                index += 1;
+                continue;
+            }
+            let start = index;
+            index += 1;
+            while index < bytes.len()
+                && (bytes[index].is_ascii_alphanumeric() || bytes[index] == 95)
+            {
+                index += 1;
+            }
+            if index < bytes.len()
+                && bytes[index] == 91
+                && is_marked_var(&self.env_vars, ASSOC_VARS, &expression[start..index])
+                && expression[index..].contains("[$")
+            {
+                return true;
+            }
+        }
+        false
     }
 
     pub(super) fn expand_arithmetic_special_parameters(&self, expression: &str) -> String {
