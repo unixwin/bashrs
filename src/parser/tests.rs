@@ -10,6 +10,26 @@ fn test_parse_simple() {
 }
 
 #[test]
+fn test_extglob_enabled_after_parse_is_rejected() {
+    let ast = parse(&tokenize("shopt -s extglob; echo @(x)"));
+
+    assert_eq!(ast.commands.len(), 2);
+    assert_eq!(
+        ast.commands[1].assignments.get("__RUBASH_PARSE_ERROR__").map(String::as_str),
+        Some("unexpected token `('")
+    );
+}
+
+#[test]
+fn test_extglob_on_next_input_line_remains_valid() {
+    let ast = parse(&tokenize("shopt -s extglob\necho @(x)"));
+
+    assert!(ast.commands.iter().all(|command| !command
+        .assignments
+        .contains_key("__RUBASH_PARSE_ERROR__")));
+}
+
+#[test]
 fn test_parse_pipeline() {
     let tokens = tokenize("ls | grep foo");
     let ast = parse(&tokens);

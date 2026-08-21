@@ -42,7 +42,60 @@ pub fn parse(tokens: &[Token]) -> Ast {
     state.ast.commands = fold_inverted_commands(state.ast.commands);
     state.ast.commands = fold_and_or_list_commands(state.ast.commands);
     state.ast.commands = fold_background_commands(state.ast.commands);
+    mark_parse_time_extglob_errors(&mut state.ast, tokens);
     state.ast
+}
+
+/// Extglob is enabled while Bash parses a command unit, not after the unit
+/// has already been read.  Therefore `shopt -s extglob; echo @(x)` is a
+/// syntax error even though a later input line can use the pattern.
+fn mark_parse_time_extglob_errors(ast: &mut Ast, tokens: &[Token]) {
+    let mut saw_shopt = false;
+    let mut saw_enable = false;
+    let mut extglob_enabled_in_unit = false;
+
+    for token in tokens {
+        if token.kind == TokenKind::Semicolon && !token.line_break {
+            if saw_shopt && saw_enable {
+                extglob_enabled_in_unit = true;
+            }
+            saw_shopt = false;
+            saw_enable = false;
+            continue;
+        }
+        if token.value == "shopt" {
+            saw_shopt = true;
+            continue;
+        }
+        if saw_shopt && token.value == "-s" {
+            saw_enable = true;
+            continue;
+        }
+        if saw_enable && token.value == "extglob" {
+            continue;
+        }
+        if extglob_enabled_in_unit && is_unquoted_extglob_word(token) {
+            for command in &mut ast.commands {
+                if command.words.iter().any(|word| word == &token.value) {
+                    command.assignments.insert(
+                        "__RUBASH_PARSE_ERROR__".to_string(),
+                        "unexpected token `('".to_string(),
+                    );
+                    break;
+                }
+            }
+        }
+        if token.kind != TokenKind::Semicolon {
+            saw_shopt = false;
+            saw_enable = false;
+        }
+    }
+}
+
+fn is_unquoted_extglob_word(token: &Token) -> bool {
+    token.raw == token.value
+        && token.value.chars().any(|operator| matches!(operator, '@' | '!' | '+' | '?' | '*'))
+        && token.value.contains("(")
 }
 
 fn fold_inverted_commands(commands: Vec<CommandNode>) -> Vec<CommandNode> {
