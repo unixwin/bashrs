@@ -138,13 +138,18 @@ impl Executor {
             ));
         }
 
-        if let Some(line) = self.stdin_string_for_command(cmd) {
-            return Some(trim_read_input(
-                line,
-                delimiter,
-                char_limit,
-                exact_char_limit,
-            ));
+        // Here-strings are command-local input. Persistent virtual fds must
+        // bypass `stdin_string_for_command`, whose legacy remaining-text view
+        // does not advance the shared fd cursor.
+        if cmd.here_string.is_some() {
+            if let Some(line) = self.stdin_string_for_command(cmd) {
+                return Some(trim_read_input(
+                    line,
+                    delimiter,
+                    char_limit,
+                    exact_char_limit,
+                ));
+            }
         }
 
         // If FUNCTION_STDIN is set (from heredoc or redirect), only read from it.
