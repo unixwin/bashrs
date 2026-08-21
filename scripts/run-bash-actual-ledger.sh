@@ -45,8 +45,12 @@ done
 total=0
 pass=0
 diff_count=0
+first_row=yes
 while IFS=$'\t' read -r name status bash_rc rubash_rc; do
-  [[ $name == test ]] && continue
+  if [[ $first_row == yes ]]; then
+    first_row=no
+    continue
+  fi
   total=$(expr "$total" + 1)
   case $status in
     PASS) pass=$(expr "$pass" + 1) ;;
