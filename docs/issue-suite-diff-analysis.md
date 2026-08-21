@@ -528,7 +528,7 @@ The current compatibility picture comes from these sources:
 | Rust kill regressions | Windows kill and shell PID handling | pass after `47924f4` | focused `cli_tests` / `executor_tests` |
 | Self difftest cases | Hand-authored Bash vs rubash probes | previously 26-case baseline | `tests/difftest/` |
 | Bash upstream `.right` runner | GNU Bash `run-*` against checked-in `.right` expectations | 86/87 pass; `run-minimal` has exit-0 log noise | `target/bash-upstream-tests/results.tsv` |
-| Bash actual-output | GNU Bash `.tests` bodies, Bash 5.2 actual output vs rubash | 83 files: 15 PASS / 68 DIFF | `target/issue-suites/results/bash-actual/results.tsv` |
+| Bash actual-output | GNU Bash `.tests` bodies, GNU Bash vs Rubash at `b5e3f7b3` with LF-normalized copied fixtures | 83 files: 13 PASS / 70 raw DIFF | `target/issue-suites/results/bash-ledger-refresh-b5e3f7b3/results.tsv` |
 | Oil spec | Broad POSIX/Bash/YSH shell behavior corpus | 222 spec files processed; 12 clean, 210 with diffs/failures | `target/issue-suites/results/oils-spec.status` |
 | mksh `check.t` | Large shell semantic corpus, Bash-compatible subset used as signal | passed 162; failed 417, including 5 ignored | `target/issue-suites/results/mksh-check-timeout.log` |
 | Busybox `ash_test` | POSIX/ash shell behavior, strong heredoc/redir/signal signal | official runner completed; 5 failing scripts in latest run | `target/issue-suites/results/busybox-run-all.log` |
@@ -2813,5 +2813,45 @@ Remaining fd risk: dynamic move still exposes a `\x1c` storage/control marker in
 ### Focused coproc rerun evidence
 
 After the parser change `581da9d2` was committed, a bounded `timeout 120s cargo test --test cli_tests coproc -- --nocapture` completed in 11.88s with 12/17 tests passing. The five failures are classified as three pre-existing `\x1c` control-marker assertions, one persistent-stderr completion status (`done=127`), and one sequential `cat -` coprocess timeout. Separate owner probes for nested command substitution, input/output process substitution, coprocess descriptors, and repeated/invalid `wait` matched GNU Bash. The raw 120KB heredoc and coprocess probe artifacts remain under `target/issue-suites/results/`.
+
+## 2026-08-21 Evidence Refresh Status
+
+The `12/17`, `5/17`, and `151/153` figures above are historical pre-final-fix snapshots.
+Current bridge-free evidence is recorded in
+`target/issue-suites/results/coproc-current-20260821/`: Bash and Rubash both
+completed the coproc body with status 0 and empty stderr; `flop`, `REFLECT
+status 143`, and closed-fd diagnostics matched. Native versus virtual fd numbers,
+missing `xcase`/`/etc/passwd`, and localized Windows diagnostics are host or
+representation differences.
+
+`target/issue-suites/results/readonly-20260821-vredir/` records matching
+`vredir5`/`vredir7` output and a `vredir8` difference limited to unavailable
+`/dev/tty` host diagnostics.
+
+An isolated 83-file actual-output ledger was produced at the current
+`b5e3f7b3` baseline under
+`target/issue-suites/results/bash-ledger-refresh-b5e3f7b3/`. Its complete
+`results.tsv` contains `83` rows: `13 PASS / 70 raw DIFF`. The runner's detached
+cleanup exited nonzero before writing `summary.txt`, so this is a valid per-test
+raw ledger but not a clean runner completion. Status-pair counts are preserved
+in the artifact and include host/fixture and timeout cases; `70` is not `70`
+independent Rubash root causes. The old `83/68` count is now historical.
+
+The tracked runner `scripts/run-bash-actual-ledger.sh` now supports a unique
+output directory, GNU Bash/Rubash selection, CRLF-to-LF normalization, engine
+wrappers, per-test timeout, and `BASH_LEDGER_TEST_FILTER` smoke mode. A two-file
+smoke (`arith,coproc`) completed normally with `TOTAL=2 PASS=0 DIFF=2`; its raw
+output is under `target/issue-suites/results/bash-ledger-smoke2-b5e3f7b3/`.
+The complete ledger index and status pairs are tracked under
+`docs/evidence/bash-ledger-b5e3f7b3-diff-index.tsv` and
+`docs/evidence/bash-ledger-b5e3f7b3-status-pairs.tsv`.
+
+A bounded four-file refresh at `b5e3f7b3` is archived under
+`target/issue-suites/results/bash-refresh-manual/`. `arith.tests` completed with
+Bash/Rubash both at rc 2 and no output diff. The `redir` and `coproc` entries
+used a Winuxsh Bash wrapper rather than the GNU Bash control executable and
+therefore emitted `winuxsh: unknown argument '--'`; `procsub.tests` also lacked
+`test-glue-functions`. These are runner/fixture limitations, not new semantic
+DIFF counts.
 
 Post-parser rerun: `timeout 120s cargo test --test cli_tests coproc -- --nocapture` compiled and ran 17 tests in 11.21s, with 12 passed and 5 failed. The failures were three \x1c quoted-assignment marker leaks, persistent-stderr `done=127`, and sequential coproc timeout. GNU Bash returned `flop` rc 0 for the sequential probe; direct Rubash remained timeout rc 124. No residual rubash/bash/cargo processes remained. The marker leaks cross variable storage/expansion; the sequential timeout crosses internal cat/stdin streaming. No parser modification was made here.

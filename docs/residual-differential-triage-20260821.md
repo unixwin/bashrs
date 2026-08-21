@@ -1,12 +1,47 @@
 # Residual Differential Triage
 
 > Date: 2026-08-21
-> Base: master f8e645e1
-> Scope: bounded residual review for coproc, process substitution, part_080, and run-minimal.
+> Historical base: master f8e645e1
+> Scope: historical bounded residual review for coproc, process substitution, part_080, and run-minimal.
 
-This is an interpretation ledger. Raw command output remains under
-`target/issue-suites/results/`; no expected output or core semantic owner was
-changed during this review.
+This file preserves the 2026-08-21 interpretation ledger. Its `151/153`, `12/17`,
+and `5/17` figures are pre-final-fix snapshots and must not be treated as the
+current score. Raw command output remains under `target/issue-suites/results/`;
+no expected output or core semantic owner was changed by that review.
+
+## Current Evidence Superseding This Snapshot
+
+The later focused evidence was collected at `a60a3faf` and remains valid on the
+subsequent `b5e3f7b3` baseline unless a newer artifact says otherwise:
+
+- `target/issue-suites/results/coproc-current-20260821/`: Bash and Rubash both
+  completed the bridge-free coproc body with status 0 and empty stderr; `flop`,
+  `REFLECT status 143`, and closed-fd diagnostics matched. Native versus virtual
+  fd numbers, missing `xcase`/`/etc/passwd`, and localized Windows diagnostics
+  are host or representation differences.
+- `target/issue-suites/results/readonly-20260821-vredir/`: `vredir5` and `vredir7`
+  matched Bash; `vredir8` differed only in the unavailable `/dev/tty` host
+  diagnostic while fd recovery behavior matched.
+- The old official `83/68` ledger is historical. An isolated raw ledger at
+  `b5e3f7b3` is now available under
+  `target/issue-suites/results/bash-ledger-refresh-b5e3f7b3/`: `83` rows,
+  `13 PASS / 70 raw DIFF`. Its `results.tsv` is complete, but detached cleanup
+  exited nonzero before `summary.txt` was written. The `70` rows require
+  status-pair and fixture classification and are not 70 independent semantic
+  defects.
+
+The historical rows below remain useful for root-cause history, but any row marked
+open must be revalidated against a dated artifact on the current commit before a
+new Rust change is made.
+
+A four-file Bash refresh at `b5e3f7b3` is recorded in
+`target/issue-suites/results/bash-refresh-manual/`. Only `arith.tests` produced a
+usable equal-status/equal-output result (`2/2`); `redir` and `coproc` used a
+Winuxsh wrapper instead of GNU Bash, and `procsub` lacked `test-glue-functions`,
+so those three entries are runner/fixture blocked. A Ksh representative probe
+created `target/issue-suites/results/ksh-refresh-manual/manifest.txt` and its
+input script but produced no status/stdout/stderr artifact; it is likewise a
+runner-blocked attempt, not a Ksh semantic DIFF.
 
 ## Classification Summary
 
