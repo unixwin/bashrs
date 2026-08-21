@@ -1321,6 +1321,22 @@ fn test_read_here_string_scalar_expansion_has_no_assignment_marker() {
 }
 
 #[test]
+fn test_unquoted_array_field_split_preserves_each_element() {
+    let output_path = "target/rubash-array-field-split-marker-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "IFS=,; arr=(alpha beta); printf '<%s>\\n' ${{arr[@]}} > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    assert!(executor.execute_ast(&ast).is_ok());
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "<alpha>\n<beta>\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_exec_dynamic_fd_array_element_keeps_input_and_output_owners() {
     let input_path = "target/rubash-dynamic-array-fd-input.txt";
     let output_path = "target/rubash-dynamic-array-fd-output.txt";
@@ -2993,6 +3009,22 @@ fn test_alias_introduced_coproc_preserves_simple_redirects() {
     assert_eq!(output, "alias-redirected\n");
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_file(status_path);
+}
+
+#[test]
+fn test_coproc_quoted_format_has_no_assignment_marker() {
+    let output_path = "target/rubash-coproc-quoted-format-marker-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "coproc MYC {{ printf 'x=%s\\n' hi > {output_path}; }}; wait $MYC_PID"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    assert!(executor.execute_ast(&ast).is_ok());
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "x=hi\n");
+    let _ = fs::remove_file(output_path);
 }
 
 #[test]
