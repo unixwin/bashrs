@@ -1,6 +1,22 @@
 use std::{env, fs, process::Command};
 
 #[test]
+fn posix_parameter_word_can_contain_single_quoted_closing_brace() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(concat!(
+            "set -o posix; (echo 1 $",
+            "{IFS+'}'z}) 2>&- || echo failed",
+        ))
+        .output()
+        .expect("run POSIX parameter brace probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "1 }z\n");
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn quoted_native_wildcards_and_special_arguments_survive_argv_boundary() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

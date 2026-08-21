@@ -271,7 +271,7 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     self.skip_arith_bracket();
                 }
-                '}' if !double => {
+                '}' if !single && !double => {
                     depth = depth.saturating_sub(1);
                     if depth == 0 {
                         break;
