@@ -337,8 +337,44 @@ fn logical_bin_command_name(name: &str) -> Option<String> {
     Some(rest.to_string())
 }
 
+fn repair_windows_drive_slash_argument(arg: &str) -> Option<String> {
+    let bytes = arg.as_bytes();
+    if bytes.len() < 4
+        || !bytes[0].is_ascii_alphabetic()
+        || bytes[1] != b':'
+        || bytes[2] != b'/'
+        || bytes[3] != b'/'
+    {
+        return None;
+    }
+
+    // Winuxsh's host boundary can turn an unquoted `C:\\...` into
+    // `C://...`. Repair only that unambiguous drive-shaped artifact; ordinary
+    // slash paths and native arguments remain untouched.
+    let mut repaired = String::with_capacity(arg.len());
+    repaired.push(bytes[0] as char);
+    repaired.push(':');
+    let mut previous_was_slash = false;
+    for ch in arg[2..].chars() {
+        if ch == '/' {
+            if !previous_was_slash {
+                repaired.push('\\');
+            }
+            previous_was_slash = true;
+        } else {
+            repaired.push(ch);
+            previous_was_slash = false;
+        }
+    }
+    Some(repaired)
+}
+
 fn external_argument_path(arg: &str, env_vars: &HashMap<String, String>) -> String {
     if cfg!(windows) {
+        if let Some(repaired) = repair_windows_drive_slash_argument(arg) {
+            return repaired;
+        }
+
         // A leading backslash is a valid native argument spelling (and is
         // commonly used by utilities for escape sequences such as `\\n`).
         // Only slash-prefixed shell paths belong to the logical root; treating
@@ -1588,6 +1624,24 @@ mod tests {
 
         assert!(!used_shell);
         assert_eq!(args, vec!["/h/not-a-real-pathspec".to_string()]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_external_arguments_repair_host_rewritten_drive_backslashes() {
+        let env_vars = HashMap::new();
+        let (command, used_shell) = external_command_for_program(
+            &PathBuf::from("where.exe"),
+            &["C://Windows//System32".to_string()],
+            &env_vars,
+        );
+        let args = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(!used_shell);
+        assert_eq!(args, vec!["C:\\Windows\\System32".to_string()]);
     }
 
     #[cfg(windows)]

@@ -257,7 +257,9 @@ impl Executor {
             .collect::<Vec<_>>();
         variable_expanded.words = expanded_words
             .iter()
-            .map(|(word, _)| restore_pathname_escape_markers(&word.replace('\x15', "\\")))
+            .map(|(word, _)| {
+                restore_pathname_escape_markers(&word.replace('\x15', "\\").replace('\x14', "\\"))
+            })
             .collect();
         variable_expanded.word_kinds = Vec::new();
 
@@ -266,13 +268,15 @@ impl Executor {
             let mut words = Vec::new();
             for (word, suppress_glob) in expanded_words {
                 if suppress_glob {
-                    words.push(restore_pathname_escape_markers(&word.replace('\x15', "\\")));
+                    words.push(restore_pathname_escape_markers(
+                        &word.replace('\x15', "\\").replace('\x14', "\\"),
+                    ));
                 } else {
                     match pathname_expand_word(&word, &self.env_vars) {
                         PathnameExpansion::Matches(matches) => words.extend(matches),
-                        PathnameExpansion::NoMatch => {
-                            words.push(restore_pathname_escape_markers(&word.replace('\x15', "\\")))
-                        }
+                        PathnameExpansion::NoMatch => words.push(restore_pathname_escape_markers(
+                            &word.replace('\x15', "\\").replace('\x14', "\\"),
+                        )),
                         PathnameExpansion::Fail(pattern) => {
                             self.report_failglob(&pattern);
                             return Err(ExecuteError::ExitCode(1));
