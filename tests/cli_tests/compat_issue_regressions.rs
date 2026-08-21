@@ -548,6 +548,38 @@ fn arithmetic_conditional_requires_false_branch_expression() {
 }
 
 #[test]
+fn nameref_to_array_element_expands_value_and_indirect_name() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("arr=(zero 'one two'); declare -n ref='arr[1]'; printf '<%s>|<%s>\n' \"${ref}\" \"${!ref}\"")
+        .output()
+        .expect("run nameref array element probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "<one two>|<arr[1]>\n"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
+fn positional_slice_offset_zero_includes_script_name() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("set -- alpha beta; got=\"${@:0:1}\"; [ \"$got\" = \"$0\" ]")
+        .output()
+        .expect("run positional offset-zero probe");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn explicit_read_reply_trims_like_normal_scalar_name() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

@@ -49,7 +49,7 @@ impl Executor {
             let Some(target) = self.env_vars.get(current) else {
                 return NamerefResolution::NotNameref;
             };
-            if !is_shell_name(target) {
+            if !is_shell_name(target) && parse_array_subscript(target).is_none() {
                 return NamerefResolution::NotNameref;
             }
             if !is_marked_var(&self.env_vars, NAMEREF_VARS, target) {
@@ -73,6 +73,9 @@ impl Executor {
             }
             NamerefResolution::NotNameref => name.to_string(),
         };
+        if let Some(value) = self.array_element_parameter_value(&name) {
+            return Some(value);
+        }
         self.env_vars
             .get(&name)
             .and_then(|value| self.scalar_parameter_value(&name, value))

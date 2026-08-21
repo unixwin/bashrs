@@ -128,6 +128,12 @@ impl Executor {
             return value;
         }
         if matches!(var_name, "@" | "*") {
+            if offset == 0 {
+                let mut params = Vec::with_capacity(self.positional_params.len() + 1);
+                params.push(self.script_name_value());
+                params.extend(self.positional_params.iter().cloned());
+                return positional_parameter_substring(&params, 1, length).join(" ");
+            }
             return positional_parameter_substring(&self.positional_params, offset, length)
                 .join(" ");
         }
