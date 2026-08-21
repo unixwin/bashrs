@@ -347,6 +347,10 @@ fn external_argument_path(arg: &str, env_vars: &HashMap<String, String>) -> Stri
             return arg.to_string();
         }
         let normalized = arg.replace('\\', "/");
+        if !normalized.starts_with('/') {
+            return arg.to_string();
+        }
+
         let drive_path = normalized.len() >= 3
             && normalized.as_bytes()[0] == b'/'
             && normalized.as_bytes()[2] == b'/'
@@ -367,12 +371,49 @@ fn external_argument_path(arg: &str, env_vars: &HashMap<String, String>) -> Stri
             }
             return translated.to_string_lossy().into_owned();
         }
-        shell_path_to_windows_for_lookup(arg, env_vars)
-            .to_string_lossy()
-            .into_owned()
+        if windows_external_absolute_argument_needs_translation(&normalized, env_vars) {
+            return shell_path_to_windows(arg, env_vars)
+                .to_string_lossy()
+                .into_owned();
+        }
+
+        arg.to_string()
     } else {
         arg.to_string()
     }
+}
+
+fn windows_external_absolute_argument_needs_translation(
+    normalized: &str,
+    env_vars: &HashMap<String, String>,
+) -> bool {
+    if normalized == "/" {
+        return configured_shell_root(env_vars).is_some();
+    }
+
+    if matches!(normalized, "/dev" | "/dev/null") || normalized.starts_with("/dev/") {
+        return true;
+    }
+
+    if normalized == "/tmp" || normalized.starts_with("/tmp/") {
+        return true;
+    }
+
+    if normalized == "/home" || normalized.starts_with("/home/") {
+        return windows_real_home_path(env_vars).is_some()
+            || configured_shell_root(env_vars).is_some();
+    }
+
+    if configured_shell_root(env_vars).is_some()
+        && matches!(
+            normalized.split('/').nth(1),
+            Some("bin" | "etc" | "lib" | "lib64" | "opt" | "sbin" | "usr" | "var")
+        )
+    {
+        return shell_path_to_windows(normalized, env_vars).exists();
+    }
+
+    false
 }
 
 fn dispatcher_command_name(command_name: &str) -> String {
@@ -682,13 +723,10 @@ const WINDOWS_LITERAL_QUESTION: &str = "%RUBASH_QMARK%";
 
 fn shell_path_from_shell_name(path: &str) -> String {
     if cfg!(windows) {
-        path.chars()
-            .map(|ch| match ch {
-                '*' => WINDOWS_LITERAL_STAR.to_string(),
-                '?' => WINDOWS_LITERAL_QUESTION.to_string(),
-                _ => ch.to_string(),
-            })
-            .collect()
+        // Path conversion must not rewrite wildcard characters in ordinary data.
+        // Globbing is handled before this boundary, while native programs need
+        // literal * and ? values to survive unchanged.
+        path.replace('/', "\\")
     } else {
         path.to_string()
     }
@@ -1100,7 +1138,10 @@ mod tests {
             PathBuf::from(r"C:/Users/example")
         );
         assert_eq!(
-            shell_path_to_windows("Z:/nope/D:/repo/rubash/target/bashdb-probe-target.sh", &env_vars),
+            shell_path_to_windows(
+                "Z:/nope/D:/repo/rubash/target/bashdb-probe-target.sh",
+                &env_vars
+            ),
             PathBuf::from(r"D:/repo/rubash/target/bashdb-probe-target.sh")
         );
         assert_eq!(
@@ -1472,6 +1513,45 @@ mod tests {
 
         assert!(!used_shell);
         assert_eq!(args, vec![r"C:\Users\example\file.txt"]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_external_arguments_preserve_native_literals_and_options() {
+        let root = std::env::temp_dir().join("rubash-native-argv-literals");
+        let mut env_vars = HashMap::new();
+        env_vars.insert(
+            "WINUXSH_ROOT".to_string(),
+            root.to_string_lossy().to_string(),
+        );
+
+        let (command, used_shell) = external_command_for_program(
+            &PathBuf::from("pwsh.exe"),
+            &[
+                "-Command".to_string(),
+                r"Copy-Item full\bin\* smoke -Force".to_string(),
+                "repos/nmap/nmap/contents/configure.ac?ref=v7.991".to_string(),
+                "--send-only".to_string(),
+                "/CN=test".to_string(),
+            ],
+            &env_vars,
+        );
+        let args = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(!used_shell);
+        assert_eq!(
+            args,
+            vec![
+                "-Command".to_string(),
+                r"Copy-Item full\bin\* smoke -Force".to_string(),
+                "repos/nmap/nmap/contents/configure.ac?ref=v7.991".to_string(),
+                "--send-only".to_string(),
+                "/CN=test".to_string(),
+            ]
+        );
     }
 
     #[cfg(windows)]
