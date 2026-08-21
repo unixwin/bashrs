@@ -8,6 +8,7 @@ use std::io::{self, Write};
 
 const EXECUTION_SUCCESS: i32 = 0;
 const EXECUTION_FAILURE: i32 = 1;
+const ENABLE_USAGE: &str = "enable [-a] [-dnps] [-f filename] [name ...]";
 
 const DISABLED_BUILTINS: &str = "__RUBASH_DISABLED_BUILTINS";
 const ALL_BUILTINS: &[&str] = &[
@@ -166,24 +167,8 @@ where
     }
 
     if delete {
-        let mut status = EXECUTION_SUCCESS;
-        for name in operands {
-            if !is_builtin(name) {
-                writeln!(
-                    stderr,
-                    "{}enable: {name}: not a shell builtin",
-                    diagnostic_prefix(env_vars)
-                )?;
-            } else {
-                writeln!(
-                    stderr,
-                    "{}enable: {name}: not dynamically loaded",
-                    diagnostic_prefix(env_vars)
-                )?;
-            }
-            status = EXECUTION_FAILURE;
-        }
-        return Ok(status);
+        writeln!(stderr, "{}enable: usage: {ENABLE_USAGE}", diagnostic_prefix(env_vars))?;
+        return Ok(2);
     }
 
     if operands.is_empty() && (reusable || list_all || !disable) {

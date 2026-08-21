@@ -124,6 +124,26 @@ fn test_enable_redirects_stderr() {
 }
 
 #[test]
+fn test_enable_delete_reports_usage() {
+    let error_path = "target/rubash-enable-delete-error.txt";
+    let _ = fs::remove_file(error_path);
+    let input = format!("enable -d notbuiltin 2> {error_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 2);
+    assert_eq!(
+        fs::read_to_string(error_path).unwrap(),
+        "rubash: enable: usage: enable [-a] [-dnps] [-f filename] [name ...]\n"
+    );
+    let _ = fs::remove_file(error_path);
+}
+
+#[test]
 fn test_enable_f_consumes_load_filename() {
     let error_path = "target/rubash-enable-f-error.txt";
     let status_path = "target/rubash-enable-f-status.txt";
