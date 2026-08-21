@@ -50,3 +50,4 @@ Do not change expected output globally or treat a status pair alone as proof.
 - `target/issue-suites/results/coproc-persistent-stderr-boundary/`
 - `docs/residual-differential-triage-20260821.md`
 - `target/issue-suites/results/cross-shell-current-20260822/`: BusyBox ash, Oil, and mksh unavailable; provider blockers, not Rubash DIFF.
+- `target/issue-suites/results/ksh-current-20260822/`: ksh93, ksh, and mksh unavailable; bounded probe returned provider-blocked 127 without executing a ksh script.
