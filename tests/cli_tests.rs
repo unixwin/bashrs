@@ -1143,6 +1143,27 @@ fn brace_groups_require_a_command_terminator_before_close() {
 }
 
 #[test]
+fn brace_groups_allow_completed_compound_commands_before_close() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("(exit 2); { { true; } }; echo Zero:$?; (exit 2); {(true)}; echo Zero:$?; (exit 2); { true | { true; } }; echo Zero:$?; (exit 2); { while false; do :; done }; echo Zero:$?; (exit 2); { case a in b) ;; esac }; echo Zero:$?")
+        .output()
+        .expect("run rubash");
+
+    assert!(
+        output.status.success(),
+        "stdout={:?} stderr={:?}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "Zero:0\nZero:0\nZero:0\nZero:0\nZero:0\n"
+    );
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
 fn malformed_case_reserved_word_boundaries_are_syntax_errors() {
     for command in [
         "case x in esac) echo done; esac",
@@ -1168,7 +1189,10 @@ fn sequential_compact_case_subshells_preserve_closing_esac() {
         .expect("run rubash");
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "first\nsecond\nredirected\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "first\nsecond\nredirected\n"
+    );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "case-stderr\n");
 }
 

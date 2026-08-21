@@ -12,8 +12,7 @@ pub(super) fn parse_brace_group_command(
         && token.value.len() >= 2
     {
         let inner_source = token.value.trim_start_matches('{').trim_end_matches('}');
-        let terminator_source = inner_source.trim_end_matches([' ', '\t']);
-        if !terminator_source.ends_with(';') && !terminator_source.ends_with('\n') {
+        if !brace_group_source_has_completed_command(inner_source) {
             let mut command = CommandNode::new();
             command.assignments.insert(
                 "__RUBASH_PARSE_ERROR__".to_string(),

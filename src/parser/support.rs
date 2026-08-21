@@ -230,6 +230,37 @@ pub(super) fn is_boundary_keyword(tokens: &[Token], index: usize, value: &str) -
     command_boundary_keyword_allowed(tokens, index) && is_keyword(tokens, index, value)
 }
 
+pub(super) fn brace_group_source_has_completed_command(source: &str) -> bool {
+    let terminator_source = source.trim_end_matches([' ', '\t']);
+    if terminator_source.is_empty() {
+        return false;
+    }
+    if terminator_source.ends_with(';') || terminator_source.ends_with('\n') {
+        return true;
+    }
+
+    crate::lexer::tokenize(terminator_source)
+        .last()
+        .is_some_and(token_completes_brace_group_command)
+}
+
+pub(super) fn token_completes_brace_group_command(token: &Token) -> bool {
+    if token.kind == TokenKind::Semicolon {
+        return true;
+    }
+    if token.kind != TokenKind::Keyword {
+        return false;
+    }
+    if matches!(token.value.as_str(), "}" | ")" | "fi" | "done" | "esac") {
+        return true;
+    }
+    if token.value.starts_with('{') && token.value.ends_with('}') && token.value.len() >= 2 {
+        let inner_source = token.value.trim_start_matches('{').trim_end_matches('}');
+        return brace_group_source_has_completed_command(inner_source);
+    }
+    false
+}
+
 pub(super) fn matching_brace_group_end(tokens: &[Token], start: usize) -> Option<usize> {
     if !is_keyword(tokens, start, "{") {
         return None;
@@ -248,14 +279,14 @@ pub(super) fn matching_brace_group_end(tokens: &[Token], start: usize) -> Option
         if is_boundary_keyword(tokens, index, "{") {
             depth += 1;
         } else if is_boundary_keyword(tokens, index, "}") {
-            // GNU parse.y requires a command terminator before a brace-group
-            // close. `{ command }` is malformed; `{ command; }` and a
-            // physical newline before `}` are valid.
-            let has_terminator = index > start + 1
+            // GNU parse.y requires a completed command before a brace-group
+            // close. `{ command }` is malformed; `{ command; }`, a physical
+            // newline, and a completed compound command before `}` are valid.
+            let has_completed_command = index > start + 1
                 && tokens
                     .get(index - 1)
-                    .is_some_and(|token| token.kind == TokenKind::Semicolon);
-            if !has_terminator {
+                    .is_some_and(token_completes_brace_group_command);
+            if !has_completed_command {
                 return None;
             }
             depth -= 1;
