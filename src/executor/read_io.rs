@@ -158,7 +158,9 @@ impl Executor {
             self.fd_table.read_endpoint(0),
             Some(FdReadEndpoint::Text(_) | FdReadEndpoint::ProcessSubstitution(_))
         ) {
-            if let Some(line) = self.read_virtual_fd_stdin(0, delimiter, char_limit, exact_char_limit) {
+            if let Some(line) =
+                self.read_virtual_fd_stdin(0, delimiter, char_limit, exact_char_limit)
+            {
                 return Some(line);
             }
         }

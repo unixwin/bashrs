@@ -1581,8 +1581,9 @@ fn test_embedded_assignment_output_process_substitution_keeps_surrounding_text()
     let output = fs::read_to_string(output_path).unwrap();
     assert!(output.starts_with('x'));
     assert!(output.ends_with("y\n"));
-    assert!(!Path::new(side_path).exists());
+    assert_eq!(fs::read_to_string(side_path).unwrap(), "payload");
     let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(side_path);
 }
 
 #[test]
@@ -3016,9 +3017,7 @@ fn test_alias_introduced_coproc_preserves_simple_redirects() {
 fn test_coproc_quoted_format_has_no_assignment_marker() {
     let output_path = "target/rubash-coproc-quoted-format-marker-output.txt";
     let _ = fs::remove_file(output_path);
-    let input = format!(
-        "coproc MYC {{ printf 'x=%s\\n' hi > {output_path}; }}; wait $MYC_PID"
-    );
+    let input = format!("coproc MYC {{ printf 'x=%s\\n' hi > {output_path}; }}; wait $MYC_PID");
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
     let mut executor = Executor::new();

@@ -30,7 +30,10 @@ fn noexec_flag_skips_script_file() {
     let _ = fs::remove_file(&output_path);
     fs::write(
         &script_path,
-        format!("printf should-not-run > {}\n", shell_test_path(&output_path)),
+        format!(
+            "printf should-not-run > {}\n",
+            shell_test_path(&output_path)
+        ),
     )
     .expect("write noexec script");
 

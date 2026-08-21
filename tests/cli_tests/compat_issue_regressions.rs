@@ -976,7 +976,10 @@ fn arithmetic_error_aborts_current_subshell_only() {
         .expect("run arithmetic subshell error probe");
 
     assert_eq!(output.status.code(), Some(0));
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "inner:9\nouter:9\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "inner:9\nouter:9\n"
+    );
     assert!(!String::from_utf8_lossy(&output.stderr).is_empty());
 }
 
