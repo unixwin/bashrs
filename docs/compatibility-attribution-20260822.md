@@ -41,7 +41,7 @@ Remaining candidates after bounded probes:
 
 - `array 1/2`: real empty/`*`/negative subscript diagnostic and error-propagation mismatch; current uncommitted patch still fails the full focused regression with status 1 and is not integrated.
 - `comsub-posix`: valid output mismatch (`abc )` versus `abc eof )`), artifact-backed and not yet fixed.
-- `posixexp2`: valid rc/output mismatch (Bash rc=0 and `1 }z`; Rubash rc=2), not yet fixed.
+- `posixexp2`: fixed by `8001a04a`; the braced-parameter scanner now ignores closing braces inside single quotes. Focused regression and artifact rerun produce Bash-compatible `1 }z`, rc=0.
 - `quotearray`: associative quoted subscript/value mismatch and arithmetic diagnostic divergence, not yet fixed.
 - `comsub2` now rejects the unsupported `${ command; }` form like Bash via `1e1b367b`; classify this as a compatibility guard/feature boundary, not proof that Rubash lacked a Bash-supported command-substitution feature. `builtins` is fixed by `4a9e8d46`; `arith` is fixed by `a80e07d8`.
 - `rsh 0/1` remains bridge/stream-policy evidence; independent `set -r` is an engine feature gap without an integrated owner implementation.
