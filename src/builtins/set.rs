@@ -113,7 +113,7 @@ where
                     stderr,
                     "set: usage: set [-abefhkmnptuvxBCEHPT] [-o option-name] [--] [arg ...]"
                 )?;
-                return Ok(EXECUTION_FAILURE);
+                return Ok(EX_USAGE);
             }
         }
 
@@ -192,7 +192,7 @@ mod tests {
         let env_vars = HashMap::new();
         let (status, _stdout, stderr) = run_set(&["-Z"], &env_vars);
 
-        assert_eq!(status, EXECUTION_FAILURE);
+        assert_eq!(status, EX_USAGE);
         assert!(stderr.contains("invalid option"));
     }
 

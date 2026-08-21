@@ -2732,3 +2732,13 @@ Bounded reproduction used the BusyBox fixture at target/issue-suites/busybox/she
 
 A minimal exact pipeline confirms the reported read result is not a Rubash semantic defect: both Git Bash and Rubash produce x=, y=: for printf "%s\n" "::" | ( IFS=": "; read x y; ... ). Therefore the audit DIFF is classified as a harness/reference timeout plus ash-fixture expectation artifact, with Rubash performance slower than the 8s budget but completing within 60s. No Rust fix or focused semantic regression is justified by this evidence. The remaining 528 generated lines are fixture-specific residuals, not Bash-vs-Rubash proof until the suite is run under a BusyBox ash reference (or its expected-output contract is explicitly separated from Bash).
 
+## 2026-08-20 Builtin usage-status parity: set and umask
+
+A minimal GNU Bash comparison (set -Z and umask -Z) showed matching diagnostics but a status mismatch: Bash returns 2 for invalid builtin options, while Rubash returned 1. The root cause was local option parsing in src/builtins/set.rs and src/builtins/umask.rs, not parser or executor behavior. Both owners now return EX_USAGE (2) and have focused unit regressions covering the invalid-option contract.
+
+Evidence:
+
+- GNU Bash: set -Z and umask -Z, both rc 2.
+- Rubash after fix: same probes, both rc 2.
+- cargo test --lib set umask -- --nocapture passed (bounded builtin tests).
+

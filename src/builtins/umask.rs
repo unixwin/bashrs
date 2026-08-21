@@ -41,14 +41,14 @@ where
                         'p' => reusable = true,
                         _ => {
                             writeln!(stderr, "rubash: umask: {value}: invalid option")?;
-                            return Ok(EXECUTION_FAILURE);
+                            return Ok(2);
                         }
                     }
                 }
             }
             value if value.starts_with('-') => {
                 writeln!(stderr, "rubash: umask: {value}: invalid option")?;
-                return Ok(EXECUTION_FAILURE);
+                return Ok(2);
             }
             value => mode = Some(value),
         }
@@ -327,6 +327,20 @@ mod tests {
         assert_eq!(status, EXECUTION_SUCCESS);
         assert_eq!(stdout, "u=,g=rx,o=rwx\n");
         assert!(stderr.is_empty());
+    }
+
+    #[test]
+    fn invalid_option_is_usage_error() {
+        let mut env = HashMap::new();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let status =
+            execute_with_io(&["-Z".to_string()], &mut env, &mut stdout, &mut stderr).unwrap();
+        assert_eq!(status, 2);
+        assert_eq!(
+            String::from_utf8(stderr).unwrap(),
+            "rubash: umask: -Z: invalid option\n"
+        );
     }
 
     #[test]
