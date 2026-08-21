@@ -37,11 +37,13 @@ impl Executor {
         if empty_quoted_array_subscript(&expression) {
             return None;
         }
-        eval_mutable_arith_value_with_random(
+        let value = eval_mutable_arith_value_with_random(
             &expression,
             &mut self.env_vars,
             Some(&self.random_state),
-        )
+        );
+        self.report_arithmetic_readonly_error();
+        value
     }
 
     /// Evaluate a `$(( ... ))` expansion embedded in a word. This is the
@@ -67,11 +69,22 @@ impl Executor {
         if empty_quoted_array_subscript(&expression) {
             return None;
         }
-        eval_mutable_arith_value_with_random(
+        let value = eval_mutable_arith_value_with_random(
             &expression,
             &mut self.env_vars,
             Some(&self.random_state),
-        )
+        );
+        self.report_arithmetic_readonly_error();
+        value
+    }
+
+    fn report_arithmetic_readonly_error(&mut self) {
+        let Some(name) = self.env_vars.remove("__RUBASH_ARITH_READONLY_ERROR") else {
+            return;
+        };
+        if !self.arithmetic_expansion_error.replace(true) {
+            eprintln!("{}{}: readonly variable", self.diagnostic_prefix(), name);
+        }
     }
 
     pub(super) fn expand_arithmetic_special_parameters(&self, expression: &str) -> String {

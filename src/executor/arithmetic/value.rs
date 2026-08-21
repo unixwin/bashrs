@@ -2,9 +2,9 @@ use super::{ArithLValue, ConditionalArithParser};
 use crate::executor::arithmetic::{bash_arith, checked_arithmetic_pow};
 use crate::executor::{
     array_value_at, assoc_entries, assoc_value_at, format_assoc_storage,
-    format_indexed_array_storage, indexed_array_entries, is_noassign_bash_array, mark_env_name,
-    next_random_from_state, next_srandom_from_state, resolve_indexed_array_subscript,
-    set_process_env, ARRAY_VARS, ASSOC_VARS,
+    format_indexed_array_storage, indexed_array_entries, is_marked_var, is_noassign_bash_array,
+    mark_env_name, next_random_from_state, next_srandom_from_state,
+    resolve_indexed_array_subscript, set_process_env, ARRAY_VARS, ASSOC_VARS, READONLY_VARS,
 };
 
 impl ConditionalArithParser<'_> {
@@ -102,6 +102,9 @@ impl ConditionalArithParser<'_> {
         delta: i128,
         prefix: bool,
     ) -> Option<i128> {
+        if !self.lvalue_is_writable(lvalue) {
+            return None;
+        }
         let current = self.lvalue_value(lvalue)?;
         let updated = bash_arith(current + delta);
         self.set_lvalue(lvalue, updated);
@@ -114,6 +117,9 @@ impl ConditionalArithParser<'_> {
         op: &str,
         rhs: i128,
     ) -> Option<i128> {
+        if !self.lvalue_is_writable(lvalue) {
+            return None;
+        }
         if op == "=" {
             self.set_lvalue(lvalue, rhs);
             return Some(rhs);
@@ -141,6 +147,20 @@ impl ConditionalArithParser<'_> {
         };
         self.set_lvalue(lvalue, value);
         Some(value)
+    }
+
+    fn lvalue_is_writable(&mut self, lvalue: &ArithLValue) -> bool {
+        let name = match lvalue {
+            ArithLValue::Scalar(name)
+            | ArithLValue::Indexed { name, .. }
+            | ArithLValue::Assoc { name, .. } => name,
+        };
+        if is_marked_var(self.env_vars, READONLY_VARS, name) {
+            self.env_vars
+                .insert("__RUBASH_ARITH_READONLY_ERROR".to_string(), name.clone());
+            return false;
+        }
+        true
     }
 
     pub(super) fn set_lvalue(&mut self, lvalue: &ArithLValue, value: i128) {

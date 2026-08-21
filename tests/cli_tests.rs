@@ -1584,6 +1584,21 @@ fn readonly_array_element_argument_matches_bash_identifier_diagnostic() {
 }
 
 #[test]
+fn readonly_arithmetic_case_pattern_does_not_mutate_or_match() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "readonly xx=1; case 1 in $((xx++))) echo unexpected ;; *) : ;; esac; echo $xx.$?",
+        )
+        .output()
+        .expect("run rubash");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "1.1\n");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("xx: readonly variable"));
+}
+
+#[test]
 fn compound_inside_command_substitution_still_executes_when_closed() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
