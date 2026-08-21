@@ -472,12 +472,22 @@ impl Executor {
 
         for substitution in substitutions {
             let path = if substitution.output {
-                let path = self.empty_process_substitution_temp()?;
-                self.assignment_output_process_substitutions.insert(
-                    shell_display_path(&path.to_string_lossy()),
-                    substitution.source,
-                );
-                path
+                // An output process substitution embedded in an assignment word
+                // is only a path fragment. It is not an endpoint that a later
+                // command may implicitly own; registering it here would make
+                // the next unrelated command execute the source and leak its
+                // side effects. A complete p=>(...) value remains deferred
+                // until that path is used as a redirect target below.
+                if substitution.target != value {
+                    self.process_substitution_temp_path()?
+                } else {
+                    let path = self.empty_process_substitution_temp()?;
+                    self.assignment_output_process_substitutions.insert(
+                        shell_display_path(&path.to_string_lossy()),
+                        substitution.source,
+                    );
+                    path
+                }
             } else {
                 let Some(output) = self.process_substitution_output(&substitution.source) else {
                     continue;

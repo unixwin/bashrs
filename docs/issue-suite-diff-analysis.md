@@ -1716,6 +1716,25 @@ under both shells. `vredir8` stdout is byte-for-byte identical; remaining
 stderr differences are `/dev/tty` host behavior and source-token rendering.
 The other three bodies only differ in function pretty-print formatting.
 
+### 2026-08-14 embedded assignment output process substitution ownership
+
+`p=x>(...)y` must not transfer an output process-substitution endpoint to the
+next unrelated command. Rubash previously registered every output substitution
+found while materializing an assignment value in
+`assignment_output_process_substitutions`; the command-level fallback then ran
+the source and created side effects even though the materialized path was only
+an embedded text fragment. The owner now defers only a complete `p=>(...)`
+assignment value, which can later be consumed as a redirect target. Embedded
+output substitutions receive a display path without creating an executable
+temporary endpoint.
+
+Verification:
+
+- GNU Bash probe and Rubash probe recorded the asynchronous endpoint distinction
+  under `target/ps-probe/`; the focused Rubash contract requires no side file for
+  the embedded assignment case.
+- `cargo test --test executor_tests command_chaining::part_080::test_embedded_assignment_output_process_substitution_keeps_surrounding_text -- --nocapture`: 1/1.
+
 Verification after the refresh:
 
 - `cargo test --test cli_tests c_command_dynamic_varredir_covers_read_write_dup_and_auto_close -- --nocapture`: 1/1.
