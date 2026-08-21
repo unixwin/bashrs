@@ -1187,6 +1187,37 @@ regression for `/h/not-a-real-pathspec`.
 Verification: `cargo test --lib path` (20 passed) and `cargo test --lib`
 (163 passed).
 
+### 2026-08-21 Issue #59 native argv literal preservation
+
+Issue #59 extended the same boundary from drive-shaped pathspecs to ordinary
+native argv data. The Windows external argument conversion path now leaves
+non-slash-prefixed values unchanged, so PowerShell command strings such as
+`Copy-Item full\bin\* smoke -Force` and URL/query strings containing `?`
+are not fed through `shell_path_to_windows` and cannot receive
+`%RUBASH_STAR%`/`%RUBASH_QMARK%` placeholders. Slash-prefixed operands are
+converted only for explicit shell paths such as `/c/...`, `/dev/null`,
+`/tmp/...`, `/home/...`, or existing logical-root paths; native options or
+data such as `--send-only` and `/CN=test` remain literal. The same slice adds
+CLI `-n` support by mapping it to the existing `noexec` shell option, covering
+both `-n -c` and `-n script.sh` forms. The command-word path also restores
+literal dollar markers from fully single-quoted words, so a PowerShell command
+string containing `$args` is not sent as a private control character.
+
+The pure Rubash-to-PowerShell probe passes when Rubash is launched through
+`std::process::Command`, which bypasses the interactive Winuxsh wrapper. A
+probe launched from the current Winuxsh command line still shows the wrapper
+itself rewriting `*` and `?` before Rubash starts; that remaining behavior
+belongs to the Winuxsh/winuxcmd host layer, not this repository. Likewise,
+separate argv values after a PowerShell array parameter are not automatically
+rebound into one array by native PowerShell; Rubash preserves the POSIX argv
+boundary and does not synthesize host-specific parameter binding.
+
+Verification: `cargo test windows_external_arguments_preserve_native_literals_and_options`
+(1 passed), `cargo test --test cli_tests cli_noexec_flag_parses_without_executing_command_string -- --nocapture`
+(1 passed), `cargo test --test cli_tests cli_noexec_flag_parses_script_file_without_executing -- --nocapture`
+(1 passed), `cargo test windows_external_arguments` (5 passed), and
+`cargo test --test cli_tests cli_ -- --nocapture` (11 passed).
+
 ### 2026-08-13 WinuxCmd streaming `head` fixes the producer hang
 
 The BusyBox `heredoc_huge`/large-producer failure was reproduced through the

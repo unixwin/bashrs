@@ -307,7 +307,7 @@ impl Executor {
         // removed by the lexer. Any double quotes left in its value are
         // literal data, including inside parameter alternate words.
         if raw_word_is_fully_single_quoted(raw) {
-            return vec![word.to_string()];
+            return vec![word.replace('\x1f', "$")];
         }
         if let Some(values) = self.braced_alternate_word_values(word) {
             return values;

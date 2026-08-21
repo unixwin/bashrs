@@ -1,6 +1,45 @@
 use std::{env, fs, process::Command};
 
 #[test]
+fn quoted_native_wildcards_and_special_arguments_survive_argv_boundary() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"printf '<%s>\n' "a*b" "q?x" "/CN=test" --send-only"#)
+        .output()
+        .expect("run native argv literal probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "<a*b>\n<q?x>\n</CN=test>\n<--send-only>\n"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[cfg(windows)]
+#[test]
+fn rubash_to_powershell_preserves_native_argument_literals() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            r#"pwsh -NoProfile -Command 'Write-Output (Get-Variable args -ValueOnly)' -- "a*b" "q?x" "/CN=test" --send-only"#,
+        )
+        .output()
+        .expect("run Rubash to PowerShell argv probe");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "a*b\r\nq?x\r\n/CN=test\r\n--send-only\r\n"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn quoted_positional_at_keeps_suffix_expansion_unquoted() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
@@ -671,7 +710,10 @@ fn parameter_alternate_preserves_nested_literal_double_quotes() {
         .expect("run nested quote parameter alternate probe");
 
     assert_eq!(output.status.code(), Some(0));
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "<b c>\n<d>\n<b c d>\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "<b c>\n<d>\n<b c d>\n"
+    );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
