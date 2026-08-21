@@ -1584,12 +1584,25 @@ fn readonly_array_element_argument_matches_bash_identifier_diagnostic() {
 }
 
 #[test]
-fn readonly_arithmetic_case_pattern_does_not_mutate_or_match() {
+fn declare_assigns_an_element_of_an_existing_associative_array() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
         .arg(
-            "readonly xx=1; case 1 in $((xx++))) echo unexpected ;; *) : ;; esac; echo $xx.$?",
+            "declare -A map=([one]=first); declare map[two]=second; printf '%s:%s\n' \"${map[one]}\" \"${map[two]}\"",
         )
+        .output()
+        .expect("run rubash");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "first:second\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn readonly_arithmetic_case_pattern_does_not_mutate_or_match() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("readonly xx=1; case 1 in $((xx++))) echo unexpected ;; *) : ;; esac; echo $xx.$?")
         .output()
         .expect("run rubash");
 

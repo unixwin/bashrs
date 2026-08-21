@@ -74,6 +74,8 @@ external materialization 根因。
 
 ### 族 E：内置族整体异常（#24，覆盖约 120 项，单点修复收益大）
 - umask（18 项，符号模式解析）、trap（37 项，ERR 语义/列表/-p/-l）、kill（15 项，-l/-s）、set/shopt（35 项）、echo、cd、jobs（17 项）
+- 2026-08-xx 启动协议切片：Winuxsh 已将 `-n/-e/-u/-x/-o/-O/--posix/-s` 转交 Rubash 的共享 invocation parser；`-n` 与 `-e` 宿主回归通过。
+- `pipefail` 已由 `src/executor/pipeline_exec.rs::pipeline_exit_status` 实现：2026-08-21 的脚本文件对照在 `-o pipefail` 下 GNU Bash 与 Rubash 均得到 `false | true` 的 `status=1`。仍需在下一次 cross-suite refresh 覆盖 `set +o pipefail`、CLI `-o pipefail` 与多段 pipeline。
 - 修复点：各内置的完整选项/输出/错误码对齐（可对照 bash builtins/*.c + *.def）
 
 ### 族 F：数组赋值族（#22/#23，约 60 项）

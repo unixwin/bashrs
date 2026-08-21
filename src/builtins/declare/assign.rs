@@ -36,7 +36,28 @@ where
             continue;
         };
         if let Some((base, index_expression)) = declare_indexed_element(var_name) {
-            if !assoc && !marked_vars(variables, ASSOC_VARS).contains(base) {
+            if assoc || marked_vars(variables, ASSOC_VARS).contains(base) {
+                if readonly.contains(base) {
+                    writeln!(
+                        stderr,
+                        "{}declare: {}: readonly variable",
+                        diagnostic_prefix(),
+                        base
+                    )?;
+                    status = EXECUTION_FAILURE;
+                } else {
+                    let current = variables
+                        .get(base)
+                        .cloned()
+                        .unwrap_or_else(|| "()".to_string());
+                    let element = format!("([{index_expression}]={value})");
+                    variables.insert(base.to_string(), append_assoc_value(&current, &element));
+                    mark_typed(variables, ASSOC_VARS, base);
+                    unmark_typed(variables, DECLARED_UNSET_VARS, base);
+                }
+                continue;
+            }
+            if !assoc {
                 let index = if index_expression.trim().is_empty() {
                     Some(0)
                 } else {
