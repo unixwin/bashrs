@@ -39,6 +39,10 @@ impl Executor {
         self.shell_state.set_exit_code(exit_code);
     }
 
+    pub fn set_history_provider(&mut self, provider: crate::history::SharedHistoryProvider) {
+        self.history_provider = Some(provider);
+    }
+
     pub fn set_external_file_builtins_enabled(&mut self, enabled: bool) {
         self.external_file_builtins_enabled = enabled;
     }
@@ -158,6 +162,12 @@ impl Executor {
 
     pub fn unset_env(&mut self, name: &str) {
         self.remove_env(name);
+    }
+
+    /// Enable or disable a dispatch builtin without executing shell source.
+    /// This allows embedding hosts to apply policy defaults before startup files.
+    pub fn set_builtin_disabled(&mut self, name: &str, disabled: bool) {
+        crate::builtins::enable::set_disabled(&mut self.env_vars, name, disabled);
     }
 
     pub(crate) fn remove_env(&mut self, name: &str) {

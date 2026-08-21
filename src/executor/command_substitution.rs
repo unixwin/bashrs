@@ -468,6 +468,7 @@ impl Executor {
             elevation_handler: None,
             external_file_builtins_enabled: self.external_file_builtins_enabled,
             process_env_snapshot: self.process_env_snapshot.clone(),
+            history_provider: self.history_provider.clone(),
         }
     }
 

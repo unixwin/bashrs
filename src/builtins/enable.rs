@@ -242,6 +242,20 @@ where
     Ok(status)
 }
 
+/// Change a builtin's enabled state without parsing an `enable` command.
+/// Embedding hosts use this for policy defaults before user startup code runs.
+pub fn set_disabled(env_vars: &mut HashMap<String, String>, name: &str, disabled: bool) {
+    let mut builtins = disabled_builtins(env_vars);
+    if disabled {
+        if !builtins.iter().any(|builtin| builtin == name) {
+            builtins.push(name.to_string());
+        }
+    } else {
+        builtins.retain(|builtin| builtin != name);
+    }
+    set_disabled_builtins(env_vars, &builtins);
+}
+
 pub fn is_disabled(env_vars: &HashMap<String, String>, name: &str) -> bool {
     disabled_builtins(env_vars)
         .iter()

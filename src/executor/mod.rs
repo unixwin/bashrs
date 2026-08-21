@@ -417,6 +417,7 @@ pub struct Executor {
     elevation_handler: Option<ElevationHandler>,
     external_file_builtins_enabled: bool,
     process_env_snapshot: HashMap<String, String>,
+    history_provider: Option<crate::history::SharedHistoryProvider>,
 }
 
 #[cfg(test)]

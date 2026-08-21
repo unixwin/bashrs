@@ -16,6 +16,20 @@ pub fn execute_with_io<E>(
 where
     E: Write,
 {
+    execute_with_history(args, diagnostic_prefix, &[], &mut io::sink(), stderr)
+}
+
+pub fn execute_with_history<E, O>(
+    args: &[String],
+    diagnostic_prefix: &str,
+    entries: &[String],
+    stdout: &mut O,
+    stderr: &mut E,
+) -> io::Result<i32>
+where
+    E: Write,
+    O: Write,
+{
     let mut index = 0;
     while let Some(arg) = args.get(index) {
         if arg == "--" {
@@ -53,6 +67,11 @@ where
         index += 1;
     }
 
+    let first = args.get(index).and_then(|arg| arg.parse::<usize>().ok());
+    let start = first.unwrap_or(1).saturating_sub(1);
+    for (number, entry) in entries.iter().enumerate().skip(start) {
+        writeln!(stdout, "{:>5}  {}", number + 1, entry)?;
+    }
     Ok(EXECUTION_SUCCESS)
 }
 

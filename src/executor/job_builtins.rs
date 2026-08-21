@@ -733,13 +733,54 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<i32, ExecuteError> {
+        let mut stdout = Vec::new();
         let mut stderr = Vec::new();
+        let args = &cmd.words[1..];
+        if let Some(provider) = self.history_provider.as_ref() {
+            let clear = args.iter().any(|arg| arg == "-c" || arg == "-pc");
+            let save = args.iter().position(|arg| arg == "-s" || arg == "-ps");
+            let delete = args.iter().position(|arg| arg == "-d");
+            let entries = if clear {
+                provider.borrow_mut().clear()?;
+                Vec::new()
+            } else if let Some(index) = save {
+                let command = args[index + 1..].join(" ");
+                if !command.is_empty() {
+                    provider.borrow_mut().append(command)?;
+                }
+                Vec::new()
+            } else if let Some(index) = delete {
+                let mut entries = provider.borrow_mut().entries()?;
+                if let Some(offset) = args
+                    .get(index + 1)
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .filter(|offset| *offset > 0)
+                {
+                    if offset <= entries.len() {
+                        entries.remove(offset - 1);
+                        provider.borrow_mut().replace(entries.clone())?;
+                    }
+                }
+                Vec::new()
+            } else {
+                provider.borrow_mut().entries()?
+            };
+            let status = crate::builtins::history::execute_with_history(
+                args,
+                &self.diagnostic_prefix(),
+                &entries,
+                &mut stdout,
+                &mut stderr,
+            )?;
+            self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+            return Ok(status);
+        }
         let status = crate::builtins::history::execute_with_io(
-            &cmd.words[1..],
+            args,
             &self.diagnostic_prefix(),
             &mut stderr,
         )?;
-        self.write_buffered_builtin_output(cmd, &[], &stderr)?;
+        self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
         Ok(status)
     }
 
@@ -761,13 +802,25 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<i32, ExecuteError> {
+        let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        let status = crate::builtins::fc::execute_with_io(
-            &cmd.words[1..],
-            &self.diagnostic_prefix(),
-            &mut stderr,
-        )?;
-        self.write_buffered_builtin_output(cmd, &[], &stderr)?;
+        let status = if let Some(provider) = self.history_provider.as_ref() {
+            let entries = provider.borrow_mut().entries()?;
+            crate::builtins::fc::execute_with_history(
+                &cmd.words[1..],
+                &self.diagnostic_prefix(),
+                &entries,
+                &mut stdout,
+                &mut stderr,
+            )?
+        } else {
+            crate::builtins::fc::execute_with_io(
+                &cmd.words[1..],
+                &self.diagnostic_prefix(),
+                &mut stderr,
+            )?
+        };
+        self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
         Ok(status)
     }
 

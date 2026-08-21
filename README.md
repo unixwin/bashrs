@@ -102,6 +102,15 @@ cargo test --test cli_tests script_bash_source -- --nocapture
 
 完整测试仍在持续扩展中。开发兼容性功能时优先使用 focused tests 和受限范围的 GNU Bash 上游测试切片，避免无界运行大型套件。
 
+## Windows 提权
+
+Rubash 的 Windows `sudo` builtin is an embedding API, not a complete Windows
+elevation product. It requires the embedding host to register an elevation
+handler. Winuxsh disables it by default and recommends the WPM `gsudo` package
+for UAC elevation. Hosts may disable a builtin through
+`Executor::set_builtin_disabled("sudo", true)`; users can use
+`enable -n sudo` and restore it with `enable sudo`.
+
 ## 文档
 
 - `docs/bashdb-debugging-rubash.md`: bashdb fixture、launcher/libdir 说明、smoke test 和 fresh checkout 用法。
