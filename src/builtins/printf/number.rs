@@ -14,9 +14,12 @@ pub(super) fn parse_i64(value: &str) -> ParsedNumber<i64> {
         };
     }
     match parse_integer_literal(value) {
-        Some((parsed_value, has_invalid_suffix)) => ParsedNumber {
+        Some((parsed_value, issue)) => ParsedNumber {
             value: parsed_value,
-            invalid: has_invalid_suffix.then(|| value.to_string()),
+            invalid: issue.map(|issue| match issue {
+                IntegerIssue::InvalidSuffix => value.to_string(),
+                IntegerIssue::Overflow => format!("__rubash_printf_overflow__:{value}"),
+            }),
         },
         None => ParsedNumber {
             value: 0,
@@ -51,7 +54,11 @@ pub(super) fn parse_f64(value: &str) -> ParsedNumber<f64> {
 }
 
 pub(super) fn invalid_number_error(value: &str) -> String {
-    format!("rubash: printf: {value}: invalid number")
+    if let Some(value) = value.strip_prefix("__rubash_printf_overflow__:") {
+        format!("rubash: printf: warning: {value}: Numerical result out of range")
+    } else {
+        format!("rubash: printf: {value}: invalid number")
+    }
 }
 
 fn printf_char_constant(value: &str) -> Option<char> {
@@ -62,12 +69,18 @@ fn printf_char_constant(value: &str) -> Option<char> {
     }
 }
 
-fn parse_integer_literal(value: &str) -> Option<(i64, bool)> {
+#[derive(Debug, Clone, Copy)]
+enum IntegerIssue {
+    InvalidSuffix,
+    Overflow,
+}
+
+fn parse_integer_literal(value: &str) -> Option<(i64, Option<IntegerIssue>)> {
     let value = value.trim();
-    let (sign, digits) = match value.as_bytes().first().copied() {
-        Some(b'-') => (-1_i64, &value[1..]),
-        Some(b'+') => (1_i64, &value[1..]),
-        _ => (1_i64, value),
+    let (negative, digits) = match value.as_bytes().first().copied() {
+        Some(b'-') => (true, &value[1..]),
+        Some(b'+') => (false, &value[1..]),
+        _ => (false, value),
     };
 
     let (radix, digits) = if let Some(hex) = digits
@@ -81,9 +94,8 @@ fn parse_integer_literal(value: &str) -> Option<(i64, bool)> {
         (10, digits)
     };
 
-    // Bash's printf uses the valid numeric prefix even when the remainder is
-    // invalid, while still returning an error for the argument.  For example,
-    // `%d` formats `1.2` as `1` and `08` as `0`.
+    // Bash consumes the valid prefix, saturates integer overflow, and reports
+    // a warning without turning the printf status into failure.
     let prefix_len = digits
         .char_indices()
         .take_while(|(_, ch)| ch.to_digit(radix).is_some())
@@ -94,6 +106,29 @@ fn parse_integer_literal(value: &str) -> Option<(i64, bool)> {
         return None;
     }
 
-    let parsed = i64::from_str_radix(&digits[..prefix_len], radix).ok()?;
-    Some((sign * parsed, prefix_len != digits.len()))
+    let prefix = &digits[..prefix_len];
+    let limit = if negative { (i64::MAX as u128) + 1 } else { i64::MAX as u128 };
+    let mut parsed = 0_u128;
+    let mut overflow = false;
+    for ch in prefix.chars() {
+        let digit = ch.to_digit(radix).expect("prefix contains only radix digits") as u128;
+        parsed = match parsed.checked_mul(radix as u128).and_then(|n| n.checked_add(digit)) {
+            Some(value) if value <= limit => value,
+            _ => { overflow = true; limit }
+        };
+    }
+
+    let number = if negative {
+        if parsed == (i64::MAX as u128) + 1 { i64::MIN } else { -(parsed as i64) }
+    } else {
+        parsed as i64
+    };
+    let issue = if overflow {
+        Some(IntegerIssue::Overflow)
+    } else if prefix_len != digits.len() {
+        Some(IntegerIssue::InvalidSuffix)
+    } else {
+        None
+    };
+    Some((number, issue))
 }

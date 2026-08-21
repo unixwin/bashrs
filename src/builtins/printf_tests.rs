@@ -25,6 +25,15 @@ fn run(args: &[&str]) -> (i32, String, String, HashMap<String, String>) {
 }
 
 #[test]
+fn integer_overflow_saturates_and_warns_without_failure() {
+    let (status, stdout, stderr, _) = run(&["%d|%d|%x", "9223372036854775808", "-9223372036854775809", "0xFFFFFFFFFFFFFFFF"]);
+
+    assert_eq!(status, EXECUTION_SUCCESS);
+    assert_eq!(stdout, "9223372036854775807|-9223372036854775808|7fffffffffffffff");
+    assert_eq!(stderr.matches("Numerical result out of range").count(), 3);
+}
+
+#[test]
 fn prints_plain_and_escaped_format() {
     assert_eq!(run(&["a\\nb"]).1, "a\nb");
 }
