@@ -115,12 +115,17 @@ The runner writes:
 - `target/bash-upstream-tests/summary.md`
 - `target/bash-upstream-tests/results.tsv`
 - `target/bash-upstream-tests/logs/*.log`
+- `target/issue-suites/results/bash-upstream-tests/<run-id>/<runner>/` containing the unfiltered runner log, generated test workspace, expected files, and temporary output
+
+The raw artifact directory is intentionally separate from the progress table so a later focused run cannot erase evidence from an earlier run. Set `BASH_UPSTREAM_RUN_ID` when a stable, externally supplied artifact name is required.
 
 By default ordinary upstream compatibility differences are non-blocking and the
 progress run exits successfully even when tests fail. Set
 `BASH_UPSTREAM_STRICT=1` to make any upstream failure fail the command. Every
-runner has a 60-second timeout by default; override it with
-`BASH_UPSTREAM_TIMEOUT`. A timeout always fails the command, even when strict
+runner (one upstream test file/driver) has a 60-second timeout by default; override it with
+`BASH_UPSTREAM_TIMEOUT`. A timed-out runner receives a follow-up kill after
+`BASH_UPSTREAM_KILL_AFTER` seconds (default 5), so child processes do not remain
+attached to the next test. A timeout always fails the command, even when strict
 mode is disabled. The runner validates `BASH_UPSTREAM_TIMEOUT_BIN` with a
 short probe and rejects simplified timeout stubs unless they return GNU
 timeout status `124`.

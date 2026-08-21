@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PATH="/c/Users/caomengxuan/.cargo/bin:/usr/bin:/bin:$PATH"
+# Preserve the caller's toolchain. Do not bake a developer-specific Cargo path
+# into a compatibility runner; CI and Windows hosts provide different paths.
+export PATH="${PATH:-/usr/bin:/bin}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASH_UPSTREAM_DIR="$ROOT_DIR/third_party/bash"
@@ -10,14 +12,25 @@ OUT_DIR="$ROOT_DIR/target/bash-upstream-tests"
 STRICT="${BASH_UPSTREAM_STRICT:-0}"
 TIMEOUT_BIN="${BASH_UPSTREAM_TIMEOUT_BIN:-timeout}"
 TIMEOUT_SECONDS="${BASH_UPSTREAM_TIMEOUT:-60}"
+TIMEOUT_KILL_AFTER="${BASH_UPSTREAM_KILL_AFTER:-5}"
+RUN_ID="${BASH_UPSTREAM_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
+RAW_OUT_DIR="$ROOT_DIR/target/issue-suites/results/bash-upstream-tests/$RUN_ID"
 
 validate_timeout() {
+  [[ "$TIMEOUT_SECONDS" =~ ^[1-9][0-9]*([.][0-9]+)?$ ]] || {
+    echo "BASH_UPSTREAM_TIMEOUT must be a positive number of seconds: $TIMEOUT_SECONDS" >&2
+    exit 125
+  }
+  [[ "$TIMEOUT_KILL_AFTER" =~ ^[1-9][0-9]*([.][0-9]+)?$ ]] || {
+    echo "BASH_UPSTREAM_KILL_AFTER must be a positive number of seconds: $TIMEOUT_KILL_AFTER" >&2
+    exit 125
+  }
   command -v "$TIMEOUT_BIN" >/dev/null 2>&1 || {
     echo "Bash upstream runner requires a GNU timeout binary: $TIMEOUT_BIN" >&2
     exit 125
   }
   set +e
-  "$TIMEOUT_BIN" 1 -- sh -c 'sleep 2' >/dev/null 2>&1
+  "$TIMEOUT_BIN" 1 sh -c 'sleep 2' >/dev/null 2>&1
   local timeout_rc=$?
   set -e
   [[ "$timeout_rc" -eq 124 ]] || {
@@ -92,7 +105,7 @@ OUT_REAL="$(real_path "$OUT_DIR")"
 WORK_ROOT="$OUT_DIR/work"
 WORK_ROOT_REAL="$(real_path "$WORK_ROOT")"
 
-mkdir -p "$OUT_DIR/logs"
+mkdir -p "$OUT_DIR/logs" "$RAW_OUT_DIR"
 
 refuse_unsafe_dir() {
   local dir="$1"
@@ -164,7 +177,7 @@ TIMEOUT_FAIL=0
 RESULTS_TSV="$OUT_DIR/results.tsv"
 SUMMARY_MD="$OUT_DIR/summary.md"
 
-printf "test\tstatus\texit_code\tlog\n" > "$RESULTS_TSV"
+printf "test\tstatus\texit_code\tlog\traw_artifacts\n" > "$RESULTS_TSV"
 
 for runner in "${RUNNERS[@]}"; do
   if [[ "$runner" == */* || "$runner" == *\\* ]]; then
@@ -303,7 +316,7 @@ EOF
       BASH_TSTOUT="$tmpdir/bashtst.out" \
       TMPDIR="$tmpdir" \
       PATH="$guard_bin:$BASH_TEST_DIR:$PATH" \
-      "$TIMEOUT_BIN" "$TIMEOUT_SECONDS" sh "./$runner"
+      "$TIMEOUT_BIN" --kill-after="$TIMEOUT_KILL_AFTER" "$TIMEOUT_SECONDS" sh "./$runner"
   ) >"$log" 2>&1
   status=$?
   set -e
@@ -395,13 +408,21 @@ EOF
     -e 'warning: produce diff output.' \
     "$log" > "$unexpected_log" || true
 
+  raw_runner_dir="$RAW_OUT_DIR/$runner"
+  mkdir -p "$raw_runner_dir"
+  cp "$log" "$raw_runner_dir/runner.log"
+  cp "$unexpected_log" "$raw_runner_dir/runner.unexpected.log"
+  cp -R "$test_workdir" "$raw_runner_dir/tests"
+  cp -R "$expected_dir" "$raw_runner_dir/expected"
+  cp -R "$tmpdir" "$raw_runner_dir/tmp"
+
   if [[ "$status" -eq 0 && ! -s "$unexpected_log" ]]; then
     PASS=$((PASS + 1))
-    printf "%s\tPASS\t%s\t%s\n" "$runner" "$status" "$log" >> "$RESULTS_TSV"
+    printf "%s\tPASS\t%s\t%s\t%s\n" "$runner" "$status" "$log" "$raw_runner_dir" >> "$RESULTS_TSV"
     printf "PASS %s\n" "$runner"
   else
     FAIL=$((FAIL + 1))
-    printf "%s\tFAIL\t%s\t%s\n" "$runner" "$status" "$log" >> "$RESULTS_TSV"
+    printf "%s\tFAIL\t%s\t%s\t%s\n" "$runner" "$status" "$log" "$raw_runner_dir" >> "$RESULTS_TSV"
     printf "FAIL %s (exit %s, log %s)\n" "$runner" "$status" "$log"
   fi
 done
@@ -423,7 +444,7 @@ done
   echo
   echo "## Failures"
   echo
-  awk -F '\t' 'NR > 1 && $2 == "FAIL" { printf "- `%s` exit `%s`, log `%s`\n", $1, $3, $4 }' "$RESULTS_TSV"
+  awk -F '\t' 'NR > 1 && $2 == "FAIL" { printf "- `%s` exit `%s`, log `%s`, raw `%s`\n", $1, $3, $4, $5 }' "$RESULTS_TSV"
 } > "$SUMMARY_MD"
 
 cat "$SUMMARY_MD"
