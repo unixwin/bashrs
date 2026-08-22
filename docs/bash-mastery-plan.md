@@ -2,12 +2,12 @@
 
 > 目标：通过全部测试套件（差分 26 + bash 官方 83 + 上游 87 + oil 684 + mksh 436 + ksh93 46 + busybox 143），解决远程全部 7 个 issue（#20-#26）。
 > 原则：P0 挂起/DoS 优先 → 最短路径消除 FAIL → 大套件按根因族推进 → 每阶段跑全套回归（差分 + winuxsh suites + 上游 + Rust）。
-> 当前基线（2026-08-03 会话结束）：**差分 26/26 全 PASS**（阶段 1 完成）；bash 官方 83 tests 14/83（阶段 2 进行中）；上游 86/87（run-minimal 归入路径转换家族）；Rust 69/70。
+> 历史基线（2026-08-03 会话结束）：**差分 26/26 全 PASS**（阶段 1 完成）；bash 官方 83 tests 14/83；上游 86/87；Rust 69/70。2026-08-22 的实际输出账本已更新为 13/83 PASS、70 DIFF，见 `docs/compatibility-attribution-20260822.md`。
 > 会话交接：`memory/handoff-next-session.md`（新会话先读这个 + 本文件 + `memory/compat-fixes-20260803.md`）。
 
 ## 阶段 0：回归测试环境修复（阻塞所有验证）
 - 上游测试 `tests/bash` 缺失（cp 失败、`usr/bin/bash.exe` 缺失）：修复 runner 复制逻辑/环境（scripts/run-bash-upstream-tests.sh），恢复 87/87 基线
-- winuxsh suites 驱动确认可用（WINUXSH_RUNNER=rubash 已验证 bash-tests 14/83）
+- winuxsh suites 驱动确认可用；`bash-tests` 的 14/83 是历史运行记录，不替代当前 13/83 实际输出账本。
 
 ## 阶段 1：差分 26 case 全 PASS（最短路径）
 - case-01（for+heredoc 词法组合）：heredoc body 收集与逻辑行交互——词法层修复（heredoc 未闭合跨行收集）

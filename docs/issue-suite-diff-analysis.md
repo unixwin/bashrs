@@ -1,6 +1,10 @@
 # Issue Suite DIFF Analysis
 
 > Date: 2026-08-12
+
+> Status refresh: 2026-08-22. The latest implementation and attribution
+> checkpoint is recorded in `docs/compatibility-attribution-20260822.md`.
+> Do not interpret the historical `.right` runner total as real-output parity.
 > Scope: issue #20-#26 compatibility suites, local reruns, and implementation ownership.
 
 ## Platform Scope Decision (2026-08-19)
@@ -527,7 +531,7 @@ The current compatibility picture comes from these sources:
 | Rust unit/lib | Local implementation regressions | 153/153 pass | `cargo test --lib` |
 | Rust kill regressions | Windows kill and shell PID handling | pass after `47924f4` | focused `cli_tests` / `executor_tests` |
 | Self difftest cases | Hand-authored Bash vs rubash probes | previously 26-case baseline | `tests/difftest/` |
-| Bash upstream `.right` runner | GNU Bash `run-*` against checked-in `.right` expectations | 86/87 pass; `run-minimal` has exit-0 log noise | `target/bash-upstream-tests/results.tsv` |
+| Bash upstream `.right` runner | GNU Bash `run-*` against checked-in `.right` expectations | 87/87 historical expectation baseline; separate from actual-output parity | `target/bash-upstream-tests/results.tsv` |
 | Bash actual-output | GNU Bash `.tests` bodies, GNU Bash vs Rubash at `b5e3f7b3` with LF-normalized copied fixtures | 83 files: 13 PASS / 70 raw DIFF | `target/issue-suites/results/bash-ledger-refresh-b5e3f7b3/results.tsv` |
 | Oil spec | Broad POSIX/Bash/YSH shell behavior corpus | 222 spec files processed; 12 clean, 210 with diffs/failures | `target/issue-suites/results/oils-spec.status` |
 | mksh `check.t` | Large shell semantic corpus, Bash-compatible subset used as signal | passed 162; failed 417, including 5 ignored | `target/issue-suites/results/mksh-check-timeout.log` |

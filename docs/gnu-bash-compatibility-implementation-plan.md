@@ -1,6 +1,11 @@
 # GNU Bash Compatibility Implementation Plan
 
 > Date: 2026-08-12
+
+> Current status (2026-08-22): recent fixes cover quoted associative arithmetic
+> subscripts, array diagnostics, parameter-brace scanning, arithmetic condition
+> diagnostics, and `enable -d`. The next evidence gate is the bounded refresh of
+> the actual-output ledger, not another edit to historical expected-output files.
 > Audience: future agents and maintainers fixing rubash compatibility.
 > Goal: make rubash reach GNU Bash observable compatibility while staying usable
 > as the Bash syntax/execution library embedded by Winuxsh.
@@ -58,7 +63,7 @@ because they are repeated in `docs/bash-compat-issues.md` or in an Issue title.
 | Evidence | Current interpretation |
 |---|---|
 | Bash official `.tests` actual output | 83 files: 15 exact matches, 68 diffs; raw table: `target/issue-suites/results/bash-actual/results.tsv` |
-| Bash upstream `.right` runner | Latest documented aggregate: 86/87; `run-minimal` has exit-0 log noise. A focused run may overwrite `target/bash-upstream-tests/results.tsv`, so inspect the file before quoting it as an aggregate. |
+| Bash upstream `.right` runner | Historical aggregate: 87/87 against checked-in expectations. A focused run may overwrite `target/bash-upstream-tests/results.tsv`; this is not the actual-output ledger. |
 | Rust focused/lib tests | Latest documented focused lib result: 163 passed; rerun the affected focused tests after every code change. |
 | Oil / mksh / ksh93 / BusyBox | Large suites remain red; use them as secondary cross-suite evidence after a Bash-native root-cause slice is fixed. |
 

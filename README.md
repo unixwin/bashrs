@@ -17,6 +17,11 @@ Rubash 是一个正在开发中的 GNU Bash 兼容 Shell，使用 Rust 从零实
 
 ## 当前进度
 
+当前源码包版本为 `0.3.0`。截至 2026-08-22，最近一轮真实 Bash 输出账本为
+`13/83 PASS`、`70 DIFF`；这是逐测试 stdout/stderr/退出码对比，不应与上游
+`run-*` 使用旧 `.right` 文件得到的 `87/87` runner 结果混用。差异归因和原始
+artifact 见 [`docs/compatibility-attribution-20260822.md`](docs/compatibility-attribution-20260822.md)。
+
 Rubash 的 GNU Bash 语法和运行时支持已经推进到可以运行较复杂 Bash 程序的阶段：clean 外部 `bashdb` 的核心调试闭环已经能在 `target/debug/rubash.exe` 下工作。
 
 已验证的 bashdb 核心命令包括：
@@ -147,4 +152,4 @@ Rubash 使用 GPL-3.0-or-later 许可证。详见 `LICENSE`。
 
 ---
 
-*最后更新: 2026-08-18*
+*最后更新: 2026-08-22*

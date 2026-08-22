@@ -17,6 +17,14 @@ Rubash is an in-progress GNU Bash-compatible shell. It reimplements Bash lexical
 
 ## Current Status
 
+The current source package version is `0.3.0`. As of 2026-08-22, the latest
+real-output Bash ledger is `13/83 PASS` and `70 DIFF`. This compares each
+test's stdout, stderr, and exit status; it must not be conflated with the
+`87/87` upstream `run-*` runner result, which compares against the older
+`.right` expectation files. See
+[`docs/compatibility-attribution-20260822.md`](docs/compatibility-attribution-20260822.md)
+for attribution and raw artifacts.
+
 Rubash's GNU Bash syntax and runtime support have progressed far enough to run complex Bash programs. A clean external `bashdb` checkout now completes the core debugger loop under `target/debug/rubash.exe`.
 
 Verified bashdb core commands include:
@@ -134,4 +142,4 @@ Issues, compatibility repros, focused regression tests, and implementation patch
 
 ---
 
-*Last updated: 2026-08-18*
+*Last updated: 2026-08-22*

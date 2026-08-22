@@ -1,6 +1,6 @@
 # rubash 兼容性差距总览（issue #20-#26 汇总与维修计划）
 
-> 汇总日期：2026-08-03（数据修正版：同步各 ISSUE 评论的最终数字）。数据来源：unixwin/rubash issue #20-#26 + 本地差分/上游测试。
+> 历史汇总日期：2026-08-03（数据修正版：同步各 ISSUE 评论的最终数字）。数据来源：unixwin/rubash issue #20-#26 + 本地差分/上游测试。
 > 核心结论：**7 个 issue 的差异高度重叠**——同一批根因族在不同套件（oil spec / mksh / ksh93 / bash 官方 / busybox）中反复命中。按根因族维修，而非按 issue 逐个修。
 >
 > 2026-08-12 追加：最新本地套件运行、DIFF 形态、实现归因、rubash/winuxcmd/winuxsh 架构边界见
@@ -8,8 +8,9 @@
 >
 > 2026-08-14 续接基线：当前以 `docs/issue-suite-diff-analysis.md` 的
 > `Continuation Checkpoint` 和 `target/issue-suites/results/` 最新 raw 结果为准。
-> Bash actual-output 当前为 `15/83 PASS, 68 DIFF`；`.right` 上游 runner
-> 最新记录为 `86/87`，其中 `run-minimal` 是 exit-0 日志噪音。当前第一
+> 2026-08-22 账本已 supersede 上述旧数字：Bash actual-output 为 `13/83 PASS,
+> 70 DIFF`，详见 `docs/compatibility-attribution-20260822.md`。`.right` 上游
+> runner 的 `87/87` 仍是独立的期望文件基线，不代表真实输出已 83/83。当前第一
 > 执行族为 GNU Bash `redir/vredir` 动态 fd、设备路径、fd 生命周期和
 > ordered redirect；不得用旧的 `14/83`、`87/87` 数字覆盖新的证据。
 
@@ -46,7 +47,7 @@ external materialization 根因。
 | #22 | oil spec（首跑半程快照） | 219 项（当时快照） | alias 语义 / **语法宽松度** / 数组赋值族 / 算术错误码 / jobs-dirs |
 | #23 | oil 全量 + mksh 全量 + ksh93 全量 | **684 / 436 / 46** | case / heredoc / eglob / expand / break 越界 / 错误码 / ksh 复合变量 |
 | #24 | oil 684 + mksh 436（全量清单聚焦） | 高频领域 | **内置族整体**（umask/trap/kill/set/echo/cd/shopt）/ word-split 35 / var-op 48 / nameref / mksh 进制 |
-| #25 | bash 官方 83 tests | 14/83 一致，37 可靠差异（另 32 项待归因） | 与 #20/#21/#22 同批根因族（.right 旧期望掩盖） |
+| #25 | bash 官方 83 tests | 历史记录 14/83；当前账本 13/83、70 raw DIFF | 与 #20/#21/#22 同批根因族（`.right` 旧期望掩盖） |
 | #26 | busybox ash_test | **143 项**（17/17 目录完成） | **heredoc_huge 挂起（P0 DoS）** / vars 29 / redir 14 / signals 11 / 解析 / psubst |
 
 > 差距总量：**1,345+ 项**（31 手动 + 684 + 436 + 37 可靠 + 46 + 143），全部已归入上述 ISSUE。
@@ -135,7 +136,7 @@ external materialization 根因。
 
 ## 四、测试与验证策略
 
-1. **回归基线**：差分测试（tests/difftest，23 case，当前 19 PASS）+ 上游测试（87/87）+ Rust 测试
+1. **回归基线**：差分测试（按对应 artifact 记录）+ 上游 `.right` runner（87/87 历史基线）+ Bash 实际输出账本（13/83）+ Rust 测试
 2. **每族聚焦用例**：从 winuxsh probe/suites（oil/mksh/busybox）提取该族代表用例，固化到 tests/difftest/cases/ 作为回归
 3. **大型脚本**：自建综合脚本（已发现 heredoc 挂起）+ 真实构建脚本（如 Git contrib、经典 configure 脚本），bash vs rubash 对比
 4. **GNU Bash 源码映射**：`docs/bash-source-map.md` 有 .c/.def → .rs 映射；修每族时先读对应 C 源码（subst.c/execute_cmd.c/builtins/*.c）再改 .rs，避免盲改
@@ -143,8 +144,8 @@ external materialization 根因。
 
 ## 五、GNU Bash 差距评估（当前，最终数字）
 
-- 上游 run-* 套件（.right 对比）：87/87 —— **但 .right 是旧期望，掩盖实际差距**
-- bash 官方 83 tests 实际输出对比：14/83（#25；另 32 项 bash 侧 rc 非零，**待用 run-bash-upstream 完整环境复核归因**）
+- 上游 run-* 套件（`.right` 对比）：87/87 —— **旧期望文件通过，不等于真实输出 83/83**
+- bash 官方 83 tests 实际输出对比：13/83（2026-08-22 账本；70 项 raw DIFF，需按归因分类处理）
 - 差分测试 26 case：22/26（真 bug 3 个：case-01/03/05 + 版本身份 1 个：case-10；新增 case-24 var-op / case-25 arith / case-26 alias 全 PASS，2026-08-03）
 - oil spec：228 文件 684 项差异（#23/#24）——**系统性差距仍在词法/解析/执行边界**
 - mksh：436 项；ksh93：46 项（**其中 ksh 特有语法部分为非目标**，bash 支持子集需逐个筛选）；busybox ash：143 项（含 vars/signals 新领域）

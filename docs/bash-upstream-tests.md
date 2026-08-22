@@ -164,6 +164,11 @@ Current local baseline:
 |-------------|-------|--------|--------|-----------|
 | Windows + Git Bash full upstream run | 87 | 87 | 0 | 100.00% |
 
+This table is the `.right` expectation-file runner baseline. It is intentionally
+separate from the actual-output ledger, which compares Rubash with native Bash
+per test and currently reports `13/83 PASS` and `70 DIFF`; see
+`docs/compatibility-attribution-20260822.md`.
+
 The runner stays non-strict for ordinary compatibility differences in CI so it
 can serve as a progress signal, but timeout failures and invalid timeout
 implementations are always blocking. The current local baseline passes the full
