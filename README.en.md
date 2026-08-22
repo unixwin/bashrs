@@ -2,7 +2,7 @@
 
 A GNU Bash-compatible shell implementation written in Rust.
 
-[中文](README.md)
+[中文](README.zh-CN.md)
 
 [![CI](https://github.com/unixwin/rubash/actions/workflows/ci.yml/badge.svg)](https://github.com/unixwin/rubash/actions/workflows/ci.yml)
 [![Rust Version](https://img.shields.io/badge/rust-1.70+-blue)](https://www.rust-lang.org)
@@ -48,7 +48,7 @@ The boundary is important: **the bashdb core workflow is usable, but the complet
 - **Expansion system**: Variables, positional parameters, indexed and associative arrays, command substitution, arithmetic expansion, brace expansion, tilde expansion, pathname globbing, common `${parameter...}` operators, and case/replacement transforms.
 - **Array semantics**: Indexed and associative arrays, compound assignment, element assignment/append, negative indexes, slices, `${arr[@]}`/`${arr[*]}`, and common `declare`/`local`/`export`/`readonly` interactions.
 - **Builtins**: Common Bash builtins are implemented or wired in, including `alias`/`unalias`, `builtin`, `cd`, `command`, `declare`/`typeset`/`local`, `echo`, `enable`, `eval`, `exec`, `exit`, `export`/`readonly`, `getopts`, `hash`, `help`, `jobs`, `kill`, `let`, `mapfile`/`readarray`, `printf`, `pushd`/`popd`/`dirs`, `pwd`, `read`, `return`, `set`, `shift`, `shopt`, `source`/`.`, `test`/`[`, `times`, `trap`, `type`, `ulimit`, `umask`, `unset`, and `wait`.
-- **Still in progress**: Full job control, interactive readline/history, process group and terminal control, signal edges, precise Bash parser/alias reread behavior, full bashdb command coverage, and all upstream compatibility corner cases.
+- **Known limitations**: Full job control, interactive readline/history, and process-group/terminal control remain host-sensitive. Bash parser and alias reread edge cases, full bashdb command coverage, and residual upstream compatibility cases are still under active compatibility work.
 
 ## Quick Start
 
