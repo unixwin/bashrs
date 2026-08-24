@@ -803,6 +803,32 @@ fn large_heredoc_preserves_all_lines() {
 }
 
 #[test]
+fn large_pipeline_heredoc_does_not_block_before_downstream_spawn() {
+    let body = "pipeline-payload\n".repeat(100_000);
+    let script = format!("cat <<EOF | wc -l\n{body}EOF\n");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run large heredoc pipeline probe");
+    child
+        .stdin
+        .as_mut()
+        .expect("rubash stdin")
+        .write_all(script.as_bytes())
+        .expect("write large heredoc pipeline");
+    drop(child.stdin.take());
+    let output = child
+        .wait_with_output()
+        .expect("wait for large heredoc pipeline");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "100000");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn quoted_heredoc_preserves_backslash_newline() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
