@@ -268,15 +268,23 @@ impl Executor {
             let mut words = Vec::new();
             for (word, suppress_glob) in expanded_words {
                 if suppress_glob {
-                    words.push(restore_pathname_escape_markers(
-                        &word.replace('\x15', "\\").replace('\x14', "\\"),
-                    ));
+                    words.push(
+                        restore_pathname_escape_markers(
+                            &word.replace('\x15', "\\").replace('\x14', "\\"),
+                        )
+                        .replace('\x17', "'"),
+                    );
                 } else {
                     match pathname_expand_word(&word, &self.env_vars) {
-                        PathnameExpansion::Matches(matches) => words.extend(matches),
-                        PathnameExpansion::NoMatch => words.push(restore_pathname_escape_markers(
-                            &word.replace('\x15', "\\").replace('\x14', "\\"),
-                        )),
+                        PathnameExpansion::Matches(matches) => words.extend(
+                            matches.into_iter().map(|value| value.replace('\x17', "'")),
+                        ),
+                        PathnameExpansion::NoMatch => words.push(
+                            restore_pathname_escape_markers(
+                                &word.replace('\x15', "\\").replace('\x14', "\\"),
+                            )
+                            .replace('\x17', "'"),
+                        ),
                         PathnameExpansion::Fail(pattern) => {
                             self.report_failglob(&pattern);
                             return Err(ExecuteError::ExitCode(1));
@@ -300,6 +308,21 @@ impl Executor {
         // the point where their word is expanded. Applying them to every
         // command word up front changes Bash's left-to-right semantics.
         self.apply_parameter_assignment_expansions_in_word(word);
+        if let Some(raw_substitution) = raw
+            .filter(|raw| raw.starts_with("$(") && raw.ends_with(')'))
+            .filter(|raw| {
+                raw[2..raw.len() - 1]
+                    .split_whitespace()
+                    .next()
+                    .is_some_and(|name| self.functions.contains_key(name))
+            })
+        {
+            let expanded = self.expand_embedded_parameters_mut(raw_substitution);
+            if self.splits_unquoted_expanded_word(cmd, index, &expanded) {
+                return field_split_escaped_ifs(&expanded, self.env_vars.get("IFS").map(String::as_str));
+            }
+            return vec![expanded];
+        }
         if cmd
             .process_substitutions
             .iter()
@@ -313,8 +336,10 @@ impl Executor {
         if raw_word_is_fully_single_quoted(raw) {
             return vec![word.replace('\x1f', "$")];
         }
-        if let Some(values) = self.braced_alternate_word_values(word) {
-            return values;
+        if !word.starts_with('\x1d') {
+            if let Some(values) = self.braced_alternate_word_values(word) {
+                return values;
+            }
         }
         if let Some(values) = self.array_at_word_values(word) {
             if word_is_unquoted_array_list_expansion(word) {
@@ -367,11 +392,25 @@ impl Executor {
             }
         }
         let expanded = self.expand_word_mut(word);
-        let expanded = if word_contains_brace_group(word) {
+        let expanded = if word_contains_brace_group(word) && !word.starts_with('\x1d') {
             crate::lexer::remove_shell_quotes(&expanded)
         } else {
             expanded
         };
+        if cmd
+            .array_element_assignments
+            .iter()
+            .any(|assignment| assignment.word_index == Some(index))
+        {
+            if let Some(raw_value) = raw
+                .and_then(|raw| raw.split_once('=').map(|(_, value)| value))
+                .and_then(|value| value.strip_prefix('\"').and_then(|value| value.strip_suffix('\"')))
+            {
+                if let Some((left, _)) = expanded.split_once('=') {
+                    return vec![format!("{left}={}", self.expand_quoted_parameter_word(raw_value))];
+                }
+            }
+        }
         if assignment_builtin_receives_assignment_word(cmd, index, word) {
             return vec![strip_assignment_builtin_command_subst_quotes(
                 &expanded, raw,
@@ -674,7 +713,7 @@ fn word_contains_brace_group(word: &str) -> bool {
     false
 }
 
-fn restore_pathname_escape_markers(word: &str) -> String {
+pub(in crate::executor) fn restore_pathname_escape_markers(word: &str) -> String {
     let word = crate::expand::tilde::tilde::strip_assignment_quote_marker(word);
     let word = word
         .split_once('=')

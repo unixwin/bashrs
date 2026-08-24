@@ -229,8 +229,10 @@ impl Executor {
                         "{expression}: syntax error in expression (error token is \"{expression}\")"
                     )
                 });
-            if message.contains("attempted assignment to non-variable") {
+            if !crate::executor::arithmetic::arithmetic_expansion_is_fatal(&expression) {
                 self.arithmetic_nonfatal_error.set(true);
+            } else {
+                self.arithmetic_fatal_error.set(true);
             }
             if !self.arithmetic_expansion_error.replace(true) {
                 eprintln!("{}{}", self.diagnostic_prefix(), message);

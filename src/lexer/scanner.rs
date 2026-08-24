@@ -243,7 +243,7 @@ impl<'a> Lexer<'a> {
                 }
                 Some('{') => {
                     self.advance();
-                    self.skip_braced();
+                    self.skip_braced(false);
                     if self.peek().is_some_and(|ch| !is_word_delimiter(ch)) {
                         return Some(self.finish_word_token(start, false));
                     }

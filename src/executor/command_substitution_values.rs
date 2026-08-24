@@ -23,7 +23,12 @@ impl Executor {
             "sed" => {
                 let args = words[1..]
                     .iter()
-                    .map(|word| self.expand_word(word))
+                    .map(|word| {
+                        self.expand_word(word)
+                            .replace('\x15', "\\")
+                            .replace('\x1f', "$")
+                            .replace('\x11', "")
+                    })
                     .collect::<Vec<_>>();
                 apply_simple_sed_args(input, &args).map(|output| (output, 0))
             }
@@ -657,7 +662,11 @@ impl Executor {
 }
 
 fn decode_backtick_substitution_source(source: &str) -> String {
-    decode_old_style_backtick_source(source).replace('\x1a', "`")
+    decode_old_style_backtick_source(source)
+        .replace('\x1a', "`")
+        .replace('\x11', "")
+        .replace('\x1f', "$")
+        .replace('\x15', "\\")
 }
 
 #[derive(Default)]

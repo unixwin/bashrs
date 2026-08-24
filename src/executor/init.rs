@@ -197,6 +197,7 @@ impl Executor {
             debug_trap_function_line: None,
             arithmetic_expansion_error: Cell::new(false),
             arithmetic_nonfatal_error: Cell::new(false),
+            arithmetic_fatal_error: Cell::new(false),
             last_command_substitution_status: Cell::new(None),
             last_command_substitution_parse_error: Cell::new(false),
             stdout_capture: None,

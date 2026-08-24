@@ -94,6 +94,11 @@ impl Executor {
                             "{expression}: syntax error in expression (error token is \"{expression}\")"
                         )
                     });
+                if !crate::executor::arithmetic::arithmetic_expansion_is_fatal(expression) {
+                    self.arithmetic_nonfatal_error.set(true);
+                } else {
+                    self.arithmetic_fatal_error.set(true);
+                }
                 eprintln!("{}{}", self.diagnostic_prefix(), message);
             }
         }

@@ -1,3 +1,4 @@
+use super::dolbrace::{scan_braced_parameter, BraceContext, DolbraceState};
 use super::scanner::Lexer;
 
 impl<'a> Lexer<'a> {
@@ -217,7 +218,7 @@ impl<'a> Lexer<'a> {
                 match self.peek() {
                     Some('{') => {
                         self.advance();
-                        self.skip_braced();
+                        self.skip_braced(true);
                     }
                     Some('(') => {
                         self.advance();
@@ -235,7 +236,19 @@ impl<'a> Lexer<'a> {
             }
         }
     }
-    pub(super) fn skip_braced(&mut self) {
+    pub(super) fn skip_braced(&mut self, outer_double_quote: bool) {
+        let start = self.position.saturating_sub(2);
+        let context = BraceContext {
+            outer_double_quote,
+            posix: outer_double_quote,
+            replacement_context: false,
+            initial_state: DolbraceState::Param,
+        };
+        if let Some(scan) = scan_braced_parameter(&self.input[start..], context) {
+            self.position = start + scan.end;
+            return;
+        }
+
         let mut depth = 1usize;
         let mut single = false;
         let mut double = false;
@@ -362,7 +375,7 @@ impl<'a> Lexer<'a> {
                     match self.peek() {
                         Some('{') => {
                             self.advance();
-                            self.skip_braced();
+                            self.skip_braced(false);
                         }
                         Some('(') => {
                             self.advance();

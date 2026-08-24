@@ -167,7 +167,11 @@ where
     }
 
     if delete {
-        writeln!(stderr, "{}enable: usage: {ENABLE_USAGE}", diagnostic_prefix(env_vars))?;
+        writeln!(
+            stderr,
+            "{}enable: usage: {ENABLE_USAGE}",
+            diagnostic_prefix(env_vars)
+        )?;
         return Ok(2);
     }
 

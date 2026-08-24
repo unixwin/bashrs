@@ -94,7 +94,10 @@ fn mark_parse_time_extglob_errors(ast: &mut Ast, tokens: &[Token]) {
 
 fn is_unquoted_extglob_word(token: &Token) -> bool {
     token.raw == token.value
-        && token.value.chars().any(|operator| matches!(operator, '@' | '!' | '+' | '?' | '*'))
+        && token
+            .value
+            .chars()
+            .any(|operator| matches!(operator, '@' | '!' | '+' | '?' | '*'))
         && token.value.contains("(")
 }
 

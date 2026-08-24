@@ -150,8 +150,10 @@ impl Executor {
                                         "{expression}: syntax error in expression (error token is \"{expression}\")"
                                     )
                                 });
-                                if message.contains("attempted assignment to non-variable") {
+                                if !crate::executor::arithmetic::arithmetic_expansion_is_fatal(&expression) {
                                     self.arithmetic_nonfatal_error.set(true);
+                                } else {
+                                    self.arithmetic_fatal_error.set(true);
                                 }
                                 eprintln!("{}: {message}", self.diagnostic_prefix());
                             }
@@ -337,7 +339,11 @@ impl Executor {
 }
 
 fn decode_backtick_substitution_source(source: &str) -> String {
-    source.replace('\x1a', "`")
+    source
+        .replace('\x1a', "`")
+        .replace('\x11', "")
+        .replace('\x1f', "$")
+        .replace('\x15', "\\")
 }
 
 fn push_backtick_escaped_source_char(

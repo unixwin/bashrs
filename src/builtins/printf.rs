@@ -631,7 +631,10 @@ fn render_one_pass(
 }
 
 fn status_from_errors(errors: &[String]) -> i32 {
-    if errors.iter().all(|error| error.starts_with("rubash: printf: warning:")) {
+    if errors
+        .iter()
+        .all(|error| error.starts_with("rubash: printf: warning:"))
+    {
         EXECUTION_SUCCESS
     } else if errors.is_empty() {
         EXECUTION_SUCCESS

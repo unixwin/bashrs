@@ -15,7 +15,11 @@ impl Executor {
             .strip_prefix(COMPOUND_ASSIGNMENT_MARKER)
             .unwrap_or(value);
         if value.contains("\\$(") {
-            let literal = if quoted { strip_matching_quotes(value) } else { value };
+            let literal = if quoted {
+                strip_matching_quotes(value)
+            } else {
+                value
+            };
             return unescape_remaining_shell_escapes(literal);
         }
         if quoted && value.contains(":$((") {

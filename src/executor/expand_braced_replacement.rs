@@ -33,7 +33,14 @@ impl Executor {
             return Some(
                 self.positional_params
                     .get(index.saturating_sub(1))
-                    .map(|value| replace_parameter_pattern(value, &pattern, &replacement, global))
+                    .map(|value| {
+                        replace_parameter_pattern(
+                            &value.replace('\x1b', ""),
+                            &pattern,
+                            &replacement,
+                            global,
+                        )
+                    })
                     .unwrap_or_default(),
             );
         }

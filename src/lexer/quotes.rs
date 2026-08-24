@@ -1,4 +1,5 @@
 use super::ansi::decode_ansi_c_quoted;
+use super::dolbrace::{scan_braced_parameter, BraceContext, DolbraceState};
 
 pub(crate) fn remove_shell_quotes(raw: &str) -> String {
     let mut out = String::new();
@@ -332,15 +333,43 @@ fn copy_backtick_body_preserving_syntax(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preserves_single_quotes_inside_double_quoted_parameter_word() {
+        assert_eq!(remove_shell_quotes("\"${IFS+'}'z}\""), "${IFS+'}'z}");
+    }
+}
+
 pub(super) fn copy_braced_parameter_after_dollar(
     out: &mut String,
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
 ) {
     out.push('$');
-    if chars.next() != Some('{') {
+    if chars.peek() != Some(&'{') {
         return;
     }
-    out.push('{');
+    let remaining: String = chars.clone().collect();
+    let mut wrapped = String::from("$");
+    wrapped.push_str(&remaining);
+    let context = BraceContext {
+        outer_double_quote: true,
+        posix: true,
+        replacement_context: false,
+        initial_state: DolbraceState::Param,
+    };
+    if let Some(scan) = scan_braced_parameter(&wrapped, context) {
+        let consumed = wrapped[..scan.end].chars().count().saturating_sub(1);
+        for _ in 0..consumed {
+            if let Some(ch) = chars.next() {
+                out.push(ch);
+            }
+        }
+        return;
+    }
+    out.push(chars.next().unwrap());
     let mut depth = 1usize;
     while let Some(ch) = chars.next() {
         out.push(ch);

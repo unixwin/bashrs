@@ -25,6 +25,17 @@ impl Executor {
             );
         }
 
+        // Bash permits a parameter name to be another expansion, as in
+        // `${$1}` and `${$(($2 + 2))}`. Resolve that name before the final
+        // lookup; eval-heavy helpers such as bashdb's getopts_long depend on
+        // preserving this positional indirection and its empty sentinel.
+        if name.starts_with('$') {
+            let target_name = self.expand_embedded_parameters(name);
+            if target_name != name {
+                return Some(self.expand_parameter_named_value(&target_name));
+            }
+        }
+
         let indirect_name = name.strip_prefix('!')?;
         if has_indirect_parameter_word_operator(name) {
             return None;

@@ -107,19 +107,35 @@ fn parse_integer_literal(value: &str) -> Option<(i64, Option<IntegerIssue>)> {
     }
 
     let prefix = &digits[..prefix_len];
-    let limit = if negative { (i64::MAX as u128) + 1 } else { i64::MAX as u128 };
+    let limit = if negative {
+        (i64::MAX as u128) + 1
+    } else {
+        i64::MAX as u128
+    };
     let mut parsed = 0_u128;
     let mut overflow = false;
     for ch in prefix.chars() {
-        let digit = ch.to_digit(radix).expect("prefix contains only radix digits") as u128;
-        parsed = match parsed.checked_mul(radix as u128).and_then(|n| n.checked_add(digit)) {
+        let digit = ch
+            .to_digit(radix)
+            .expect("prefix contains only radix digits") as u128;
+        parsed = match parsed
+            .checked_mul(radix as u128)
+            .and_then(|n| n.checked_add(digit))
+        {
             Some(value) if value <= limit => value,
-            _ => { overflow = true; limit }
+            _ => {
+                overflow = true;
+                limit
+            }
         };
     }
 
     let number = if negative {
-        if parsed == (i64::MAX as u128) + 1 { i64::MIN } else { -(parsed as i64) }
+        if parsed == (i64::MAX as u128) + 1 {
+            i64::MIN
+        } else {
+            -(parsed as i64)
+        }
     } else {
         parsed as i64
     };

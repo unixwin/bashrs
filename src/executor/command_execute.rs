@@ -193,6 +193,7 @@ impl Executor {
         // and assignment contexts retain their own status handling above.
         if self.arithmetic_expansion_error.get() {
             self.arithmetic_expansion_error.set(false);
+            let arithmetic_fatal_error = self.arithmetic_fatal_error.replace(false);
             let status = if self
                 .env_vars
                 .remove("__RUBASH_ARITH_NOUNSET_ERROR")
@@ -206,7 +207,8 @@ impl Executor {
             let script_mode_nonfatal = self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
                 && self.subshell_depth.get() == 0
                 && (!self.errexit_enabled() || !self.errexit_is_active());
-            let ordinary_word_error = cmd.assignments.is_empty()
+            let ordinary_word_error = !arithmetic_fatal_error
+                && cmd.assignments.is_empty()
                 && !cmd.words.is_empty()
                 && cmd.arithmetic_command.is_none()
                 && (!self.errexit_enabled() || !self.errexit_is_active());

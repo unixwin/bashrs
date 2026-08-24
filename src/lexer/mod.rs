@@ -6,6 +6,7 @@ mod ansi;
 mod brace_scan;
 mod classification;
 mod continuation;
+pub(crate) mod dolbrace;
 mod heredoc;
 mod heredoc_scan;
 mod number_redirect;

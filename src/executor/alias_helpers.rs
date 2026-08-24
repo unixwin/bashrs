@@ -323,7 +323,10 @@ fn split_escaped_separator(value: &str, separator: char) -> Option<(&str, &str)>
 }
 
 fn apply_simple_sed_line(line: &str, pattern: &str, replacement: &str) -> String {
-    let pattern = pattern.replace('\x1f', "$");
+    let pattern = pattern
+        .replace('\x1f', "$")
+        .replace('\x11', "")
+        .replace(r"\\.", r"\.");
     match pattern.as_str() {
         "'" => line.replace('\'', &unescape_sed_replacement(replacement)),
         "#" => line.replace('#', &unescape_sed_replacement(replacement)),

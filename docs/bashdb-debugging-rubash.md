@@ -89,7 +89,24 @@ stderr.
 ## Using a Fresh Official bashdb Checkout
 
 A user should not need to patch bashdb for this workflow. The needed fixes are
-in Rubash compatibility behavior.
+in Rubash compatibility behavior. The repository keeps the small target-script
+fixtures under `tests/fixtures/bashdb`; only the generated launcher and staging
+copy belong under ignored `target/`.
+
+To recreate the local fixture after a fresh checkout, first obtain/build an
+official bashdb checkout, then run:
+
+```sh
+bash scripts/setup-bashdb-fixture.sh /path/to/bashdb-checkout-or-install
+```
+
+The script copies the tracked probe inputs and the built bashdb launcher into
+`target/`. It preserves an official checkout's `getopts_long.sh` and uses the
+tracked fallback only when that runtime file is absent. It fails clearly when the
+external checkout or launcher is missing; it does not silently claim that bashdb
+tests are available. The currently verified external source is
+`Trepan-Debuggers/bashdb`, branch `bash-5.2`, commit
+`f139cc23183798cb0874358a3d624850b418266c`, release `5.2-1.2.0`.
 
 For a fresh bashdb checkout, the required user work is:
 

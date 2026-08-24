@@ -72,6 +72,7 @@ impl Executor {
         expression: &str,
     ) -> Option<String> {
         let (array_name, key) = parse_array_subscript(expression)?;
+
         let storage_name = self.resolved_variable_name(array_name)?;
         let storage = self.parameter_array_storage(array_name).unwrap_or_default();
         if is_marked_var(&self.env_vars, ASSOC_VARS, &storage_name) {

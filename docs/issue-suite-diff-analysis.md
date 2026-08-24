@@ -25,6 +25,47 @@ This document is the durable version of the issue-suite run notes. Files under
 `target/issue-suites/results/` are raw run artifacts; this document is the
 tracked summary used to decide what to fix and where.
 
+## Arithmetic Expansion Status (2026-08-24)
+
+The current Windows CLI baseline contains 353 tests: 329 passed and 24 failed. The
+previous arithmetic failure `arithmetic_empty_quoted_array_subscript_fails_outside_let`
+was Rubash-owned. Arithmetic expansion errors now have an explicit fatality state:
+empty quoted array subscripts abort the current command with status 1, while ordinary
+arithmetic word errors (`1/0`, invalid octal, and assignment-to-non-variable) report
+the diagnostic and continue without `errexit`. Readonly arithmetic in a `case` pattern
+continues to preserve the existing nonfatal behavior. Focused regressions and
+`cargo check` pass.
+
+After restoring the official bashdb fixture and fixing dynamic braced parameter-name indirection, the focused `bashdb_compat` slice is 35 passed and 12 failed. The earlier 336/19 classification predates fixture restoration and the getopts fix. The current 12 failures are bashdb runtime/command compatibility cases; they must not be classified as missing fixtures. The official launcher smoke now exits 0 and reaches the target, while the remaining debugger failures cover source mapping, nested shell, breakpoint, variable, and command behavior.
+The separate aliasconv case remains a reproducible Rubash-owned escaped-quote failure, and the Windows `?.tmp` cases remain filename limitations. Tracked source inputs live under
+`tests/fixtures/bashdb/` and can be staged with `scripts/setup-bashdb-fixture.sh`.
+The direct `declare -F`/`extdebug` behavior passes when a function is loaded. One full-suite refresh also timed out the sequential coproc test;
+two isolated reruns passed in about three seconds, so it is treated as a concurrent
+suite-load flake rather than a reproducible coproc defect.
+
+Round 2 isolation: `script_backtick_echo_sed_pipeline_splits_version` still fails
+only in the mutable command-substitution AST pipeline. Root cause was the shared shell-sentinel
+contract: backtick command-substitution sed arguments retained `\x15`, `\x1f`, and
+`\x11` markers after tokenization. The decoder now restores them before sed
+filter execution, and both the long script regression and a minimal backtick/`$()`
+equivalence regression pass. The quoted positional substitution defect was fixed in
+`expand_command_word`: raw metadata for function-shaped `$()` substitutions is
+expanded before token-value shortcuts can discard the quoted argument source. Both
+`script_sort_pos_params_example_handles_quoted_positional_args` and a minimal
+function/`"$@"` regression now pass. A bashdb parameter-replacement case also
+exposed `\x1b` quote protection leaking from a quoted positional value; numeric
+replacement now strips that internal marker before pattern replacement.
+`script_aliasconv_example_converts_aliases` is now fixed in Rubash-owned quote handling.
+Words containing command substitution or backticks retain the escaped-apostrophe
+sentinel through embedded expansion; final command-word materialization decodes it
+after pathname and quote-sensitive processing. Ordinary words keep their existing
+quote decoding path. The focused aliasconv regression passes, as does the bashdb
+getopts dynamic-indirection regression. No expected-output or upstream bridge file
+was changed. A separate lexer regression still leaks `\x11` in a multiline pipeline
+single-quoted word and remains open. The raw run is retained at
+`target/issue-suites/results/current-cli-full-r2.out`; this classification is not
+proof that every bashdb runtime failure is a Rubash semantic defect.
+
 ## Runner Infrastructure Checkpoint (2026-08-21)
 
 The Bash upstream runner preserves the caller toolchain, validates positive
@@ -2869,3 +2910,7 @@ therefore emitted `winuxsh: unknown argument '--'`; `procsub.tests` also lacked
 DIFF counts.
 
 Post-parser rerun: `timeout 120s cargo test --test cli_tests coproc -- --nocapture` compiled and ran 17 tests in 11.21s, with 12 passed and 5 failed. The failures were three \x1c quoted-assignment marker leaks, persistent-stderr `done=127`, and sequential coproc timeout. GNU Bash returned `flop` rc 0 for the sequential probe; direct Rubash remained timeout rc 124. No residual rubash/bash/cargo processes remained. The marker leaks cross variable storage/expansion; the sequential timeout crosses internal cat/stdin streaming. No parser modification was made here.
+
+## 2026-08-24 Malformed compound command substitution
+
+The focused CLI failure `malformed_compound_inside_command_substitution_is_a_syntax_error` was traced to `expand_command_substitution_inner`: the existing `if ... then` compound-shape check set status 2 but did not set `last_command_substitution_parse_error`. The outer command therefore treated the substitution as an empty successful word. The fix marks the same parse-error cell used by the normal AST substitution path. The focused regression now passes.

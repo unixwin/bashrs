@@ -1,4 +1,5 @@
 use super::*;
+use crate::lexer::dolbrace::{scan_braced_parameter_body, BraceContext, DolbraceState};
 
 pub(in crate::executor) fn decode_parameter_word_quotes(word: &str) -> String {
     let mut output = String::new();
@@ -224,6 +225,21 @@ pub(in crate::executor) fn parse_parameter_assignment_operator(
 }
 
 pub(in crate::executor) fn matching_parameter_brace(input: &str) -> Option<usize> {
+    let replacement_context = input.find('/').is_some_and(|slash| {
+        !input[..slash].contains(':')
+            && input[..slash]
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '#')
+    });
+    let context = BraceContext {
+        outer_double_quote: false,
+        posix: false,
+        replacement_context,
+        initial_state: DolbraceState::Param,
+    };
+    if let Some(scan) = scan_braced_parameter_body(input, context) {
+        return scan.end.checked_sub(1);
+    }
     let mut chars = input.char_indices().peekable();
     let mut depth = 0usize;
     let mut in_bracket_expression = false;

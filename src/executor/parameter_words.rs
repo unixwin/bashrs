@@ -275,9 +275,8 @@ impl Executor {
         if let Some((var_name, alternate)) = name.split_once('+') {
             if is_parameter_error_name(var_name) {
                 if self.parameter_operator_value(var_name).is_some() {
-                    return decode_double_quotes_in_quoted_parameter_word(
-                        &self.expand_embedded_parameters_mut(alternate),
-                    );
+                    let expanded = self.expand_embedded_parameters_mut(alternate);
+                    return decode_double_quotes_in_quoted_parameter_word(&expanded);
                 }
                 return String::new();
             }

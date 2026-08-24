@@ -17,6 +17,18 @@ fn posix_parameter_word_can_contain_single_quoted_closing_brace() {
 }
 
 #[test]
+fn posix_parameter_word_preserves_single_quoted_closing_brace_in_double_quotes() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("set -o posix; (echo 2 \"${IFS+'}'z}\")")
+        .output()
+        .expect("run quoted POSIX parameter brace probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "2 '}'z\n");
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+#[test]
 fn quoted_native_wildcards_and_special_arguments_survive_argv_boundary() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
@@ -1161,5 +1173,46 @@ fn grouped_background_trap_receives_kill_from_parent() {
         String::from_utf8_lossy(&output.stdout),
         "got TERM\nDone: 0\n"
     );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn external_pipeline_preserves_quoted_awk_field_separator_argument() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"printf 'a\tb\n' | awk -F '\t' 'BEGIN { print "FS=[" FS "]" }'"#)
+        .output()
+        .expect("run quoted awk field separator pipeline probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n"),
+        "FS=[\\t]\n"
+    );
+}
+
+#[test]
+fn unquoted_function_substitution_preserves_quoted_positional_arguments() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("f(){ printf '%s\\n' \"$@\"; }; set -- a b; set -- $(f \"$@\"); printf '<%s>\\n' \"$@\"")
+        .output()
+        .expect("run function substitution positional probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<a>\n<b>\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn command_substitution_sed_restores_shell_sentinels() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("v=5.3; a=`echo $v | sed 's:\\\\..*$::'`; b=$(echo $v | sed 's:^.*\\.::'); printf '%s:%s\\n' \"$a\" \"$b\"")
+        .output()
+        .expect("run command substitution sed sentinel probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "5:3\n");
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }

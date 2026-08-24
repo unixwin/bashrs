@@ -161,7 +161,7 @@ impl<'a> Lexer<'a> {
                     match self.peek() {
                         Some('{') => {
                             self.advance();
-                            self.skip_braced();
+                            self.skip_braced(false);
                         }
                         Some('(') => {
                             self.advance();

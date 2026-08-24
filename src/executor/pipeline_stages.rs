@@ -252,7 +252,21 @@ impl Executor {
 
         let args: Vec<String> = command.words[1..]
             .iter()
-            .map(|word| self.expand_word(word))
+            .enumerate()
+            .flat_map(|(offset, word)| {
+                let index = offset + 1;
+                let raw = command
+                    .word_metadata
+                    .get(index)
+                    .map(|metadata| metadata.raw.as_str());
+                self.expand_command_word(command, index, word, raw)
+                    .into_iter()
+                    .map(|word| {
+                        crate::executor::command_prepare::restore_pathname_escape_markers(
+                            &word.replace('\x15', "\\").replace('\x14', "\\"),
+                        )
+                    })
+            })
             .collect();
         let (mut process, _) = external_command_for_named_program(
             &program,

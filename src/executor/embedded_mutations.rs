@@ -41,7 +41,13 @@ impl Executor {
             }
 
             if ch == '\x17' {
-                output.push('\'');
+                // Only command-substitution words cross a later quote-removal
+                // pass; ordinary words retain their existing decoding path.
+                if word.contains("$(") || word.contains('`') {
+                    output.push('\x17');
+                } else {
+                    output.push('\'');
+                }
                 continue;
             }
 
@@ -77,9 +83,12 @@ impl Executor {
                     source.push(source_ch);
                 }
                 if closed {
-                    output.push_str(&protect_command_substitution_output(
-                        &self.expand_command_substitution_mut(&source),
-                    ));
+                    let expanded = if source.contains('|') {
+                        self.expand_command_substitution(&source)
+                    } else {
+                        self.expand_command_substitution_mut(&source)
+                    };
+                    output.push_str(&protect_command_substitution_output(&expanded));
                 } else {
                     output.push('`');
                     output.push_str(&source);
@@ -351,9 +360,12 @@ impl Executor {
     pub(in crate::executor) fn expand_command_substitution_mut(&mut self, source: &str) -> String {
         let source = source.trim();
         let words = self.expand_aliases(&split_shell_words(source));
+        let saved_positional_params = self.positional_params.clone();
         if let Some(output) = self.run_function_command_substitution(&words) {
+            self.positional_params = saved_positional_params;
             return output;
         }
+        self.positional_params = saved_positional_params;
         if command_substitution_words_contain_here_string(&words) {
             let alias_source = words.join(" ");
             if let Some(output) = self.run_ast_command_substitution(&alias_source) {
@@ -410,6 +422,7 @@ impl Executor {
         let saved_function_redirects = self.function_definition_redirects.clone();
         let saved_aliases = self.aliases.clone();
         let saved_exit_code = self.exit_code;
+        let saved_positional_params = self.positional_params.clone();
         let saved_dir = env::current_dir().ok();
         let saved_depth = self.subshell_depth.get();
         self.subshell_depth.set(saved_depth + 1);
@@ -450,6 +463,7 @@ impl Executor {
             let _ = env::set_current_dir(saved_dir);
         }
         self.subshell_depth.set(saved_depth);
+        self.positional_params = saved_positional_params;
         self.exit_code = saved_exit_code;
         self.last_command_substitution_status.set(Some(status));
 

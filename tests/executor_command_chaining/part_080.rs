@@ -1569,7 +1569,8 @@ fn test_embedded_assignment_output_process_substitution_keeps_surrounding_text()
     let side_path = "target/rubash-embedded-assignment-output-process-substitution-side.txt";
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_file(side_path);
-    let input = format!("p=x>(printf payload > {side_path})y; printf '%s\\n' \"$p\" > {output_path}");
+    let input =
+        format!("p=x>(printf payload > {side_path})y; printf '%s\\n' \"$p\" > {output_path}");
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
     let mut executor = Executor::new();

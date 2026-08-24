@@ -111,6 +111,7 @@ impl Executor {
 
         if command_substitution_needs_command_list(source, &words) {
             if command_substitution_has_unclosed_compound(source) {
+                self.last_command_substitution_parse_error.set(true);
                 self.last_command_substitution_status.set(Some(2));
                 return String::new();
             }
@@ -446,6 +447,7 @@ impl Executor {
             last_background_pid: self.last_background_pid,
             arithmetic_expansion_error: Cell::new(false),
             arithmetic_nonfatal_error: Cell::new(false),
+            arithmetic_fatal_error: Cell::new(false),
             background_children: HashMap::new(),
             background_jobs: HashMap::new(),
             background_job_order: Vec::new(),

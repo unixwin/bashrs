@@ -1,3 +1,4 @@
+use super::dolbrace::{scan_braced_parameter_body, BraceContext, DolbraceState};
 use super::token::{Token, TokenKind};
 
 pub(super) fn has_unclosed_brace_group(input: &str) -> bool {
@@ -289,7 +290,19 @@ fn brace_group_separator_allows_reserved_word(ch: char) -> bool {
     matches!(ch, ';' | '&' | '|' | '(' | ')' | '{' | '\n')
 }
 
-pub(super) fn skip_braced_parameter_in_chars(chars: &[char], mut index: usize) -> usize {
+pub(super) fn skip_braced_parameter_in_chars(chars: &[char], index: usize) -> usize {
+    let body: String = chars[index..].iter().collect();
+    let context = BraceContext {
+        outer_double_quote: false,
+        posix: false,
+        replacement_context: false,
+        initial_state: DolbraceState::Param,
+    };
+    if let Some(scan) = scan_braced_parameter_body(&body, context) {
+        return index + body[..scan.end].chars().count();
+    }
+
+    let mut index = index;
     let mut depth = 1usize;
     let mut single = false;
     let mut double = false;

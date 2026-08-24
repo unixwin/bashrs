@@ -155,7 +155,7 @@ impl Executor {
 
     pub(in crate::executor) fn expand_parameter_pattern_word(&self, pattern: &str) -> String {
         let pattern = self.expand_embedded_parameters_preserving_escaped_single_quotes(pattern);
-        decode_parameter_pattern_quotes(&pattern)
+        decode_parameter_pattern_quotes(&pattern).replace('\x1b', "")
     }
 
     pub(in crate::executor) fn assoc_subscript_key(&self, key: &str) -> String {

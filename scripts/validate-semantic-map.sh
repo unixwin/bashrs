@@ -4,7 +4,8 @@ set -eu
 map="docs/semantic-ownership.tsv"
 test -f "$map"
 
-awk -F '\t' '
+awk 'BEGIN { FS = sprintf("%c", 9) }
+
   NR == 1 {
     if ($1 != "GNU source family" || NF != 7) {
       print "invalid semantic map header" > "/dev/stderr"
@@ -46,7 +47,8 @@ awk -F '\t' '
   }
 ' "$map"
 
-awk -F '\t' 'NR > 1 {
+awk 'BEGIN { FS = sprintf("%c", 9) }
+NR > 1 {
   n = split($3, owners, ";")
   for (i = 1; i <= n; i++) {
     owner = owners[i]
