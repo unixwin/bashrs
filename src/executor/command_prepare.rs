@@ -346,7 +346,13 @@ impl Executor {
             }
             return values;
         }
-        if self.is_brace_expand_enabled() && !word.contains("${") && !raw_word_is_quoted(raw) {
+        if self.is_brace_expand_enabled()
+            && !word.contains("${")
+            && (!raw_word_is_quoted(raw)
+                || raw.is_some_and(|raw| {
+                    !raw.contains('\'') && !raw.contains('\"') && word_contains_brace_group(raw)
+                }))
+        {
             let braced = expand_braces_with_optional_raw(word, raw);
             if braced.len() > 1 {
                 return braced;
@@ -361,6 +367,11 @@ impl Executor {
             }
         }
         let expanded = self.expand_word_mut(word);
+        let expanded = if word_contains_brace_group(word) {
+            crate::lexer::remove_shell_quotes(&expanded)
+        } else {
+            expanded
+        };
         if assignment_builtin_receives_assignment_word(cmd, index, word) {
             return vec![strip_assignment_builtin_command_subst_quotes(
                 &expanded, raw,
@@ -617,7 +628,7 @@ pub(in crate::executor) fn expand_braces_with_optional_raw(
     if let Some(raw) = raw {
         if raw != word && !raw.contains("${") {
             let braced = crate::expand::braces::expand_braces(raw);
-            if braced.len() > 1 {
+            if braced.len() > 1 || word_contains_brace_group(raw) {
                 return braced
                     .into_iter()
                     .map(|word| crate::lexer::remove_shell_quotes(&word))
@@ -632,9 +643,35 @@ pub(in crate::executor) fn expand_braces_with_optional_raw(
             .into_iter()
             .map(|word| crate::lexer::remove_shell_quotes(&word))
             .collect()
+    } else if word_contains_brace_group(word) {
+        // A brace group can be syntactically present without producing
+        // multiple words; quote removal still applies to its escaped text.
+        braced
+            .into_iter()
+            .map(|word| crate::lexer::remove_shell_quotes(&word))
+            .collect()
     } else {
         braced
     }
+}
+
+fn word_contains_brace_group(word: &str) -> bool {
+    let mut escaped = false;
+    let mut open = false;
+    for ch in word.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+        } else if ch == '{' {
+            open = true;
+        } else if ch == '}' && open {
+            return true;
+        }
+    }
+    false
 }
 
 fn restore_pathname_escape_markers(word: &str) -> String {

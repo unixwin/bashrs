@@ -120,6 +120,23 @@ fn test_simple_command_brace_expansion_keeps_escaped_commas() {
 }
 
 #[test]
+fn test_singleton_brace_group_performs_quote_removal() {
+    let output_path = "target/rubash-brace-singleton-quote-removal-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!("printf '<%s>\\n' {{abc\\,def}} > {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "<{abc,def}>\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_for_command_brace_expansion_keeps_escaped_commas() {
     let output_path = "target/rubash-for-brace-escaped-comma-output.txt";
     let _ = fs::remove_file(output_path);
