@@ -123,6 +123,12 @@ impl Executor {
 
     fn expand_braced_transform_parameter(&self, name: &str) -> Option<String> {
         let (var_name, transform) = parse_parameter_transform(name)?;
+        // GNU subst.c resolves indirect names before applying the final
+        // transform. Otherwise `${!ref@A}` is mistaken for a literal `!ref`
+        // variable and loses the target's attributes.
+        if let Some(value) = self.indirect_parameter_transform(var_name, transform) {
+            return Some(value);
+        }
         if transform == ParameterTransform::KeyValueQuoted {
             return Some(self.parameter_key_value_transform(var_name, true));
         }
@@ -134,9 +140,6 @@ impl Executor {
         }
         if transform == ParameterTransform::Attributes {
             return Some(self.parameter_attribute_transform(var_name));
-        }
-        if let Some(value) = self.indirect_parameter_transform(var_name, transform) {
-            return Some(value);
         }
         if matches!(var_name, "@" | "*") {
             return Some(
