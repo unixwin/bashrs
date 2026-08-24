@@ -88,11 +88,36 @@ pub(super) fn parameter_expansions_in_word(word: &str) -> Vec<ParameterExpansion
     expansions
 }
 
+fn quote_state_before(chars: &[char], end: usize) -> (bool, bool) {
+    let mut single = false;
+    let mut double = false;
+    let mut escaped = false;
+    let mut index = 0usize;
+    while index < end {
+        let ch = chars[index];
+        if escaped {
+            escaped = false;
+        } else if ch == '\\' && !single {
+            escaped = true;
+        } else if ch == '\'' && !double {
+            single = !single;
+        } else if ch == '"' && !single {
+            double = !double;
+        }
+        index += 1;
+    }
+    (single, double)
+}
+
 fn braced_parameter_expansion(chars: &[char], start: usize) -> Option<(ParameterExpansion, usize)> {
     let mut index = start + 2;
     let mut depth = 1usize;
-    let mut single = false;
-    let mut double = false;
+    // Preserve quote state from the word around `${...}`. An expansion inside
+    // an outer double-quoted word must still accept its own closing brace.
+    let (initial_single, initial_double) = quote_state_before(chars, start);
+    let outer_double_quote = initial_double;
+    let mut single = initial_single;
+    let mut double = initial_double;
     let mut ansi_single = false;
     let mut escaped = false;
     while index < chars.len() {
@@ -132,7 +157,7 @@ fn braced_parameter_expansion(chars: &[char], start: usize) -> Option<(Parameter
             // A nested `${...}` closes while it is embedded in the outer
             // parameter's quoted pattern/word. The outer quote state must
             // not hide that nested delimiter from the depth counter.
-            '}' if !single && (!double || depth > 1) => {
+            '}' if !single && (!double || depth > 1 || outer_double_quote) => {
                 depth = depth.saturating_sub(1);
                 if depth == 0 {
                     let parameter = chars[start + 2..index].iter().collect::<String>();

@@ -229,6 +229,7 @@ pub(in crate::executor) fn matching_parameter_brace(input: &str) -> Option<usize
     let mut in_bracket_expression = false;
     let mut single = false;
     let mut double = false;
+    let mut saw_quote = false;
     // In `${var/pattern/replacement}`, quotes in the pattern and replacement
     // are part of the parameter operation. They must not hide the operation's
     // closing brace from the outer `${...}` scanner. A colon before the slash
@@ -253,10 +254,12 @@ pub(in crate::executor) fn matching_parameter_brace(input: &str) -> Option<usize
         }
         if ch == '\'' && !double {
             single = !single;
+            saw_quote = true;
             continue;
         }
         if ch == '"' && !single {
             double = !double;
+            saw_quote = true;
             continue;
         }
         if ch == '[' && !single && !double {
@@ -273,8 +276,8 @@ pub(in crate::executor) fn matching_parameter_brace(input: &str) -> Option<usize
             continue;
         }
         if ch == '}'
-            && !in_bracket_expression
-            && (replacement_context || (!single && (!double || depth > 0)))
+            && (!in_bracket_expression || depth > 0)
+            && (replacement_context || (!single && (!double || depth > 0 || !saw_quote)))
         {
             if depth == 0 {
                 return Some(index);
@@ -512,6 +515,11 @@ mod tests {
     #[test]
     fn matching_parameter_brace_ignores_closing_brace_in_bracket_pattern() {
         assert_eq!(matching_parameter_brace("o%[}]}"), Some(5));
+    }
+
+    #[test]
+    fn matching_parameter_brace_accepts_nested_array_subscript() {
+        assert_eq!(matching_parameter_brace("A[${i}]}"), Some(7));
     }
 
     #[test]
