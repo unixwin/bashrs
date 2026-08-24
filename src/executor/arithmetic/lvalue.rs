@@ -46,7 +46,7 @@ impl ConditionalArithParser<'_> {
             } else if self.peek() == Some(b'"') || self.peek() == Some(b'\'') {
                 let expression = self.collect_quoted_index_expression()?;
                 let expression = strip_arith_double_quotes(&expression);
-                if expression.trim().is_empty() {
+                if expression.is_empty() {
                     self.error_category = Some(super::super::ArithmeticErrorCategory::EmptyArraySubscript);
                     return None;
                 }
