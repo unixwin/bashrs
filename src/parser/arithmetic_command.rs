@@ -43,6 +43,22 @@ pub(super) fn parse_arithmetic_command(
             return Some(finish_arithmetic_command(command, tokens, i + 1));
         }
 
+        // A separated arithmetic command can be nested in a subshell. In
+        // the nested form, one closing parenthesis ends arithmetic and the
+        // separator belongs to the surrounding subshell.
+        if paren_depth == 0
+            && bracket_depth == 0
+            && is_keyword(tokens, i, ")")
+            && tokens
+                .get(i + 1)
+                .is_some_and(|token| token.kind == TokenKind::Semicolon)
+        {
+            let mut command = CommandNode::new();
+            command.line = tokens.get(start).map(|token| token.position);
+            set_arithmetic_command_words(&mut command, parts.join(" "));
+            return Some(finish_arithmetic_command(command, tokens, i + 1));
+        }
+
         if paren_depth == 0
             && bracket_depth == 0
             && is_keyword(tokens, i, ")")
