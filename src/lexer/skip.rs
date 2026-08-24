@@ -240,7 +240,10 @@ impl<'a> Lexer<'a> {
         let start = self.position.saturating_sub(2);
         let context = BraceContext {
             outer_double_quote,
-            posix: outer_double_quote,
+            // parse.y::parse_matched_pair keeps POSIX mode separate from the
+            // surrounding quote state. The lexer API currently scans in Bash
+            // default mode; do not infer POSIX mode from double quotes.
+            posix: false,
             replacement_context: false,
             initial_state: DolbraceState::Param,
         };

@@ -36,9 +36,44 @@ fn integer_overflow_saturates_and_warns_without_failure() {
     assert_eq!(status, EXECUTION_SUCCESS);
     assert_eq!(
         stdout,
-        "9223372036854775807|-9223372036854775808|7fffffffffffffff"
+        "9223372036854775807|-9223372036854775808|ffffffffffffffff"
     );
-    assert_eq!(stderr.matches("Numerical result out of range").count(), 3);
+    assert_eq!(stderr.matches("Numerical result out of range").count(), 2);
+}
+
+#[test]
+fn unsigned_formats_accept_uintmax_max_without_overflow() {
+    let (status, stdout, stderr, _) = run(&[
+        "%u|%o|%x|%X",
+        "0xffffffffffffffff",
+        "0xffffffffffffffff",
+        "0xffffffffffffffff",
+        "0xffffffffffffffff",
+    ]);
+    assert_eq!(status, EXECUTION_SUCCESS);
+    assert_eq!(
+        stdout,
+        "18446744073709551615|1777777777777777777777|ffffffffffffffff|FFFFFFFFFFFFFFFF"
+    );
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn unsigned_invalid_prefix_fails_and_preserves_value() {
+    let (status, stdout, stderr, _) = run(&["%u|%x", "123oops", "oops"]);
+    assert_eq!(status, EXECUTION_FAILURE);
+    assert_eq!(stdout, "123|0");
+    assert!(stderr.contains("123oops: invalid number"));
+    assert!(stderr.contains("oops: invalid number"));
+}
+
+#[test]
+fn unsigned_overflow_saturates_with_warning_only() {
+    let (status, stdout, stderr, _) =
+        run(&["%u|%x", "18446744073709551616", "0x10000000000000000"]);
+    assert_eq!(status, EXECUTION_SUCCESS);
+    assert_eq!(stdout, "18446744073709551615|ffffffffffffffff");
+    assert_eq!(stderr.matches("Numerical result out of range").count(), 2);
 }
 
 #[test]

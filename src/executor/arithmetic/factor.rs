@@ -86,9 +86,16 @@ impl ConditionalArithParser<'_> {
             self.pos += 1;
         }
         if self.peek() == Some(b'#') {
-            let base_text = std::str::from_utf8(&self.input[start..self.pos]).ok()?;
-            let base = base_text.parse::<u32>().ok()?;
+            let Some(base_text) = std::str::from_utf8(&self.input[start..self.pos]).ok() else {
+                self.error_category = Some(super::super::ArithmeticErrorCategory::InvalidLiteral);
+                return None;
+            };
+            let Some(base) = base_text.parse::<u32>().ok() else {
+                self.error_category = Some(super::super::ArithmeticErrorCategory::InvalidLiteral);
+                return None;
+            };
             if !(2..=64).contains(&base) {
+                self.error_category = Some(super::super::ArithmeticErrorCategory::InvalidLiteral);
                 return None;
             }
             self.pos += 1;
@@ -99,9 +106,14 @@ impl ConditionalArithParser<'_> {
                 self.pos += 1;
             }
             if self.pos == digit_start {
+                self.error_category = Some(super::super::ArithmeticErrorCategory::InvalidLiteral);
                 return None;
             }
-            return parse_arithmetic_digits(&self.input[digit_start..self.pos], base);
+            let result = parse_arithmetic_digits(&self.input[digit_start..self.pos], base);
+            if result.is_none() {
+                self.error_category = Some(super::super::ArithmeticErrorCategory::InvalidLiteral);
+            }
+            return result;
         }
 
         if self.input[start..].starts_with(b"0x") || self.input[start..].starts_with(b"0X") {
@@ -111,9 +123,14 @@ impl ConditionalArithParser<'_> {
                 self.pos += 1;
             }
             if self.pos == digit_start {
+                self.error_category = Some(super::super::ArithmeticErrorCategory::InvalidLiteral);
                 return None;
             }
-            return parse_arithmetic_digits(&self.input[digit_start..self.pos], 16);
+            let result = parse_arithmetic_digits(&self.input[digit_start..self.pos], 16);
+            if result.is_none() {
+                self.error_category = Some(super::super::ArithmeticErrorCategory::InvalidLiteral);
+            }
+            return result;
         }
 
         let text = std::str::from_utf8(&self.input[start..self.pos]).ok()?;
@@ -122,7 +139,11 @@ impl ConditionalArithParser<'_> {
         } else {
             10
         };
-        parse_arithmetic_digits(text.as_bytes(), base)
+        let result = parse_arithmetic_digits(text.as_bytes(), base);
+        if result.is_none() {
+            self.error_category = Some(super::super::ArithmeticErrorCategory::InvalidLiteral);
+        }
+        result
     }
 
     pub(super) fn parse_dollar_variable(&mut self) -> Option<i128> {

@@ -90,9 +90,14 @@ impl ConditionalArithParser<'_> {
             env_vars: self.env_vars,
             resolving,
             random_state: self.random_state,
+            error_category: None,
         };
         let value = parser.parse_comma()?;
         parser.skip_ws();
+        let category = parser.error_category;
+        if category.is_some() {
+            self.error_category = category;
+        }
         (parser.pos == parser.input.len()).then_some(value)
     }
 

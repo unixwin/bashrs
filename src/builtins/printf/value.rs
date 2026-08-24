@@ -1,6 +1,6 @@
 use super::escape::{expand_percent_b, shell_quote};
 use super::float::format_float;
-use super::number::{invalid_number_error, parse_f64, parse_i64};
+use super::number::{invalid_number_error, parse_f64, parse_i64, parse_u64};
 use super::FormatSpec;
 
 pub(super) fn format_value(value: &str, spec: &FormatSpec) -> (String, bool, Option<String>) {
@@ -22,24 +22,24 @@ pub(super) fn format_value(value: &str, spec: &FormatSpec) -> (String, bool, Opt
             format_signed_integer(parsed.value, spec)
         }
         'u' => {
-            let parsed = parse_i64(value);
+            let parsed = parse_u64(value);
             invalid_number = parsed.invalid;
-            format_unsigned_integer(parsed.value as u64, 10, false, spec)
+            format_unsigned_integer(parsed.value, 10, false, spec)
         }
         'x' => {
-            let parsed = parse_i64(value);
+            let parsed = parse_u64(value);
             invalid_number = parsed.invalid;
-            format_unsigned_integer(parsed.value as u64, 16, false, spec)
+            format_unsigned_integer(parsed.value, 16, false, spec)
         }
         'X' => {
-            let parsed = parse_i64(value);
+            let parsed = parse_u64(value);
             invalid_number = parsed.invalid;
-            format_unsigned_integer(parsed.value as u64, 16, true, spec)
+            format_unsigned_integer(parsed.value, 16, true, spec)
         }
         'o' => {
-            let parsed = parse_i64(value);
+            let parsed = parse_u64(value);
             invalid_number = parsed.invalid;
-            format_unsigned_integer(parsed.value as u64, 8, false, spec)
+            format_unsigned_integer(parsed.value, 8, false, spec)
         }
         'f' | 'F' => {
             let parsed = parse_f64(value);

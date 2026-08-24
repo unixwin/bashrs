@@ -239,6 +239,12 @@ mod tests {
         replacement_context: false,
         initial_state: DolbraceState::Param,
     };
+    const OUTER_DOUBLE_DEFAULT: BraceContext = BraceContext {
+        outer_double_quote: true,
+        posix: false,
+        replacement_context: false,
+        initial_state: DolbraceState::Param,
+    };
     const OUTER_DOUBLE_POSIX: BraceContext = BraceContext {
         outer_double_quote: true,
         posix: true,
@@ -296,6 +302,13 @@ mod tests {
         let input = "${x:-$(printf '}') $((1 + 2)) `printf '}'`}";
         let scan = scan_braced_parameter(input, PLAIN).unwrap();
         assert_eq!(scan.end, input.len());
+    }
+
+    #[test]
+    fn outer_quote_does_not_imply_posix_scanning() {
+        let input = "${x:-'}";
+        assert!(scan_braced_parameter(input, OUTER_DOUBLE_DEFAULT).is_some());
+        assert!(scan_braced_parameter(input, OUTER_DOUBLE_POSIX).is_none());
     }
 
     #[test]

@@ -12,6 +12,16 @@ use std::collections::HashMap;
 use super::Executor;
 use crate::executor::{is_marked_var, ASSOC_VARS};
 
+/// Categories surfaced by GNU Bash's arithmetic evaluator.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ArithmeticErrorCategory {
+    EmptyArraySubscript,
+    DivisionByZero,
+    InvalidLiteral,
+    NonVariableAssignment,
+    EvaluatorFailure,
+}
+
 impl Executor {
     pub(crate) fn eval_arithmetic_command_value(&mut self, expression: &str) -> Option<i128> {
         let expression = if self.has_associative_parameter_subscript(expression) {
@@ -36,9 +46,6 @@ impl Executor {
             return None;
         }
         if empty_quoted_operand_has_operator(&expression) {
-            return None;
-        }
-        if empty_quoted_array_subscript(&expression) {
             return None;
         }
         let value = eval_mutable_arith_value_with_random(
@@ -68,9 +75,6 @@ impl Executor {
             }
         }
         if empty_quoted_operand_has_operator(&expression) {
-            return None;
-        }
-        if empty_quoted_array_subscript(&expression) {
             return None;
         }
         let value = eval_mutable_arith_value_with_random(
@@ -166,25 +170,15 @@ fn empty_quoted_operand_has_operator(expression: &str) -> bool {
 }
 
 pub(crate) fn arithmetic_expansion_is_fatal(expression: &str) -> bool {
-    empty_quoted_array_subscript(expression)
+    arithmetic_error_category(expression) == Some(ArithmeticErrorCategory::EmptyArraySubscript)
 }
 
-fn empty_quoted_array_subscript(expression: &str) -> bool {
-    let mut start = 0;
-    while let Some(relative_open) = expression[start..].find('[') {
-        let open = start + relative_open;
-        let Some(relative_close) = expression[open + 1..].find(']') else {
-            break;
-        };
-        let close = open + 1 + relative_close;
-        let subscript = &expression[open + 1..close];
-        if subscript.is_empty() || matches!(subscript.trim(), "\"\"" | "''") {
-            return true;
-        }
-        start = close + 1;
-    }
-    false
+pub(crate) fn arithmetic_error_category(expression: &str) -> Option<ArithmeticErrorCategory> {
+    let mut env_vars = HashMap::new();
+    let (_, category) = eval_mutable_arith_result(expression, &mut env_vars, None);
+    category
 }
+
 
 pub(crate) fn eval_conditional_arith_value(
     value: &str,
@@ -587,16 +581,46 @@ pub(super) fn eval_mutable_arith_value_with_random(
     if normalized.trim().is_empty() {
         return Some(0);
     }
+    eval_mutable_arith_result(value, env_vars, random_state).0
+}
+
+fn eval_mutable_arith_result(
+    value: &str,
+    env_vars: &mut HashMap<String, String>,
+    random_state: Option<&Cell<u32>>,
+) -> (Option<i128>, Option<ArithmeticErrorCategory>) {
+    let normalized = normalize_arithmetic_quotes(value);
+    if normalized.trim().is_empty() {
+        return (Some(0), None);
+    }
     let mut parser = ConditionalArithParser {
         input: normalized.as_bytes(),
         pos: 0,
         env_vars,
         resolving: Vec::new(),
         random_state,
+        error_category: None,
     };
-    let value = parser.parse_comma()?;
+    let value = parser.parse_comma();
     parser.skip_ws();
-    (parser.pos == parser.input.len()).then_some(value)
+    let value = value.filter(|_| parser.pos == parser.input.len());
+    let category = parser.error_category.or_else(|| {
+        if value.is_none() && numeric_assignment_expression(&normalized) {
+            Some(ArithmeticErrorCategory::NonVariableAssignment)
+        } else if value.is_none() {
+            Some(ArithmeticErrorCategory::EvaluatorFailure)
+        } else {
+            None
+        }
+    });
+    (value, category)
+}
+
+fn numeric_assignment_expression(expression: &str) -> bool {
+    let Some((left, _)) = expression.split_once('=') else {
+        return false;
+    };
+    !left.trim().is_empty() && left.trim().chars().all(|ch| ch.is_ascii_digit())
 }
 
 fn bash_arith(value: i128) -> i128 {

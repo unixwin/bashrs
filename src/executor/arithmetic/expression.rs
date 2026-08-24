@@ -269,6 +269,7 @@ impl ConditionalArithParser<'_> {
                     self.pos += 1;
                     let rhs = self.parse_power()?;
                     if rhs == 0 {
+                        self.error_category = Some(super::super::ArithmeticErrorCategory::DivisionByZero);
                         return None;
                     }
                     value = bash_arith((value as i64).wrapping_div(rhs as i64) as i128);
@@ -277,9 +278,11 @@ impl ConditionalArithParser<'_> {
                     self.pos += 1;
                     let rhs = self.parse_power()?;
                     if rhs == 0 {
+                        self.error_category = Some(super::super::ArithmeticErrorCategory::DivisionByZero);
                         return None;
                     }
                     if value == i128::from(i64::MIN) && rhs == -1 {
+                        self.error_category = Some(super::super::ArithmeticErrorCategory::EvaluatorFailure);
                         return None;
                     }
                     value %= rhs;

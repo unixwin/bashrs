@@ -45,10 +45,9 @@ pub(crate) fn remove_shell_quotes(raw: &str) -> String {
                         break;
                     }
                     if quoted == '$' {
+                        // Preserve the existing protected-dollar contract used by
+                        // downstream expansion, but do not protect literal globs.
                         out.push('\x1f');
-                    } else if matches!(quoted, '*' | '?' | '[' | '@' | '+' | '!') {
-                        out.push('\x11');
-                        out.push(quoted);
                     } else {
                         out.push(quoted);
                     }
@@ -343,6 +342,8 @@ mod tests {
     }
 }
 
+// Source-mapped to subst.c::extract_dollar_brace_string: quote removal
+// receives explicit outer-quote and POSIX context instead of conflating them.
 pub(super) fn copy_braced_parameter_after_dollar(
     out: &mut String,
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
@@ -356,7 +357,8 @@ pub(super) fn copy_braced_parameter_after_dollar(
     wrapped.push_str(&remaining);
     let context = BraceContext {
         outer_double_quote: true,
-        posix: true,
+        // The surrounding double quote is not POSIX mode.
+        posix: false,
         replacement_context: false,
         initial_state: DolbraceState::Param,
     };

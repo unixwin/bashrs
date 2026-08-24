@@ -28,6 +28,34 @@ pub(super) fn parse_i64(value: &str) -> ParsedNumber<i64> {
     }
 }
 
+pub(super) fn parse_u64(value: &str) -> ParsedNumber<u64> {
+    if let Some(ch) = printf_char_constant(value) {
+        return ParsedNumber {
+            value: ch as u64,
+            invalid: None,
+        };
+    }
+    if value.is_empty() {
+        return ParsedNumber {
+            value: 0,
+            invalid: None,
+        };
+    }
+    match parse_unsigned_integer_literal(value) {
+        Some((parsed_value, issue)) => ParsedNumber {
+            value: parsed_value,
+            invalid: issue.map(|issue| match issue {
+                IntegerIssue::InvalidSuffix => value.to_string(),
+                IntegerIssue::Overflow => format!("__rubash_printf_overflow__:{value}"),
+            }),
+        },
+        None => ParsedNumber {
+            value: 0,
+            invalid: Some(value.to_string()),
+        },
+    }
+}
+
 pub(super) fn parse_f64(value: &str) -> ParsedNumber<f64> {
     if let Some(ch) = printf_char_constant(value) {
         return ParsedNumber {
@@ -73,6 +101,64 @@ fn printf_char_constant(value: &str) -> Option<char> {
 enum IntegerIssue {
     InvalidSuffix,
     Overflow,
+}
+
+fn parse_unsigned_integer_literal(value: &str) -> Option<(u64, Option<IntegerIssue>)> {
+    let value = value.trim();
+    let (negative, digits) = match value.as_bytes().first().copied() {
+        Some(b'-') => (true, &value[1..]),
+        Some(b'+') => (false, &value[1..]),
+        _ => (false, value),
+    };
+    let (radix, digits) = if let Some(hex) = digits
+        .strip_prefix("0x")
+        .or_else(|| digits.strip_prefix("0X"))
+    {
+        (16, hex)
+    } else if digits.len() > 1 && digits.starts_with('0') {
+        (8, digits)
+    } else {
+        (10, digits)
+    };
+    let prefix_len = digits
+        .char_indices()
+        .take_while(|(_, ch)| ch.to_digit(radix).is_some())
+        .map(|(index, ch)| index + ch.len_utf8())
+        .last()
+        .unwrap_or(0);
+    if prefix_len == 0 {
+        return None;
+    }
+    let mut parsed = 0_u64;
+    let mut overflow = false;
+    for ch in digits[..prefix_len].chars() {
+        let digit = ch
+            .to_digit(radix)
+            .expect("prefix contains only radix digits") as u64;
+        parsed = match parsed
+            .checked_mul(radix as u64)
+            .and_then(|n| n.checked_add(digit))
+        {
+            Some(value) => value,
+            None => {
+                overflow = true;
+                u64::MAX
+            }
+        };
+    }
+    let number = if negative && !overflow {
+        0_u64.wrapping_sub(parsed)
+    } else {
+        parsed
+    };
+    let issue = if prefix_len != digits.len() {
+        Some(IntegerIssue::InvalidSuffix)
+    } else if overflow {
+        Some(IntegerIssue::Overflow)
+    } else {
+        None
+    };
+    Some((number, issue))
 }
 
 fn parse_integer_literal(value: &str) -> Option<(i64, Option<IntegerIssue>)> {

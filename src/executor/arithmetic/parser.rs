@@ -18,6 +18,7 @@ pub(super) struct ConditionalArithParser<'a> {
     pub(super) env_vars: &'a mut HashMap<String, String>,
     pub(super) resolving: Vec<String>,
     pub(super) random_state: Option<&'a Cell<u32>>,
+    pub(super) error_category: Option<super::ArithmeticErrorCategory>,
 }
 
 #[derive(Clone)]

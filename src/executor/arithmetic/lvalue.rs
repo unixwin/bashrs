@@ -46,6 +46,10 @@ impl ConditionalArithParser<'_> {
             } else if self.peek() == Some(b'"') || self.peek() == Some(b'\'') {
                 let expression = self.collect_quoted_index_expression()?;
                 let expression = strip_arith_double_quotes(&expression);
+                if expression.trim().is_empty() {
+                    self.error_category = Some(super::super::ArithmeticErrorCategory::EmptyArraySubscript);
+                    return None;
+                }
                 eval_mutable_arith_value_with_random(&expression, self.env_vars, self.random_state)?
             } else {
                 let index = self.parse_comma()?;
