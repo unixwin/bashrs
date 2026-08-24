@@ -280,6 +280,7 @@ pub(in crate::executor) fn short_set_flag_option(flag: char) -> Option<&'static 
         'k' => Some("keyword"),
         'P' => Some("physical"),
         'p' => Some("privileged"),
+        'r' => Some("restricted"),
         't' => Some("onecmd"),
         'T' => Some("functrace"),
         'v' => Some("verbose"),

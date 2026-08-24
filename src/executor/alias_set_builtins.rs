@@ -77,6 +77,14 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<(), ExecuteError> {
+        if crate::builtins::set::shell_option_enabled(&self.env_vars, "restricted")
+            && cmd.words[1..]
+                .iter()
+                .any(|word| word.starts_with('+') && word[1..].chars().any(|flag| flag == 'r'))
+        {
+            self.exit_code = self.execute_set(cmd)?;
+            return Ok(());
+        }
         if self.apply_simple_set_flags(&cmd.words[1..]) {
             self.exit_code = 0;
             return Ok(());

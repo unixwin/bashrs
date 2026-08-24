@@ -176,6 +176,7 @@ fn cli_flag_name(flag: char) -> Option<&'static str> {
         'f' => Some("noglob"),
         'h' => Some("hashall"),
         'n' => Some("noexec"),
+        'r' => Some("restricted"),
         'u' => Some("nounset"),
         'v' => Some("verbose"),
         'x' => Some("xtrace"),

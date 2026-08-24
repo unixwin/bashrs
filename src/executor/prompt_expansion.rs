@@ -266,6 +266,7 @@ impl Executor {
             ('k', "keyword"),
             ('n', "noexec"),
             ('p', "privileged"),
+            ('r', "restricted"),
             ('t', "onecmd"),
             ('u', "nounset"),
             ('v', "verbose"),

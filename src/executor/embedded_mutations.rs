@@ -620,6 +620,43 @@ fn collect_command_substitution_source(
             }
             continue;
         }
+        if source_ch == '<' && !single && !double && chars.peek().copied() == Some('<') {
+            let mut lookahead = chars.clone();
+            lookahead.next();
+            if lookahead.peek().copied() != Some('<') {
+                source.push(source_ch);
+                source.push(chars.next().expect("heredoc second less-than"));
+                let mut header = String::new();
+                while let Some(header_ch) = chars.next() {
+                    source.push(header_ch);
+                    if header_ch == '\n' {
+                        break;
+                    }
+                    header.push(header_ch);
+                }
+                let raw_delimiter = header.trim_end().trim_start_matches('-').trim();
+                let delimiter = raw_delimiter
+                    .trim_matches('\'')
+                    .trim_matches('\"')
+                    .to_string();
+                if !delimiter.is_empty() {
+                    let mut body_line = String::new();
+                    while let Some(body_ch) = chars.next() {
+                        source.push(body_ch);
+                        if body_ch == '\n' {
+                            if body_line.trim_end() == delimiter {
+                                break;
+                            }
+                            body_line.clear();
+                        } else {
+                            body_line.push(body_ch);
+                        }
+                    }
+                }
+                continue;
+            }
+        }
+
         let rest = chars.clone().collect::<String>();
         update_command_substitution_case_depth(
             source_ch,

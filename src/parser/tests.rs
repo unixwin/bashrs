@@ -15,7 +15,10 @@ fn test_extglob_enabled_after_parse_is_rejected() {
 
     assert_eq!(ast.commands.len(), 2);
     assert_eq!(
-        ast.commands[1].assignments.get("__RUBASH_PARSE_ERROR__").map(String::as_str),
+        ast.commands[1]
+            .assignments
+            .get("__RUBASH_PARSE_ERROR__")
+            .map(String::as_str),
         Some("unexpected token `('")
     );
 }
@@ -24,9 +27,10 @@ fn test_extglob_enabled_after_parse_is_rejected() {
 fn test_extglob_on_next_input_line_remains_valid() {
     let ast = parse(&tokenize("shopt -s extglob\necho @(x)"));
 
-    assert!(ast.commands.iter().all(|command| !command
-        .assignments
-        .contains_key("__RUBASH_PARSE_ERROR__")));
+    assert!(ast
+        .commands
+        .iter()
+        .all(|command| !command.assignments.contains_key("__RUBASH_PARSE_ERROR__")));
 }
 
 #[test]
@@ -101,6 +105,19 @@ fn test_parse_piped_heredoc_body_belongs_to_left_command() {
     assert_eq!(pipeline.stages[0].heredoc.as_deref(), Some("body\n"));
     assert_eq!(pipeline.stages[1].words, vec!["sort", "-u"]);
     assert!(pipeline.stages[1].heredoc.is_none());
+}
+
+#[test]
+fn test_command_substitution_ignores_parentheses_in_heredoc_body() {
+    let tokens = tokenize("echo $(\ncat <<eof\nhere doc with )\neof\n)");
+    let ast = parse(&tokens);
+    let substitution = &ast.commands[0].command_substitutions[0];
+
+    assert_eq!(substitution.source, "\ncat <<eof\nhere doc with )\neof\n");
+    assert_eq!(
+        substitution.commands[0].heredoc.as_deref(),
+        Some("here doc with )\n")
+    );
 }
 
 #[test]

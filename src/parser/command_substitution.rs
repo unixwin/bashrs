@@ -123,6 +123,13 @@ fn dollar_command_substitution(
                 continue;
             }
         }
+        // Heredoc bodies are opaque to command-substitution delimiter matching.
+        if ch == '<' && !single && !double && chars.get(index + 1) == Some(&'<') {
+            if let Some(next_index) = skip_command_substitution_heredoc(chars, index) {
+                index = next_index;
+                continue;
+            }
+        }
         update_command_substitution_case_depth(
             &chars,
             index,
@@ -221,6 +228,52 @@ fn braced_command_substitution(
             _ => {}
         }
         index += 1;
+    }
+    None
+}
+
+fn skip_command_substitution_heredoc(chars: &[char], start: usize) -> Option<usize> {
+    let mut header_end = start + 2;
+    while header_end < chars.len() && chars[header_end] != '\n' {
+        header_end += 1;
+    }
+    if header_end >= chars.len() {
+        return None;
+    }
+
+    let mut header = chars[start + 2..header_end].iter().collect::<String>();
+    let strip_tabs = header.trim_start().starts_with('-');
+    if strip_tabs {
+        header = header.trim_start_matches([' ', '\t', '-']).to_string();
+    }
+    let raw_delimiter = header.split_whitespace().next()?;
+    let delimiter = raw_delimiter
+        .trim_matches(['\'', '"'])
+        .trim_start_matches('\\')
+        .to_string();
+    if delimiter.is_empty() {
+        return None;
+    }
+
+    let mut line_start = header_end + 1;
+    while line_start <= chars.len() {
+        let mut line_end = line_start;
+        while line_end < chars.len() && chars[line_end] != '\n' {
+            line_end += 1;
+        }
+        let line = chars[line_start..line_end].iter().collect::<String>();
+        let candidate = if strip_tabs {
+            line.trim_start_matches('\t')
+        } else {
+            line.as_str()
+        };
+        if candidate == delimiter {
+            return Some((line_end + (line_end < chars.len()) as usize).min(chars.len()));
+        }
+        if line_end >= chars.len() {
+            break;
+        }
+        line_start = line_end + 1;
     }
     None
 }

@@ -961,6 +961,10 @@ impl Executor {
                 .map(Some);
         };
 
+        if let Some(restricted) = self.restricted_command_error(command, name) {
+            return Ok(Some((String::new(), restricted, 1)));
+        }
+
         match name {
             "true" | ":" => Ok(Some((String::new(), String::new(), 0))),
             "false" => Ok(Some((String::new(), String::new(), 1))),
@@ -1143,6 +1147,68 @@ impl Executor {
                 }
             }
         }
+    }
+
+    pub(in crate::executor) fn restricted_command_error(
+        &self,
+        command: &CommandNode,
+        name: &str,
+    ) -> Option<String> {
+        if !crate::builtins::set::shell_option_enabled(&self.env_vars, "restricted") {
+            return None;
+        }
+        let slash = |value: &str| value.contains('/') || value.contains('\\');
+        if slash(name) {
+            return Some(format!(
+                "{}{}: restricted: cannot specify `/' in command names\n",
+                self.diagnostic_prefix(),
+                name
+            ));
+        }
+        if matches!(name, "cd" | "exec") {
+            return Some(format!(
+                "{}{}: restricted\n",
+                self.diagnostic_prefix(),
+                name
+            ));
+        }
+        if matches!(name, "." | "source") {
+            if command.words[1..]
+                .iter()
+                .map(|word| self.expand_word(word))
+                .any(|word| slash(&word))
+            {
+                return Some(format!(
+                    "{}{}: restricted\n",
+                    self.diagnostic_prefix(),
+                    name
+                ));
+            }
+        }
+        if name == "command"
+            && command
+                .words
+                .iter()
+                .skip(1)
+                .any(|word| self.expand_word(word) == "-p")
+        {
+            return Some(format!(
+                "{}command: -p: restricted\n",
+                self.diagnostic_prefix()
+            ));
+        }
+        for redirect in &command.redirects {
+            let target = self.expand_word(&redirect.target);
+            if redirect.fd_var.is_none() && redirect_target_fd(&target).is_none() && slash(&target)
+            {
+                return Some(format!(
+                    "{}{}: restricted: cannot redirect output\n",
+                    self.diagnostic_prefix(),
+                    target
+                ));
+            }
+        }
+        None
     }
 
     fn brace_expanded_pipeline_stage(&self, command: &CommandNode) -> CommandNode {

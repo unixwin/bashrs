@@ -112,6 +112,10 @@ const SHELL_OPTIONS: &[ShellOption] = &[
         default_enabled: false,
     },
     ShellOption {
+        name: "restricted",
+        default_enabled: false,
+    },
+    ShellOption {
         name: "verbose",
         default_enabled: false,
     },

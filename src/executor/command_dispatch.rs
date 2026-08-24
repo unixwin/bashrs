@@ -49,6 +49,11 @@ impl Executor {
         let Some(word) = cmd.words.first() else {
             return Ok(());
         };
+        if let Some(message) = self.restricted_command_error(cmd, word) {
+            self.write_default_stderr(message.as_bytes())?;
+            self.exit_code = 1;
+            return Ok(());
+        }
         if crate::builtins::enable::is_disabled(&self.env_vars, word) {
             return self.execute_external(cmd);
         }

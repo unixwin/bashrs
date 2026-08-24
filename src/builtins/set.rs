@@ -20,7 +20,7 @@ pub(super) const EXECUTION_SUCCESS: i32 = 0;
 pub(super) const EXECUTION_FAILURE: i32 = 1;
 pub(super) const EX_USAGE: i32 = 2;
 
-const SET_FLAGS: &str = "abefhkmnptuvxBCEHPT";
+const SET_FLAGS: &str = "abefhkmnprtuvxBCEHPT";
 pub(super) const EXPORTED_VARS: &str = "__RUBASH_EXPORTED_VARS";
 pub(super) const READONLY_VARS: &str = "__RUBASH_READONLY_VARS";
 pub(super) const ARRAY_VARS: &str = "__RUBASH_ARRAY_VARS";
@@ -99,12 +99,33 @@ where
                             // simply reports failure.
                             return Ok(EX_USAGE);
                         }
+                        if *name == "restricted"
+                            && prefix == '+'
+                            && shell_option_enabled(env_vars, "restricted")
+                        {
+                            writeln!(
+                                stderr,
+                                "rubash: set: restricted: cannot unset: restricted shell"
+                            )?;
+                            return Ok(EXECUTION_FAILURE);
+                        }
                         set_shell_option(env_vars, name, prefix == '-');
                         index += 1;
                     }
                     _ => print_shell_options(env_vars, prefix == '+', stdout)?,
                 }
                 break;
+            }
+
+            if option == 'r' {
+                if prefix == '+' && shell_option_enabled(env_vars, "restricted") {
+                    writeln!(
+                        stderr,
+                        "rubash: set: restricted: cannot unset: restricted shell"
+                    )?;
+                    return Ok(EXECUTION_FAILURE);
+                }
+                set_shell_option(env_vars, "restricted", prefix == '-');
             }
 
             if !SET_FLAGS.contains(option) {
@@ -203,6 +224,31 @@ mod tests {
 
         assert_eq!(status, EX_USAGE);
         assert!(stderr.contains("invalid option name"));
+    }
+
+    #[test]
+    fn restricted_short_option_is_enabled() {
+        let mut env_vars = HashMap::new();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        assert_eq!(
+            set_with_io(["-r"], &mut env_vars, &mut stdout, &mut stderr).unwrap(),
+            EXECUTION_SUCCESS
+        );
+        assert!(shell_option_enabled(&env_vars, "restricted"));
+    }
+
+    #[test]
+    fn restricted_option_cannot_be_unset() {
+        let mut env_vars = HashMap::new();
+        set_shell_option(&mut env_vars, "restricted", true);
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        assert_eq!(
+            set_with_io(["+r"], &mut env_vars, &mut stdout, &mut stderr).unwrap(),
+            EXECUTION_FAILURE
+        );
+        assert!(shell_option_enabled(&env_vars, "restricted"));
     }
 
     #[test]
