@@ -364,6 +364,22 @@ fn test_compound_command_substitution_captures_stdout() {
 }
 
 #[test]
+fn test_command_substitution_runs_inner_exit_trap_without_parent_trap() {
+    let output_path = "target/rubash-command-subst-exit-trap-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "trap 'printf PARENT' EXIT; out=$(trap 'printf INNER' EXIT; printf body); printf 'out=%s\\n' \"$out\" > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    assert!(executor.execute_ast(&ast).is_ok());
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "out=bodyINNER\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_select_command_substitution_with_here_string_captures_stdout() {
     let output_path = "target/rubash-select-command-subst-output.txt";
     let _ = fs::remove_file(output_path);

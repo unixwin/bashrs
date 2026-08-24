@@ -394,14 +394,28 @@ impl Executor {
 
         let saved_dir = env::current_dir().ok();
         let mut subshell = self.command_substitution_executor();
+        // Trap mutation needs the Bash command-substitution trap lifecycle.
+        // Keep the compatibility adjustment scoped to parsed bodies that
+        // actually invoke trap, preserving specialized substitution modes.
+        let has_trap_command = source.split_whitespace().any(|word| word == "trap");
+        if has_trap_command {
+            crate::builtins::trap::reset_for_subshell(&mut subshell.env_vars);
+        }
         // Keep the command source visible to BASH_COMMAND while the parsed
         // substitution body runs, including DEBUG trap actions.
         *subshell.debug_trap_command.borrow_mut() = Some(source.trim().to_string());
         subshell.stdout_capture = Some(Vec::new());
 
         let result = subshell.execute_ast(&ast);
+        let mut status = command_substitution_result_status(result, subshell.exit_code);
+        // Bash runs EXIT in the command-substitution child, so an EXIT trap
+        // installed by the body contributes its output to captured stdout.
+        if has_trap_command {
+            if let Ok(exit_status) = subshell.run_exit_trap_for_status(status) {
+                status = exit_status;
+            }
+        }
         let output = subshell.stdout_capture.take().unwrap_or_default();
-        let status = command_substitution_result_status(result, subshell.exit_code);
 
         if let Some(saved_dir) = saved_dir {
             let _ = env::set_current_dir(saved_dir);
