@@ -2,6 +2,23 @@ use super::super::*;
 use std::fs;
 
 #[test]
+fn test_indirect_positional_count_after_ifs_split() {
+    let output_path = "target/rubash-indirect-positional-count-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!(
+        "IFS=\" \"; out=$(printf \"a  b\"); set -- $out; printf \"n=%s first=%s last=%s\\n\" \"$#\" \"$1\" \"${{!#}}\" > {output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    assert!(executor.execute_ast(&ast).is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "n=2 first=a last=b\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_array_star_indices_expand() {
     let output_path = "target/rubash-array-star-indices-output.txt";
     let _ = fs::remove_file(output_path);

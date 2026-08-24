@@ -302,6 +302,10 @@ impl Executor {
 }
 
 fn split_top_level_pattern_operator(name: &str) -> Option<(&str, &str, PatternRemoval)> {
+    // In `${!#}`, `#` is the indirect target special parameter, not removal syntax.
+    if name.starts_with('!') {
+        return None;
+    }
     // In `${##word}` and `${#%word}`, the first `#` names `$#`; the
     // following operator must retain that special-parameter name.
     if let Some(pattern) = name.strip_prefix("##") {
