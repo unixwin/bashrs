@@ -25,6 +25,12 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Prepare external bashdb fixture
+        run: |
+          git clone https://github.com/Trepan-Debuggers/bashdb.git target/bashdb-source
+          git -C target/bashdb-source checkout f139cc23183798cb0874358a3d624850b418266c
+          bash scripts/setup-bashdb-fixture.sh target/bashdb-source/bash-5.2
+
       - name: Run cargo tests
         run: cargo test --lib --test cli_tests
 
