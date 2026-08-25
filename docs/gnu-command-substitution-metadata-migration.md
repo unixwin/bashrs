@@ -51,7 +51,7 @@ Payload bytes must remain bytes. Syntax quotes from the outer source are metadat
 - [ ] Represent quoted, unquoted, assignment, and heredoc substitution context without C0 prefixes.
 - [~] Add ExpandedWord/WordPart fragments with origin, quoted state, escaped state, quoted-null state, expansion state, and no-split policy. Simple multi-span mixed words now materialize RawWordFragment values into ExpandedFragment and use the typed splitter; parameter/arithmetic/heredoc combinations remain open.
 - [~] Replace command_substitution_word_split and raw-word heuristics with centralized IFS-aware splitting. The typed splitter is implemented and unit-tested, but whole-word integration was reverted after it changed bashdb getopts/profile behavior.
-- [~] Preserve quoted empty fields and adjacent quoted/unquoted fragments. Typed unit coverage exists; full mixed-word integration remains open.
+- [~] Preserve quoted empty fields and adjacent quoted/unquoted fragments. Typed origin-aware splitting now keeps literal IFS bytes intact and covers empty adjacent substitution output; broader quoted-null combinations remain open.
 - [ ] Move final quote removal and glob protection to one owning boundary.
 - [ ] Remove targeted early substitution restoration from expand_word, command_substitution_values, command_input_scope, and backtick paths as each owner migrates.
 - [ ] Replace \x1c structural close detection with parser state/typed heredoc termination.
@@ -78,7 +78,7 @@ Each probe compares GNU D:/Git/bin/bash.exe with target/debug/rubash.exe and che
 - 6fe14287: added SubstitutionOutput and typed parsed readback.
 - 3dc2cfab: documented the migration, threaded SubstitutionQuoteContext through parsed readback, and added ExpandedFragment/IFS splitter tests.
 - Current follow-up: parsed readback accepts lexical context, complete double-quoted parent handoff is wired, and both AST and mutable embedded-substitution fallbacks route output through SubstitutionOutput::readback. Single-span raw words now pass scanner context into mutable expansion. Typed whole-word splitting and printf shortcut quote changes were tested but reverted after bashdb compatibility regressions.
-- Focused verification: cargo check, 8 metadata tests, command_substitution_echo_handles_escaped_parens_and_nested_backticks, mixed-fragment, and multiple-fragment differential tests passed.
+- Focused verification: cargo check, 9 metadata tests, mixed-fragment, multiple-fragment, and literal-IFS differential tests passed.
 - A temporary child-quote differential probe matched GNU only while the experimental whole-word/printf changes were active; those changes were reverted and the probe was not retained as a passing regression.
 - cargo check: passed after 6fe14287.
 - cargo test --lib executor::substitution_metadata::tests: 8 passed, including mixed-quote, nested-span, and adjacent raw-fragment cases. GNU/Rubash mixed probe matched for unquoted and double-quoted adjacent fragments.

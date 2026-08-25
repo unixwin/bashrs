@@ -833,6 +833,19 @@ fn quoted_process_substitution_stays_literal() {
 }
 
 #[test]
+fn command_substitution_does_not_split_literal_ifs_bytes() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("IFS=:; set -- a$(printf '')b::c; printf 'ifs:%d:%s:%s:%s:%s\\n' \"$#\" \"$1\" \"$2\" \"$3\" \"$4\"")
+        .output()
+        .expect("run literal IFS fragment probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "ifs:1:ab::c:::\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn command_substitution_multiple_fragments_split_independently() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

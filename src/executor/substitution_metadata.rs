@@ -54,6 +54,7 @@ pub(in crate::executor) enum SubstitutionSplitPolicy {
 pub(in crate::executor) struct ExpandedFragment {
     pub(in crate::executor) bytes: Vec<u8>,
     pub(in crate::executor) quoted: bool,
+    pub(in crate::executor) splittable: bool,
 }
 
 impl ExpandedFragment {
@@ -62,6 +63,16 @@ impl ExpandedFragment {
         Self {
             bytes: text.as_bytes().to_vec(),
             quoted,
+            splittable: false,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(in crate::executor) fn expanded(text: &str, quoted: bool) -> Self {
+        Self {
+            bytes: text.as_bytes().to_vec(),
+            quoted,
+            splittable: true,
         }
     }
 }
@@ -88,7 +99,7 @@ pub(in crate::executor) fn split_expanded_fragments(
     for fragment in fragments {
         for byte in &fragment.bytes {
             let is_ifs = ifs.as_bytes().contains(byte);
-            if !fragment.quoted && is_ifs {
+            if fragment.splittable && !fragment.quoted && is_ifs {
                 saw_unquoted = true;
                 if non_whitespace.contains(byte) {
                     fields.push(std::mem::take(&mut current));
@@ -242,7 +253,7 @@ mod tests {
     #[test]
     fn unquoted_ifs_splits_but_quoted_fragment_does_not() {
         let fragments = [
-            ExpandedFragment::literal("a  b", false),
+            ExpandedFragment::expanded("a  b", false),
             ExpandedFragment::literal(" c d", true),
         ];
         assert_eq!(
@@ -253,10 +264,19 @@ mod tests {
 
     #[test]
     fn non_whitespace_ifs_preserve_interior_empty_fields() {
-        let fragments = [ExpandedFragment::literal("a::b:", false)];
+        let fragments = [ExpandedFragment::expanded("a::b:", false)];
         assert_eq!(
             split_expanded_fragments(&fragments, Some(":"), SubstitutionSplitPolicy::Split),
             vec!["a", "", "b"]
+        );
+    }
+
+    #[test]
+    fn literal_ifs_bytes_are_not_field_split() {
+        let fragments = [ExpandedFragment::literal("a::b:", false)];
+        assert_eq!(
+            split_expanded_fragments(&fragments, Some(":"), SubstitutionSplitPolicy::Split),
+            vec!["a::b:"],
         );
     }
 
