@@ -310,6 +310,61 @@ impl Executor {
         Some(format!("{prefix}{value}{suffix}"))
     }
 
+    fn expand_single_substitution_fragments(
+        &mut self,
+        cmd: &CommandNode,
+        index: usize,
+        word: &str,
+        raw: &str,
+    ) -> Option<Vec<String>> {
+        let raw_fragments = split_raw_word_fragments(raw);
+        if raw_fragments.len() < 3
+            || raw_fragments.iter().filter(|fragment| fragment.substitution).count() != 1
+            || !raw_fragments.iter().any(|fragment| !fragment.substitution && !fragment.text.is_empty())
+        {
+            return None;
+        }
+        let substitution_start = raw_fragments.iter().position(|fragment| fragment.substitution)?;
+        if raw_fragments[..substitution_start]
+            .iter()
+            .any(|fragment| fragment.text.contains('=')) {
+            return None;
+        }
+        if raw_fragments.iter().any(|fragment| {
+            !fragment.substitution
+                && fragment.text.contains(['$', '`', '{', '}'])
+        }) {
+            return None;
+        }
+        let mut expanded_fragments = Vec::new();
+        for fragment in raw_fragments {
+            if fragment.substitution {
+                let context = fragment.context.unwrap_or(SubstitutionQuoteContext::Unquoted);
+                let source = fragment.text.strip_prefix("$(")?.strip_suffix(')')?;
+                let output = self.expand_command_substitution_mut_with_context(source, context);
+                expanded_fragments.push(ExpandedFragment {
+                    bytes: output.into_bytes(),
+                    quoted: context == SubstitutionQuoteContext::DoubleQuoted,
+                });
+            } else {
+                let literal = crate::lexer::remove_shell_quotes(&fragment.text);
+                if !literal.is_empty() {
+                    expanded_fragments.push(ExpandedFragment::literal(&literal, false));
+                }
+            }
+        }
+        let policy = if self.splits_unquoted_expanded_word(cmd, index, word) {
+            SubstitutionSplitPolicy::Split
+        } else {
+            SubstitutionSplitPolicy::NoSplit
+        };
+        Some(split_expanded_fragments(
+            &expanded_fragments,
+            self.env_vars.get("IFS").map(String::as_str),
+            policy,
+        ))
+    }
+
     pub(in crate::executor) fn expand_command_word(
         &mut self,
         cmd: &CommandNode,
@@ -328,6 +383,11 @@ impl Executor {
                 source,
                 SubstitutionQuoteContext::DoubleQuoted,
             )];
+        }
+        if let Some(raw) = raw {
+            if let Some(values) = self.expand_single_substitution_fragments(cmd, index, word, raw) {
+                return values;
+            }
         }
         if let Some(raw_substitution) = raw
             .filter(|raw| raw.starts_with("$(") && raw.ends_with(')'))
