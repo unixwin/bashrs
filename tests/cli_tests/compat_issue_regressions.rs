@@ -423,6 +423,18 @@ fn custom_space_ifs_does_not_create_empty_fields() {
 }
 
 #[test]
+fn quoted_arithmetic_expansion_survives_test_builtin_word_expansion() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("set 4 '' opt no-highlight 0 '' x; if [ \"$(($2 + 2))\" -gt \"$#\" ]; then echo yes; else echo no; fi")
+        .output()
+        .expect("run quoted arithmetic test operand");
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "no\n");
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn arithmetic_nounset_errors_exit_127_like_bash() {
     for command in [
         "set -u; ((missing + 1))",
