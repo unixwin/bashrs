@@ -114,9 +114,76 @@ pub(in crate::executor) fn split_expanded_fragments(
     fields
 }
 
+#[allow(dead_code)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::executor) struct SubstitutionSpan {
+    pub(in crate::executor) start: usize,
+    pub(in crate::executor) end: usize,
+    pub(in crate::executor) context: SubstitutionQuoteContext,
+}
+
+#[allow(dead_code)]
+pub(in crate::executor) fn scan_substitution_spans(raw: &str) -> Vec<SubstitutionSpan> {
+    let chars: Vec<(usize, char)> = raw.char_indices().collect();
+    let mut spans = Vec::new();
+    let mut index = 0usize;
+    let mut single = false;
+    let mut double = false;
+    while index < chars.len() {
+        let (offset, ch) = chars[index];
+        if ch == '\\' && !single { index += 2; continue; }
+        if ch == '\'' && !double { single = !single; index += 1; continue; }
+        if ch == '"' && !single { double = !double; index += 1; continue; }
+        let dollar_paren = ch == '$' && chars.get(index + 1).is_some_and(|(_, next)| *next == '(');
+        let backtick = ch == char::from(96);
+        if !single && (dollar_paren || backtick) {
+            let start = offset;
+            let context = if double { SubstitutionQuoteContext::DoubleQuoted } else { SubstitutionQuoteContext::Unquoted };
+            let mut depth = if dollar_paren { 1usize } else { 0usize };
+            let mut cursor = index + if dollar_paren { 2 } else { 1 };
+            let mut inner_single = false;
+            let mut inner_double = false;
+            while cursor < chars.len() {
+                let (_, inner) = chars[cursor];
+                if inner == '\\' && !inner_single { cursor += 2; continue; }
+                if backtick && inner == char::from(96) && !inner_single && !inner_double {
+                    spans.push(SubstitutionSpan { start, end: chars[cursor].0 + 1, context });
+                    index = cursor + 1; break;
+                }
+                if dollar_paren {
+                    if inner == '\'' && !inner_double { inner_single = !inner_single; }
+                    if inner == '"' && !inner_single { inner_double = !inner_double; }
+                    if !inner_single && !inner_double && inner == '$' && chars.get(cursor + 1).is_some_and(|(_, next)| *next == '(') { depth += 1; cursor += 2; continue; }
+                    if !inner_single && !inner_double && inner == ')' { depth = depth.saturating_sub(1); if depth == 0 { spans.push(SubstitutionSpan { start, end: chars[cursor].0 + 1, context }); index = cursor + 1; break; } }
+                }
+                cursor += 1;
+            }
+            if index <= cursor { index = cursor; }
+            continue;
+        }
+        index += 1;
+    }
+    spans
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn span_scanner_tracks_mixed_quote_contexts() {
+        let spans = scan_substitution_spans(r#"pre$(u)"$(q)"post"#);
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].context, SubstitutionQuoteContext::Unquoted);
+        assert_eq!(spans[1].context, SubstitutionQuoteContext::DoubleQuoted);
+    }
+
+    #[test]
+    fn span_scanner_ignores_nested_syntax_inside_single_quotes() {
+        let spans = scan_substitution_spans(r#"'$(literal)' $(outer $(inner))"#);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].context, SubstitutionQuoteContext::Unquoted);
+    }
 
     #[test]
     fn readback_removes_nuls_and_only_trailing_newlines() {
