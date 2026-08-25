@@ -49,7 +49,7 @@ Payload bytes must remain bytes. Syntax quotes from the outer source are metadat
 - [x] Add unit coverage proving child quote bytes remain data.
 - [~] Carry lexical context into parsed readback. Single-span raw words now select context before mutable word expansion, and the context reaches embedded expansion/AST fallback; multi-span materialization and heredoc/assignment context remain open.
 - [ ] Represent quoted, unquoted, assignment, and heredoc substitution context without C0 prefixes.
-- [~] Add ExpandedWord/WordPart fragments with origin, quoted state, escaped state, quoted-null state, expansion state, and no-split policy. Typed ExpandedFragment and split policy exist with unit coverage; command-word integration remains open.
+- [~] Add ExpandedWord/WordPart fragments with origin, quoted state, escaped state, quoted-null state, expansion state, and no-split policy. Typed ExpandedFragment plus raw-word fragment decomposition and split policy now have unit coverage; command-word materialization remains open.
 - [~] Replace command_substitution_word_split and raw-word heuristics with centralized IFS-aware splitting. The typed splitter is implemented and unit-tested, but whole-word integration was reverted after it changed bashdb getopts/profile behavior.
 - [~] Preserve quoted empty fields and adjacent quoted/unquoted fragments. Typed unit coverage exists; full mixed-word integration remains open.
 - [ ] Move final quote removal and glob protection to one owning boundary.
@@ -81,7 +81,7 @@ Each probe compares GNU D:/Git/bin/bash.exe with target/debug/rubash.exe and che
 - Focused verification: cargo check, 7 metadata tests, and command_substitution_echo_handles_escaped_parens_and_nested_backticks passed.
 - A temporary child-quote differential probe matched GNU only while the experimental whole-word/printf changes were active; those changes were reverted and the probe was not retained as a passing regression.
 - cargo check: passed after 6fe14287.
-- cargo test --lib executor::substitution_metadata::tests: 7 passed, including mixed-quote and nested-span scanner cases.
+- cargo test --lib executor::substitution_metadata::tests: 8 passed, including mixed-quote, nested-span, and adjacent raw-fragment cases.
 - cargo test --test cli_tests declare_output: 4 passed.
 - Removing echo/printf shortcuts was tested and reverted: it caused 3 real CLI regressions, proving shortcuts must share the future capture/readback contract rather than simply disappear.
 

@@ -166,6 +166,35 @@ pub(in crate::executor) fn scan_substitution_spans(raw: &str) -> Vec<Substitutio
     spans
 }
 
+#[allow(dead_code)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::executor) struct RawWordFragment {
+    pub(in crate::executor) text: String,
+    pub(in crate::executor) substitution: bool,
+    pub(in crate::executor) context: Option<SubstitutionQuoteContext>,
+}
+
+#[allow(dead_code)]
+pub(in crate::executor) fn split_raw_word_fragments(raw: &str) -> Vec<RawWordFragment> {
+    let spans = scan_substitution_spans(raw);
+    if spans.is_empty() {
+        return vec![RawWordFragment { text: raw.to_string(), substitution: false, context: None }];
+    }
+    let mut fragments = Vec::new();
+    let mut cursor = 0usize;
+    for span in spans {
+        if span.start > cursor {
+            fragments.push(RawWordFragment { text: raw[cursor..span.start].to_string(), substitution: false, context: None });
+        }
+        fragments.push(RawWordFragment { text: raw[span.start..span.end].to_string(), substitution: true, context: Some(span.context) });
+        cursor = span.end;
+    }
+    if cursor < raw.len() {
+        fragments.push(RawWordFragment { text: raw[cursor..].to_string(), substitution: false, context: None });
+    }
+    fragments
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,6 +212,20 @@ mod tests {
         let spans = scan_substitution_spans(r#"'$(literal)' $(outer $(inner))"#);
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].context, SubstitutionQuoteContext::Unquoted);
+    }
+
+    #[test]
+    fn raw_fragments_preserve_adjacent_literal_and_substitution_spans() {
+        let fragments = split_raw_word_fragments(r#"pre$(u)"$(q)"post"#);
+        assert_eq!(fragments.len(), 5);
+        assert_eq!(fragments[0].text, "pre");
+        assert!(!fragments[0].substitution);
+        assert_eq!(fragments[1].text, "$(u)");
+        assert_eq!(fragments[1].context, Some(SubstitutionQuoteContext::Unquoted));
+        assert_eq!(fragments[2].text, "\"");
+        assert_eq!(fragments[3].text, "$(q)");
+        assert_eq!(fragments[3].context, Some(SubstitutionQuoteContext::DoubleQuoted));
+        assert_eq!(fragments[4].text, "\"post");
     }
 
     #[test]
