@@ -419,13 +419,6 @@ impl Executor {
         self.expand_command_substitution_with_context(source, context)
     }
 
-    pub(in crate::executor) fn run_ast_command_substitution(
-        &mut self,
-        source: &str,
-    ) -> Option<String> {
-        self.run_ast_command_substitution_with_context(source, SubstitutionQuoteContext::Unquoted)
-    }
-
     pub(in crate::executor) fn run_ast_command_substitution_with_context(
         &mut self,
         source: &str,
