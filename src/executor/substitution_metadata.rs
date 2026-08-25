@@ -145,7 +145,9 @@ pub(in crate::executor) fn scan_substitution_spans(raw: &str) -> Vec<Substitutio
         if ch == '\\' && !single { index += 2; continue; }
         if ch == '\'' && !double { single = !single; index += 1; continue; }
         if ch == '"' && !single { double = !double; index += 1; continue; }
-        let dollar_paren = ch == '$' && chars.get(index + 1).is_some_and(|(_, next)| *next == '(');
+        let dollar_paren = ch == '$'
+            && chars.get(index + 1).is_some_and(|(_, next)| *next == '(')
+            && chars.get(index + 2).is_none_or(|(_, next)| *next != '(');
         let backtick = ch == char::from(96);
         if !single && (dollar_paren || backtick) {
             let start = offset;
@@ -216,6 +218,12 @@ mod tests {
         assert_eq!(spans.len(), 2);
         assert_eq!(spans[0].context, SubstitutionQuoteContext::Unquoted);
         assert_eq!(spans[1].context, SubstitutionQuoteContext::DoubleQuoted);
+    }
+
+    #[test]
+    fn span_scanner_ignores_arithmetic_expansions() {
+        assert!(scan_substitution_spans("A:$(( )); B:$(printf x)").len() == 1);
+        assert_eq!(scan_substitution_spans("A:$(( ))"), Vec::new());
     }
 
     #[test]

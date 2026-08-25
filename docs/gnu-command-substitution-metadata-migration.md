@@ -85,7 +85,8 @@ Each probe compares GNU D:/Git/bin/bash.exe with target/debug/rubash.exe and che
 - cargo test --test cli_tests declare_output: 4 passed.
 - scripts/validate-semantic-map.sh: passed after adding substitution_metadata and focused mixed/empty tests to the canonical owner map.
 - cargo test --test cli_tests heredoc: 12 passed; no heredoc regression introduced by the fragment owner.
-- Final bounded matrix: command_substitution 32 passed / 1 existing bashdb info-files failure; arithmetic 29 passed / 2 existing nounset-empty arithmetic failures; printf 6 passed / 0 failures.
+- Final bounded matrix: command_substitution 32 passed / 1 existing bashdb info-files failure; arithmetic 31 passed / 0 failures; printf 6 passed / 0 failures.
+- `scan_substitution_spans` now excludes `$((...))` from command-substitution spans; the focused empty-arithmetic differential passes and prevents mixed-fragment expansion from routing arithmetic through command substitution.
 - Removing echo/printf shortcuts was tested and reverted: it caused 3 real CLI regressions, proving shortcuts must share the future capture/readback contract rather than simply disappear.
 
 ## Remaining Risks
