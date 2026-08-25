@@ -2,6 +2,14 @@ use super::*;
 
 impl Executor {
     pub(in crate::executor) fn expand_embedded_parameters(&self, word: &str) -> String {
+        self.expand_embedded_parameters_with_context(word, false)
+    }
+
+    pub(in crate::executor) fn expand_embedded_parameters_for_heredoc(&self, word: &str) -> String {
+        self.expand_embedded_parameters_with_context(word, true)
+    }
+
+    fn expand_embedded_parameters_with_context(&self, word: &str, heredoc: bool) -> String {
         // TODO(subst.c/subst.h): This is a narrow parameter-expansion subset.
         // GNU Bash handles quoting state, operators like ${name:-word},
         // positional/special parameters, arrays, command substitution, and IFS
@@ -64,7 +72,7 @@ impl Executor {
                     ));
                 } else {
                     output.push('`');
-                    output.push_str(&self.expand_embedded_parameters(&source));
+                    output.push_str(&self.expand_embedded_parameters_with_context(&source, heredoc));
                 }
                 continue;
             }
@@ -276,7 +284,12 @@ impl Executor {
                         self.shell_variable_value(&name)
                             .or_else(|| std::env::var(&name).ok())
                     }) {
-                        output.push_str(&shell_safe_value(&value));
+                        let value = shell_safe_value(&value);
+                        if heredoc {
+                            output.push_str(&protect_command_substitution_output(&value));
+                        } else {
+                            output.push_str(&value);
+                        }
                     }
                 }
                 Some(other) => {

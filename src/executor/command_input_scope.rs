@@ -59,9 +59,10 @@ impl Executor {
         if quoted {
             return body.to_string();
         }
-        restore_command_substitution_output(
-            &self.expand_embedded_parameters(&prepare_unquoted_heredoc_expansion(body)),
-        )
+        let expanded = self.expand_embedded_parameters_for_heredoc(
+            &prepare_unquoted_heredoc_expansion(body),
+        );
+        decode_command_substitution_payload(&restore_command_substitution_output(&expanded))
     }
 }
 
