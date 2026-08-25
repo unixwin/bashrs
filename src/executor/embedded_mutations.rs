@@ -366,10 +366,6 @@ impl Executor {
         }
     }
 
-    pub(in crate::executor) fn expand_command_substitution_mut(&mut self, source: &str) -> String {
-        self.expand_command_substitution_mut_with_context(source, SubstitutionQuoteContext::Unquoted)
-    }
-
     pub(in crate::executor) fn expand_command_substitution_mut_with_context(
         &mut self,
         source: &str,

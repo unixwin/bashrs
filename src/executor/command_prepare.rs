@@ -416,7 +416,12 @@ impl Executor {
                 return vec![expanded];
             }
         }
-        let expanded = self.expand_word_mut(word);
+        let context = raw
+            .map(scan_substitution_spans)
+            .filter(|spans| spans.len() == 1)
+            .and_then(|spans| spans.first().map(|span| span.context))
+            .unwrap_or(SubstitutionQuoteContext::Unquoted);
+        let expanded = self.expand_word_mut_with_context(word, context);
         let expanded = if word_contains_brace_group(word) && !word.starts_with('\x1d') {
             crate::lexer::remove_shell_quotes(&expanded)
         } else {

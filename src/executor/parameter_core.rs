@@ -5,6 +5,14 @@ impl Executor {
         crate::builtins::set::shell_option_enabled(&self.env_vars, "braceexpand")
     }
     pub(in crate::executor) fn expand_word_mut(&mut self, word: &str) -> String {
+        self.expand_word_mut_with_context(word, SubstitutionQuoteContext::Unquoted)
+    }
+
+    pub(in crate::executor) fn expand_word_mut_with_context(
+        &mut self,
+        word: &str,
+        context: SubstitutionQuoteContext,
+    ) -> String {
         self.apply_parameter_assignment_expansions_in_word(word);
 
         if let Some(word) = word.strip_prefix('\x1b') {
@@ -120,11 +128,11 @@ impl Executor {
         }
 
         if word.contains("$((") || word.contains("$[") {
-            return self.expand_embedded_parameters_mut(word);
+            return self.expand_embedded_parameters_mut_with_context(word, context);
         }
 
         if word_contains_current_shell_command_substitution(word) {
-            return self.expand_embedded_parameters_mut(word);
+            return self.expand_embedded_parameters_mut_with_context(word, context);
         }
 
         if let Some(source) = word
@@ -132,14 +140,14 @@ impl Executor {
             .and_then(|rest| rest.strip_suffix(')'))
         {
             if command_substitution_spans_whole_word(word) {
-                return self.expand_command_substitution_mut(source);
+                return self.expand_command_substitution_mut_with_context(source, context);
             }
         }
 
         // Embedded $() substitutions may contain full command lists or
         // compound commands, so use the mutable path that can execute an AST.
         if word.contains("$(") {
-            return self.expand_embedded_parameters_mut(word);
+            return self.expand_embedded_parameters_mut_with_context(word, context);
         }
 
         self.expand_word(word)
