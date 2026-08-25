@@ -406,6 +406,14 @@ impl Executor {
         &mut self,
         source: &str,
     ) -> Option<String> {
+        self.run_ast_command_substitution_with_context(source, SubstitutionQuoteContext::Unquoted)
+    }
+
+    pub(in crate::executor) fn run_ast_command_substitution_with_context(
+        &mut self,
+        source: &str,
+        context: SubstitutionQuoteContext,
+    ) -> Option<String> {
         if command_substitution_contains_heredoc(source) {
             return None;
         }
@@ -467,11 +475,7 @@ impl Executor {
         self.exit_code = saved_exit_code;
         self.last_command_substitution_status.set(Some(status));
 
-        Some(
-            String::from_utf8_lossy(&output)
-                .trim_end_matches('\n')
-                .to_string(),
-        )
+        Some(SubstitutionOutput::readback(output, status, context).text_lossy())
     }
 
     pub(in crate::executor) fn run_function_command_substitution(

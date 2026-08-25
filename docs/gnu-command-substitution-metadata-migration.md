@@ -77,7 +77,8 @@ Each probe compares GNU D:/Git/bin/bash.exe with target/debug/rubash.exe and che
 
 - 6fe14287: added SubstitutionOutput and typed parsed readback.
 - 3dc2cfab: documented the migration, threaded SubstitutionQuoteContext through parsed readback, and added ExpandedFragment/IFS splitter tests.
-- Current follow-up: parsed readback accepts lexical context and complete double-quoted parent handoff is wired; typed whole-word splitting and printf shortcut quote changes were tested but reverted after bashdb compatibility regressions.
+- Current follow-up: parsed readback accepts lexical context, complete double-quoted parent handoff is wired, and the AST fallback now routes output through SubstitutionOutput::readback. Typed whole-word splitting and printf shortcut quote changes were tested but reverted after bashdb compatibility regressions.
+- Focused verification: cargo check, 7 metadata tests, and command_substitution_echo_handles_escaped_parens_and_nested_backticks passed.
 - A temporary child-quote differential probe matched GNU only while the experimental whole-word/printf changes were active; those changes were reverted and the probe was not retained as a passing regression.
 - cargo check: passed after 6fe14287.
 - cargo test --lib executor::substitution_metadata::tests: 7 passed, including mixed-quote and nested-span scanner cases.
