@@ -52,16 +52,16 @@ impl Executor {
 
     /// Expands an unquoted heredoc body like Bash: parameter, command and
     /// arithmetic expansions run in the context of the receiving command.
-    /// A `\x1e` prefix marks a quoted heredoc whose body stays literal.
+    /// A dedicated quoted-heredoc marker keeps the body literal without sharing
+    /// the compound-assignment transport protocol.
     pub(in crate::executor) fn expand_heredoc_body(&self, body: &str) -> String {
         let quoted = body.starts_with(crate::lexer::QUOTED_HEREDOC_MARKER);
         let body = strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(body));
         if quoted {
             return body.to_string();
         }
-        let expanded = self.expand_embedded_parameters_for_heredoc(
-            &prepare_unquoted_heredoc_expansion(body),
-        );
+        let expanded =
+            self.expand_embedded_parameters_for_heredoc(&prepare_unquoted_heredoc_expansion(body));
         decode_command_substitution_payload(&restore_command_substitution_output(&expanded))
     }
 }

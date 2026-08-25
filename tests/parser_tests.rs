@@ -3361,7 +3361,7 @@ mod assignment_tests {
         assert_eq!(ast.commands.len(), 1);
         assert_eq!(
             ast.commands[0].assignments.get("arr").unwrap(),
-            "\x1e(one \"two words\")"
+            "__RUBASH_CA1__(one \"two words\")"
         );
 
         let compound = ast.commands[0].compound_assignments.as_slice();
@@ -5823,7 +5823,7 @@ mod quote_removal {
             vec![
                 "declare",
                 "-A",
-                "assoc=\x1e(one \"two words\" three \"four words\")"
+                "assoc=__RUBASH_CA1__(one \"two words\" three \"four words\")"
             ]
         );
         let compound = ast.commands[0].compound_assignments.as_slice();
@@ -5847,7 +5847,7 @@ mod quote_removal {
             vec![
                 "declare",
                 "-A",
-                "assoc=\x1e([\"two words\"]=\"value here\")"
+                "assoc=__RUBASH_CA1__([\"two words\"]=\"value here\")"
             ]
         );
     }

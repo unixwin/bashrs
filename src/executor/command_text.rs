@@ -162,7 +162,9 @@ where
     let (Some(body), Some(delimiter)) = (&command.heredoc, &command.heredoc_delimiter) else {
         return Ok(());
     };
-    let body = body.strip_prefix(crate::lexer::QUOTED_HEREDOC_MARKER).unwrap_or(body);
+    let body = body
+        .strip_prefix(crate::lexer::QUOTED_HEREDOC_MARKER)
+        .unwrap_or(body);
     write!(stdout, "{body}")?;
     writeln!(stdout, "{delimiter}")?;
     Ok(())

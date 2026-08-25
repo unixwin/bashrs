@@ -85,13 +85,22 @@ pub(in crate::executor) fn split_expanded_fragments(
 ) -> Vec<String> {
     if policy == SubstitutionSplitPolicy::NoSplit {
         return vec![String::from_utf8_lossy(
-            &fragments.iter().flat_map(|fragment| fragment.bytes.iter().copied()).collect::<Vec<_>>(),
+            &fragments
+                .iter()
+                .flat_map(|fragment| fragment.bytes.iter().copied())
+                .collect::<Vec<_>>(),
         )
         .into_owned()];
     }
     let ifs = ifs.unwrap_or(" \t\n");
-    let whitespace: Vec<u8> = ifs.bytes().filter(|byte| byte.is_ascii_whitespace()).collect();
-    let non_whitespace: Vec<u8> = ifs.bytes().filter(|byte| !byte.is_ascii_whitespace()).collect();
+    let whitespace: Vec<u8> = ifs
+        .bytes()
+        .filter(|byte| byte.is_ascii_whitespace())
+        .collect();
+    let non_whitespace: Vec<u8> = ifs
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect();
     let mut fields = Vec::new();
     let mut current = String::new();
     let mut saw_unquoted = false;
@@ -142,36 +151,84 @@ pub(in crate::executor) fn scan_substitution_spans(raw: &str) -> Vec<Substitutio
     let mut double = false;
     while index < chars.len() {
         let (offset, ch) = chars[index];
-        if ch == '\\' && !single { index += 2; continue; }
-        if ch == '\'' && !double { single = !single; index += 1; continue; }
-        if ch == '"' && !single { double = !double; index += 1; continue; }
+        if ch == '\\' && !single {
+            index += 2;
+            continue;
+        }
+        if ch == '\'' && !double {
+            single = !single;
+            index += 1;
+            continue;
+        }
+        if ch == '"' && !single {
+            double = !double;
+            index += 1;
+            continue;
+        }
         let dollar_paren = ch == '$'
             && chars.get(index + 1).is_some_and(|(_, next)| *next == '(')
             && chars.get(index + 2).is_none_or(|(_, next)| *next != '(');
         let backtick = ch == char::from(96);
         if !single && (dollar_paren || backtick) {
             let start = offset;
-            let context = if double { SubstitutionQuoteContext::DoubleQuoted } else { SubstitutionQuoteContext::Unquoted };
+            let context = if double {
+                SubstitutionQuoteContext::DoubleQuoted
+            } else {
+                SubstitutionQuoteContext::Unquoted
+            };
             let mut depth = if dollar_paren { 1usize } else { 0usize };
             let mut cursor = index + if dollar_paren { 2 } else { 1 };
             let mut inner_single = false;
             let mut inner_double = false;
             while cursor < chars.len() {
                 let (_, inner) = chars[cursor];
-                if inner == '\\' && !inner_single { cursor += 2; continue; }
+                if inner == '\\' && !inner_single {
+                    cursor += 2;
+                    continue;
+                }
                 if backtick && inner == char::from(96) && !inner_single && !inner_double {
-                    spans.push(SubstitutionSpan { start, end: chars[cursor].0 + 1, context });
-                    index = cursor + 1; break;
+                    spans.push(SubstitutionSpan {
+                        start,
+                        end: chars[cursor].0 + 1,
+                        context,
+                    });
+                    index = cursor + 1;
+                    break;
                 }
                 if dollar_paren {
-                    if inner == '\'' && !inner_double { inner_single = !inner_single; }
-                    if inner == '"' && !inner_single { inner_double = !inner_double; }
-                    if !inner_single && !inner_double && inner == '$' && chars.get(cursor + 1).is_some_and(|(_, next)| *next == '(') { depth += 1; cursor += 2; continue; }
-                    if !inner_single && !inner_double && inner == ')' { depth = depth.saturating_sub(1); if depth == 0 { spans.push(SubstitutionSpan { start, end: chars[cursor].0 + 1, context }); index = cursor + 1; break; } }
+                    if inner == '\'' && !inner_double {
+                        inner_single = !inner_single;
+                    }
+                    if inner == '"' && !inner_single {
+                        inner_double = !inner_double;
+                    }
+                    if !inner_single
+                        && !inner_double
+                        && inner == '$'
+                        && chars.get(cursor + 1).is_some_and(|(_, next)| *next == '(')
+                    {
+                        depth += 1;
+                        cursor += 2;
+                        continue;
+                    }
+                    if !inner_single && !inner_double && inner == ')' {
+                        depth = depth.saturating_sub(1);
+                        if depth == 0 {
+                            spans.push(SubstitutionSpan {
+                                start,
+                                end: chars[cursor].0 + 1,
+                                context,
+                            });
+                            index = cursor + 1;
+                            break;
+                        }
+                    }
                 }
                 cursor += 1;
             }
-            if index <= cursor { index = cursor; }
+            if index <= cursor {
+                index = cursor;
+            }
             continue;
         }
         index += 1;
@@ -191,19 +248,35 @@ pub(in crate::executor) struct RawWordFragment {
 pub(in crate::executor) fn split_raw_word_fragments(raw: &str) -> Vec<RawWordFragment> {
     let spans = scan_substitution_spans(raw);
     if spans.is_empty() {
-        return vec![RawWordFragment { text: raw.to_string(), substitution: false, context: None }];
+        return vec![RawWordFragment {
+            text: raw.to_string(),
+            substitution: false,
+            context: None,
+        }];
     }
     let mut fragments = Vec::new();
     let mut cursor = 0usize;
     for span in spans {
         if span.start > cursor {
-            fragments.push(RawWordFragment { text: raw[cursor..span.start].to_string(), substitution: false, context: None });
+            fragments.push(RawWordFragment {
+                text: raw[cursor..span.start].to_string(),
+                substitution: false,
+                context: None,
+            });
         }
-        fragments.push(RawWordFragment { text: raw[span.start..span.end].to_string(), substitution: true, context: Some(span.context) });
+        fragments.push(RawWordFragment {
+            text: raw[span.start..span.end].to_string(),
+            substitution: true,
+            context: Some(span.context),
+        });
         cursor = span.end;
     }
     if cursor < raw.len() {
-        fragments.push(RawWordFragment { text: raw[cursor..].to_string(), substitution: false, context: None });
+        fragments.push(RawWordFragment {
+            text: raw[cursor..].to_string(),
+            substitution: false,
+            context: None,
+        });
     }
     fragments
 }
@@ -215,13 +288,19 @@ mod tests {
 
     #[test]
     fn payload_protection_boundary_rejects_lexical_backticks_and_existing_tokens() {
-        assert!(command_substitution_value_needs_payload_protection("$x", "a\x1a"));
-        assert!(!command_substitution_value_needs_payload_protection("`$x`", "a\x1a"));
+        assert!(command_substitution_value_needs_payload_protection(
+            "$x", "a\x1a"
+        ));
+        assert!(!command_substitution_value_needs_payload_protection(
+            "`$x`", "a\x1a"
+        ));
         assert!(!command_substitution_value_needs_payload_protection(
             "$x",
             "__RUBASH_CSB1_1a;",
         ));
-        assert!(!command_substitution_value_needs_payload_protection("literal", "a\x1a"));
+        assert!(!command_substitution_value_needs_payload_protection(
+            "literal", "a\x1a"
+        ));
     }
 
     #[test]
@@ -252,10 +331,16 @@ mod tests {
         assert_eq!(fragments[0].text, "pre");
         assert!(!fragments[0].substitution);
         assert_eq!(fragments[1].text, "$(u)");
-        assert_eq!(fragments[1].context, Some(SubstitutionQuoteContext::Unquoted));
+        assert_eq!(
+            fragments[1].context,
+            Some(SubstitutionQuoteContext::Unquoted)
+        );
         assert_eq!(fragments[2].text, "\"");
         assert_eq!(fragments[3].text, "$(q)");
-        assert_eq!(fragments[3].context, Some(SubstitutionQuoteContext::DoubleQuoted));
+        assert_eq!(
+            fragments[3].context,
+            Some(SubstitutionQuoteContext::DoubleQuoted)
+        );
         assert_eq!(fragments[4].text, "\"post");
     }
 

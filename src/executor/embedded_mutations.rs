@@ -14,8 +14,11 @@ impl Executor {
         self.apply_parameter_assignment_expansions_in_word(word);
         let saved_parameter_state = word_contains_current_shell_command_substitution(word)
             .then(|| (self.env_vars.clone(), self.pipestatus.clone()));
-        let expanded =
-            self.expand_embedded_parameters_ordered_mut(word, saved_parameter_state.as_ref(), context);
+        let expanded = self.expand_embedded_parameters_ordered_mut(
+            word,
+            saved_parameter_state.as_ref(),
+            context,
+        );
         let expanded = if word.contains("$(") || word.contains('`') {
             unescape_remaining_shell_escapes(&expanded)
                 .replace("\\\\'", "'")
@@ -381,7 +384,9 @@ impl Executor {
         self.positional_params = saved_positional_params;
         if command_substitution_words_contain_here_string(&words) {
             let alias_source = words.join(" ");
-            if let Some(output) = self.run_ast_command_substitution_with_context(&alias_source, context) {
+            if let Some(output) =
+                self.run_ast_command_substitution_with_context(&alias_source, context)
+            {
                 return output;
             }
         }

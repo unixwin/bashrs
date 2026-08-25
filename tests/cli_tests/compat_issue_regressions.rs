@@ -571,7 +571,10 @@ fn arithmetic_assignment_error_continues_without_errexit() {
     assert_eq!(String::from_utf8_lossy(&output.stdout), "after:1 y: x:2\n");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("attempted assignment to non-variable"));
-    assert!(stderr.contains("error token is \"+=2\""), "stderr: {stderr}");
+    assert!(
+        stderr.contains("error token is \"+=2\""),
+        "stderr: {stderr}"
+    );
 }
 
 #[test]
@@ -879,7 +882,10 @@ fn command_substitution_multiple_fragments_split_independently() {
         .expect("run multiple substitution fragment probe");
 
     assert_eq!(output.status.code(), Some(0));
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "<preamidb>\n<cpost>\n<preamidb cpost>\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "<preamidb>\n<cpost>\n<preamidb cpost>\n"
+    );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
@@ -892,7 +898,10 @@ fn command_substitution_mixed_fragments_follow_quote_context() {
         .expect("run mixed substitution fragment probe");
 
     assert_eq!(output.status.code(), Some(0));
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "<prea>\n<bpost>\n<prea bpost>\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "<prea>\n<bpost>\n<prea bpost>\n"
+    );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
@@ -1293,7 +1302,7 @@ fn command_substitution_assignment_preserves_c0_payload_bytes() {
     let normalized = String::from_utf8_lossy(&output.stdout)
         .split_whitespace()
         .collect::<Vec<_>>()
-        .join(" " );
+        .join(" ");
     assert_eq!(normalized, "14 14 15 15 1a 1a 1f 1f");
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }

@@ -179,7 +179,6 @@ pub(crate) fn arithmetic_error_category(expression: &str) -> Option<ArithmeticEr
     category
 }
 
-
 pub(crate) fn eval_conditional_arith_value(
     value: &str,
     env_vars: &HashMap<String, String>,

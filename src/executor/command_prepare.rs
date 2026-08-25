@@ -258,7 +258,9 @@ impl Executor {
         variable_expanded.words = expanded_words
             .iter()
             .map(|(word, _)| {
-                decode_command_substitution_payload(&restore_pathname_escape_markers(&word.replace('\x15', "\\").replace('\x14', "\\")))
+                decode_command_substitution_payload(&restore_pathname_escape_markers(
+                    &word.replace('\x15', "\\").replace('\x14', "\\"),
+                ))
             })
             .collect();
         variable_expanded.word_kinds = Vec::new();
@@ -276,9 +278,8 @@ impl Executor {
                     );
                 } else {
                     match pathname_expand_word(&word, &self.env_vars) {
-                        PathnameExpansion::Matches(matches) => words.extend(
-                            matches.into_iter().map(|value| value.replace('\x17', "'")),
-                        ),
+                        PathnameExpansion::Matches(matches) => words
+                            .extend(matches.into_iter().map(|value| value.replace('\x17', "'"))),
                         PathnameExpansion::NoMatch => words.push(
                             decode_command_substitution_payload(&restore_pathname_escape_markers(
                                 &word.replace('\x15', "\\").replace('\x14', "\\"),
@@ -320,26 +321,33 @@ impl Executor {
         let raw_fragments = split_raw_word_fragments(raw);
         if raw_fragments.len() < 3
             || !raw_fragments.iter().any(|fragment| fragment.substitution)
-            || !raw_fragments.iter().any(|fragment| !fragment.substitution && !fragment.text.is_empty())
+            || !raw_fragments
+                .iter()
+                .any(|fragment| !fragment.substitution && !fragment.text.is_empty())
         {
             return None;
         }
-        let substitution_start = raw_fragments.iter().position(|fragment| fragment.substitution)?;
+        let substitution_start = raw_fragments
+            .iter()
+            .position(|fragment| fragment.substitution)?;
         if raw_fragments[..substitution_start]
             .iter()
-            .any(|fragment| fragment.text.contains('=')) {
+            .any(|fragment| fragment.text.contains('='))
+        {
             return None;
         }
-        if raw_fragments.iter().any(|fragment| {
-            !fragment.substitution
-                && fragment.text.contains(['$', '`', '{', '}'])
-        }) {
+        if raw_fragments
+            .iter()
+            .any(|fragment| !fragment.substitution && fragment.text.contains(['$', '`', '{', '}']))
+        {
             return None;
         }
         let mut expanded_fragments = Vec::new();
         for fragment in raw_fragments {
             if fragment.substitution {
-                let context = fragment.context.unwrap_or(SubstitutionQuoteContext::Unquoted);
+                let context = fragment
+                    .context
+                    .unwrap_or(SubstitutionQuoteContext::Unquoted);
                 let source = fragment.text.strip_prefix("$(")?.strip_suffix(')')?;
                 let output = self.expand_command_substitution_mut_with_context(source, context);
                 expanded_fragments.push(ExpandedFragment::expanded(
@@ -380,7 +388,8 @@ impl Executor {
         // word splitting. Keep it out of the legacy `$()` materializer, which
         // otherwise treats the inner `+` as a command word.
         if let Some(expression) = raw.and_then(|raw| {
-            raw.strip_prefix("\"$((").and_then(|rest| rest.strip_suffix("))\""))
+            raw.strip_prefix("\"$((")
+                .and_then(|rest| rest.strip_suffix("))\""))
         }) {
             if let Some(value) = self.eval_arithmetic_expansion_value(expression) {
                 return vec![value.to_string()];
@@ -393,9 +402,10 @@ impl Executor {
             }
             return Vec::new();
         }
-        if let Some(source) = raw
-            .and_then(|raw| raw.strip_prefix("\"$(").and_then(|rest| rest.strip_suffix(")\"")))
-        {
+        if let Some(source) = raw.and_then(|raw| {
+            raw.strip_prefix("\"$(")
+                .and_then(|rest| rest.strip_suffix(")\""))
+        }) {
             return vec![self.expand_command_substitution_with_context(
                 source,
                 SubstitutionQuoteContext::DoubleQuoted,
@@ -419,9 +429,13 @@ impl Executor {
                 .first()
                 .map(|span| span.context)
                 .unwrap_or(SubstitutionQuoteContext::Unquoted);
-            let expanded = self.expand_embedded_parameters_mut_with_context(raw_substitution, context);
+            let expanded =
+                self.expand_embedded_parameters_mut_with_context(raw_substitution, context);
             if self.splits_unquoted_expanded_word(cmd, index, &expanded) {
-                return field_split_escaped_ifs(&expanded, self.env_vars.get("IFS").map(String::as_str));
+                return field_split_escaped_ifs(
+                    &expanded,
+                    self.env_vars.get("IFS").map(String::as_str),
+                );
             }
             return vec![expanded];
         }
@@ -511,10 +525,17 @@ impl Executor {
         {
             if let Some(raw_value) = raw
                 .and_then(|raw| raw.split_once('=').map(|(_, value)| value))
-                .and_then(|value| value.strip_prefix('\"').and_then(|value| value.strip_suffix('\"')))
+                .and_then(|value| {
+                    value
+                        .strip_prefix('\"')
+                        .and_then(|value| value.strip_suffix('\"'))
+                })
             {
                 if let Some((left, _)) = expanded.split_once('=') {
-                    return vec![format!("{left}={}", self.expand_quoted_parameter_word(raw_value))];
+                    return vec![format!(
+                        "{left}={}",
+                        self.expand_quoted_parameter_word(raw_value)
+                    )];
                 }
             }
         }

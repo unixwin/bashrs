@@ -22,10 +22,7 @@ impl Executor {
     }
 
     pub(in crate::executor) fn expand_command_substitution(&self, source: &str) -> String {
-        self.expand_command_substitution_with_context(
-            source,
-            SubstitutionQuoteContext::Unquoted,
-        )
+        self.expand_command_substitution_with_context(source, SubstitutionQuoteContext::Unquoted)
     }
 
     pub(in crate::executor) fn expand_command_substitution_with_context(
@@ -446,8 +443,7 @@ impl Executor {
             let _ = env::set_current_dir(saved_dir);
         }
 
-        let readback =
-            SubstitutionOutput::readback(output, status, context);
+        let readback = SubstitutionOutput::readback(output, status, context);
         self.last_command_substitution_status
             .set(Some(readback.status));
         Some(readback.text_lossy())

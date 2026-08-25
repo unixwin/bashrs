@@ -47,7 +47,8 @@ impl ConditionalArithParser<'_> {
                 let expression = self.collect_quoted_index_expression()?;
                 let expression = strip_arith_double_quotes(&expression);
                 if expression.is_empty() {
-                    self.error_category = Some(super::super::ArithmeticErrorCategory::EmptyArraySubscript);
+                    self.error_category =
+                        Some(super::super::ArithmeticErrorCategory::EmptyArraySubscript);
                     return None;
                 }
                 eval_mutable_arith_value_with_random(&expression, self.env_vars, self.random_state)?

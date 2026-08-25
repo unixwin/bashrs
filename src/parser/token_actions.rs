@@ -89,7 +89,11 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                                     .compound_assignments
                                     .push(compound_assignment);
                             }
-                            var_value = format!("\x1e{compound_value}");
+                            var_value = format!(
+                                "{}{}",
+                                crate::executor::types::COMPOUND_ASSIGNMENT_MARKER,
+                                compound_value
+                            );
                             *i = next_i;
                         }
                     }
@@ -166,7 +170,7 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                                     .compound_assignments
                                     .push(compound_assignment);
                             }
-                            word.push('\x1e');
+                            word.push_str(crate::executor::types::COMPOUND_ASSIGNMENT_MARKER);
                             word.push_str(&compound_value);
                             *i = next_i;
                         }

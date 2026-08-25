@@ -5,6 +5,8 @@
 pub(crate) mod arithmetic;
 pub(crate) mod glob;
 pub(crate) mod path;
+pub(crate) mod types;
+pub(crate) use types::COMPOUND_ASSIGNMENT_MARKER;
 mod upstream_scripts;
 use arithmetic::{
     arithmetic_division_by_zero_token, arithmetic_unbound_variable, eval_arith_value,
@@ -254,7 +256,6 @@ const INHERIT_PROCESS_STDIN: &str = "__RUBASH_INHERIT_PROCESS_STDIN";
 const LOCAL_EXPORT_ENV: &str = "__RUBASH_LOCAL_EXPORT_ENV";
 const POSIX_FUNCTION_EXPORT_TOUCHED: &str = "__RUBASH_POSIX_FUNCTION_EXPORT_TOUCHED";
 const DECLARED_UNSET_VARS: &str = "__RUBASH_DECLARED_UNSET_VARS";
-const COMPOUND_ASSIGNMENT_MARKER: char = '\x1e';
 const ARRAY_FIELD_SPLIT_MARKER: char = '\x10';
 const SKIP_POSIXPIPE_TIME_COUNT_REMAINDER: &str = "__RUBASH_SKIP_POSIXPIPE_TIME_COUNT_REMAINDER";
 

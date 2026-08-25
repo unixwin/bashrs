@@ -25,7 +25,7 @@ const INTEGER_VARS: &str = "__RUBASH_INTEGER_VARS";
 const UPPERCASE_VARS: &str = "__RUBASH_UPPERCASE_VARS";
 const LOWERCASE_VARS: &str = "__RUBASH_LOWERCASE_VARS";
 const NAMEREF_VARS: &str = "__RUBASH_NAMEREF_VARS";
-const COMPOUND_ASSIGNMENT_MARKER: char = '\x1e';
+use crate::executor::types::COMPOUND_ASSIGNMENT_MARKER;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ExportMode {

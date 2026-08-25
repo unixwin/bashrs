@@ -301,7 +301,11 @@ fn process_substitution_source(tokens: &[Token]) -> String {
             if !source.ends_with('\n') {
                 source.push('\n');
             }
-            source.push_str(token.value.trim_start_matches(['\x1e', '\x1f']));
+            let body = token
+                .value
+                .strip_prefix(crate::lexer::QUOTED_HEREDOC_MARKER)
+                .unwrap_or(&token.value);
+            source.push_str(body.strip_prefix('\x1f').unwrap_or(body));
             if !source.ends_with('\n') {
                 source.push('\n');
             }

@@ -52,6 +52,19 @@ impl ConditionalArithParser<'_> {
                 .or(Some(1));
         }
 
+        // GNU expr.c treats a bare indexed-array operand as element zero.
+        // The typed store serializes the whole array, which is not itself an
+        // arithmetic expression, so resolve the scalar view before parsing.
+        if is_marked_var(self.env_vars, ARRAY_VARS, name) {
+            if let Some(value) = self
+                .env_vars
+                .get(name)
+                .and_then(|value| array_value_at(value, 0))
+            {
+                return self.evaluate_variable_text(name, &value);
+            }
+        }
+
         let value = self
             .env_vars
             .get(name)

@@ -72,7 +72,8 @@ impl Executor {
                     ));
                 } else {
                     output.push('`');
-                    output.push_str(&self.expand_embedded_parameters_with_context(&source, heredoc));
+                    output
+                        .push_str(&self.expand_embedded_parameters_with_context(&source, heredoc));
                 }
                 continue;
             }
@@ -158,7 +159,9 @@ impl Executor {
                                         "{expression}: syntax error in expression (error token is \"{expression}\")"
                                     )
                                 });
-                                if !crate::executor::arithmetic::arithmetic_expansion_is_fatal(&expression) {
+                                if !crate::executor::arithmetic::arithmetic_expansion_is_fatal(
+                                    &expression,
+                                ) {
                                     self.arithmetic_nonfatal_error.set(true);
                                 } else {
                                     self.arithmetic_fatal_error.set(true);

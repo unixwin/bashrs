@@ -94,7 +94,8 @@ pub(in crate::executor) fn strip_unterminated_heredoc_marker(body: &str) -> &str
 }
 
 pub(in crate::executor) fn strip_quoted_heredoc_marker(body: &str) -> &str {
-    body.strip_prefix(crate::lexer::QUOTED_HEREDOC_MARKER).unwrap_or(body)
+    body.strip_prefix(crate::lexer::QUOTED_HEREDOC_MARKER)
+        .unwrap_or(body)
 }
 
 pub(in crate::executor) fn unterminated_heredoc_body_line_count(body: &str) -> usize {
@@ -339,8 +340,8 @@ pub(in crate::executor) fn current_epoch_micros() -> i64 {
 
 pub(in crate::executor) fn eval_source_for_reparse(source: &str) -> String {
     let source = source
-        .replace('\x1e', "")
-        .replace('\x1d', "")
+        .replace(crate::lexer::QUOTED_HEREDOC_MARKER, "")
+        .replace(crate::executor::types::COMPOUND_ASSIGNMENT_MARKER, "")
         .replace('\x1c', "")
         .replace('\x1f', "$")
         .replace('\x17', "'");
@@ -416,11 +417,17 @@ pub(in crate::executor) fn command_substitution_value_needs_payload_protection(
 }
 
 pub(in crate::executor) fn protect_command_substitution_output(value: &str) -> String {
-    let escaped_value = value.replace(COMMAND_SUBSTITUTION_PAYLOAD_PREFIX, &format!("{COMMAND_SUBSTITUTION_PAYLOAD_PREFIX}{COMMAND_SUBSTITUTION_PAYLOAD_PREFIX}"));
+    let escaped_value = value.replace(
+        COMMAND_SUBSTITUTION_PAYLOAD_PREFIX,
+        &format!("{COMMAND_SUBSTITUTION_PAYLOAD_PREFIX}{COMMAND_SUBSTITUTION_PAYLOAD_PREFIX}"),
+    );
     let mut output = String::with_capacity(escaped_value.len());
     for ch in escaped_value.chars() {
         match ch {
-            '\x10'..='\x1f' => output.push_str(&format!("{COMMAND_SUBSTITUTION_PAYLOAD_PREFIX}{:02x};", ch as u32)),
+            '\x10'..='\x1f' => output.push_str(&format!(
+                "{COMMAND_SUBSTITUTION_PAYLOAD_PREFIX}{:02x};",
+                ch as u32
+            )),
             '`' => output.push('\x1a'),
             '$' => output.push('\x1f'),
             '\\' => output.push('\x15'),

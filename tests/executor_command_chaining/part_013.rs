@@ -14,7 +14,10 @@ fn test_indirect_positional_count_after_ifs_split() {
 
     assert!(executor.execute_ast(&ast).is_ok());
     assert_eq!(executor.last_exit_code(), 0);
-    assert_eq!(fs::read_to_string(output_path).unwrap(), "n=2 first=a last=b\n");
+    assert_eq!(
+        fs::read_to_string(output_path).unwrap(),
+        "n=2 first=a last=b\n"
+    );
     let _ = fs::remove_file(output_path);
 }
 

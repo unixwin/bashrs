@@ -34,7 +34,7 @@ const UPPERCASE_VARS: &str = "__RUBASH_UPPERCASE_VARS";
 const LOWERCASE_VARS: &str = "__RUBASH_LOWERCASE_VARS";
 const NAMEREF_VARS: &str = "__RUBASH_NAMEREF_VARS";
 const DECLARED_UNSET_VARS: &str = "__RUBASH_DECLARED_UNSET_VARS";
-const COMPOUND_ASSIGNMENT_MARKER: char = '\x1e';
+use crate::executor::types::COMPOUND_ASSIGNMENT_MARKER;
 const EX_USAGE: i32 = 2;
 
 /// Synchronize indexed declarations into the typed variable owner after the
