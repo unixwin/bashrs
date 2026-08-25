@@ -67,7 +67,7 @@ impl Executor {
         }
 
         let expanded_value = self.expand_embedded_parameters_mut(value);
-        let mut expanded = if quoted {
+        let expanded = if quoted {
             // Prompt transforms consume Bash's `\!` and `\#` escapes after
             // parameter expansion. Keep those two quoted backslashes until
             // `${var@P}` reaches prompt_expansion; ordinary shell escapes
@@ -76,6 +76,7 @@ impl Executor {
         } else {
             unescape_remaining_shell_escapes(&expanded_value)
         };
+        let mut expanded = decode_command_substitution_payload(&expanded);
         if expanded.contains("<(") || expanded.contains(">(") {
             if let Ok(materialized) = self.materialize_assignment_process_substitutions(&expanded) {
                 expanded = materialized;

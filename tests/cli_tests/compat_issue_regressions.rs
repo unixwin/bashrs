@@ -1280,3 +1280,20 @@ fn command_substitution_sed_restores_shell_sentinels() {
     assert_eq!(String::from_utf8_lossy(&output.stdout), "5:3\n");
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
+
+#[test]
+fn command_substitution_assignment_preserves_c0_payload_bytes() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"x=$(printf '\024'); printf '14 '; printf '%s' "$x" | od -An -tx1; x=$(printf '\025'); printf '15 '; printf '%s' "$x" | od -An -tx1; x=$(printf '\032'); printf '1a '; printf '%s' "$x" | od -An -tx1; x=$(printf '\037'); printf '1f '; printf '%s' "$x" | od -An -tx1"#)
+        .output()
+        .expect("run command substitution C0 payload probe");
+
+    assert!(output.status.success());
+    let normalized = String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" " );
+    assert_eq!(normalized, "14 14 15 15 1a 1a 1f 1f");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}

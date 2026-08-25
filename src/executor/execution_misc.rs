@@ -403,11 +403,21 @@ pub(in crate::executor) fn command_substitution_word_split(value: &str) -> Strin
     value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+const COMMAND_SUBSTITUTION_PAYLOAD_PREFIX: &str = "__RUBASH_CSB1_";
+
 pub(in crate::executor) fn protect_command_substitution_output(value: &str) -> String {
-    value
-        .replace('`', "\x1a")
-        .replace('$', "\x1f")
-        .replace('\\', "\x15")
+    let escaped_value = value.replace(COMMAND_SUBSTITUTION_PAYLOAD_PREFIX, &format!("{COMMAND_SUBSTITUTION_PAYLOAD_PREFIX}{COMMAND_SUBSTITUTION_PAYLOAD_PREFIX}"));
+    let mut output = String::with_capacity(escaped_value.len());
+    for ch in escaped_value.chars() {
+        match ch {
+            '\x10'..='\x1f' => output.push_str(&format!("{COMMAND_SUBSTITUTION_PAYLOAD_PREFIX}{:02x};", ch as u32)),
+            '`' => output.push('\x1a'),
+            '$' => output.push('\x1f'),
+            '\\' => output.push('\x15'),
+            _ => output.push(ch),
+        }
+    }
+    output
 }
 
 pub(in crate::executor) fn restore_command_substitution_output(value: &str) -> String {
@@ -416,6 +426,30 @@ pub(in crate::executor) fn restore_command_substitution_output(value: &str) -> S
         .replace('\x1f', "$")
         .replace('\x15', "\\")
         .replace('\x14', "\\")
+}
+
+pub(in crate::executor) fn decode_command_substitution_payload(value: &str) -> String {
+    let mut output = String::new();
+    let mut rest = value;
+    while let Some(index) = rest.find(COMMAND_SUBSTITUTION_PAYLOAD_PREFIX) {
+        output.push_str(&rest[..index]);
+        rest = &rest[index + COMMAND_SUBSTITUTION_PAYLOAD_PREFIX.len()..];
+        if let Some(escaped) = rest.strip_prefix(COMMAND_SUBSTITUTION_PAYLOAD_PREFIX) {
+            output.push_str(COMMAND_SUBSTITUTION_PAYLOAD_PREFIX);
+            rest = escaped;
+        } else if rest.len() >= 3 && rest.as_bytes()[2] == b';' {
+            if let Ok(byte) = u8::from_str_radix(&rest[..2], 16) {
+                output.push(char::from(byte));
+                rest = &rest[3..];
+            } else {
+                output.push_str(COMMAND_SUBSTITUTION_PAYLOAD_PREFIX);
+            }
+        } else {
+            output.push_str(COMMAND_SUBSTITUTION_PAYLOAD_PREFIX);
+        }
+    }
+    output.push_str(rest);
+    output
 }
 
 pub(in crate::executor) fn unescape_storage_command_substitution_source(source: &str) -> String {
