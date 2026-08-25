@@ -96,8 +96,9 @@ Each probe compares GNU D:/Git/bin/bash.exe with target/debug/rubash.exe and che
 
 ## Backtick Differential Evidence
 
-- Round 39 probe: `x=$(printf '\\032'); y=`printf '%s' "$x"`; printf '%s' "$y" | od -An -tx1` matches GNU as `1a`, while Rubash currently emits `60` (backtick). The attempted final-argument decode was reverted because the corruption occurs earlier in backtick child-output/source materialization.
-- The remaining owner is the backtick capture path in `embedded_parameters.rs`/`embedded_mutations.rs`, not heredoc input or pipeline handoff.
+- Round 46 fix: the backtick variable-value owner now protects raw C0 bytes only when the source word contains a parameter expansion without backtick syntax and the value is not already an owner-tagged payload token. This prevents legacy `\x1a -> backtick` restoration from interpreting payload data.
+- GNU/Rubash explicit backtick probes now match for `0x10..0x1c`: each byte survives quoted and unquoted variable use. The focused regression `backtick_command_substitution_preserves_raw_c0_variable_payload` covers `0x14`, `0x15`, `0x1a`, and `0x1f`; assignment and heredoc C0 regressions remain green.
+- `0x1d` and `0x1e` remain separate migration risks because Rubash uses them for array/assignment, quoted-heredoc, and compound-assignment protocols. They require typed fragment provenance rather than another global replacement.
 
 ## Remaining Risks
 
