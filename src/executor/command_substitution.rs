@@ -16,6 +16,17 @@ impl Executor {
     }
 
     pub(in crate::executor) fn expand_command_substitution(&self, source: &str) -> String {
+        self.expand_command_substitution_with_context(
+            source,
+            SubstitutionQuoteContext::Unquoted,
+        )
+    }
+
+    pub(in crate::executor) fn expand_command_substitution_with_context(
+        &self,
+        source: &str,
+        context: SubstitutionQuoteContext,
+    ) -> String {
         self.last_command_substitution_status.set(Some(0));
         self.last_command_substitution_parse_error.set(false);
         let old_depth = self.subshell_depth.get();
@@ -24,13 +35,17 @@ impl Executor {
         // Bash evaluates BASH_COMMAND in a command substitution against the
         // substitution's own command source, rather than the outer word.
         *self.debug_trap_command.borrow_mut() = Some(source.trim().to_string());
-        let result = self.expand_command_substitution_inner(source);
+        let result = self.expand_command_substitution_inner(source, context);
         *self.debug_trap_command.borrow_mut() = saved_command;
         self.subshell_depth.set(old_depth);
         result
     }
 
-    pub(in crate::executor) fn expand_command_substitution_inner(&self, source: &str) -> String {
+    pub(in crate::executor) fn expand_command_substitution_inner(
+        &self,
+        source: &str,
+        context: SubstitutionQuoteContext,
+    ) -> String {
         // TODO(subst.c/parse.y/execute_cmd.c): Bash command substitution runs a
         // subshell, captures stdout, removes trailing newlines, and performs
         // full parsing/execution. This handles the alias4.sub form
@@ -43,7 +58,7 @@ impl Executor {
         }
         let source = source.strip_prefix("eval ").unwrap_or(source);
         if let Some(inner) = strip_wrapping_subshell_group(source) {
-            return self.expand_command_substitution_inner(inner);
+            return self.expand_command_substitution_inner(inner, context);
         }
         if source == "false" {
             self.last_command_substitution_status.set(Some(1));
@@ -103,7 +118,7 @@ impl Executor {
         // such as `if x; then ...`, so route these forms through the real AST
         // parser before dispatching a simple command shortcut.
         if source.contains(">&2") || source.contains("2>") {
-            if let Some(output) = self.command_list_substitution_output(source) {
+            if let Some(output) = self.command_list_substitution_output(source, context) {
                 return output;
             }
             return String::new();
@@ -115,7 +130,7 @@ impl Executor {
                 self.last_command_substitution_status.set(Some(2));
                 return String::new();
             }
-            if let Some(output) = self.command_list_substitution_output(source) {
+            if let Some(output) = self.command_list_substitution_output(source, context) {
                 return output;
             }
             return String::new();
@@ -139,7 +154,7 @@ impl Executor {
             // commands, not one echo with `; echo ""` in its arguments).
             // The single-command shortcuts below assume a lone command word,
             // so route multi-command sources through the real executor.
-            if let Some(output) = self.command_list_substitution_output(source) {
+            if let Some(output) = self.command_list_substitution_output(source, context) {
                 return output;
             }
             return String::new();
@@ -334,7 +349,7 @@ impl Executor {
         // Fallback: run the source through the real parser/executor in a
         // subshell and capture stdout (function calls, pipelines, compound
         // commands that the special-case dispatch above does not cover).
-        if let Some(output) = self.command_list_substitution_output(source) {
+        if let Some(output) = self.command_list_substitution_output(source, context) {
             return output;
         }
 
@@ -382,7 +397,11 @@ impl Executor {
         ))
     }
 
-    fn command_list_substitution_output(&self, source: &str) -> Option<String> {
+    fn command_list_substitution_output(
+        &self,
+        source: &str,
+        context: SubstitutionQuoteContext,
+    ) -> Option<String> {
         let tokens = crate::lexer::tokenize(source);
         let ast = crate::parser::parse(&tokens);
 
@@ -422,7 +441,7 @@ impl Executor {
         }
 
         let readback =
-            SubstitutionOutput::readback(output, status, SubstitutionQuoteContext::Unquoted);
+            SubstitutionOutput::readback(output, status, context);
         self.last_command_substitution_status
             .set(Some(readback.status));
         Some(readback.text_lossy())

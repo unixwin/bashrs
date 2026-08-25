@@ -321,6 +321,14 @@ impl Executor {
         // the point where their word is expanded. Applying them to every
         // command word up front changes Bash's left-to-right semantics.
         self.apply_parameter_assignment_expansions_in_word(word);
+        if let Some(source) = raw
+            .and_then(|raw| raw.strip_prefix("\"$(").and_then(|rest| rest.strip_suffix(")\"")))
+        {
+            return vec![self.expand_command_substitution_with_context(
+                source,
+                SubstitutionQuoteContext::DoubleQuoted,
+            )];
+        }
         if let Some(raw_substitution) = raw
             .filter(|raw| raw.starts_with("$(") && raw.ends_with(')'))
             .filter(|raw| {

@@ -42,6 +42,78 @@ impl SubstitutionOutput {
     }
 }
 
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::executor) enum SubstitutionSplitPolicy {
+    Split,
+    NoSplit,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::executor) struct ExpandedFragment {
+    pub(in crate::executor) bytes: Vec<u8>,
+    pub(in crate::executor) quoted: bool,
+}
+
+impl ExpandedFragment {
+    #[allow(dead_code)]
+    pub(in crate::executor) fn literal(text: &str, quoted: bool) -> Self {
+        Self {
+            bytes: text.as_bytes().to_vec(),
+            quoted,
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub(in crate::executor) fn split_expanded_fragments(
+    fragments: &[ExpandedFragment],
+    ifs: Option<&str>,
+    policy: SubstitutionSplitPolicy,
+) -> Vec<String> {
+    if policy == SubstitutionSplitPolicy::NoSplit {
+        return vec![String::from_utf8_lossy(
+            &fragments.iter().flat_map(|fragment| fragment.bytes.iter().copied()).collect::<Vec<_>>(),
+        )
+        .into_owned()];
+    }
+    let ifs = ifs.unwrap_or(" \t\n");
+    let whitespace: Vec<u8> = ifs.bytes().filter(|byte| byte.is_ascii_whitespace()).collect();
+    let non_whitespace: Vec<u8> = ifs.bytes().filter(|byte| !byte.is_ascii_whitespace()).collect();
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut saw_unquoted = false;
+    let mut pending_non_whitespace = false;
+    for fragment in fragments {
+        for byte in &fragment.bytes {
+            let is_ifs = ifs.as_bytes().contains(byte);
+            if !fragment.quoted && is_ifs {
+                saw_unquoted = true;
+                if non_whitespace.contains(byte) {
+                    fields.push(std::mem::take(&mut current));
+                    pending_non_whitespace = true;
+                } else if !current.is_empty() {
+                    fields.push(std::mem::take(&mut current));
+                    pending_non_whitespace = false;
+                }
+                continue;
+            }
+            if !fragment.quoted && whitespace.contains(byte) {
+                continue;
+            }
+            if pending_non_whitespace && current.is_empty() {
+                pending_non_whitespace = false;
+            }
+            current.push(*byte as char);
+        }
+    }
+    if !current.is_empty() || !saw_unquoted {
+        fields.push(current);
+    }
+    fields
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -55,6 +127,40 @@ mod tests {
         );
         assert_eq!(output.bytes, b"ab");
         assert_eq!(output.text_lossy(), "ab");
+    }
+
+    #[test]
+    fn unquoted_ifs_splits_but_quoted_fragment_does_not() {
+        let fragments = [
+            ExpandedFragment::literal("a  b", false),
+            ExpandedFragment::literal(" c d", true),
+        ];
+        assert_eq!(
+            split_expanded_fragments(&fragments, Some(" \t\n"), SubstitutionSplitPolicy::Split),
+            vec!["a", "b c d"]
+        );
+    }
+
+    #[test]
+    fn non_whitespace_ifs_preserve_interior_empty_fields() {
+        let fragments = [ExpandedFragment::literal("a::b:", false)];
+        assert_eq!(
+            split_expanded_fragments(&fragments, Some(":"), SubstitutionSplitPolicy::Split),
+            vec!["a", "", "b"]
+        );
+    }
+
+    #[test]
+    fn no_split_keeps_empty_and_adjacent_fragments_as_one_word() {
+        let fragments = [
+            ExpandedFragment::literal("pre", true),
+            ExpandedFragment::literal("", true),
+            ExpandedFragment::literal("post", true),
+        ];
+        assert_eq!(
+            split_expanded_fragments(&fragments, Some(":"), SubstitutionSplitPolicy::NoSplit),
+            vec!["prepost"]
+        );
     }
 
     #[test]
