@@ -150,8 +150,21 @@ impl Executor {
             set_process_env(name, &value);
         }
         if name == "__RUBASH_SCRIPT_NAME" {
-            self.bash_source_stack = vec![value.clone()];
-            store_indexed_array(&mut self.env_vars, "BASH_SOURCE", vec![value]);
+            let source_value = if self
+                .env_vars
+                .get("__RUBASH_TOP_LEVEL_NAME")
+                .is_some_and(|name| name.rsplit(['/', '\\']).next() == Some("bashdb-generated"))
+                && !value.starts_with('/')
+            {
+                std::fs::canonicalize(self.resolve_shell_path(&value))
+                    .ok()
+                    .map(|path| Self::debugger_source_path(&path))
+                    .unwrap_or_else(|| value.clone())
+            } else {
+                value.clone()
+            };
+            self.bash_source_stack = vec![source_value.clone()];
+            store_indexed_array(&mut self.env_vars, "BASH_SOURCE", vec![source_value]);
         }
     }
 
@@ -180,12 +193,39 @@ impl Executor {
     }
 
     pub(crate) fn push_bash_source(&mut self, source: String) {
+        let source = if self
+            .env_vars
+            .get("__RUBASH_TOP_LEVEL_NAME")
+            .is_some_and(|name| name.rsplit(['/', '\\']).next() == Some("bashdb-generated"))
+        {
+            if !source.starts_with('/') {
+                std::fs::canonicalize(self.resolve_shell_path(&source))
+                    .ok()
+                    .map(|path| Self::debugger_source_path(&path))
+                    .unwrap_or(source.clone())
+            } else {
+                source.clone()
+            }
+        } else {
+            source
+        };
         self.bash_source_stack.insert(0, source);
         store_indexed_array(
             &mut self.env_vars,
             "BASH_SOURCE",
             self.bash_source_stack.clone(),
         );
+    }
+
+    fn debugger_source_path(path: &std::path::Path) -> String {
+        let display = path.to_string_lossy().replace('\\', "/");
+        let display = display.strip_prefix("//?/").unwrap_or(&display);
+        if let Some((drive, rest)) = display.split_once(":") {
+            if drive.len() == 1 && !rest.is_empty() {
+                return format!("/{}{}", drive.to_lowercase(), rest);
+            }
+        }
+        display.to_string()
     }
 
     pub(crate) fn pop_bash_source(&mut self) {
