@@ -47,11 +47,11 @@ Payload bytes must remain bytes. Syntax quotes from the outer source are metadat
 - [x] Add an owner-scoped SubstitutionOutput readback type.
 - [x] Route parsed substitution capture through typed readback for NUL and trailing newline handling.
 - [x] Add unit coverage proving child quote bytes remain data.
-- [ ] Carry real lexical context from parser/word metadata into command substitution evaluation.
+- [~] Carry lexical context into parsed readback. The parent boundary now handles complete double-quoted words; mixed fragments and heredoc/assignment context remain open.
 - [ ] Represent quoted, unquoted, assignment, and heredoc substitution context without C0 prefixes.
 - [~] Add ExpandedWord/WordPart fragments with origin, quoted state, escaped state, quoted-null state, expansion state, and no-split policy. Typed ExpandedFragment and split policy exist with unit coverage; command-word integration remains open.
-- [ ] Replace command_substitution_word_split and raw-word heuristics with centralized IFS-aware splitting.
-- [ ] Preserve quoted empty fields and adjacent quoted/unquoted fragments.
+- [~] Replace command_substitution_word_split and raw-word heuristics with centralized IFS-aware splitting. The typed splitter is implemented and unit-tested, but whole-word integration was reverted after it changed bashdb getopts/profile behavior.
+- [~] Preserve quoted empty fields and adjacent quoted/unquoted fragments. Typed unit coverage exists; full mixed-word integration remains open.
 - [ ] Move final quote removal and glob protection to one owning boundary.
 - [ ] Remove targeted early substitution restoration from expand_word, command_substitution_values, command_input_scope, and backtick paths as each owner migrates.
 - [ ] Replace \x1c structural close detection with parser state/typed heredoc termination.
@@ -76,9 +76,11 @@ Each probe compares GNU D:/Git/bin/bash.exe with target/debug/rubash.exe and che
 ## Evidence Log
 
 - 6fe14287: added SubstitutionOutput and typed parsed readback.
-- Uncommitted follow-up: threaded SubstitutionQuoteContext through parsed readback, added ExpandedFragment/IFS splitter tests, and added whole double-quoted parent handoff. A probe still shows escaped child quotes, so full quote removal migration remains open.
+- 3dc2cfab: documented the migration, threaded SubstitutionQuoteContext through parsed readback, and added ExpandedFragment/IFS splitter tests.
+- Current follow-up: parsed readback accepts lexical context and complete double-quoted parent handoff is wired; typed whole-word splitting and printf shortcut quote changes were tested but reverted after bashdb compatibility regressions.
+- A temporary child-quote differential probe matched GNU only while the experimental whole-word/printf changes were active; those changes were reverted and the probe was not retained as a passing regression.
 - cargo check: passed after 6fe14287.
-- cargo test --lib executor::substitution_metadata::tests: 2 passed.
+- cargo test --lib executor::substitution_metadata::tests: 5 passed.
 - cargo test --test cli_tests declare_output: 4 passed.
 - Removing echo/printf shortcuts was tested and reverted: it caused 3 real CLI regressions, proving shortcuts must share the future capture/readback contract rather than simply disappear.
 
