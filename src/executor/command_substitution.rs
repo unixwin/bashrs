@@ -16,7 +16,7 @@ impl Executor {
         let protected = if word.contains('$')
             && !word.contains('`')
             && !unescaped.contains("__RUBASH_CSB1_")
-            && unescaped.contains('\x1a')
+            && unescaped.chars().any(|ch| ('\x10'..='\x1f').contains(&ch))
         {
             protect_command_substitution_output(&unescaped)
         } else {
