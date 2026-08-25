@@ -161,7 +161,7 @@ fn consume_read_delimiter(chars: &[char], index: &mut usize, ifs: &str, delimite
     }
 }
 
-pub(super) fn mark_env_name(env_vars: &mut HashMap<String, String>, key: &str, name: &str) {
+pub(crate) fn mark_env_name(env_vars: &mut HashMap<String, String>, key: &str, name: &str) {
     let mut names: Vec<String> = env_vars
         .get(key)
         .map(|value| {

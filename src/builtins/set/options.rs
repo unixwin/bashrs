@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::io::{self, Write};
 
+use crate::executor::mark_env_name;
+
 #[derive(Clone, Copy)]
 struct ShellOption {
     name: &'static str,
@@ -255,6 +257,11 @@ pub(crate) fn set_shell_option(env_vars: &mut HashMap<String, String>, name: &st
         if enabled { "1" } else { "0" }.to_string(),
     );
     env_vars.insert("SHELLOPTS".to_string(), shellopts_value(env_vars));
+    if name == "restricted" && enabled {
+        for variable in ["PATH", "SHELL", "CDPATH", "ENV", "BASH_ENV"] {
+            mark_env_name(env_vars, super::READONLY_VARS, variable);
+        }
+    }
 }
 
 fn shell_option_key(name: &str) -> String {

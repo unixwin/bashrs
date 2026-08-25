@@ -144,7 +144,7 @@ use parameter_ops::*;
 use parameter_replace::*;
 use parse_helpers::*;
 use read_helpers::*;
-use read_split::*;
+pub(crate) use read_split::*;
 use redirect_inherit::*;
 use support_names::*;
 
