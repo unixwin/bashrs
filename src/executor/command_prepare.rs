@@ -376,6 +376,19 @@ impl Executor {
         // the point where their word is expanded. Applying them to every
         // command word up front changes Bash's left-to-right semantics.
         self.apply_parameter_assignment_expansions_in_word(word);
+        // GNU subst.c materializes a complete quoted arithmetic expansion before
+        // word splitting; this narrow path preserves nounset status propagation.
+        if crate::builtins::set::shell_option_enabled(&self.env_vars, "nounset") {
+            if let Some(expression) = raw.and_then(|raw| {
+                raw.strip_prefix("\"$((").and_then(|rest| rest.strip_suffix("))\""))
+            }) {
+                if let Some(value) = self.eval_arithmetic_expansion_value(expression) {
+                    return vec![value.to_string()];
+                }
+                self.arithmetic_fatal_error.set(true);
+                return Vec::new();
+            }
+        }
         if let Some(source) = raw
             .and_then(|raw| raw.strip_prefix("\"$(").and_then(|rest| rest.strip_suffix(")\"")))
         {

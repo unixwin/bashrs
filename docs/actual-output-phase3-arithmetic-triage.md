@@ -36,6 +36,8 @@ The focused regression arithmetic_assignment_error_continues_without_errexit cov
 
 The full native fixture was rerun as copy.tests to bypass the bridge. Bash and Rubash both return rc=1. Replacing line 191, ((echo abc; echo def;); echo ghi), with : allows both executions to reach the end; this isolates that stop to parser/AST handling and routes it to the ordered parser phase. The arithmetic parser now rejects empty conditional false branches and bare assignments after logical &&/|| even when the branch is short-circuited. The native copy-no191 fixture now has identical GNU/RUBASH stdout (301 lines) and identical final status 1/1. Remaining stderr differences are diagnostic text/channel only. The removed line 191 remains isolated to parser/AST handling for Phase 4.
 
+The focused regression `arithmetic_nounset_errors_exit_127_like_bash` initially exposed a raw-word boundary bug: quoted `$((missing + 1))` was routed through the legacy command-substitution materializer and executed `missing` as a command. `command_prepare.rs` now recognizes complete quoted `"$((...))"` raw words, delegates evaluation to the arithmetic owner, and propagates GNU nounset status 127. The arithmetic slice is now 30 passed / 1 remaining empty-arithmetic parser failure.
+
 ## Remaining Phase 3 Work
 
 1. Run the native arithmetic fixture under a non-bridge filename with stdout and stderr captured separately.
