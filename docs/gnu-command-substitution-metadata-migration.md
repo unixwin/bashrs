@@ -83,6 +83,8 @@ Each probe compares GNU D:/Git/bin/bash.exe with target/debug/rubash.exe and che
 - cargo check: passed after 6fe14287.
 - cargo test --lib executor::substitution_metadata::tests: 8 passed, including mixed-quote, nested-span, and adjacent raw-fragment cases. GNU/Rubash mixed probe matched for unquoted and double-quoted adjacent fragments.
 - cargo test --test cli_tests declare_output: 4 passed.
+- scripts/validate-semantic-map.sh: passed after adding substitution_metadata and focused mixed/empty tests to the canonical owner map.
+- cargo test --test cli_tests heredoc: 12 passed; no heredoc regression introduced by the fragment owner.
 - Removing echo/printf shortcuts was tested and reverted: it caused 3 real CLI regressions, proving shortcuts must share the future capture/readback contract rather than simply disappear.
 
 ## Remaining Risks
