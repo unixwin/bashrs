@@ -421,12 +421,11 @@ impl Executor {
             let _ = env::set_current_dir(saved_dir);
         }
 
-        self.last_command_substitution_status.set(Some(status));
-        Some(
-            String::from_utf8_lossy(&output)
-                .trim_end_matches('\n')
-                .to_string(),
-        )
+        let readback =
+            SubstitutionOutput::readback(output, status, SubstitutionQuoteContext::Unquoted);
+        self.last_command_substitution_status
+            .set(Some(readback.status));
+        Some(readback.text_lossy())
     }
 
     pub(in crate::executor) fn command_substitution_executor(&self) -> Executor {

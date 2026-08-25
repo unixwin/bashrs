@@ -39,6 +39,7 @@ mod command_substitution_pipelines;
 mod command_substitution_values;
 mod command_words;
 mod compound_exec;
+mod substitution_metadata;
 use compound_exec::*;
 mod declare_local;
 mod dynamic_arrays;
@@ -146,6 +147,7 @@ use parse_helpers::*;
 use read_helpers::*;
 pub(crate) use read_split::*;
 use redirect_inherit::*;
+use substitution_metadata::*;
 use support_names::*;
 
 pub(crate) mod conditional;
