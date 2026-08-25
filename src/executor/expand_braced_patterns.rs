@@ -121,7 +121,7 @@ impl Executor {
         String::new()
     }
 
-    fn expand_braced_transform_parameter(&self, name: &str) -> Option<String> {
+    pub(in crate::executor) fn expand_braced_transform_parameter(&self, name: &str) -> Option<String> {
         let (var_name, transform) = parse_parameter_transform(name)?;
         // GNU subst.c resolves indirect names before applying the final
         // transform. Otherwise `${!ref@A}` is mistaken for a literal `!ref`

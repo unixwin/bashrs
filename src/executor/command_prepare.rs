@@ -297,6 +297,19 @@ impl Executor {
         Ok(variable_expanded)
     }
 
+    fn expand_unquoted_parameter_transform_word(&self, word: &str) -> Option<String> {
+        let start = word.find("${")?;
+        let end = word[start..].find('}')? + start;
+        let inner = &word[start + 2..end];
+        if !(inner.ends_with("@Q") || inner.ends_with("@K")) {
+            return None;
+        }
+        let value = self.expand_braced_transform_parameter(inner)?;
+        let prefix = self.expand_word(&word[..start]);
+        let suffix = self.expand_word(&word[end + 1..]);
+        Some(format!("{prefix}{value}{suffix}"))
+    }
+
     pub(in crate::executor) fn expand_command_word(
         &mut self,
         cmd: &CommandNode,
@@ -415,6 +428,9 @@ impl Executor {
             return vec![strip_assignment_builtin_command_subst_quotes(
                 &expanded, raw,
             )];
+        }
+        if let Some(formatted) = self.expand_unquoted_parameter_transform_word(word) {
+            return vec![formatted];
         }
         if expanded.is_empty() && self.removes_unquoted_null_word(cmd, index) {
             Vec::new()
