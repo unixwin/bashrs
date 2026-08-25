@@ -338,7 +338,11 @@ impl Executor {
                     .is_some_and(|name| self.functions.contains_key(name))
             })
         {
-            let expanded = self.expand_embedded_parameters_mut(raw_substitution);
+            let context = scan_substitution_spans(raw_substitution)
+                .first()
+                .map(|span| span.context)
+                .unwrap_or(SubstitutionQuoteContext::Unquoted);
+            let expanded = self.expand_embedded_parameters_mut_with_context(raw_substitution, context);
             if self.splits_unquoted_expanded_word(cmd, index, &expanded) {
                 return field_split_escaped_ifs(&expanded, self.env_vars.get("IFS").map(String::as_str));
             }

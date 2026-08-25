@@ -47,7 +47,7 @@ Payload bytes must remain bytes. Syntax quotes from the outer source are metadat
 - [x] Add an owner-scoped SubstitutionOutput readback type.
 - [x] Route parsed substitution capture through typed readback for NUL and trailing newline handling.
 - [x] Add unit coverage proving child quote bytes remain data.
-- [~] Carry lexical context into parsed readback. A quote-aware substitution span scanner now distinguishes mixed unquoted/double-quoted spans; expansion-chain integration and heredoc/assignment context remain open.
+- [~] Carry lexical context into parsed readback. The span context now reaches the mutable embedded-expansion and AST fallback chain; mixed-word materialization and heredoc/assignment context remain open.
 - [ ] Represent quoted, unquoted, assignment, and heredoc substitution context without C0 prefixes.
 - [~] Add ExpandedWord/WordPart fragments with origin, quoted state, escaped state, quoted-null state, expansion state, and no-split policy. Typed ExpandedFragment and split policy exist with unit coverage; command-word integration remains open.
 - [~] Replace command_substitution_word_split and raw-word heuristics with centralized IFS-aware splitting. The typed splitter is implemented and unit-tested, but whole-word integration was reverted after it changed bashdb getopts/profile behavior.
@@ -77,7 +77,7 @@ Each probe compares GNU D:/Git/bin/bash.exe with target/debug/rubash.exe and che
 
 - 6fe14287: added SubstitutionOutput and typed parsed readback.
 - 3dc2cfab: documented the migration, threaded SubstitutionQuoteContext through parsed readback, and added ExpandedFragment/IFS splitter tests.
-- Current follow-up: parsed readback accepts lexical context, complete double-quoted parent handoff is wired, and the AST fallback now routes output through SubstitutionOutput::readback. Typed whole-word splitting and printf shortcut quote changes were tested but reverted after bashdb compatibility regressions.
+- Current follow-up: parsed readback accepts lexical context, complete double-quoted parent handoff is wired, and both AST and mutable embedded-substitution fallbacks route output through SubstitutionOutput::readback. Typed whole-word splitting and printf shortcut quote changes were tested but reverted after bashdb compatibility regressions.
 - Focused verification: cargo check, 7 metadata tests, and command_substitution_echo_handles_escaped_parens_and_nested_backticks passed.
 - A temporary child-quote differential probe matched GNU only while the experimental whole-word/printf changes were active; those changes were reverted and the probe was not retained as a passing regression.
 - cargo check: passed after 6fe14287.

@@ -3,11 +3,19 @@ use crate::executor::parameter_core::word_contains_current_shell_command_substit
 
 impl Executor {
     pub(in crate::executor) fn expand_embedded_parameters_mut(&mut self, word: &str) -> String {
+        self.expand_embedded_parameters_mut_with_context(word, SubstitutionQuoteContext::Unquoted)
+    }
+
+    pub(in crate::executor) fn expand_embedded_parameters_mut_with_context(
+        &mut self,
+        word: &str,
+        context: SubstitutionQuoteContext,
+    ) -> String {
         self.apply_parameter_assignment_expansions_in_word(word);
         let saved_parameter_state = word_contains_current_shell_command_substitution(word)
             .then(|| (self.env_vars.clone(), self.pipestatus.clone()));
         let expanded =
-            self.expand_embedded_parameters_ordered_mut(word, saved_parameter_state.as_ref());
+            self.expand_embedded_parameters_ordered_mut(word, saved_parameter_state.as_ref(), context);
         let expanded = if word.contains("$(") || word.contains('`') {
             unescape_remaining_shell_escapes(&expanded)
                 .replace("\\\\'", "'")
@@ -25,6 +33,7 @@ impl Executor {
         &mut self,
         word: &str,
         saved_parameter_state: Option<&(std::collections::HashMap<String, String>, Vec<i32>)>,
+        context: SubstitutionQuoteContext,
     ) -> String {
         let mut output = String::new();
         let mut chars = word.chars().peekable();
@@ -86,7 +95,7 @@ impl Executor {
                     let expanded = if source.contains('|') {
                         self.expand_command_substitution(&source)
                     } else {
-                        self.expand_command_substitution_mut(&source)
+                        self.expand_command_substitution_mut_with_context(&source, context)
                     };
                     output.push_str(&protect_command_substitution_output(&expanded));
                 } else {
@@ -173,7 +182,7 @@ impl Executor {
 
                     let source = collect_command_substitution_source(&mut chars);
                     output.push_str(&protect_command_substitution_output(
-                        &self.expand_command_substitution_mut(&source),
+                        &self.expand_command_substitution_mut_with_context(&source, context),
                     ));
                 }
                 Some('[') => {
@@ -358,6 +367,14 @@ impl Executor {
     }
 
     pub(in crate::executor) fn expand_command_substitution_mut(&mut self, source: &str) -> String {
+        self.expand_command_substitution_mut_with_context(source, SubstitutionQuoteContext::Unquoted)
+    }
+
+    pub(in crate::executor) fn expand_command_substitution_mut_with_context(
+        &mut self,
+        source: &str,
+        context: SubstitutionQuoteContext,
+    ) -> String {
         let source = source.trim();
         let words = self.expand_aliases(&split_shell_words(source));
         let saved_positional_params = self.positional_params.clone();
@@ -368,12 +385,12 @@ impl Executor {
         self.positional_params = saved_positional_params;
         if command_substitution_words_contain_here_string(&words) {
             let alias_source = words.join(" ");
-            if let Some(output) = self.run_ast_command_substitution(&alias_source) {
+            if let Some(output) = self.run_ast_command_substitution_with_context(&alias_source, context) {
                 return output;
             }
         }
         if command_substitution_uses_specialized_path(self, source, &words) {
-            return self.expand_command_substitution(source);
+            return self.expand_command_substitution_with_context(source, context);
         }
         // A command list (`echo a; echo b`, `a && b`) must run as an AST, not
         // through the single-command specialized dispatch below: routing
@@ -385,7 +402,7 @@ impl Executor {
             .iter()
             .any(|word| word.contains(';') || matches!(word.as_str(), "&&" | "||"))
         {
-            if let Some(output) = self.run_ast_command_substitution(source) {
+            if let Some(output) = self.run_ast_command_substitution_with_context(source, context) {
                 return output;
             }
         }
@@ -394,12 +411,12 @@ impl Executor {
         // nested `"$(...)"` arguments do not leak quote characters through
         // the full-AST execution path.
         if is_specialized_command_substitution_word(&words) {
-            return self.expand_command_substitution(source);
+            return self.expand_command_substitution_with_context(source, context);
         }
-        if let Some(output) = self.run_ast_command_substitution(source) {
+        if let Some(output) = self.run_ast_command_substitution_with_context(source, context) {
             return output;
         }
-        self.expand_command_substitution(source)
+        self.expand_command_substitution_with_context(source, context)
     }
 
     pub(in crate::executor) fn run_ast_command_substitution(
