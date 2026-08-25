@@ -1297,3 +1297,20 @@ fn command_substitution_assignment_preserves_c0_payload_bytes() {
     assert_eq!(normalized, "14 14 15 15 1a 1a 1f 1f");
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
+
+#[test]
+fn backtick_command_substitution_preserves_raw_c0_variable_payload() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"x=$(printf '\032'); y=`printf '%s' "$x"`; printf '%s' "$y" | od -An -tx1; printf '%s' $y | od -An -tx1"#)
+        .output()
+        .expect("run backtick raw C0 payload probe");
+
+    assert!(output.status.success());
+    let normalized = String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert_eq!(normalized, "1a 1a");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}

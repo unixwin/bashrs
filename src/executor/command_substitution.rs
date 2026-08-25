@@ -12,7 +12,17 @@ impl Executor {
         } else {
             self.expand_word(word)
         };
-        restore_old_style_backtick_markers(&unescape_remaining_shell_escapes(&expanded))
+        let unescaped = unescape_remaining_shell_escapes(&expanded);
+        let protected = if word.contains('$')
+            && !word.contains('`')
+            && !unescaped.contains("__RUBASH_CSB1_")
+            && unescaped.contains('\x1a')
+        {
+            protect_command_substitution_output(&unescaped)
+        } else {
+            unescaped
+        };
+        decode_command_substitution_payload(&restore_old_style_backtick_markers(&protected))
     }
 
     pub(in crate::executor) fn expand_command_substitution(&self, source: &str) -> String {
