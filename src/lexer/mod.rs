@@ -29,6 +29,8 @@ use scanner::Lexer;
 pub(crate) use quotes::remove_shell_quotes;
 pub use token::{Token, TokenKind};
 
+pub(crate) const QUOTED_HEREDOC_MARKER: &str = "__RUBASH_HD1__";
+
 pub fn tokenize(input: &str) -> Vec<Token> {
     if input.trim().is_empty() {
         return Vec::new();
@@ -143,7 +145,7 @@ fn tokenize_with_heredocs(input: &str) -> Vec<Token> {
                 body.insert(0, '\x1f');
             }
             if delimiter.quoted {
-                body.insert(0, '\x1e');
+                body.insert_str(0, QUOTED_HEREDOC_MARKER);
             }
             output.push(Token::new(TokenKind::HereDocBody, &body, position));
         }

@@ -148,7 +148,7 @@ pub(in crate::executor) fn exported_function_command_text(command: &CommandNode)
         append_exported_redirect(&mut line, command.redirect_err_append.as_ref(), "2>>");
     }
     if let (Some(body), Some(delimiter)) = (&command.heredoc, &command.heredoc_delimiter) {
-        let body = body.strip_prefix('\x1e').unwrap_or(body);
+        let body = body.strip_prefix(crate::lexer::QUOTED_HEREDOC_MARKER).unwrap_or(body);
         line.push('\n');
         line.push_str(body);
         line.push_str(delimiter);

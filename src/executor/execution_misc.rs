@@ -94,7 +94,7 @@ pub(in crate::executor) fn strip_unterminated_heredoc_marker(body: &str) -> &str
 }
 
 pub(in crate::executor) fn strip_quoted_heredoc_marker(body: &str) -> &str {
-    body.strip_prefix('\x1e').unwrap_or(body)
+    body.strip_prefix(crate::lexer::QUOTED_HEREDOC_MARKER).unwrap_or(body)
 }
 
 pub(in crate::executor) fn unterminated_heredoc_body_line_count(body: &str) -> usize {

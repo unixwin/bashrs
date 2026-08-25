@@ -135,7 +135,7 @@ impl Executor {
         &self,
         body: &str,
     ) -> Option<(String, String, i32)> {
-        if body.starts_with('\x1e') {
+        if body.starts_with(crate::lexer::QUOTED_HEREDOC_MARKER) {
             return None;
         }
         let body = strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(body));

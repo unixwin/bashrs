@@ -54,7 +54,7 @@ impl Executor {
     /// arithmetic expansions run in the context of the receiving command.
     /// A `\x1e` prefix marks a quoted heredoc whose body stays literal.
     pub(in crate::executor) fn expand_heredoc_body(&self, body: &str) -> String {
-        let quoted = body.starts_with('\x1e');
+        let quoted = body.starts_with(crate::lexer::QUOTED_HEREDOC_MARKER);
         let body = strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(body));
         if quoted {
             return body.to_string();
