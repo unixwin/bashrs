@@ -13,11 +13,7 @@ impl Executor {
             self.expand_word(word)
         };
         let unescaped = unescape_remaining_shell_escapes(&expanded);
-        let protected = if word.contains('$')
-            && !word.contains('`')
-            && !unescaped.contains("__RUBASH_CSB1_")
-            && unescaped.chars().any(|ch| ('\x10'..='\x1f').contains(&ch))
-        {
+        let protected = if command_substitution_value_needs_payload_protection(word, &unescaped) {
             protect_command_substitution_output(&unescaped)
         } else {
             unescaped

@@ -211,6 +211,18 @@ pub(in crate::executor) fn split_raw_word_fragments(raw: &str) -> Vec<RawWordFra
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::executor::command_substitution_value_needs_payload_protection;
+
+    #[test]
+    fn payload_protection_boundary_rejects_lexical_backticks_and_existing_tokens() {
+        assert!(command_substitution_value_needs_payload_protection("$x", "a\x1a"));
+        assert!(!command_substitution_value_needs_payload_protection("`$x`", "a\x1a"));
+        assert!(!command_substitution_value_needs_payload_protection(
+            "$x",
+            "__RUBASH_CSB1_1a;",
+        ));
+        assert!(!command_substitution_value_needs_payload_protection("literal", "a\x1a"));
+    }
 
     #[test]
     fn span_scanner_tracks_mixed_quote_contexts() {

@@ -405,6 +405,16 @@ pub(in crate::executor) fn command_substitution_word_split(value: &str) -> Strin
 
 const COMMAND_SUBSTITUTION_PAYLOAD_PREFIX: &str = "__RUBASH_CSB1_";
 
+pub(in crate::executor) fn command_substitution_value_needs_payload_protection(
+    source: &str,
+    value: &str,
+) -> bool {
+    source.contains('$')
+        && !source.contains('`')
+        && !value.contains(COMMAND_SUBSTITUTION_PAYLOAD_PREFIX)
+        && value.chars().any(|ch| ('\x10'..='\x1f').contains(&ch))
+}
+
 pub(in crate::executor) fn protect_command_substitution_output(value: &str) -> String {
     let escaped_value = value.replace(COMMAND_SUBSTITUTION_PAYLOAD_PREFIX, &format!("{COMMAND_SUBSTITUTION_PAYLOAD_PREFIX}{COMMAND_SUBSTITUTION_PAYLOAD_PREFIX}"));
     let mut output = String::with_capacity(escaped_value.len());
