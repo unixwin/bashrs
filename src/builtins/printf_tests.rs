@@ -244,6 +244,15 @@ fn percent_b_decodes_numeric_escapes() {
 }
 
 #[test]
+fn percent_b_preserves_unknown_escape_backslash_like_bash() {
+    let (status, stdout, stderr, _) = run(&["%b", "x\\qy"]);
+
+    assert_eq!(status, EXECUTION_SUCCESS);
+    assert_eq!(stdout, "x\\qy");
+    assert!(stderr.is_empty());
+}
+
+#[test]
 fn numeric_formats_accept_bash_character_constants() {
     assert_eq!(
         run(&[

@@ -73,7 +73,11 @@ pub(super) fn expand_percent_b(value: &str) -> (String, bool) {
                 let value = read_prefixed_escape_digits(&mut chars, octal, 8, 3);
                 push_escape_codepoint(&mut output, value, "");
             }
-            Some(other) => output.push(other),
+            Some(other) => {
+                // GNU printf preserves the backslash for unrecognized %b escapes.
+                output.push('\\');
+                output.push(other);
+            }
             None => output.push('\\'),
         }
     }
