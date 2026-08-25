@@ -101,6 +101,7 @@ Each probe compares GNU D:/Git/bin/bash.exe with target/debug/rubash.exe and che
 - `0x1d` and `0x1e` remain separate migration risks because Rubash uses them for array/assignment, quoted-heredoc, and compound-assignment protocols. They require typed fragment provenance rather than another global replacement.
 - Round 48 isolation: GNU preserves raw `0x1d` through a plain variable, backtick substitution, array element, and unquoted heredoc. Rubash currently consumes the value before those owners materialize it, confirming a collision with the `\x1d` array/assignment protocol rather than a pipe or external process issue.
 - Round 49 isolation: GNU preserves raw `0x1e` through a plain variable and array element, while Rubash consumes it during parameter-value materialization; quoted heredoc output also collides with the Rubash `\x1e` quoted-body/compound-assignment protocol. The next fix must introduce a typed payload boundary across `embedded_parameters.rs`, `embedded_mutations.rs`, and array/assignment storage, not alter one decoder.
+- Round 54 source mapping: `lexer/word.rs:59-63` encodes quoted parameter words with `\x1d`, while the same byte is consumed by array, assignment, fd, process-substitution, and payload owners throughout `src/executor`. Replacing it with another C0 would only move the collision; the correct migration is an ASCII quote-context marker or typed WORD metadata propagated to all consumers.
 
 ## Remaining Risks
 
