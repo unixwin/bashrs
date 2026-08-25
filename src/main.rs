@@ -31,7 +31,7 @@ fn run_main() -> i32 {
     let mut executor = Executor::new();
     if let Ok(path) = env::current_exe() {
         let path = path.to_string_lossy().replace('\\', "/");
-        executor.set_env("BASH", &path);
+        executor.export_env("BASH", &path);
     }
     if let Some(shell_name) = args.first() {
         executor.set_env("__RUBASH_SHELL_NAME", shell_name);
