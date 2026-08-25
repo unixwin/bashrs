@@ -833,6 +833,19 @@ fn quoted_process_substitution_stays_literal() {
 }
 
 #[test]
+fn command_substitution_preserves_quoted_empty_word() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("set -- \"$(printf '')\"; printf 'q:%d:<%s>\\n' \"$#\" \"$1\"; set -- $(printf ''); printf 'u:%d\\n' \"$#\"")
+        .output()
+        .expect("run quoted empty substitution probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "q:1:<>\nu:0\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn command_substitution_does_not_split_literal_ifs_bytes() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
