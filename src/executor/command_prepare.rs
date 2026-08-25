@@ -310,7 +310,7 @@ impl Executor {
         Some(format!("{prefix}{value}{suffix}"))
     }
 
-    fn expand_single_substitution_fragments(
+    fn expand_simple_substitution_fragments(
         &mut self,
         cmd: &CommandNode,
         index: usize,
@@ -319,7 +319,7 @@ impl Executor {
     ) -> Option<Vec<String>> {
         let raw_fragments = split_raw_word_fragments(raw);
         if raw_fragments.len() < 3
-            || raw_fragments.iter().filter(|fragment| fragment.substitution).count() != 1
+            || !raw_fragments.iter().any(|fragment| fragment.substitution)
             || !raw_fragments.iter().any(|fragment| !fragment.substitution && !fragment.text.is_empty())
         {
             return None;
@@ -385,7 +385,7 @@ impl Executor {
             )];
         }
         if let Some(raw) = raw {
-            if let Some(values) = self.expand_single_substitution_fragments(cmd, index, word, raw) {
+            if let Some(values) = self.expand_simple_substitution_fragments(cmd, index, word, raw) {
                 return values;
             }
         }

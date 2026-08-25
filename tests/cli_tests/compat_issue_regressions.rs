@@ -833,6 +833,19 @@ fn quoted_process_substitution_stays_literal() {
 }
 
 #[test]
+fn command_substitution_multiple_fragments_split_independently() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r###"printf '<%s>\n' pre$(printf '%s' a)mid$(printf '%s' 'b c')post; printf '<%s>\n' pre$(printf '%s' a)mid"$(printf '%s' 'b c')"post"###)
+        .output()
+        .expect("run multiple substitution fragment probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<preamidb>\n<cpost>\n<preamidb cpost>\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn command_substitution_mixed_fragments_follow_quote_context() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
