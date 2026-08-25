@@ -29,6 +29,10 @@ fn run_main() -> i32 {
         run_internal_pipeline_utility(name, &args[2..]);
     }
     let mut executor = Executor::new();
+    if let Ok(path) = env::current_exe() {
+        let path = path.to_string_lossy().replace('\\', "/");
+        executor.set_env("BASH", &path);
+    }
     if let Some(shell_name) = args.first() {
         executor.set_env("__RUBASH_SHELL_NAME", shell_name);
     }
@@ -79,7 +83,8 @@ fn run_args(executor: &mut Executor, args: &[String]) -> i32 {
     for arg in args {
         if let Some(flags) = arg.strip_prefix('-') {
             let flags = flags.strip_prefix('-').unwrap_or(flags);
-            if flags.len() > 1
+            if !arg.starts_with("--")
+                && flags.len() > 1
                 && flags.contains('c')
                 && flags.chars().all(|flag| {
                     flag == 'c' || cli_shell_flag_name(flag).is_some() || flag == 's' || flag == 'o'
