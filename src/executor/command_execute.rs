@@ -204,7 +204,8 @@ impl Executor {
                 1
             };
             self.exit_code = status;
-            let script_mode_nonfatal = self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
+            let script_mode_nonfatal = (self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
+                || self.env_vars.contains_key("BASH_EXECUTION_STRING"))
                 && self.subshell_depth.get() == 0
                 && (!self.errexit_enabled() || !self.errexit_is_active());
             if self.arithmetic_nonfatal_error.replace(false) || script_mode_nonfatal {
