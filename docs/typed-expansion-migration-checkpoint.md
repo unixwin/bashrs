@@ -59,6 +59,8 @@ Repeated passing gates:
 - arithmetic fatality contracts: 2 passed / 0 failed
 - printf focused slice: 9 passed / 0 failed
 - typed substitution metadata: 14 passed / 0 failed
+- heredoc_regressions: 2 passed / 0 failed, including FIFO ownership and raw C0 payload
+- command_substitution heredoc pipeline/sequential focused tests: passed; mutable callers cover production paths, shell_options immutable fallback remains the sole legacy owner
 
 Known unrelated command-substitution slice failure: bashdb_info_files_reports_source_files_without_command_substitution_error, a fixed bashdb path assertion.
 
