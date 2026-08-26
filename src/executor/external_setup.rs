@@ -240,8 +240,8 @@ impl Executor {
                 .strip_prefix("<(")
                 .and_then(|target| target.strip_suffix(')'))
             {
-                if let Some(output) = self.process_substitution_output(source) {
-                    let path = self.write_process_substitution_temp(&output)?;
+                if let Some(output) = self.process_substitution_output_bytes(source) {
+                    let path = self.write_process_substitution_temp_bytes(&output)?;
                     let old_target = redirect.target.clone();
                     redirect.target = shell_display_path(&path.to_string_lossy());
                     redirect_target_rewrites.push((old_target, redirect.target.clone()));
@@ -409,10 +409,10 @@ impl Executor {
             .strip_prefix("<(")
             .and_then(|word| word.strip_suffix(')'))
         {
-            let Some(output) = self.process_substitution_output(source) else {
+            let Some(output) = self.process_substitution_output_bytes(source) else {
                 return Ok(());
             };
-            let path = self.write_process_substitution_temp(&output)?;
+            let path = self.write_process_substitution_temp_bytes(&output)?;
             *word = shell_display_path(&path.to_string_lossy());
             files.inputs.push(path);
         } else if let Some(source) = word
@@ -444,10 +444,11 @@ impl Executor {
                 });
                 path
             } else {
-                let Some(output) = self.process_substitution_output(&substitution.source) else {
+                let Some(output) = self.process_substitution_output_bytes(&substitution.source)
+                else {
                     continue;
                 };
-                let path = self.write_process_substitution_temp(&output)?;
+                let path = self.write_process_substitution_temp_bytes(&output)?;
                 files.inputs.push(path.clone());
                 path
             };
@@ -689,6 +690,13 @@ impl Executor {
     pub(in crate::executor) fn write_process_substitution_temp(
         &self,
         output: &str,
+    ) -> Result<PathBuf, ExecuteError> {
+        self.write_process_substitution_temp_bytes(output.as_bytes())
+    }
+
+    pub(in crate::executor) fn write_process_substitution_temp_bytes(
+        &self,
+        output: &[u8],
     ) -> Result<PathBuf, ExecuteError> {
         let path = self.process_substitution_temp_path()?;
         fs::write(&path, output)?;

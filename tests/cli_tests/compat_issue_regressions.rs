@@ -915,6 +915,19 @@ fn quoted_process_substitution_stays_literal() {
 }
 
 #[test]
+fn process_substitution_external_redirect_preserves_printf_raw_bytes() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("cat <(printf '\\377')")
+        .output()
+        .expect("run process substitution external raw byte probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, [0xff]);
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn command_substitution_preserves_quoted_empty_word() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

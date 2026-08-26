@@ -266,6 +266,11 @@ impl Executor {
     }
 
     pub(crate) fn process_substitution_output(&mut self, source: &str) -> Option<String> {
+        self.process_substitution_output_bytes(source)
+            .map(|output| bytes_to_shell_text(&output))
+    }
+
+    pub(crate) fn process_substitution_output_bytes(&mut self, source: &str) -> Option<Vec<u8>> {
         let tokens = crate::lexer::tokenize(source);
         let ast = crate::parser::parse(&tokens);
         if ast.commands.is_empty() {
@@ -284,9 +289,7 @@ impl Executor {
         }
 
         match result {
-            Ok(()) | Err(ExecuteError::ExitCode(_)) | Err(ExecuteError::Return(_)) => {
-                Some(bytes_to_shell_text(&output))
-            }
+            Ok(()) | Err(ExecuteError::ExitCode(_)) | Err(ExecuteError::Return(_)) => Some(output),
             Err(_) => None,
         }
     }
