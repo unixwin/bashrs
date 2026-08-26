@@ -525,7 +525,7 @@ impl Executor {
             // A loop's numbered heredoc is still an ordinary unquoted
             // heredoc. Keep its expansion rules identical to the command's
             // stdin heredoc, including parameter and command substitutions.
-            let body = self.expand_heredoc_body(&body);
+            let body = self.expand_heredoc_body_mut(&body);
             saved_fd_inputs.push((fd, self.fd_table.entries.get(&fd).cloned()));
             self.fd_table
                 .open_input(fd, FdReadEndpoint::text(&body), true);
