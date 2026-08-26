@@ -473,7 +473,7 @@ impl Executor {
         cmd: &CommandNode,
     ) -> Option<String> {
         if let Some(body) = &cmd.heredoc {
-            return Some(self.expand_heredoc_body(body));
+            return Some(self.expand_heredoc_body_readback(body).text_lossy());
         }
 
         if let Some(redirect) = &cmd.redirect_in {

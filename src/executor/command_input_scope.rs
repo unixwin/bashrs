@@ -69,6 +69,18 @@ impl Executor {
         )
     }
 
+    pub(in crate::executor) fn expand_heredoc_body_readback(
+        &self,
+        body: &str,
+    ) -> SubstitutionOutput {
+        let expanded = self.expand_heredoc_body(body);
+        SubstitutionOutput::readback(
+            expanded.into_bytes(),
+            0,
+            SubstitutionQuoteContext::HereDocument,
+        )
+    }
+
     pub(in crate::executor) fn expand_heredoc_body(&self, body: &str) -> String {
         let quoted = body.starts_with(crate::lexer::QUOTED_HEREDOC_MARKER);
         let body = strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(body));
