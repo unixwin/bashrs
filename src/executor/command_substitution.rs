@@ -400,18 +400,18 @@ impl Executor {
         ))
     }
 
-    fn command_list_substitution_output(
+    fn command_list_substitution_output_typed(
         &self,
         source: &str,
         context: SubstitutionQuoteContext,
-    ) -> Option<String> {
+    ) -> Option<SubstitutionOutput> {
         let tokens = crate::lexer::tokenize(source);
         let ast = crate::parser::parse(&tokens);
 
         if ast.commands.iter().any(command_has_parse_error) {
             self.last_command_substitution_parse_error.set(true);
             self.last_command_substitution_status.set(Some(2));
-            return Some(String::new());
+            return Some(SubstitutionOutput::readback(Vec::new(), 2, context));
         }
 
         let saved_dir = env::current_dir().ok();
@@ -446,7 +446,17 @@ impl Executor {
         let readback = SubstitutionOutput::readback(output, status, context);
         self.last_command_substitution_status
             .set(Some(readback.status));
-        Some(readback.text_lossy())
+        Some(readback)
+    }
+
+    /// Legacy String boundary for callers that still build AST words as text.
+    fn command_list_substitution_output(
+        &self,
+        source: &str,
+        context: SubstitutionQuoteContext,
+    ) -> Option<String> {
+        self.command_list_substitution_output_typed(source, context)
+            .map(|output| output.text_lossy())
     }
 
     pub(in crate::executor) fn command_substitution_executor(&self) -> Executor {

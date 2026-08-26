@@ -452,8 +452,14 @@ mod tests {
             SubstitutionQuoteContext::Unquoted,
         ));
         assert_eq!(word.status, Some(41));
-        assert_eq!(word.materialize_lossy_at_boundary().as_bytes(), &[b'p', b'r', b'e', 0x1d, b'a', b' ', b'b']);
-        assert_eq!(word.split(Some(" "), SubstitutionSplitPolicy::Split), vec![format!("pre{}a", char::from(0x1d)), "b".to_string()]);
+        assert_eq!(
+            word.materialize_lossy_at_boundary().as_bytes(),
+            &[b'p', b'r', b'e', 0x1d, b'a', b' ', b'b']
+        );
+        assert_eq!(
+            word.split(Some(" "), SubstitutionSplitPolicy::Split),
+            vec![format!("pre{}a", char::from(0x1d)), "b".to_string()]
+        );
     }
 
     #[test]
