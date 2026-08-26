@@ -88,6 +88,45 @@ impl ExpandedFragment {
 }
 
 #[allow(dead_code)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(in crate::executor) struct ExpandedWord {
+    pub(in crate::executor) fragments: Vec<ExpandedFragment>,
+    pub(in crate::executor) status: Option<i32>,
+}
+
+impl ExpandedWord {
+    #[allow(dead_code)]
+    pub(in crate::executor) fn append_literal(&mut self, text: &str, quoted: bool) {
+        self.fragments.push(ExpandedFragment::literal(text, quoted));
+    }
+
+    #[allow(dead_code)]
+    pub(in crate::executor) fn append_substitution(&mut self, output: SubstitutionOutput) {
+        self.status = Some(output.status);
+        self.fragments.push(output.into_fragment());
+    }
+
+    #[allow(dead_code)]
+    pub(in crate::executor) fn split(
+        &self,
+        ifs: Option<&str>,
+        policy: SubstitutionSplitPolicy,
+    ) -> Vec<String> {
+        split_expanded_fragments(&self.fragments, ifs, policy)
+    }
+
+    #[allow(dead_code)]
+    pub(in crate::executor) fn materialize_lossy_at_boundary(&self) -> String {
+        let bytes = self
+            .fragments
+            .iter()
+            .flat_map(|fragment| fragment.bytes.iter().copied())
+            .collect::<Vec<_>>();
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+}
+
+#[allow(dead_code)]
 pub(in crate::executor) fn split_expanded_fragments(
     fragments: &[ExpandedFragment],
     ifs: Option<&str>,
@@ -401,6 +440,20 @@ mod tests {
         assert_eq!(quoted.bytes, vec![0x1a, 0x15, b'b']);
         assert!(quoted.quoted);
         assert!(!quoted.splittable);
+    }
+
+    #[test]
+    fn expanded_word_tracks_status_and_materializes_only_at_boundary() {
+        let mut word = ExpandedWord::default();
+        word.append_literal("pre", true);
+        word.append_substitution(SubstitutionOutput::readback(
+            vec![0x1d, b'a', b' ', b'b'],
+            41,
+            SubstitutionQuoteContext::Unquoted,
+        ));
+        assert_eq!(word.status, Some(41));
+        assert_eq!(word.materialize_lossy_at_boundary().as_bytes(), &[b'p', b'r', b'e', 0x1d, b'a', b' ', b'b']);
+        assert_eq!(word.split(Some(" "), SubstitutionSplitPolicy::Split), vec![format!("pre{}a", char::from(0x1d)), "b".to_string()]);
     }
 
     #[test]
