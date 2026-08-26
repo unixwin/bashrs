@@ -34,8 +34,10 @@ impl Executor {
             return Some(input);
         }
 
-        if let Some(here_string) = &cmd.here_string {
-            return Some(self.expand_word(here_string));
+        if let Some(here_string) = cmd.here_string.clone() {
+            return Some(
+                self.expand_word_mut_with_context(&here_string, SubstitutionQuoteContext::Unquoted),
+            );
         }
 
         if let Some(heredoc) = &cmd.heredoc {
