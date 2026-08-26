@@ -2924,3 +2924,8 @@ shopt -s varredir_close; : {fd}>&1; echo after >&$fd
 ```
 
 GNU Bash and Rubash both allocate fd 10, close it after the command, return status 1 for the later write, and report `$fd: Bad file descriptor`. The Windows-only `/dev/tty` diagnostic difference remains a host device error and is not folded into the semantic result.
+
+## 2026-08-24 assignment RHS differential matrix
+
+A bounded GNU Bash/Rubash matrix covered assignment-only tilde expansion, colon-separated tilde positions, quoted command substitution, mixed prefix/suffix substitution, and a raw C0 payload. Command-substitution values and raw bytes matched. The only difference was Git Bash displaying the home path as `/c/Users/Administrator` while Rubash preserves the Windows-native `C:\Users\Administrator` spelling; this is a host path representation boundary, not an assignment expansion defect. No Rust change is justified by this probe.
+
