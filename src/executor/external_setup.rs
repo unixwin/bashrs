@@ -719,7 +719,7 @@ impl Executor {
         "0".to_string()
     }
 
-    fn external_fd_heredoc_input(&self, cmd: &CommandNode, fd: u32) -> Option<String> {
+    fn external_fd_heredoc_input(&mut self, cmd: &CommandNode, fd: u32) -> Option<String> {
         let body = cmd
             .heredoc_redirects
             .iter()
@@ -733,7 +733,7 @@ impl Executor {
             input.push('\n');
             return Some(input);
         }
-        Some(self.expand_heredoc_body(body))
+        Some(self.expand_heredoc_body_mut(body))
     }
 }
 
