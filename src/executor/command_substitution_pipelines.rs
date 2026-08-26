@@ -437,7 +437,7 @@ impl Executor {
                     &mut stdout,
                     &mut stderr,
                 );
-                Some(String::from_utf8_lossy(&stdout).into_owned())
+                Some(bytes_to_shell_text(&stdout))
             }
             "cat" => {
                 let mut output = String::new();

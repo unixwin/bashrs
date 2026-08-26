@@ -282,6 +282,19 @@ fn command_substitution_preserves_printf_raw_bytes() {
 }
 
 #[test]
+fn command_substitution_pipeline_preserves_printf_raw_bytes() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("value=\"$(printf '\\377' | tr x y)\"; printf '%s' \"$value\"")
+        .output()
+        .expect("run pipeline raw byte probe");
+
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"\xff");
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
 fn command_substitution_pipeline_applies_tr_translation() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
