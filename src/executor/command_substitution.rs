@@ -395,9 +395,8 @@ impl Executor {
         }
 
         self.last_command_substitution_status.set(Some(0));
-        Some(shell_display_path(
-            &path.to_string_lossy().replace('\\', "/"),
-        ))
+        let display = path.to_string_lossy().replace('\\', "/");
+        Some(display.strip_prefix("//?/").unwrap_or(&display).to_string())
     }
 
     fn command_list_substitution_output_typed(
