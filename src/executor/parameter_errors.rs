@@ -173,6 +173,13 @@ impl Executor {
                 ));
             };
             let inner = &after_start[..end];
+            // GNU rejects a parameter expansion nested inside another
+            // parameter expansion inside an array subscript. Reject it
+            // before the mutable whole-word expander can recurse indefinitely;
+            // a single nested subscript such as `${A[${i}]}` remains valid.
+            if inner.contains("[${${") {
+                return Some((format!("${{{inner}}}"), "bad substitution".to_string(), 1));
+            }
             // `${ command; }` is not Bash command substitution. Rubash also
             // supports the distinct `${| command; }` current-shell form, so
             // reject only the whitespace-led form as a bad substitution.

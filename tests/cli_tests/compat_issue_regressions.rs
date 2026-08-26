@@ -221,6 +221,19 @@ fn parameter_replacement_keeps_escaped_command_substitution_literal() {
 }
 
 #[test]
+fn nested_parameter_subscript_rejects_recursive_indirection_without_stack_overflow() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("a=(zero one); i=1; printf '<%s>\\n' \"${a[${i}]}\"; y=${a[${${i}}]}")
+        .output()
+        .expect("run nested parameter recursion probe");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<one>\n");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("bad substitution"));
+}
+
+#[test]
 fn printf_integer_conversion_keeps_valid_prefix_before_invalid_suffix() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
