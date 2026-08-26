@@ -40,6 +40,16 @@ impl SubstitutionOutput {
     pub(in crate::executor) fn text_lossy(&self) -> String {
         String::from_utf8_lossy(&self.bytes).into_owned()
     }
+
+    /// Convert capture metadata into an expansion fragment without decoding payload bytes.
+    pub(in crate::executor) fn into_fragment(self) -> ExpandedFragment {
+        let quoted = !matches!(self.context, SubstitutionQuoteContext::Unquoted);
+        ExpandedFragment {
+            bytes: self.bytes,
+            quoted,
+            splittable: !quoted,
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -368,6 +378,29 @@ mod tests {
         assert_eq!(output.status, 23);
         assert_eq!(output.context, SubstitutionQuoteContext::DoubleQuoted);
         assert!(output.text_lossy().contains('\u{fffd}'));
+    }
+
+    #[test]
+    fn substitution_output_into_fragment_preserves_bytes_and_quote_policy() {
+        let unquoted = SubstitutionOutput::readback(
+            vec![0x1d, 0x1f, b'a'],
+            0,
+            SubstitutionQuoteContext::Unquoted,
+        )
+        .into_fragment();
+        assert_eq!(unquoted.bytes, vec![0x1d, 0x1f, b'a']);
+        assert!(!unquoted.quoted);
+        assert!(unquoted.splittable);
+
+        let quoted = SubstitutionOutput::readback(
+            vec![0x1a, 0x15, b'b'],
+            0,
+            SubstitutionQuoteContext::DoubleQuoted,
+        )
+        .into_fragment();
+        assert_eq!(quoted.bytes, vec![0x1a, 0x15, b'b']);
+        assert!(quoted.quoted);
+        assert!(!quoted.splittable);
     }
 
     #[test]
