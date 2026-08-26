@@ -387,7 +387,7 @@ impl Executor {
             if let Some(output) =
                 self.run_ast_command_substitution_with_context(&alias_source, context)
             {
-                return output;
+                return output.text_lossy();
             }
         }
         if command_substitution_uses_specialized_path(self, source, &words) {
@@ -404,7 +404,7 @@ impl Executor {
             .any(|word| word.contains(';') || matches!(word.as_str(), "&&" | "||"))
         {
             if let Some(output) = self.run_ast_command_substitution_with_context(source, context) {
-                return output;
+                return output.text_lossy();
             }
         }
         // Simple builtins that the non-mut special-case dispatch handles with
@@ -415,7 +415,7 @@ impl Executor {
             return self.expand_command_substitution_with_context(source, context);
         }
         if let Some(output) = self.run_ast_command_substitution_with_context(source, context) {
-            return output;
+            return output.text_lossy();
         }
         self.expand_command_substitution_with_context(source, context)
     }
@@ -424,7 +424,7 @@ impl Executor {
         &mut self,
         source: &str,
         context: SubstitutionQuoteContext,
-    ) -> Option<String> {
+    ) -> Option<SubstitutionOutput> {
         if command_substitution_contains_heredoc(source) {
             return None;
         }
@@ -486,7 +486,7 @@ impl Executor {
         self.exit_code = saved_exit_code;
         self.last_command_substitution_status.set(Some(status));
 
-        Some(SubstitutionOutput::readback(output, status, context).text_lossy())
+        Some(SubstitutionOutput::readback(output, status, context))
     }
 
     pub(in crate::executor) fn run_function_command_substitution(
