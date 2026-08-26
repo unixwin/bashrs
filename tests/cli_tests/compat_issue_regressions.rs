@@ -928,6 +928,19 @@ fn process_substitution_external_redirect_preserves_printf_raw_bytes() {
 }
 
 #[test]
+fn assignment_process_substitution_preserves_printf_raw_bytes() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"x=<(printf '\377'); cat "$x""#)
+        .output()
+        .expect("run assignment process substitution raw byte probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, [0xff]);
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn command_substitution_preserves_quoted_empty_word() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

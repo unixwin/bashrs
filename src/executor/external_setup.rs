@@ -480,10 +480,11 @@ impl Executor {
                 );
                 path
             } else {
-                let Some(output) = self.process_substitution_output(&substitution.source) else {
+                let Some(output) = self.process_substitution_output_bytes(&substitution.source)
+                else {
                     continue;
                 };
-                self.write_process_substitution_temp(&output)?
+                self.write_process_substitution_temp_bytes(&output)?
             };
             let display_path = shell_display_path(&path.to_string_lossy());
             word = word.replacen(&substitution.target, &display_path, 1);
