@@ -1308,6 +1308,19 @@ fn mixed_backtick_assignment_uses_typed_fragments() {
 }
 
 #[test]
+fn mixed_dollar_and_backtick_assignment_uses_typed_fragments() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("value=a$(printf b)`printf c`d; printf '<%s>\\n' \"$value\"")
+        .output()
+        .expect("run mixed dollar and backtick assignment probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<abcd>\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn command_substitution_assignment_preserves_c0_payload_bytes() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
