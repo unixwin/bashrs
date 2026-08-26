@@ -1,4 +1,6 @@
-use std::{env, fs, process::Command};
+#[cfg(not(windows))]
+use std::fs;
+use std::{env, process::Command};
 
 #[test]
 fn posix_parameter_word_can_contain_single_quoted_closing_brace() {
@@ -723,6 +725,7 @@ fn redirection_target_glob_uses_single_match() {
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
+#[cfg(not(windows))]
 #[test]
 fn posix_redirection_target_does_not_glob() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
@@ -742,6 +745,7 @@ fn posix_redirection_target_does_not_glob() {
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
+#[cfg(not(windows))]
 #[test]
 fn ash_named_invocation_uses_posix_redirection_glob_rules() {
     let dir = env::temp_dir().join(format!("rubash-ash-glob-{}", std::process::id()));

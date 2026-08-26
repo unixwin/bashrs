@@ -208,7 +208,9 @@ impl Executor {
                 || self.env_vars.contains_key("BASH_EXECUTION_STRING"))
                 && self.subshell_depth.get() == 0
                 && (!self.errexit_enabled() || !self.errexit_is_active());
-            if self.arithmetic_nonfatal_error.replace(false) && script_mode_nonfatal {
+            if self.arithmetic_nonfatal_error.replace(false)
+                && (script_mode_nonfatal || self.subshell_depth.get() > 0)
+            {
                 return Ok(());
             }
             return Err(ExecuteError::ExitCode(status));
