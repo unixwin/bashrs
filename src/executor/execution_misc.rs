@@ -486,3 +486,32 @@ pub(in crate::executor) fn unescape_storage_command_substitution_source(source: 
     }
     output
 }
+
+#[cfg(test)]
+mod command_substitution_payload_tests {
+    use super::decode_command_substitution_payload;
+
+    #[test]
+    fn decodes_c0_payload_without_utf8_loss() {
+        assert_eq!(
+            decode_command_substitution_payload("a__RUBASH_CSB1_15;b"),
+            "a\x15b"
+        );
+    }
+
+    #[test]
+    fn preserves_escaped_payload_prefix() {
+        assert_eq!(
+            decode_command_substitution_payload("__RUBASH_CSB1___RUBASH_CSB1_"),
+            "__RUBASH_CSB1_"
+        );
+    }
+
+    #[test]
+    fn leaves_malformed_payload_literal() {
+        assert_eq!(
+            decode_command_substitution_payload("x__RUBASH_CSB1_no_semicolon"),
+            "x__RUBASH_CSB1_no_semicolon"
+        );
+    }
+}
