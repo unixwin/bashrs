@@ -87,6 +87,8 @@ The failed assignment-priority experiment and command-substitution dispatch reor
 5. Add differential tests for raw C0, NUL, repeated LF, invalid UTF-8, arithmetic status 1 versus 127, printf bytes, arrays, eval, heredocs, traps, and redirects.
 6. Update docs/semantic-ownership.tsv only after focused evidence and validate with scripts/validate-semantic-map.sh.
 
+Immutable backtick audit (2026-08-24): expand_backtick_substitution_typed is currently &mut self and returns SubstitutionOutput, while expand_word's fallback is &self and returns String. Keep the dual API until an interior-state typed capture/readback carrier exists; direct substitution would lose status, quote context, and raw payload provenance.
+
 ## Recursion Rules
 
 Read this checkpoint before changing the next owner. Do not modify third_party/bash. Do not run unbounded full suites. Keep artifacts under target/issue-suites/results. Run git diff --check, cargo check, and the smallest relevant focused tests before each commit. Check for residual rubash.exe, bash.exe, cargo.exe, and suite runners before closing a testing turn. Never claim completion while a persistent failure or intentional legacy boundary remains.
