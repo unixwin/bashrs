@@ -473,4 +473,19 @@ mod tests {
         );
         assert_eq!(table.input_snapshot(10).unwrap().1, 0);
     }
+
+    #[test]
+    fn materialization_preserves_invalid_input_bytes() {
+        let mut table = FdTable::new();
+        table.open_input(10, FdReadEndpoint::bytes(vec![0xff, b'\n']), true);
+        let materialized = table.materialize_for_child();
+        assert_eq!(
+            materialized[&10].read,
+            Some(MaterializedRead::Bytes(vec![0xff, b'\n']))
+        );
+        assert_eq!(
+            table.input_snapshot_bytes(10).unwrap(),
+            (vec![0xff, b'\n'], 0)
+        );
+    }
 }

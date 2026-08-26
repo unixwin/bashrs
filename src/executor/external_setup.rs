@@ -725,7 +725,7 @@ impl Executor {
     }
 
     fn virtual_fd_stdin_len(&self, fd: u32) -> String {
-        if let Some((input, _)) = self.fd_table.input_snapshot(fd) {
+        if let Some((input, _)) = self.fd_table.input_snapshot_bytes(fd) {
             return input.len().to_string();
         }
         "0".to_string()
