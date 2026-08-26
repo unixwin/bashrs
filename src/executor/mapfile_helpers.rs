@@ -157,8 +157,10 @@ impl Executor {
         if let Some(input) = self.mapfile_redirected_fd_input(cmd, fd) {
             return Some(input);
         }
-        self.mapfile_virtual_fd_input(fd)
-            .or_else(|| self.mapfile_heredoc_fd_input(cmd, fd))
+        if let Some(input) = self.mapfile_virtual_fd_input(fd) {
+            return Some(input);
+        }
+        self.mapfile_heredoc_fd_input(cmd, fd)
     }
 
     pub(in crate::executor) fn mapfile_fd_is_available(&self, cmd: &CommandNode, fd: u32) -> bool {
@@ -226,7 +228,7 @@ impl Executor {
         None
     }
 
-    fn mapfile_heredoc_fd_input(&self, cmd: &CommandNode, fd: u32) -> Option<String> {
+    fn mapfile_heredoc_fd_input(&mut self, cmd: &CommandNode, fd: u32) -> Option<String> {
         let body = cmd
             .heredoc_redirects
             .iter()
@@ -240,7 +242,7 @@ impl Executor {
             input.push('\n');
             return Some(input);
         }
-        Some(self.expand_heredoc_body(body))
+        Some(self.expand_heredoc_body_mut(body))
     }
 
     pub(in crate::executor) fn execute_mapfile_callback(
