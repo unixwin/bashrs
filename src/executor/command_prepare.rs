@@ -987,3 +987,24 @@ fn skip_raw_backtick(chars: &[char], mut index: usize) -> usize {
     }
     index
 }
+
+#[cfg(test)]
+mod command_word_materialization_tests {
+    use super::materialize_expanded_command_word;
+
+    #[test]
+    fn materializes_legacy_payload_at_single_boundary() {
+        assert_eq!(
+            materialize_expanded_command_word("prefix__RUBASH_CSB1_41;suffix"),
+            "prefixAsuffix"
+        );
+    }
+
+    #[test]
+    fn leaves_ordinary_command_word_bytes_unchanged() {
+        assert_eq!(
+            materialize_expanded_command_word("plain\x15word"),
+            "plain\\word"
+        );
+    }
+}
