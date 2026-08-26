@@ -609,7 +609,13 @@ impl Executor {
         }
         let source =
             decode_backtick_substitution_source(word.strip_prefix('`')?.strip_suffix('`')?);
-        Some(self.expand_command_substitution(&source))
+        Some(
+            self.expand_command_substitution_readback_with_context(
+                &source,
+                SubstitutionQuoteContext::Unquoted,
+            )
+            .text_lossy(),
+        )
     }
 
     pub(in crate::executor) fn expand_dirstack_tilde(&self, word: &str) -> Option<String> {

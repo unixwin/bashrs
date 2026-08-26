@@ -44,6 +44,16 @@ impl Executor {
         result
     }
 
+    pub(in crate::executor) fn expand_command_substitution_readback_with_context(
+        &self,
+        source: &str,
+        context: SubstitutionQuoteContext,
+    ) -> SubstitutionOutput {
+        let output = self.expand_command_substitution_with_context(source, context);
+        let status = self.last_command_substitution_status.get().unwrap_or(0);
+        SubstitutionOutput::readback(output.into_bytes(), status, context)
+    }
+
     pub(in crate::executor) fn expand_command_substitution_inner(
         &self,
         source: &str,
