@@ -576,7 +576,7 @@ impl Executor {
     ) -> Result<(), ExecuteError> {
         match process.spawn() {
             Ok(mut child) => {
-                if let Some(input) = self.stdin_string_for_command(cmd) {
+                if let Some(input) = self.stdin_string_for_command_mut(cmd) {
                     if let Some(mut stdin) = child.stdin.take() {
                         stdin.write_all(input.as_bytes())?;
                     }

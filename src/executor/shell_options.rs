@@ -458,6 +458,16 @@ impl Executor {
         expanded
     }
 
+    pub(in crate::executor) fn stdin_string_for_command_mut(
+        &mut self,
+        cmd: &CommandNode,
+    ) -> Option<String> {
+        if let Some(body) = cmd.heredoc.clone() {
+            return Some(self.expand_heredoc_body_mut(&body));
+        }
+        self.stdin_string_for_command(cmd)
+    }
+
     pub(in crate::executor) fn stdin_string_for_command(
         &self,
         cmd: &CommandNode,
