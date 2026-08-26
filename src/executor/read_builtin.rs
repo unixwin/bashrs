@@ -1903,7 +1903,7 @@ impl Executor {
         })
     }
 
-    fn read_timeout_zero_status(&self, cmd: &CommandNode, read_fd: Option<u32>) -> i32 {
+    fn read_timeout_zero_status(&mut self, cmd: &CommandNode, read_fd: Option<u32>) -> i32 {
         if let Some(fd) = read_fd {
             if matches!(
                 self.fd_table.read_endpoint(fd),
@@ -1946,7 +1946,7 @@ impl Executor {
         {
             return 0;
         }
-        if self.stdin_string_for_command(cmd).is_some()
+        if self.stdin_string_for_command_mut(cmd).is_some()
             || matches!(
                 self.fd_table.read_endpoint(0),
                 Some(
