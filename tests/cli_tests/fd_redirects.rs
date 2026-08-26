@@ -437,6 +437,26 @@ fn read_text_or_default(path: &Path) -> String {
         .replace("\r\n", "\n")
 }
 
+#[test]
+fn c_dynamic_varredir_close_closes_fd_after_command() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(
+            "shopt -s varredir_close; : {fd}>&1; \
+             printf 'allocated=%s\\n' \"$fd\"; \
+             echo after >&$fd; printf 'write_status=%s\\n' \"$?\"",
+        )
+        .output()
+        .expect("run varredir_close lifetime probe");
+
+    assert!(output.status.success());
+    assert_eq!(stream_text(&output.stdout), "allocated=10\nwrite_status=1\n");
+    assert_eq!(
+        stream_text(&output.stderr),
+        "rubash: $fd: Bad file descriptor\n"
+    );
+}
+
 fn path_with_bin_first(bin_dir: &Path) -> std::ffi::OsString {
     let old_path = env::var_os("PATH");
     env::join_paths(

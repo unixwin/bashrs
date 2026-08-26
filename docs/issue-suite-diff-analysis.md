@@ -2914,3 +2914,13 @@ Post-parser rerun: `timeout 120s cargo test --test cli_tests coproc -- --nocaptu
 ## 2026-08-24 Malformed compound command substitution
 
 The focused CLI failure `malformed_compound_inside_command_substitution_is_a_syntax_error` was traced to `expand_command_substitution_inner`: the existing `if ... then` compound-shape check set status 2 but did not set `last_command_substitution_parse_error`. The outer command therefore treated the substitution as an empty successful word. The fix marks the same parse-error cell used by the normal AST substitution path. The focused regression now passes.
+
+## 2026-08-24 varredir_close lifecycle probe
+
+The focused probe corresponding to GNU `redir.c` varredir cleanup compares:
+
+```text
+shopt -s varredir_close; : {fd}>&1; echo after >&$fd
+```
+
+GNU Bash and Rubash both allocate fd 10, close it after the command, return status 1 for the later write, and report `$fd: Bad file descriptor`. The Windows-only `/dev/tty` diagnostic difference remains a host device error and is not folded into the semantic result.
