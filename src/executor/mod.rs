@@ -41,7 +41,7 @@ mod command_substitution_pipelines;
 mod command_substitution_values;
 mod command_words;
 mod compound_exec;
-mod substitution_metadata;
+pub(crate) mod substitution_metadata;
 use compound_exec::*;
 mod declare_local;
 mod dynamic_arrays;

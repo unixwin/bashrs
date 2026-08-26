@@ -12,7 +12,8 @@ pub(in crate::executor) enum SubstitutionQuoteContext {
     HereDocument,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) const RAW_BYTE_MARKER_BASE: u32 = 0xe000;
+
 pub(in crate::executor) struct SubstitutionOutput {
     pub(in crate::executor) bytes: Vec<u8>,
     pub(in crate::executor) status: i32,
@@ -38,7 +39,7 @@ impl SubstitutionOutput {
     }
 
     pub(in crate::executor) fn text_lossy(&self) -> String {
-        String::from_utf8_lossy(&self.bytes).into_owned()
+        bytes_to_shell_text(&self.bytes)
     }
 
     /// Convert capture metadata into an expansion fragment without decoding payload bytes.
@@ -122,8 +123,29 @@ impl ExpandedWord {
             .iter()
             .flat_map(|fragment| fragment.bytes.iter().copied())
             .collect::<Vec<_>>();
-        String::from_utf8_lossy(&bytes).into_owned()
+        bytes_to_shell_text(&bytes)
     }
+}
+
+pub(crate) fn bytes_to_shell_text(bytes: &[u8]) -> String {
+    let mut output = String::new();
+    let mut remaining = bytes;
+    while !remaining.is_empty() {
+        match std::str::from_utf8(remaining) {
+            Ok(text) => {
+                output.push_str(text);
+                break;
+            }
+            Err(error) => {
+                let valid = error.valid_up_to();
+                output.push_str(std::str::from_utf8(&remaining[..valid]).unwrap_or_default());
+                output
+                    .push(char::from_u32(RAW_BYTE_MARKER_BASE + remaining[valid] as u32).unwrap());
+                remaining = &remaining[valid + 1..];
+            }
+        }
+    }
+    output
 }
 
 #[allow(dead_code)]
@@ -416,7 +438,14 @@ mod tests {
         assert_eq!(output.bytes, vec![0x1d, 0x1f, 0x1a, 0x15, 0xff]);
         assert_eq!(output.status, 23);
         assert_eq!(output.context, SubstitutionQuoteContext::DoubleQuoted);
-        assert!(output.text_lossy().contains('\u{fffd}'));
+        assert_eq!(
+            output
+                .text_lossy()
+                .chars()
+                .map(|ch| ch as u32)
+                .collect::<Vec<_>>(),
+            vec![0x1d, 0x1f, 0x1a, 0x15, RAW_BYTE_MARKER_BASE + 0xff],
+        );
     }
 
     #[test]

@@ -2962,3 +2962,15 @@ Evidence:
 - `cargo test --test cli_tests printf_b_emits_octals_as_raw_bytes -- --test-threads=1`: focused differential passes.
 
 This is a raw-byte output boundary corresponding to Bash `printf %b`, not a global UTF-8 conversion change.
+
+## 2026-08-25 typed substitution invalid-byte carrier
+
+The typed substitution carrier now materializes invalid UTF-8 bytes as the shared private raw-byte marker instead of `String::from_utf8_lossy` replacement characters. This corresponds to GNU `subst.c::read_comsub`: byte payload remains data until a later output boundary. `ExpandedWord::materialize_lossy_at_boundary` and `SubstitutionOutput::text_lossy` now share this conversion, while `printf` reuses the same marker constant. The change is intentionally scoped to the typed metadata owner; remaining legacy `String` command-substitution paths are still open.
+
+Evidence:
+
+- `executor::substitution_metadata` focused tests: 14/14.
+- Invalid `0xff` materializes as the private carrier codepoint and preserves sentinels.
+- `printf` focused tests: 37/37.
+
+The current CLI probe still identifies legacy pipeline materialization as a separate migration boundary; it is not folded into this change.

@@ -1,3 +1,5 @@
+use crate::executor::substitution_metadata::RAW_BYTE_MARKER_BASE;
+
 pub(super) fn expand_format_escape<I>(chars: &mut std::iter::Peekable<I>) -> String
 where
     I: Iterator<Item = char>,
@@ -30,8 +32,6 @@ fn format_escape_codepoint(value: Option<u32>, fallback: &str) -> String {
         .map(|ch| ch.to_string())
         .unwrap_or_else(|| fallback.to_string())
 }
-
-const RAW_BYTE_MARKER_BASE: u32 = 0xe000;
 
 fn format_escape_byte(value: Option<u32>, fallback: &str) -> String {
     value
