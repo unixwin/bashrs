@@ -105,6 +105,12 @@ impl Executor {
             }
         }
 
+        if !compound_assignment {
+            if let Some(expanded) = self.expand_mixed_command_substitution_assignment(value) {
+                return expanded;
+            }
+        }
+
         if let Some(expanded) = self.expand_backtick_substitution(value) {
             return expanded;
         }
@@ -144,6 +150,25 @@ impl Executor {
         // path positions. Keep it centralized here until Rubash ports the
         // `expand_string_assignment`/SHELL_VAR path more directly.
         self.expand_assignment_tilde(&expanded)
+    }
+
+    fn expand_mixed_command_substitution_assignment(&mut self, value: &str) -> Option<String> {
+        let spans = scan_substitution_spans(value);
+        if spans.len() != 1 {
+            return None;
+        }
+        let span = spans[0].clone();
+        let raw = value.get(span.start..span.end)?;
+        let source = raw.strip_prefix("$(")?.strip_suffix(')')?;
+        let prefix = self.expand_embedded_parameters_mut(value.get(..span.start)?);
+        let suffix = self.expand_embedded_parameters_mut(value.get(span.end..)?);
+        let output = self.expand_command_substitution_mut_typed_with_context(source, span.context);
+        let mut word = ExpandedWord::default();
+        word.append_literal(&prefix, true);
+        word.append_substitution(output);
+        word.append_literal(&suffix, true);
+        self.last_command_substitution_status.set(word.status);
+        Some(word.materialize_lossy_at_boundary())
     }
 
     fn expand_fast_assignment_value(&mut self, value: &str) -> Option<String> {
