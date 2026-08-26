@@ -1,6 +1,6 @@
 # Typed Expansion Migration Checkpoint
 
-Updated: 2026-08-23
+Updated: 2026-08-24
 Branch: agentteams/typed-provenance
 
 ## Purpose
@@ -35,12 +35,15 @@ Current carriers are SubstitutionOutput { bytes, status, context }, ExpandedFrag
 - cd00e4a7 typed heredoc substitution boundary
 - bb4f4639 direct mutable heredoc shortcut input
 - 6d2f3602 Windows extended path normalization for cd ..; pwd
+- b91a477b structured current-shell substitution span scanner
+- d1c6fb07 current-shell precedence before ordinary braced parameters
+- dfae1f01 current-shell forms bypass parameter-error preflight
 
 ## Current Owner Graph
 
 Migrated mutable owners: command_input_scope, compound_exec loop heredocs, read_io, mapfile_helpers, external_setup, external_inner, external_file_builtins, function_calls, pipeline_exec, trap_exec, and embedded_mutations typed command substitution.
 
-Intentional legacy boundaries: shell_options stdin_string_for_command(&self) for immutable utility and command-substitution callers; command_substitution_heredoc_output(&self) for the immutable path; decode_command_substitution_payload in assignment, heredoc legacy, backtick, and command-preparation boundaries. These cannot be removed by replacing them with lossy UTF-8 conversion.
+Intentional legacy boundaries: shell_options stdin_string_for_command(&self) for immutable utility and command-substitution callers; command_substitution_heredoc_output(&self) for the immutable path; decode_command_substitution_payload in assignment, heredoc legacy, backtick, and command-preparation boundaries. These cannot be removed by replacing them with lossy UTF-8 conversion. command_prepare currently materializes variable_expanded.words through this adapter, while expand_simple_substitution_fragments already uses typed fragments and is the next migration owner.
 
 ## Focused Evidence
 
@@ -55,12 +58,13 @@ Repeated passing gates:
 
 Known unrelated command-substitution slice failure: bashdb_info_files_reports_source_files_without_command_substitution_error, a fixed bashdb path assertion.
 
-## Persistent Root-Cause Failures
+## Resolved Current-Shell Chain
 
-1. test_current_shell_command_substitution_captures_stdout_and_keeps_side_effects reports bad substitution for the current-shell form: ${ value=new; echo alpha; echo; }.
-2. test_current_shell_reply_substitution_expands_inside_command_substitutions leaves command text such as combined comsubs; and comsubs; });.
-3. An experiment that called expand_embedded_parameters_mut_with_context before assignment preprocessing did not fix either test and was reverted.
-4. A command-substitution dispatch reorder was tested and reverted because the focused slice did not improve.
+The two previously persistent failures are now resolved. The root causes were separate: parameter_core routed whole-word current-shell forms after ordinary braced parameters, and parameter_errors rejected whitespace-led current-shell forms before execution. The structured span scanner, precedence change, and preflight exemption now cover the stdout/side-effect form and nested reply expansion.
+
+Focused evidence: command_chaining::part_005 is 41 passed / 0 failed after dfae1f01.
+
+The failed assignment-priority experiment and command-substitution dispatch reorder remain documented as reverted experiments; they are not needed after fixing the preflight owner.
 
 ## Recursive Next Steps
 
