@@ -88,6 +88,23 @@ impl Executor {
             return expanded;
         }
 
+        if !compound_assignment && !value.starts_with("$((") && !value.starts_with("$[") {
+            if let Some(source) = value
+                .strip_prefix("$(")
+                .and_then(|rest| rest.strip_suffix(')'))
+            {
+                let result = self.expand_command_substitution_mut_typed_with_context(
+                    source,
+                    if quoted {
+                        SubstitutionQuoteContext::DoubleQuoted
+                    } else {
+                        SubstitutionQuoteContext::Unquoted
+                    },
+                );
+                return result.text_lossy();
+            }
+        }
+
         if let Some(expanded) = self.expand_backtick_substitution(value) {
             return expanded;
         }
