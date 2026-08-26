@@ -95,11 +95,9 @@ impl Executor {
                     source.push(source_ch);
                 }
                 if closed {
-                    let expanded = if source.contains('|') {
-                        self.expand_command_substitution(&source)
-                    } else {
-                        self.expand_command_substitution_mut_with_context(&source, context)
-                    };
+                    let expanded = self
+                        .expand_command_substitution_mut_typed_with_context(&source, context)
+                        .text_lossy();
                     output.push_str(&protect_command_substitution_output(&expanded));
                 } else {
                     output.push('`');

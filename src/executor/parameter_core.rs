@@ -152,6 +152,15 @@ impl Executor {
             return self.expand_embedded_parameters_mut_with_context(word, context);
         }
 
+        if word.contains('`') {
+            if let Some(output) = self.expand_backtick_substitution_typed(
+                word,
+                matches!(context, SubstitutionQuoteContext::DoubleQuoted),
+            ) {
+                return output.text_lossy();
+            }
+        }
+
         self.expand_word(word)
     }
 
