@@ -302,7 +302,7 @@ impl Executor {
             return Ok(false);
         }
         let Some(input) = self
-            .stdin_string_for_command(cmd)
+            .stdin_string_for_command_mut(cmd)
             .or_else(|| self.read_function_stdin('\0', None, false))
             .or_else(|| self.read_inherited_process_stdin_to_string())
         else {
