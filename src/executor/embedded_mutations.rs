@@ -20,16 +20,25 @@ impl Executor {
             context,
         );
         let expanded = if word.contains("$(") || word.contains('`') {
-            unescape_remaining_shell_escapes(&expanded)
-                .replace("\\\\'", "'")
-                .replace("\\'", "'")
+            if matches!(context, SubstitutionQuoteContext::HereDocument) {
+                expanded
+            } else {
+                unescape_remaining_shell_escapes(&expanded)
+                    .replace("\\\\'", "'")
+                    .replace("\\'", "'")
+            }
         } else {
             expanded
         };
-        restore_protected_replacement_quotes(&expanded)
+        let restored = restore_protected_replacement_quotes(&expanded)
             .replace('\x1f', "$")
             .replace('\x1a', "`")
-            .replace('\x14', "\\")
+            .replace('\x14', "\\");
+        if matches!(context, SubstitutionQuoteContext::HereDocument) {
+            restored.replace('\x15', "\\")
+        } else {
+            restored
+        }
     }
 
     fn expand_embedded_parameters_ordered_mut(
@@ -80,6 +89,9 @@ impl Executor {
                 let mut closed = false;
                 for source_ch in chars.by_ref() {
                     if escaped {
+                        if !matches!(source_ch, '$' | '`' | '\\' | '\n' | '\r') {
+                            source.push('\\');
+                        }
                         source.push(source_ch);
                         escaped = false;
                         continue;
