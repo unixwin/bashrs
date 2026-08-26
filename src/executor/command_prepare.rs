@@ -1,6 +1,12 @@
 use super::glob::{pathname_expand_word, PathnameExpansion};
 use super::*;
 
+fn materialize_expanded_command_word(word: &str) -> String {
+    decode_command_substitution_payload(&restore_pathname_escape_markers(
+        &word.replace('\x15', "\\").replace('\x14', "\\"),
+    ))
+}
+
 impl Executor {
     pub(in crate::executor) fn report_command_heredoc_errors(
         &mut self,
@@ -258,11 +264,7 @@ impl Executor {
             .collect::<Vec<_>>();
         variable_expanded.words = expanded_words
             .iter()
-            .map(|(word, _)| {
-                decode_command_substitution_payload(&restore_pathname_escape_markers(
-                    &word.replace('\x15', "\\").replace('\x14', "\\"),
-                ))
-            })
+            .map(|(word, _)| materialize_expanded_command_word(word))
             .collect();
         variable_expanded.word_kinds = Vec::new();
 
@@ -271,22 +273,13 @@ impl Executor {
             let mut words = Vec::new();
             for (word, suppress_glob) in expanded_words {
                 if suppress_glob {
-                    words.push(
-                        decode_command_substitution_payload(&restore_pathname_escape_markers(
-                            &word.replace('\x15', "\\").replace('\x14', "\\"),
-                        ))
-                        .replace('\x17', "'"),
-                    );
+                    words.push(materialize_expanded_command_word(&word).replace('\x17', "'"));
                 } else {
                     match pathname_expand_word(&word, &self.env_vars) {
                         PathnameExpansion::Matches(matches) => words
                             .extend(matches.into_iter().map(|value| value.replace('\x17', "'"))),
-                        PathnameExpansion::NoMatch => words.push(
-                            decode_command_substitution_payload(&restore_pathname_escape_markers(
-                                &word.replace('\x15', "\\").replace('\x14', "\\"),
-                            ))
-                            .replace('\x17', "'"),
-                        ),
+                        PathnameExpansion::NoMatch => words
+                            .push(materialize_expanded_command_word(&word).replace('\x17', "'")),
                         PathnameExpansion::Fail(pattern) => {
                             self.report_failglob(&pattern);
                             return Err(ExecuteError::ExitCode(1));
