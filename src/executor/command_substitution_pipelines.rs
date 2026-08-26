@@ -471,7 +471,7 @@ impl Executor {
                     .stderr(Stdio::null())
                     .output()
                     .ok()?;
-                Some(String::from_utf8_lossy(&output.stdout).into_owned())
+                Some(bytes_to_shell_text(&output.stdout))
             }
         }
     }
