@@ -349,11 +349,9 @@ impl Executor {
                     .context
                     .unwrap_or(SubstitutionQuoteContext::Unquoted);
                 let source = fragment.text.strip_prefix("$(")?.strip_suffix(')')?;
-                let output = self.expand_command_substitution_mut_with_context(source, context);
-                expanded_fragments.push(ExpandedFragment::expanded(
-                    &output,
-                    context == SubstitutionQuoteContext::DoubleQuoted,
-                ));
+                let output =
+                    self.expand_command_substitution_mut_typed_with_context(source, context);
+                expanded_fragments.push(output.into_fragment());
             } else {
                 let literal = crate::lexer::remove_shell_quotes(&fragment.text);
                 if !literal.is_empty() {

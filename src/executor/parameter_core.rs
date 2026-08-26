@@ -140,7 +140,9 @@ impl Executor {
             .and_then(|rest| rest.strip_suffix(')'))
         {
             if command_substitution_spans_whole_word(word) {
-                return self.expand_command_substitution_mut_with_context(source, context);
+                return self
+                    .expand_command_substitution_mut_typed_with_context(source, context)
+                    .text_lossy();
             }
         }
 
