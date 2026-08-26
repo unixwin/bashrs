@@ -228,7 +228,7 @@ impl Executor {
             )
             .unwrap_or(1);
             self.last_command_substitution_status.set(Some(status));
-            return String::from_utf8_lossy(&stdout)
+            return bytes_to_shell_text(&stdout)
                 .trim_end_matches('\n')
                 .to_string();
         }
