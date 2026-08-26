@@ -1,6 +1,26 @@
 use super::*;
 
+#[derive(Debug, Eq, PartialEq)]
+pub(in crate::executor) struct AssignmentExpansionResult {
+    pub(in crate::executor) value: String,
+    pub(in crate::executor) substitution_status: Option<i32>,
+}
+
 impl Executor {
+    pub(in crate::executor) fn expand_assignment_value_result(
+        &mut self,
+        value: &str,
+    ) -> AssignmentExpansionResult {
+        self.last_command_substitution_status.set(None);
+        let expanded = self.expand_assignment_value(value);
+        let substitution_status = self.last_command_substitution_status.get();
+        self.last_command_substitution_status.set(None);
+        AssignmentExpansionResult {
+            value: expanded,
+            substitution_status,
+        }
+    }
+
     pub(in crate::executor) fn expand_assignment_value(&mut self, value: &str) -> String {
         if !value.contains("$(") && !value.contains('`') {
             if let Some(array_value) = normalize_single_element_array_assignment(value) {
@@ -330,11 +350,8 @@ impl Executor {
         &mut self,
         value: &str,
     ) -> (String, Option<i32>) {
-        self.last_command_substitution_status.set(None);
-        let expanded = self.expand_assignment_value(value);
-        let status = self.last_command_substitution_status.get();
-        self.last_command_substitution_status.set(None);
-        (expanded, status)
+        let result = self.expand_assignment_value_result(value);
+        (result.value, result.substitution_status)
     }
 }
 
