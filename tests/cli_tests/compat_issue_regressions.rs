@@ -954,6 +954,19 @@ fn output_process_substitution_preserves_printf_raw_bytes() {
 }
 
 #[test]
+fn shell_read_with_input_and_output_process_substitutions_preserves_streams() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"f() { read value; printf 'value=%s\n' "$value"; }; f < <(printf 'hello\n') > >(cat)"#)
+        .output()
+        .expect("run combined process substitution probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, b"value=hello\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn command_substitution_preserves_quoted_empty_word() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
