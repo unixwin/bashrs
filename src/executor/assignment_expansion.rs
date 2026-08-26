@@ -4,6 +4,8 @@ use super::*;
 pub(in crate::executor) struct AssignmentExpansionResult {
     pub(in crate::executor) value: String,
     pub(in crate::executor) substitution_status: Option<i32>,
+    pub(in crate::executor) arithmetic_error: bool,
+    pub(in crate::executor) arithmetic_nonfatal_error: bool,
 }
 
 impl Executor {
@@ -15,9 +17,13 @@ impl Executor {
         let expanded = self.expand_assignment_value(value);
         let substitution_status = self.last_command_substitution_status.get();
         self.last_command_substitution_status.set(None);
+        let arithmetic_error = self.arithmetic_expansion_error.replace(false);
+        let arithmetic_nonfatal_error = self.arithmetic_nonfatal_error.replace(false);
         AssignmentExpansionResult {
             value: expanded,
             substitution_status,
+            arithmetic_error,
+            arithmetic_nonfatal_error,
         }
     }
 

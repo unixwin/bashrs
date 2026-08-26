@@ -89,9 +89,10 @@ impl Executor {
         }
         let mut status = 0;
         for (name, value) in &cmd.assignments {
-            let (expanded_value, substitution_status) =
-                self.expand_assignment_value_with_status(value);
-            if self.arithmetic_expansion_error.replace(false) {
+            let assignment_result = self.expand_assignment_value_result(value);
+            let expanded_value = assignment_result.value;
+            let substitution_status = assignment_result.substitution_status;
+            if assignment_result.arithmetic_error {
                 // An arithmetic expansion error in an assignment word aborts
                 // the current command list in Bash. Do not install a partial
                 // assignment or let the AST walker skip only the next
@@ -109,7 +110,7 @@ impl Executor {
                 let script_mode_nonfatal = self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
                     && self.subshell_depth.get() == 0
                     && (!self.errexit_enabled() || !self.errexit_is_active());
-                if self.arithmetic_nonfatal_error.replace(false) || script_mode_nonfatal {
+                if assignment_result.arithmetic_nonfatal_error || script_mode_nonfatal {
                     status = failure_status;
                     continue;
                 }
