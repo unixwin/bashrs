@@ -66,7 +66,7 @@ Focused evidence: command_chaining::part_005 is 41 passed / 0 failed after dfae1
 
 Additional byte and printf evidence (2026-08-24): substitution_metadata tests are 14 passed / 0 failed, including NUL, trailing LF, invalid UTF-8, C0-like bytes, quote provenance, status, and IFS splitting. command_chaining::part_003::test_printf is 9 passed / 0 failed, covering printf -v, %n, array targets, arithmetic subscripts, negative subscripts, and POSIX time formats.
 
-Arithmetic evidence: command_chaining::part_071 has 13 passed / 2 failed. Invalid octal 08 and invalid based literal 2#2 emit the expected value-too-great-for-base diagnostic, but the command result is successful instead of failing. This is a status propagation defect, not an expected-output discrepancy; the next owner is the arithmetic expansion error path.
+Arithmetic evidence and fix (2026-08-24): command_chaining::part_071 initially had 13 passed / 2 failed because InvalidLiteral was classified nonfatal and empty-word command execution returned before arithmetic status handling. arithmetic_expansion_is_fatal now includes InvalidLiteral, and command_execute preserves pending arithmetic errors before empty-word early return. The slice is now 15 passed / 0 failed.
 
 The failed assignment-priority experiment and command-substitution dispatch reorder remain documented as reverted experiments; they are not needed after fixing the preflight owner.
 

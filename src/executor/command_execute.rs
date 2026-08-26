@@ -174,7 +174,7 @@ impl Executor {
         let alias_expanded =
             self.apply_alias_expansion_after_word_expansion(expanded, &original_raws);
         let alias_expansion_changed_words = alias_expanded.words != pre_alias_words;
-        if alias_expanded.words.is_empty() {
+        if alias_expanded.words.is_empty() && !self.arithmetic_expansion_error.get() {
             if !cmd.assignments.is_empty() {
                 return self.execute_empty_words_command(cmd);
             }
@@ -193,7 +193,7 @@ impl Executor {
         // and assignment contexts retain their own status handling above.
         if self.arithmetic_expansion_error.get() {
             self.arithmetic_expansion_error.set(false);
-            let arithmetic_fatal_error = self.arithmetic_fatal_error.replace(false);
+            self.arithmetic_fatal_error.set(false);
             let status = if self
                 .env_vars
                 .remove("__RUBASH_ARITH_NOUNSET_ERROR")
@@ -207,15 +207,7 @@ impl Executor {
             let script_mode_nonfatal = self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
                 && self.subshell_depth.get() == 0
                 && (!self.errexit_enabled() || !self.errexit_is_active());
-            let ordinary_word_error = !arithmetic_fatal_error
-                && cmd.assignments.is_empty()
-                && !cmd.words.is_empty()
-                && cmd.arithmetic_command.is_none()
-                && (!self.errexit_enabled() || !self.errexit_is_active());
-            if self.arithmetic_nonfatal_error.replace(false)
-                || script_mode_nonfatal
-                || ordinary_word_error
-            {
+            if self.arithmetic_nonfatal_error.replace(false) || script_mode_nonfatal {
                 return Ok(());
             }
             return Err(ExecuteError::ExitCode(status));
