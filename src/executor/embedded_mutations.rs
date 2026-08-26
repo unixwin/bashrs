@@ -374,6 +374,9 @@ impl Executor {
     ) -> SubstitutionOutput {
         let source = source.trim();
         let words = self.expand_aliases(&split_shell_words(source));
+        if let Some(output) = self.command_substitution_heredoc_output_mut_typed(source, context) {
+            return output;
+        }
         let saved_positional_params = self.positional_params.clone();
         if let Some(output) = self.run_function_command_substitution(&words) {
             self.positional_params = saved_positional_params;

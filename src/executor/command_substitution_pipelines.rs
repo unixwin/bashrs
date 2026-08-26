@@ -155,6 +155,20 @@ impl Executor {
         Some(mktemp_command_substitution_display_path(&path))
     }
 
+    pub(in crate::executor) fn command_substitution_heredoc_output_mut_typed(
+        &mut self,
+        source: &str,
+        context: SubstitutionQuoteContext,
+    ) -> Option<SubstitutionOutput> {
+        let output = self.command_substitution_heredoc_output(source)?;
+        self.last_command_substitution_status.set(Some(0));
+        Some(SubstitutionOutput::readback(
+            output.into_bytes(),
+            0,
+            context,
+        ))
+    }
+
     pub(in crate::executor) fn command_substitution_heredoc_output(
         &self,
         source: &str,
