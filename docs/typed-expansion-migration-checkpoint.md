@@ -55,6 +55,10 @@ Repeated passing gates:
 - cargo test --test cli_tests read: 30 passed
 - cargo test --test cli_tests mapfile: 3 passed
 - command_chaining part_005 heredoc tests: passing
+- command_chaining::part_080: 156 passed / 0 failed after command-word materialization boundary
+- arithmetic fatality contracts: 2 passed / 0 failed
+- printf focused slice: 9 passed / 0 failed
+- typed substitution metadata: 14 passed / 0 failed
 
 Known unrelated command-substitution slice failure: bashdb_info_files_reports_source_files_without_command_substitution_error, a fixed bashdb path assertion.
 
