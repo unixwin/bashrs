@@ -193,7 +193,7 @@ impl Executor {
         // and assignment contexts retain their own status handling above.
         if self.arithmetic_expansion_error.get() {
             self.arithmetic_expansion_error.set(false);
-            self.arithmetic_fatal_error.set(false);
+            self.arithmetic_fatal_error.replace(false);
             let status = if self
                 .env_vars
                 .remove("__RUBASH_ARITH_NOUNSET_ERROR")
@@ -208,7 +208,7 @@ impl Executor {
                 || self.env_vars.contains_key("BASH_EXECUTION_STRING"))
                 && self.subshell_depth.get() == 0
                 && (!self.errexit_enabled() || !self.errexit_is_active());
-            if self.arithmetic_nonfatal_error.replace(false) || script_mode_nonfatal {
+            if self.arithmetic_nonfatal_error.replace(false) && script_mode_nonfatal {
                 return Ok(());
             }
             return Err(ExecuteError::ExitCode(status));

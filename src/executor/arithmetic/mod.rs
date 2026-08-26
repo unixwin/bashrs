@@ -172,9 +172,7 @@ fn empty_quoted_operand_has_operator(expression: &str) -> bool {
 pub(crate) fn arithmetic_expansion_is_fatal(expression: &str) -> bool {
     matches!(
         arithmetic_error_category(expression),
-        Some(
-            ArithmeticErrorCategory::EmptyArraySubscript | ArithmeticErrorCategory::InvalidLiteral
-        )
+        Some(ArithmeticErrorCategory::EmptyArraySubscript)
     )
 }
 
