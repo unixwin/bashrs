@@ -242,6 +242,22 @@ fn percent_q_uses_backslash_quoting_for_printable_shell_metacharacters() {
 }
 
 #[test]
+fn percent_q_uses_ansi_c_quoting_for_control_characters() {
+    assert_eq!(
+        run(&[
+            "<%q><%q><%q><%q>",
+            "a
+ b",
+            "a	 b",
+            "ab",
+            "ab"
+        ])
+        .1,
+        "<$'a\\n b'><$'a\\t b'><$'a\\001b'><$'a\\177b'>"
+    );
+}
+
+#[test]
 fn percent_q_and_upper_q_apply_precision_like_bash() {
     assert_eq!(run(&["<%.2q><%.2Q>", "a b", "a b"]).1, "<a\\><a\\ >");
 }

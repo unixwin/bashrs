@@ -146,6 +146,10 @@ pub(super) fn shell_quote(value: &str) -> String {
         return "\\~".to_string();
     }
 
+    if value.chars().any(|ch| ch.is_control()) {
+        return ansi_c_shell_quote(value);
+    }
+
     let mut quoted = String::new();
     for ch in value.chars() {
         if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '/' | '.' | '-' | ':') {
@@ -155,5 +159,27 @@ pub(super) fn shell_quote(value: &str) -> String {
             quoted.push(ch);
         }
     }
+    quoted
+}
+
+fn ansi_c_shell_quote(value: &str) -> String {
+    let mut quoted = String::from("$'");
+    for ch in value.chars() {
+        match ch {
+            '\\' => quoted.push_str("\\\\"),
+            '\'' => quoted.push_str("\\'"),
+            '\x07' => quoted.push_str("\\a"),
+            '\x08' => quoted.push_str("\\b"),
+            '\x1b' => quoted.push_str("\\E"),
+            '\x0c' => quoted.push_str("\\f"),
+            '\n' => quoted.push_str("\\n"),
+            '\r' => quoted.push_str("\\r"),
+            '\t' => quoted.push_str("\\t"),
+            '\x0b' => quoted.push_str("\\v"),
+            ch if ch.is_ascii_control() => quoted.push_str(&format!("\\{:03o}", ch as u32)),
+            ch => quoted.push(ch),
+        }
+    }
+    quoted.push('\'');
     quoted
 }

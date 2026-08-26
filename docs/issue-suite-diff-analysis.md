@@ -2938,3 +2938,15 @@ GNU Bash and Rubash both allocate fd 10, close it after the command, return stat
 ## 2026-08-24 assignment RHS differential matrix
 
 A bounded GNU Bash/Rubash matrix covered assignment-only tilde expansion, colon-separated tilde positions, quoted command substitution, mixed prefix/suffix substitution, and a raw C0 payload. Command-substitution values and raw bytes matched. The only difference was Git Bash displaying the home path as `/c/Users/Administrator` while Rubash preserves the Windows-native `C:\Users\Administrator` spelling; this is a host path representation boundary, not an assignment expansion defect. No Rust change is justified by this probe.
+
+## 2026-08-24 printf percent-q control quoting
+
+GNU `builtins/printf.def` emits ANSI-C shell quoting for control characters in `%q` output. For input control characters, GNU Bash emits `$'...'` forms with named escapes or three-digit octal escapes. Rubash previously emitted literal control bytes preceded by backslashes because `src/builtins/printf/escape.rs::shell_quote` treated every non-alphanumeric character uniformly. The owner now selects an ANSI-C quote and preserves Bash's `\a`, `\b`, `\E`, `\f`, `\n`, `\r`, `\t`, `\v`, and octal spellings.
+
+Evidence:
+
+- `cargo test --lib printf -- --test-threads=1`: 36/36.
+- `cargo test --test cli_tests printf_q_uses_ansi_c_quotes_for_control_bytes -- --test-threads=1`: focused CLI differential passes.
+- GNU Bash and Rubash agree on printable and control `%q` forms.
+
+This is a formatting-boundary fix corresponding to Bash's printf `%q` conversion, not a generic shell quote-removal change.

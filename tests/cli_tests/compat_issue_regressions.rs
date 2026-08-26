@@ -243,6 +243,19 @@ fn printf_integer_conversion_keeps_valid_prefix_before_invalid_suffix() {
 }
 
 #[test]
+fn printf_q_uses_ansi_c_quotes_for_control_bytes() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("printf '<%q>\\n' $'a\\x01b'")
+        .output()
+        .expect("run printf control quoting probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<$'a\\001b'>\n");
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}
+
+#[test]
 fn command_substitution_pipeline_applies_tr_translation() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
