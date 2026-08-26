@@ -689,3 +689,19 @@ fn assignment_operator_at(input: &[u8], pos: usize) -> Option<&'static str> {
     }
     None
 }
+
+#[cfg(test)]
+mod fatality_tests {
+    use super::arithmetic_expansion_is_fatal;
+
+    #[test]
+    fn invalid_literals_are_fatal_arithmetic_expansion_errors() {
+        assert!(arithmetic_expansion_is_fatal("08"));
+        assert!(arithmetic_expansion_is_fatal("2#2"));
+    }
+
+    #[test]
+    fn division_by_zero_remains_nonfatal_for_script_continuation() {
+        assert!(!arithmetic_expansion_is_fatal("1/0"));
+    }
+}
