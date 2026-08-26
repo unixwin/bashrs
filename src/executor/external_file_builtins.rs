@@ -207,7 +207,7 @@ impl Executor {
         }
 
         if cmd.heredoc.is_some() {
-            let input = self.stdin_string_for_command(cmd).unwrap_or_default();
+            let input = self.stdin_string_for_command_mut(cmd).unwrap_or_default();
             if let Some(redirect) = &cmd.append {
                 let target = self.expand_word(&redirect.target);
                 let mut file = OpenOptions::new()
@@ -228,7 +228,7 @@ impl Executor {
             }
         }
 
-        if let Some(input) = self.stdin_string_for_command(cmd) {
+        if let Some(input) = self.stdin_string_for_command_mut(cmd) {
             self.write_cat_output(cmd, input.as_bytes())?;
             self.exit_code = 0;
             return Ok(true);

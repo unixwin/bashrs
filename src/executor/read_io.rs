@@ -142,7 +142,7 @@ impl Executor {
         // bypass `stdin_string_for_command`, whose legacy remaining-text view
         // does not advance the shared fd cursor.
         if cmd.here_string.is_some() {
-            if let Some(line) = self.stdin_string_for_command(cmd) {
+            if let Some(line) = self.stdin_string_for_command_mut(cmd) {
                 return Some(trim_read_input(
                     line,
                     delimiter,

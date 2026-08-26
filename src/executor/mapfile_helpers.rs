@@ -151,7 +151,7 @@ impl Executor {
         read_fd: Option<u32>,
     ) -> Option<String> {
         let Some(fd) = read_fd else {
-            return self.stdin_string_for_command(cmd);
+            return self.stdin_string_for_command_mut(cmd);
         };
 
         if let Some(input) = self.mapfile_redirected_fd_input(cmd, fd) {
