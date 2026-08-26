@@ -130,7 +130,6 @@ pub(super) fn quote_double(value: &str) -> String {
                 quoted.push('\\');
                 quoted.push(ch);
             }
-            '\x1a' | '\x1b' | '\x1c' | '\x1d' | '\x1e' => {}
             _ => quoted.push(ch),
         }
     }

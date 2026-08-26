@@ -30,7 +30,7 @@ fn test_empty_quoted_heredoc_delimiter_reads_until_eof() {
         .iter()
         .find(|token| token.kind == TokenKind::HereDocBody)
         .map(|token| token.value.as_str());
-    assert_eq!(body, Some("\x1e\x1fhi\nthere\n''\n"));
+    assert_eq!(body, Some("__RUBASH_HD1__\x1fhi\nthere\n''\n"));
 }
 
 #[test]
@@ -42,7 +42,7 @@ fn test_command_substitution_here_string_does_not_swallow_following_heredoc() {
         .filter(|token| token.kind == TokenKind::HereDocBody)
         .map(|token| token.value.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(bodies, vec!["\x1e\x1fhi\nthere\n''\n"]);
+    assert_eq!(bodies, vec!["__RUBASH_HD1__\x1fhi\nthere\n''\n"]);
 }
 
 #[test]
