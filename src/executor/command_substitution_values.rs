@@ -511,7 +511,7 @@ impl Executor {
             return Some(String::new());
         }
         Some(
-            String::from_utf8_lossy(&output.stdout)
+            bytes_to_shell_text(&output.stdout)
                 .trim_end_matches('\n')
                 .to_string(),
         )
