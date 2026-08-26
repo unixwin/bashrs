@@ -580,6 +580,26 @@ impl Executor {
         Some(shell_path_to_windows(&expanded, &self.env_vars))
     }
 
+    pub(in crate::executor) fn expand_backtick_substitution_typed(
+        &mut self,
+        word: &str,
+        quoted: bool,
+    ) -> Option<SubstitutionOutput> {
+        if !backtick_substitution_spans_whole_word(word) {
+            return None;
+        }
+        let source =
+            decode_backtick_substitution_source(word.strip_prefix('`')?.strip_suffix('`')?);
+        Some(self.expand_command_substitution_mut_typed_with_context(
+            &source,
+            if quoted {
+                SubstitutionQuoteContext::DoubleQuoted
+            } else {
+                SubstitutionQuoteContext::Unquoted
+            },
+        ))
+    }
+
     pub(in crate::executor) fn expand_backtick_substitution(&self, word: &str) -> Option<String> {
         // TODO(subst.c): Backquote command substitution should invoke the
         // parser and run a subshell. This reuses the same in-process command

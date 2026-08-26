@@ -109,6 +109,9 @@ impl Executor {
             if let Some(expanded) = self.expand_mixed_command_substitution_assignment(value) {
                 return expanded;
             }
+            if let Some(output) = self.expand_backtick_substitution_typed(value, quoted) {
+                return output.text_lossy();
+            }
         }
 
         if let Some(expanded) = self.expand_backtick_substitution(value) {
