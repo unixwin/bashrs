@@ -351,31 +351,76 @@ fn split_top_level_colon(input: &str) -> (&str, &str, bool) {
     (input, "", false)
 }
 
-pub(in crate::executor) fn word_contains_current_shell_command_substitution(word: &str) -> bool {
-    let mut rest = word;
-    while let Some(index) = rest.find("${") {
-        let after_open = &rest[index + 2..];
-        if after_open
-            .chars()
-            .next()
-            .is_some_and(|ch| ch == '|' || ch.is_whitespace())
-        {
-            return true;
+pub(in crate::executor) fn current_shell_command_substitution_span(word: &str) -> Option<&str> {
+    let marker = "$";
+    let mut search_start = 0usize;
+    while let Some(relative) = word.get(search_start..)?.find(marker) {
+        let start = search_start + relative;
+        if word.as_bytes().get(start + 1) != Some(&b'{') {
+            search_start = start + 1;
+            continue;
         }
-        rest = after_open;
+        let after_open = start + 2;
+        let first = word.get(after_open..)?.chars().next()?;
+        if first != '|' && !first.is_whitespace() {
+            search_start = after_open;
+            continue;
+        }
+        let bytes = word.as_bytes();
+        let mut index = after_open;
+        let mut depth = 1usize;
+        let mut single = false;
+        let mut double = false;
+        let mut escaped = false;
+        while index < bytes.len() {
+            let ch = bytes[index] as char;
+            if escaped {
+                escaped = false;
+                index += 1;
+                continue;
+            }
+            if ch == '\\' && !single {
+                escaped = true;
+                index += 1;
+                continue;
+            }
+            match ch {
+                '\'' if !double => single = !single,
+                '"' if !single => double = !double,
+                '$' if !single && !double && bytes.get(index + 1) == Some(&b'{') => {
+                    depth += 1;
+                    index += 1;
+                }
+                '}' if !single && !double => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        return word.get(start..=index);
+                    }
+                }
+                _ => {}
+            }
+            index += 1;
+        }
+        return None;
     }
-    false
+    None
+}
+
+pub(in crate::executor) fn word_contains_current_shell_command_substitution(word: &str) -> bool {
+    current_shell_command_substitution_span(word).is_some()
 }
 
 #[cfg(test)]
 mod current_shell_detector_tests {
-    use super::word_contains_current_shell_command_substitution;
+    use super::{
+        current_shell_command_substitution_span, word_contains_current_shell_command_substitution,
+    };
 
     #[test]
     fn detects_current_shell_braced_command_body() {
-        assert!(word_contains_current_shell_command_substitution(
-            "${ value=new; echo alpha; echo; }"
-        ));
+        let word = "${ value=new; echo alpha; echo; }";
+        assert_eq!(current_shell_command_substitution_span(word), Some(word));
+        assert!(word_contains_current_shell_command_substitution(word));
         assert!(word_contains_current_shell_command_substitution(
             "prefix${| echo reply }suffix"
         ));
