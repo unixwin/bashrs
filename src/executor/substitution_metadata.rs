@@ -348,11 +348,26 @@ mod tests {
     fn readback_removes_nuls_and_only_trailing_newlines() {
         let output = SubstitutionOutput::readback(
             b"a\0b\n\n".to_vec(),
-            0,
-            SubstitutionQuoteContext::Unquoted,
+            17,
+            SubstitutionQuoteContext::HereDocument,
         );
         assert_eq!(output.bytes, b"ab");
+        assert_eq!(output.status, 17);
+        assert_eq!(output.context, SubstitutionQuoteContext::HereDocument);
         assert_eq!(output.text_lossy(), "ab");
+    }
+
+    #[test]
+    fn readback_preserves_sentinels_and_invalid_utf8_until_text_conversion() {
+        let output = SubstitutionOutput::readback(
+            vec![0x1d, 0x1f, 0x1a, 0x15, 0xff, b'\n', b'\n'],
+            23,
+            SubstitutionQuoteContext::DoubleQuoted,
+        );
+        assert_eq!(output.bytes, vec![0x1d, 0x1f, 0x1a, 0x15, 0xff]);
+        assert_eq!(output.status, 23);
+        assert_eq!(output.context, SubstitutionQuoteContext::DoubleQuoted);
+        assert!(output.text_lossy().contains('\u{fffd}'));
     }
 
     #[test]
