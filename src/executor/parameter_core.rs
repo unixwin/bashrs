@@ -129,6 +129,13 @@ impl Executor {
             }
         }
 
+        // Current-shell forms are special `${...}` expansions, not ordinary
+        // parameter names. GNU param_expand recognizes them before the generic
+        // whole-word braced-parameter path.
+        if word_contains_current_shell_command_substitution(word) {
+            return self.expand_embedded_parameters_mut_with_context(word, context);
+        }
+
         // A whole-word `${...}` must go to the braced parameter expander.
         // Routing it through expand_embedded_parameters_mut re-collects the
         // same `${...}` and calls expand_word_mut again, recursing forever
@@ -146,10 +153,6 @@ impl Executor {
         }
 
         if word.contains("$((") || word.contains("$[") {
-            return self.expand_embedded_parameters_mut_with_context(word, context);
-        }
-
-        if word_contains_current_shell_command_substitution(word) {
             return self.expand_embedded_parameters_mut_with_context(word, context);
         }
 
