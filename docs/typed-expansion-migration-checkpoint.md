@@ -87,7 +87,7 @@ The failed assignment-priority experiment and command-substitution dispatch reor
 5. Add differential tests for raw C0, NUL, repeated LF, invalid UTF-8, arithmetic status 1 versus 127, printf bytes, arrays, eval, heredocs, traps, and redirects.
 6. Update docs/semantic-ownership.tsv only after focused evidence and validate with scripts/validate-semantic-map.sh.
 
-Immutable backtick audit (2026-08-24): expand_backtick_substitution_typed is currently &mut self and returns SubstitutionOutput, while expand_word's fallback is &self and returns String. Keep the dual API until an interior-state typed capture/readback carrier exists; direct substitution would lose status, quote context, and raw payload provenance.
+Immutable backtick audit (2026-08-24): expand_backtick_substitution_typed is currently &mut self and returns SubstitutionOutput, while expand_word's fallback is &self and returns String. Keep the dual API until an interior-state typed capture/readback carrier exists; direct substitution would lose status, quote context, and raw payload provenance. The new expand_command_substitution_readback_with_context(&self, ...) carrier now reuses the immutable execution path, captures last-command-substitution status, and preserves quote context before the legacy String boundary. part_005 remains 41 passed / 0 failed after routing immutable backticks through it.
 
 ## Recursion Rules
 
