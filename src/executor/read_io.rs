@@ -1,4 +1,5 @@
 use super::*;
+use crate::executor::substitution_metadata::bytes_to_shell_text;
 
 impl Executor {
     pub(in crate::executor) fn finish_read_error(
@@ -284,7 +285,7 @@ impl Executor {
 
         match result {
             Ok(()) | Err(ExecuteError::ExitCode(_)) | Err(ExecuteError::Return(_)) => {
-                Some(String::from_utf8_lossy(&output).to_string())
+                Some(bytes_to_shell_text(&output))
             }
             Err(_) => None,
         }
