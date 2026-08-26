@@ -2928,4 +2928,3 @@ GNU Bash and Rubash both allocate fd 10, close it after the command, return stat
 ## 2026-08-24 assignment RHS differential matrix
 
 A bounded GNU Bash/Rubash matrix covered assignment-only tilde expansion, colon-separated tilde positions, quoted command substitution, mixed prefix/suffix substitution, and a raw C0 payload. Command-substitution values and raw bytes matched. The only difference was Git Bash displaying the home path as `/c/Users/Administrator` while Rubash preserves the Windows-native `C:\Users\Administrator` spelling; this is a host path representation boundary, not an assignment expansion defect. No Rust change is justified by this probe.
-
