@@ -369,17 +369,18 @@ impl Executor {
         }
     }
 
-    pub(in crate::executor) fn expand_command_substitution_mut_with_context(
+    pub(in crate::executor) fn expand_command_substitution_mut_typed_with_context(
         &mut self,
         source: &str,
         context: SubstitutionQuoteContext,
-    ) -> String {
+    ) -> SubstitutionOutput {
         let source = source.trim();
         let words = self.expand_aliases(&split_shell_words(source));
         let saved_positional_params = self.positional_params.clone();
         if let Some(output) = self.run_function_command_substitution(&words) {
             self.positional_params = saved_positional_params;
-            return output;
+            let status = self.last_command_substitution_status.get().unwrap_or(0);
+            return SubstitutionOutput::readback(output.into_bytes(), status, context);
         }
         self.positional_params = saved_positional_params;
         if command_substitution_words_contain_here_string(&words) {
@@ -387,11 +388,13 @@ impl Executor {
             if let Some(output) =
                 self.run_ast_command_substitution_with_context(&alias_source, context)
             {
-                return output.text_lossy();
+                return output;
             }
         }
         if command_substitution_uses_specialized_path(self, source, &words) {
-            return self.expand_command_substitution_with_context(source, context);
+            let output = self.expand_command_substitution_with_context(source, context);
+            let status = self.last_command_substitution_status.get().unwrap_or(0);
+            return SubstitutionOutput::readback(output.into_bytes(), status, context);
         }
         // A command list (`echo a; echo b`, `a && b`) must run as an AST, not
         // through the single-command specialized dispatch below: routing
@@ -404,7 +407,7 @@ impl Executor {
             .any(|word| word.contains(';') || matches!(word.as_str(), "&&" | "||"))
         {
             if let Some(output) = self.run_ast_command_substitution_with_context(source, context) {
-                return output.text_lossy();
+                return output;
             }
         }
         // Simple builtins that the non-mut special-case dispatch handles with
@@ -412,12 +415,25 @@ impl Executor {
         // nested `"$(...)"` arguments do not leak quote characters through
         // the full-AST execution path.
         if is_specialized_command_substitution_word(&words) {
-            return self.expand_command_substitution_with_context(source, context);
+            let output = self.expand_command_substitution_with_context(source, context);
+            let status = self.last_command_substitution_status.get().unwrap_or(0);
+            return SubstitutionOutput::readback(output.into_bytes(), status, context);
         }
         if let Some(output) = self.run_ast_command_substitution_with_context(source, context) {
-            return output.text_lossy();
+            return output;
         }
-        self.expand_command_substitution_with_context(source, context)
+        let output = self.expand_command_substitution_with_context(source, context);
+        let status = self.last_command_substitution_status.get().unwrap_or(0);
+        SubstitutionOutput::readback(output.into_bytes(), status, context)
+    }
+
+    pub(in crate::executor) fn expand_command_substitution_mut_with_context(
+        &mut self,
+        source: &str,
+        context: SubstitutionQuoteContext,
+    ) -> String {
+        self.expand_command_substitution_mut_typed_with_context(source, context)
+            .text_lossy()
     }
 
     pub(in crate::executor) fn run_ast_command_substitution_with_context(
