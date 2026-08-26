@@ -917,7 +917,7 @@ impl Executor {
         }
 
         if cmd.here_string.is_some() || cmd.heredoc.is_some() {
-            let Some(input) = self.stdin_string_for_command(cmd) else {
+            let Some(input) = self.stdin_string_for_command_mut(cmd) else {
                 return Ok(None);
             };
             let fd = self.allocate_dynamic_fd();

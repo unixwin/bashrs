@@ -1072,7 +1072,7 @@ impl Executor {
                     }
                     return Ok(Some((output, stderr, status)));
                 }
-                if let Some(input) = self.stdin_string_for_command(command) {
+                if let Some(input) = self.stdin_string_for_command_mut(command) {
                     Ok(Some((input, String::new(), 0)))
                 } else {
                     Ok(Some((input.to_string(), String::new(), 0)))
@@ -1236,8 +1236,8 @@ impl Executor {
         crate::builtins::shopt::option_enabled(&self.env_vars, "lastpipe")
     }
 
-    fn initial_pipeline_input(&self, command: &CommandNode) -> String {
-        self.stdin_string_for_command(command)
+    fn initial_pipeline_input(&mut self, command: &CommandNode) -> String {
+        self.stdin_string_for_command_mut(command)
             .or_else(|| {
                 pipeline_stage_reads_stdin_by_default(command)
                     .then(|| self.read_inherited_process_stdin_to_string())
