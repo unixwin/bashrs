@@ -154,18 +154,22 @@ impl Executor {
 
     fn expand_mixed_command_substitution_assignment(&mut self, value: &str) -> Option<String> {
         let spans = scan_substitution_spans(value);
-        if spans.len() != 1 {
+        if spans.is_empty() {
             return None;
         }
-        let span = spans[0].clone();
-        let raw = value.get(span.start..span.end)?;
-        let source = raw.strip_prefix("$(")?.strip_suffix(')')?;
-        let prefix = self.expand_embedded_parameters_mut(value.get(..span.start)?);
-        let suffix = self.expand_embedded_parameters_mut(value.get(span.end..)?);
-        let output = self.expand_command_substitution_mut_typed_with_context(source, span.context);
         let mut word = ExpandedWord::default();
-        word.append_literal(&prefix, true);
-        word.append_substitution(output);
+        let mut cursor = 0usize;
+        for span in spans {
+            let raw = value.get(span.start..span.end)?;
+            let source = raw.strip_prefix("$(")?.strip_suffix(')')?;
+            let prefix = self.expand_embedded_parameters_mut(value.get(cursor..span.start)?);
+            word.append_literal(&prefix, true);
+            let output =
+                self.expand_command_substitution_mut_typed_with_context(source, span.context);
+            word.append_substitution(output);
+            cursor = span.end;
+        }
+        let suffix = self.expand_embedded_parameters_mut(value.get(cursor..)?);
         word.append_literal(&suffix, true);
         self.last_command_substitution_status.set(word.status);
         Some(word.materialize_lossy_at_boundary())
