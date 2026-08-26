@@ -366,3 +366,28 @@ pub(in crate::executor) fn word_contains_current_shell_command_substitution(word
     }
     false
 }
+
+#[cfg(test)]
+mod current_shell_detector_tests {
+    use super::word_contains_current_shell_command_substitution;
+
+    #[test]
+    fn detects_current_shell_braced_command_body() {
+        assert!(word_contains_current_shell_command_substitution(
+            "${ value=new; echo alpha; echo; }"
+        ));
+        assert!(word_contains_current_shell_command_substitution(
+            "prefix${| echo reply }suffix"
+        ));
+    }
+
+    #[test]
+    fn ignores_ordinary_braced_parameters() {
+        assert!(!word_contains_current_shell_command_substitution(
+            "${value}"
+        ));
+        assert!(!word_contains_current_shell_command_substitution(
+            "${value:-fallback}"
+        ));
+    }
+}
