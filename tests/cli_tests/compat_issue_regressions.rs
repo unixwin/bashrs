@@ -282,6 +282,18 @@ fn command_substitution_preserves_printf_raw_bytes() {
 }
 
 #[test]
+fn timed_command_substitution_preserves_printf_raw_bytes() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("value=\"$(time printf '\\377')\"; printf '%s' \"$value\"")
+        .output()
+        .expect("run timed substitution raw byte probe");
+
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"\xff");
+}
+
+#[test]
 fn command_substitution_pipeline_preserves_printf_raw_bytes() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
