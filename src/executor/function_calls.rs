@@ -276,10 +276,10 @@ impl Executor {
     }
 
     pub(in crate::executor) fn function_call_stdin(
-        &self,
+        &mut self,
         call_cmd: &CommandNode,
     ) -> Result<Option<String>, ExecuteError> {
-        if let Some(input) = self.stdin_string_for_command(call_cmd) {
+        if let Some(input) = self.stdin_string_for_command_mut(call_cmd) {
             return Ok(Some(input));
         }
 
