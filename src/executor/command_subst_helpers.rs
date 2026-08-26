@@ -150,7 +150,7 @@ pub(in crate::executor) fn echo_command_substitution_output(args: &[String]) -> 
 }
 
 pub(in crate::executor) fn echo_raw_output(args: &[String]) -> String {
-    String::from_utf8_lossy(&echo_raw_output_bytes(args)).into_owned()
+    bytes_to_shell_text(&echo_raw_output_bytes(args))
 }
 
 fn echo_raw_output_bytes(args: &[String]) -> Vec<u8> {
