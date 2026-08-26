@@ -164,11 +164,21 @@ impl Executor {
         let mut cursor = 0usize;
         for span in spans {
             let raw = value.get(span.start..span.end)?;
-            let source = raw.strip_prefix("$(")?.strip_suffix(')')?;
             let prefix = self.expand_embedded_parameters_mut(value.get(cursor..span.start)?);
             word.append_literal(&prefix, true);
-            let output =
-                self.expand_command_substitution_mut_typed_with_context(source, span.context);
+            let output = if let Some(source) = raw
+                .strip_prefix("$(")
+                .and_then(|rest| rest.strip_suffix(')'))
+            {
+                self.expand_command_substitution_mut_typed_with_context(source, span.context)
+            } else if raw.starts_with('`') {
+                self.expand_backtick_substitution_typed(
+                    raw,
+                    matches!(span.context, SubstitutionQuoteContext::DoubleQuoted),
+                )?
+            } else {
+                return None;
+            };
             word.append_substitution(output);
             cursor = span.end;
         }

@@ -1295,6 +1295,19 @@ fn command_substitution_sed_restores_shell_sentinels() {
 }
 
 #[test]
+fn mixed_backtick_assignment_uses_typed_fragments() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("value=pre`printf x`post; printf '<%s>\\n' \"$value\"")
+        .output()
+        .expect("run mixed backtick assignment probe");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "<prexpost>\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn command_substitution_assignment_preserves_c0_payload_bytes() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
