@@ -40,8 +40,8 @@ impl Executor {
             );
         }
 
-        if let Some(heredoc) = &cmd.heredoc {
-            return Some(self.expand_heredoc_body(heredoc));
+        if let Some(heredoc) = cmd.heredoc.clone() {
+            return Some(self.expand_heredoc_body_mut(&heredoc));
         }
 
         cmd.heredoc_redirects
@@ -49,13 +49,26 @@ impl Executor {
             .rev()
             .find(|redirect| redirect.fd.is_none())
             .and_then(|redirect| redirect.body.as_deref())
-            .map(|body| self.expand_heredoc_body(body))
+            .map(|body| self.expand_heredoc_body_mut(body))
     }
 
     /// Expands an unquoted heredoc body like Bash: parameter, command and
     /// arithmetic expansions run in the context of the receiving command.
     /// A dedicated quoted-heredoc marker keeps the body literal without sharing
     /// the compound-assignment transport protocol.
+    pub(in crate::executor) fn expand_heredoc_body_mut(&mut self, body: &str) -> String {
+        let quoted = body.starts_with(crate::lexer::QUOTED_HEREDOC_MARKER);
+        let body = strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(body));
+        if quoted {
+            return body.to_string();
+        }
+        let prepared = prepare_unquoted_heredoc_expansion(body);
+        self.expand_embedded_parameters_mut_with_context(
+            &prepared,
+            SubstitutionQuoteContext::HereDocument,
+        )
+    }
+
     pub(in crate::executor) fn expand_heredoc_body(&self, body: &str) -> String {
         let quoted = body.starts_with(crate::lexer::QUOTED_HEREDOC_MARKER);
         let body = strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(body));
