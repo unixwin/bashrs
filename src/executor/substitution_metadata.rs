@@ -155,13 +155,11 @@ pub(in crate::executor) fn split_expanded_fragments(
     policy: SubstitutionSplitPolicy,
 ) -> Vec<String> {
     if policy == SubstitutionSplitPolicy::NoSplit {
-        return vec![String::from_utf8_lossy(
-            &fragments
-                .iter()
-                .flat_map(|fragment| fragment.bytes.iter().copied())
-                .collect::<Vec<_>>(),
-        )
-        .into_owned()];
+        let bytes = fragments
+            .iter()
+            .flat_map(|fragment| fragment.bytes.iter().copied())
+            .collect::<Vec<_>>();
+        return vec![bytes_to_shell_text(&bytes)];
     }
     let ifs = ifs.unwrap_or(" \t\n");
     let whitespace: Vec<u8> = ifs
@@ -531,6 +529,20 @@ mod tests {
         assert_eq!(
             split_expanded_fragments(&fragments, Some(":"), SubstitutionSplitPolicy::NoSplit),
             vec!["prepost"]
+        );
+    }
+
+    #[test]
+    fn no_split_materializes_invalid_bytes_as_raw_markers() {
+        let fragments = [ExpandedFragment {
+            bytes: vec![b'a', 0xff, b'b'],
+            quoted: true,
+            splittable: false,
+        }];
+        let fields = split_expanded_fragments(&fragments, None, SubstitutionSplitPolicy::NoSplit);
+        assert_eq!(
+            fields[0].chars().map(|ch| ch as u32).collect::<Vec<_>>(),
+            vec![b'a' as u32, RAW_BYTE_MARKER_BASE + 0xff, b'b' as u32],
         );
     }
 
