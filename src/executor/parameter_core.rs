@@ -8,6 +8,24 @@ impl Executor {
         self.expand_word_mut_with_context(word, SubstitutionQuoteContext::Unquoted)
     }
 
+    /// Typed boundary for substitution-bearing words; ordinary expansion keeps
+    /// the existing String API until its caller can preserve fragment provenance.
+    pub(in crate::executor) fn expand_word_mut_typed_with_context(
+        &mut self,
+        word: &str,
+        context: SubstitutionQuoteContext,
+    ) -> Option<ExpandedWord> {
+        if let Some(output) = self.expand_backtick_substitution_typed(
+            word,
+            matches!(context, SubstitutionQuoteContext::DoubleQuoted),
+        ) {
+            let mut expanded = ExpandedWord::default();
+            expanded.append_substitution(output);
+            return Some(expanded);
+        }
+        None
+    }
+
     pub(in crate::executor) fn expand_word_mut_with_context(
         &mut self,
         word: &str,
@@ -153,11 +171,8 @@ impl Executor {
         }
 
         if word.contains('`') {
-            if let Some(output) = self.expand_backtick_substitution_typed(
-                word,
-                matches!(context, SubstitutionQuoteContext::DoubleQuoted),
-            ) {
-                return output.text_lossy();
+            if let Some(expanded) = self.expand_word_mut_typed_with_context(word, context) {
+                return expanded.materialize_lossy_at_boundary();
             }
         }
 

@@ -1,5 +1,5 @@
 mod unit_tests {
-    use crate::executor::Executor;
+    use crate::executor::{Executor, SubstitutionQuoteContext};
     use crate::lexer::tokenize;
     use crate::parser::parse;
 
@@ -85,6 +85,17 @@ mod unit_tests {
             executor.expand_assignment_value("`echo -n \" ab \"`"),
             " ab "
         );
+    }
+
+    #[test]
+    fn mutable_word_typed_backtick_keeps_substitution_status() {
+        let mut executor = Executor::new();
+        let expanded = executor
+            .expand_word_mut_typed_with_context("`printf ok`", SubstitutionQuoteContext::Unquoted)
+            .expect("typed backtick word");
+        assert_eq!(expanded.status, Some(0));
+        assert_eq!(expanded.fragments.len(), 1);
+        assert_eq!(expanded.materialize_lossy_at_boundary(), "ok");
     }
 
     #[test]
