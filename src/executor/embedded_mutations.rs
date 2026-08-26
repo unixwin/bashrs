@@ -555,7 +555,7 @@ impl Executor {
         self.last_command_substitution_status.set(Some(status));
 
         Some(
-            String::from_utf8_lossy(&output)
+            bytes_to_shell_text(&output)
                 .trim_end_matches('\n')
                 .to_string(),
         )
