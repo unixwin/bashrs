@@ -77,6 +77,17 @@ fn unsigned_overflow_saturates_with_warning_only() {
 }
 
 #[test]
+fn invalid_prefixed_numbers_report_radix_diagnostics() {
+    let (status, stdout, stderr, _) = run(&["%d|%d|%d", "09", "08", "0x1g"]);
+
+    assert_eq!(status, EXECUTION_FAILURE);
+    assert_eq!(stdout, "0|0|1");
+    assert!(stderr.contains("09: invalid octal number"));
+    assert!(stderr.contains("08: invalid octal number"));
+    assert!(stderr.contains("0x1g: invalid hex number"));
+}
+
+#[test]
 fn prints_plain_and_escaped_format() {
     assert_eq!(run(&["a\\nb"]).1, "a\nb");
 }

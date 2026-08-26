@@ -84,6 +84,13 @@ pub(super) fn parse_f64(value: &str) -> ParsedNumber<f64> {
 pub(super) fn invalid_number_error(value: &str) -> String {
     if let Some(value) = value.strip_prefix("__rubash_printf_overflow__:") {
         format!("rubash: printf: warning: {value}: Numerical result out of range")
+    } else if value.starts_with("0x") || value.starts_with("0X") {
+        format!("rubash: printf: {value}: invalid hex number")
+    } else if value.len() > 1
+        && value.starts_with('0')
+        && value.as_bytes().iter().any(|byte| matches!(byte, b'8' | b'9'))
+    {
+        format!("rubash: printf: {value}: invalid octal number")
     } else {
         format!("rubash: printf: {value}: invalid number")
     }

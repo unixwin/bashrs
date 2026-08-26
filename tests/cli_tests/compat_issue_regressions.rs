@@ -236,11 +236,10 @@ fn printf_integer_conversion_keeps_valid_prefix_before_invalid_suffix() {
         "1:0:10\nstatus=1\n"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert_eq!(
-        stderr.matches("invalid number").count(),
-        3,
-        "stderr: {stderr}"
-    );
+    assert_eq!(stderr.lines().count(), 3, "stderr: {stderr}");
+    assert!(stderr.contains("1.2: invalid number"));
+    assert!(stderr.contains("08: invalid octal number"));
+    assert!(stderr.contains("10#12: invalid number"));
 }
 
 #[test]

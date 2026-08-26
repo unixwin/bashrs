@@ -2398,6 +2398,16 @@ Evidence:
 This closes the tested integer-prefix conversion primitive; other `printf`
 option, floating-point, and suite-level builtin differences remain open.
 
+### 2026-08-24 printf radix diagnostics
+
+A GNU `builtins/printf.def` differential probe showed that valid numeric prefixes and
+status already matched, but invalid `08`/`09` arguments must report `invalid octal
+number`, while invalid `0x1g` must report `invalid hex number`. The Rust owner
+`src/builtins/printf/number.rs` now classifies those diagnostics from the selected
+radix without changing prefix consumption or overflow warnings. The focused unit test
+`builtins::printf::tests::invalid_prefixed_numbers_report_radix_diagnostics` passes.
+
+
 ### 2026-08-17 command-substitution `tr` pipeline
 
 A bridge-free #20/#21 probe found that a normal pipeline translated input
