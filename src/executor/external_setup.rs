@@ -500,13 +500,13 @@ impl Executor {
         if rewritten.redirect_in.is_some()
             || rewritten.heredoc.is_some()
             || rewritten.here_string.is_some()
-            || self.virtual_fd_stdin_remaining(0).is_none()
+            || self.virtual_fd_stdin_remaining_bytes(0).is_none()
         {
             return Ok(());
         }
 
-        let input = self.virtual_fd_stdin_remaining(0).unwrap_or_default();
-        let path = self.write_process_substitution_temp(&input)?;
+        let input = self.virtual_fd_stdin_remaining_bytes(0).unwrap_or_default();
+        let path = self.write_process_substitution_temp_bytes(&input)?;
         let input_len = self.virtual_fd_stdin_len(0);
         self.fd_table.consume_all_text(0);
         self.env_vars.insert(fd_stdin_offset_key(0), input_len);
@@ -623,7 +623,7 @@ impl Executor {
         &mut self,
         output: &OutputProcessSubstitution,
     ) -> Result<(), ExecuteError> {
-        let input = fs::read_to_string(&output.path).unwrap_or_default();
+        let input = fs::read(&output.path).unwrap_or_default();
         let tokens = crate::lexer::tokenize(&output.source);
         let ast = crate::parser::parse(&tokens);
         let old_stdin = self.env_vars.get(FUNCTION_STDIN).cloned();
@@ -637,8 +637,15 @@ impl Executor {
         let old_fd0_offset = self.env_vars.get(&fd0_offset_key).cloned();
         let old_fd0_dynamic = self.env_vars.get(&fd0_dynamic_key).cloned();
         let old_fd0_closed = self.env_vars.get(&fd0_closed_key).cloned();
-        self.set_fd_input_text(0, input.clone(), false);
-        self.env_vars.insert(FUNCTION_STDIN.to_string(), input);
+        self.set_fd_input_bytes(0, input.clone(), false);
+        if std::str::from_utf8(&input).is_ok() {
+            self.env_vars.insert(
+                FUNCTION_STDIN.to_string(),
+                crate::executor::substitution_metadata::bytes_to_shell_text(&input),
+            );
+        } else {
+            self.env_vars.remove(FUNCTION_STDIN);
+        }
         self.env_vars
             .insert(FUNCTION_STDIN_OFFSET.to_string(), "0".to_string());
         let result = self.execute_ast(&ast);
@@ -704,21 +711,17 @@ impl Executor {
         Ok(path)
     }
 
+    pub(in crate::executor) fn virtual_fd_stdin_remaining_bytes(&self, fd: u32) -> Option<Vec<u8>> {
+        match self.fd_table.materialize_for_child().remove(&fd)?.read? {
+            MaterializedRead::Bytes(input) => Some(input),
+            MaterializedRead::InheritedProcessStdin => None,
+            _ => None,
+        }
+    }
+
     pub(in crate::executor) fn virtual_fd_stdin_remaining(&self, fd: u32) -> Option<String> {
-        if let Some(input) = self.fd_table.materialized_text_input(fd) {
-            return Some(input);
-        }
-        if self.fd_table.has_entry(fd)
-            && !matches!(
-                self.fd_table.read_endpoint(fd),
-                Some(FdReadEndpoint::InheritedProcessStdin)
-            )
-        {
-            return None;
-        }
-        // External child input must come from the FdTable. A missing entry is
-        // an unopened fd, not permission to resurrect the legacy env mirror.
-        None
+        self.virtual_fd_stdin_remaining_bytes(fd)
+            .map(|bytes| crate::executor::substitution_metadata::bytes_to_shell_text(&bytes))
     }
 
     fn virtual_fd_stdin_len(&self, fd: u32) -> String {

@@ -2,9 +2,21 @@ use super::*;
 
 impl Executor {
     pub(in crate::executor) fn set_fd_input_text(&mut self, fd: u32, input: String, dynamic: bool) {
+        self.set_fd_input_bytes(fd, input.into_bytes(), dynamic);
+    }
+
+    pub(in crate::executor) fn set_fd_input_bytes(
+        &mut self,
+        fd: u32,
+        input: Vec<u8>,
+        dynamic: bool,
+    ) {
         self.fd_table
-            .open_input(fd, FdReadEndpoint::text(&input), dynamic);
-        self.env_vars.insert(fd_stdin_key(fd), input);
+            .open_input(fd, FdReadEndpoint::bytes(input.clone()), dynamic);
+        self.env_vars.insert(
+            fd_stdin_key(fd),
+            crate::executor::substitution_metadata::bytes_to_shell_text(&input),
+        );
         self.env_vars
             .insert(fd_stdin_offset_key(fd), "0".to_string());
         if dynamic {

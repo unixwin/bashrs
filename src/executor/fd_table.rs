@@ -8,9 +8,11 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use crate::executor::substitution_metadata::bytes_to_shell_text;
+
 #[derive(Debug, Clone)]
 pub(crate) struct TextInput {
-    data: String,
+    data: Vec<u8>,
     offset: usize,
 }
 
@@ -49,7 +51,7 @@ pub(crate) struct MaterializedFd {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum MaterializedRead {
-    Text(String),
+    Bytes(Vec<u8>),
     InheritedProcessStdin,
     File(PathBuf),
     CoprocStdout(u32),
@@ -253,6 +255,17 @@ impl FdTable {
         char_limit: Option<usize>,
         exact: bool,
     ) -> Option<String> {
+        self.read_bytes(fd, delimiter as u8, char_limit, exact)
+            .map(|bytes| bytes_to_shell_text(&bytes))
+    }
+
+    pub(crate) fn read_bytes(
+        &mut self,
+        fd: u32,
+        delimiter: u8,
+        char_limit: Option<usize>,
+        exact: bool,
+    ) -> Option<Vec<u8>> {
         let endpoint = self.entries.get(&fd)?.read.clone()?;
         let input = match endpoint {
             FdReadEndpoint::Text(input) | FdReadEndpoint::ProcessSubstitution(input) => input,
@@ -263,37 +276,50 @@ impl FdTable {
             return None;
         }
         if char_limit == Some(0) {
-            return Some(String::new());
+            return Some(Vec::new());
         }
         let slice = &input.data[input.offset..];
-        let mut output = String::new();
         let mut consumed = 0;
-        for (index, ch) in slice.char_indices() {
-            if !exact && ch == delimiter {
-                consumed = index + ch.len_utf8();
+        let mut chars = 0;
+        for (index, byte) in slice.iter().copied().enumerate() {
+            if !exact && byte == delimiter {
+                consumed = index + 1;
                 break;
             }
-            output.push(ch);
-            consumed = index + ch.len_utf8();
-            if char_limit.map_or(false, |limit| output.chars().count() >= limit) {
+            if byte & 0xc0 != 0x80 {
+                chars += 1;
+            }
+            consumed = index + 1;
+            if char_limit.is_some_and(|limit| chars >= limit) {
                 break;
             }
         }
         if consumed == 0 {
             return None;
         }
+        let result_len = if !exact && slice[consumed - 1] == delimiter {
+            consumed - 1
+        } else {
+            consumed
+        };
+        let result = slice[..result_len].to_vec();
         input.offset += consumed;
-        Some(output)
+        Some(result)
     }
 
     pub(crate) fn read_all_text(&mut self, fd: u32) -> Option<String> {
+        self.read_all_bytes(fd)
+            .map(|bytes| bytes_to_shell_text(&bytes))
+    }
+
+    pub(crate) fn read_all_bytes(&mut self, fd: u32) -> Option<Vec<u8>> {
         let endpoint = self.entries.get(&fd)?.read.clone()?;
         let input = match endpoint {
             FdReadEndpoint::Text(input) | FdReadEndpoint::ProcessSubstitution(input) => input,
             _ => return None,
         };
         let mut input = input.borrow_mut();
-        let result = input.data.get(input.offset..)?.to_string();
+        let result = input.data.get(input.offset..)?.to_vec();
         input.offset = input.data.len();
         Some(result)
     }
@@ -309,7 +335,7 @@ impl FdTable {
         Some(input.offset)
     }
 
-    pub(crate) fn input_snapshot(&self, fd: u32) -> Option<(String, usize)> {
+    pub(crate) fn input_snapshot_bytes(&self, fd: u32) -> Option<(Vec<u8>, usize)> {
         let endpoint = self.entries.get(&fd)?.read.as_ref()?;
         let input = match endpoint {
             FdReadEndpoint::Text(input) | FdReadEndpoint::ProcessSubstitution(input) => input,
@@ -317,6 +343,11 @@ impl FdTable {
         };
         let input = input.borrow();
         Some((input.data.clone(), input.offset))
+    }
+
+    pub(crate) fn input_snapshot(&self, fd: u32) -> Option<(String, usize)> {
+        self.input_snapshot_bytes(fd)
+            .map(|(bytes, offset)| (bytes_to_shell_text(&bytes), offset))
     }
 
     pub(crate) fn output_endpoint(&self, fd: u32) -> Option<FdWriteEndpoint> {
@@ -331,7 +362,7 @@ impl FdTable {
                 let read = entry.read.as_ref().map(|endpoint| match endpoint {
                     FdReadEndpoint::Text(input) | FdReadEndpoint::ProcessSubstitution(input) => {
                         let input = input.borrow();
-                        MaterializedRead::Text(input.data[input.offset..].to_string())
+                        MaterializedRead::Bytes(input.data[input.offset..].to_vec())
                     }
                     FdReadEndpoint::File(path) => MaterializedRead::File(path.clone()),
                     FdReadEndpoint::InheritedProcessStdin => {
@@ -358,7 +389,7 @@ impl FdTable {
 
     pub(crate) fn materialized_text_input(&self, fd: u32) -> Option<String> {
         match self.materialize_for_child().remove(&fd)?.read? {
-            MaterializedRead::Text(input) => Some(input),
+            MaterializedRead::Bytes(input) => Some(bytes_to_shell_text(&input)),
             _ => None,
         }
     }
@@ -378,16 +409,20 @@ impl FdTable {
 }
 
 impl FdReadEndpoint {
-    pub(crate) fn text(input: impl Into<String>) -> Self {
+    pub(crate) fn bytes(input: Vec<u8>) -> Self {
         Self::Text(Rc::new(RefCell::new(TextInput {
-            data: input.into(),
+            data: input,
             offset: 0,
         })))
     }
 
+    pub(crate) fn text(input: impl Into<String>) -> Self {
+        Self::bytes(input.into().into_bytes())
+    }
+
     pub(crate) fn process_substitution(input: impl Into<String>) -> Self {
         Self::ProcessSubstitution(Rc::new(RefCell::new(TextInput {
-            data: input.into(),
+            data: input.into().into_bytes(),
             offset: 0,
         })))
     }
@@ -434,7 +469,7 @@ mod tests {
         let materialized = table.materialize_for_child();
         assert_eq!(
             materialized[&10].read,
-            Some(MaterializedRead::Text("value\n".into()))
+            Some(MaterializedRead::Bytes(b"value\n".to_vec()))
         );
         assert_eq!(table.input_snapshot(10).unwrap().1, 0);
     }
