@@ -24,6 +24,21 @@ fn run(args: &[&str]) -> (i32, String, String, HashMap<String, String>) {
     )
 }
 
+fn run_bytes(args: &[&str]) -> (i32, Vec<u8>, Vec<u8>) {
+    let mut env_vars = HashMap::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let status = execute_with_io(
+        args.iter().copied(),
+        &mut env_vars,
+        &mut stdout,
+        &mut stderr,
+    )
+    .unwrap();
+
+    (status, stdout, stderr)
+}
+
 #[test]
 fn integer_overflow_saturates_and_warns_without_failure() {
     let (status, stdout, stderr, _) = run(&[
@@ -268,6 +283,13 @@ fn percent_b_decodes_numeric_escapes() {
         run(&["%b", "\\01017 \\1017 \\x417 \\u0041"]).1,
         "A7 A7 A7 A"
     );
+}
+
+#[test]
+fn percent_b_octal_escapes_wrap_to_raw_bytes() {
+    let (_status, stdout, _stderr) = run_bytes(&["%b|%b|%b", "\\400", "\\777", "\\377"]);
+
+    assert_eq!(stdout, b"\0|\xff|\xff");
 }
 
 #[test]

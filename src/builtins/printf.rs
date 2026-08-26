@@ -165,7 +165,7 @@ where
     if let Some(name) = output_var {
         assign_printf_output(env_vars, name, rendered.output, variables.as_deref_mut());
     } else {
-        stdout.write_all(rendered.output.as_bytes())?;
+        stdout.write_all(&escape::raw_bytes(&rendered.output))?;
     }
 
     for error in rendered.errors {

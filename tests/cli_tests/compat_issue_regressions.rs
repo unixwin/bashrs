@@ -243,6 +243,19 @@ fn printf_integer_conversion_keeps_valid_prefix_before_invalid_suffix() {
 }
 
 #[test]
+fn printf_b_emits_octals_as_raw_bytes() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("printf '%b|%b|%b' '\\400' '\\777' '\\377'")
+        .output()
+        .expect("run printf raw octal probe");
+
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"\0|\xff|\xff");
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
 fn printf_q_uses_ansi_c_quotes_for_control_bytes() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

@@ -2950,3 +2950,15 @@ Evidence:
 - GNU Bash and Rubash agree on printable and control `%q` forms.
 
 This is a formatting-boundary fix corresponding to Bash's printf `%q` conversion, not a generic shell quote-removal change.
+
+## 2026-08-25 printf percent-b octal byte semantics
+
+GNU `builtins/printf.def` treats `%b` octal escapes as raw bytes: `\400` wraps to `0x00`, while `\777` and `\377` emit `0xff`. Rubash previously represented those values as Unicode scalar values and consequently wrote UTF-8 (`c4 80`/`c7 bf`). `src/builtins/printf/escape.rs` now uses an explicit private raw-byte marker during formatting and decodes it at the `Vec<u8>` stdout boundary in `src/builtins/printf.rs`; Unicode `\u` and `\U` escapes retain codepoint semantics.
+
+Evidence:
+
+- GNU Bash and Rubash byte probes agree for `\400`, `\777`, `\377`, NUL, and `\c` termination.
+- `cargo test --lib printf -- --test-threads=1`: 37/37.
+- `cargo test --test cli_tests printf_b_emits_octals_as_raw_bytes -- --test-threads=1`: focused differential passes.
+
+This is a raw-byte output boundary corresponding to Bash `printf %b`, not a global UTF-8 conversion change.

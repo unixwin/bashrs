@@ -15,9 +15,9 @@ where
         Some('x') => format_escape_codepoint(read_escape_digits(chars, 16, 2), "\\x"),
         Some('u') => format_escape_codepoint(read_escape_digits(chars, 16, 4), "\\u"),
         Some('U') => format_escape_codepoint(read_escape_digits(chars, 16, 8), "\\U"),
-        Some('0') => format_escape_codepoint(read_escape_digits(chars, 8, 3).or(Some(0)), ""),
+        Some('0') => format_escape_byte(read_escape_digits(chars, 8, 3).or(Some(0)), ""),
         Some(octal @ '1'..='7') => {
-            format_escape_codepoint(read_prefixed_escape_digits(chars, octal, 8, 3), "")
+            format_escape_byte(read_prefixed_escape_digits(chars, octal, 8, 3), "")
         }
         Some(other) => format!("\\{other}"),
         None => "\\".to_string(),
@@ -29,6 +29,36 @@ fn format_escape_codepoint(value: Option<u32>, fallback: &str) -> String {
         .and_then(char::from_u32)
         .map(|ch| ch.to_string())
         .unwrap_or_else(|| fallback.to_string())
+}
+
+const RAW_BYTE_MARKER_BASE: u32 = 0xe000;
+
+fn format_escape_byte(value: Option<u32>, fallback: &str) -> String {
+    value
+        .map(|byte| encode_raw_byte(byte as u8).to_string())
+        .unwrap_or_else(|| fallback.to_string())
+}
+
+fn encode_raw_byte(byte: u8) -> char {
+    if byte.is_ascii() {
+        char::from(byte)
+    } else {
+        char::from_u32(RAW_BYTE_MARKER_BASE + byte as u32).expect("raw byte marker is valid")
+    }
+}
+
+pub(super) fn raw_bytes(value: &str) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for ch in value.chars() {
+        let codepoint = ch as u32;
+        if (RAW_BYTE_MARKER_BASE..=RAW_BYTE_MARKER_BASE + u8::MAX as u32).contains(&codepoint) {
+            bytes.push((codepoint - RAW_BYTE_MARKER_BASE) as u8);
+        } else {
+            let mut encoded = [0; 4];
+            bytes.extend_from_slice(ch.encode_utf8(&mut encoded).as_bytes());
+        }
+    }
+    bytes
 }
 
 pub(super) fn expand_percent_b(value: &str) -> (String, bool) {
@@ -67,11 +97,11 @@ pub(super) fn expand_percent_b(value: &str) -> (String, bool) {
             }
             Some('0') => {
                 let value = read_escape_digits(&mut chars, 8, 3).or(Some(0));
-                push_escape_codepoint(&mut output, value, "");
+                push_escape_byte(&mut output, value, "");
             }
             Some(octal @ '1'..='7') => {
                 let value = read_prefixed_escape_digits(&mut chars, octal, 8, 3);
-                push_escape_codepoint(&mut output, value, "");
+                push_escape_byte(&mut output, value, "");
             }
             Some(other) => {
                 // GNU printf preserves the backslash for unrecognized %b escapes.
@@ -133,6 +163,13 @@ where
 fn push_escape_codepoint(output: &mut String, value: Option<u32>, fallback: &str) {
     match value.and_then(char::from_u32) {
         Some(ch) => output.push(ch),
+        None => output.push_str(fallback),
+    }
+}
+
+fn push_escape_byte(output: &mut String, value: Option<u32>, fallback: &str) {
+    match value {
+        Some(byte) => output.push(encode_raw_byte(byte as u8)),
         None => output.push_str(fallback),
     }
 }
