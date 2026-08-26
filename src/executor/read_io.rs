@@ -41,7 +41,7 @@ impl Executor {
         if read_fd.is_none() {
             if let Some(heredoc) = &cmd.heredoc {
                 return Some(trim_read_input(
-                    self.expand_heredoc_body(heredoc),
+                    self.expand_heredoc_body_mut(heredoc),
                     delimiter,
                     char_limit,
                     exact_char_limit,
