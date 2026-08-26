@@ -363,7 +363,7 @@ impl Executor {
             self.stdout_capture = Some(Vec::new());
             let result = self.execute_ast(&ast);
             let status = command_substitution_status(result, self.exit_code);
-            let output = String::from_utf8_lossy(&self.stdout_capture.take().unwrap_or_default())
+            let output = bytes_to_shell_text(&self.stdout_capture.take().unwrap_or_default())
                 .trim_end_matches('\n')
                 .to_string();
             self.stdout_capture = saved_capture;
