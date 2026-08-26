@@ -63,6 +63,7 @@ Repeated passing gates:
 - command_substitution heredoc pipeline/sequential focused tests: passed; mutable callers cover production paths, shell_options immutable fallback remains the sole legacy owner
 - payload decoder contract tests: 3 passed / 0 failed, covering raw C0, escaped prefix, and malformed literals
 - assignment mixed substitution audit: ExpandedWord owns prefix/substitution/suffix ordering and materializes only at the assignment String boundary; remaining decoder is non-mixed fallback
+- command preparation audit: expansion and field splitting precede pathname expansion; final command-word materialization restores markers and decodes payloads only after glob matching; assignment C0/status/quoted-space focused probes all pass
 
 Known unrelated command-substitution slice failure: bashdb_info_files_reports_source_files_without_command_substitution_error, a fixed bashdb path assertion.
 
