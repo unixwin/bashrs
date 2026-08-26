@@ -160,7 +160,57 @@ impl Executor {
         source: &str,
         context: SubstitutionQuoteContext,
     ) -> Option<SubstitutionOutput> {
-        let output = self.command_substitution_heredoc_output(source)?;
+        if !source.contains("<<") {
+            return None;
+        }
+        let closed_by_paren = source.contains('\x1c');
+        let source = source.replace('\x1c', "");
+        let tokens = crate::lexer::tokenize(&source);
+        let ast = crate::parser::parse(&tokens);
+        let first = ast.commands.first()?;
+        let (first, piped_next) = if let Some(pipeline_command) = &first.pipeline_command {
+            (
+                pipeline_command.stages.first()?,
+                pipeline_command.stages.get(1),
+            )
+        } else {
+            (first, ast.commands.get(1))
+        };
+        if first.words.first().map(String::as_str) != Some("cat") {
+            return None;
+        }
+        if closed_by_paren {
+            self.report_command_substitution_heredoc_warning(&source, first);
+        }
+        let mut output = if first.pipe.is_none() && ast.commands.len() > 1 {
+            let mut output = String::new();
+            for command in &ast.commands {
+                if command.words.first().map(String::as_str) != Some("cat")
+                    || command.pipe.is_some()
+                {
+                    return None;
+                }
+                output.push_str(&self.stdin_string_for_command_mut(command)?);
+            }
+            output
+        } else {
+            let mut output = self.stdin_string_for_command_mut(first)?;
+            if first.pipe.is_some() {
+                let next = piped_next?;
+                match next.words.as_slice() {
+                    [cmd, option] if cmd == "sort" && option == "-u" => {
+                        let mut lines = output.lines().map(str::to_string).collect::<Vec<_>>();
+                        lines.sort();
+                        lines.dedup();
+                        output = lines.join("\n");
+                        output.push('\n');
+                    }
+                    _ => return None,
+                }
+            }
+            output
+        };
+        output = output.trim_end_matches('\n').to_string();
         self.last_command_substitution_status.set(Some(0));
         Some(SubstitutionOutput::readback(
             output.into_bytes(),
