@@ -34,11 +34,7 @@ impl Executor {
             .replace('\x1f', "$")
             .replace('\x1a', "`")
             .replace('\x14', "\\");
-        if matches!(context, SubstitutionQuoteContext::HereDocument) {
-            restored.replace('\x15', "\\")
-        } else {
-            restored
-        }
+        restored
     }
 
     fn expand_embedded_parameters_ordered_mut(
@@ -110,7 +106,12 @@ impl Executor {
                     let expanded = self
                         .expand_command_substitution_mut_typed_with_context(&source, context)
                         .text_lossy();
-                    output.push_str(&protect_command_substitution_output(&expanded));
+                    let protected = protect_command_substitution_output(&expanded);
+                    if matches!(context, SubstitutionQuoteContext::HereDocument) {
+                        output.push_str(&protected.replace('\x15', "\x14"));
+                    } else {
+                        output.push_str(&protected);
+                    }
                 } else {
                     output.push('`');
                     output.push_str(&source);
