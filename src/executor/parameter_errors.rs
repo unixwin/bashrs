@@ -1,4 +1,5 @@
 use super::*;
+use crate::executor::parameter_core::word_contains_current_shell_command_substitution;
 
 impl Executor {
     pub(in crate::executor) fn parameter_assignment_error(
@@ -175,7 +176,9 @@ impl Executor {
             // `${ command; }` is not Bash command substitution. Rubash also
             // supports the distinct `${| command; }` current-shell form, so
             // reject only the whitespace-led form as a bad substitution.
-            if inner.chars().next().is_some_and(char::is_whitespace) && !inner.contains("${|") {
+            if inner.chars().next().is_some_and(char::is_whitespace)
+                && !word_contains_current_shell_command_substitution(word)
+            {
                 return Some((format!("${{{inner}}}"), "bad substitution".to_string(), 1));
             }
             if let Some((name, message, require_non_empty)) = parse_parameter_error_operator(inner)
