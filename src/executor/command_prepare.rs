@@ -499,7 +499,8 @@ impl Executor {
             }
         }
         if raw_word_is_quoted(raw) {
-            if let Some(expanded) = self.expand_backtick_substitution(word) {
+            if let Some(output) = self.expand_backtick_substitution_typed(word, true) {
+                let expanded = output.text_lossy();
                 if expanded.is_empty() && self.removes_unquoted_null_word(cmd, index) {
                     return Vec::new();
                 }
