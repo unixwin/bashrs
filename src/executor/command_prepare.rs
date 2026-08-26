@@ -1007,4 +1007,12 @@ mod command_word_materialization_tests {
             "plain\\word"
         );
     }
+
+    #[test]
+    fn materializes_pathname_marker_before_payload_decode() {
+        assert_eq!(
+            materialize_expanded_command_word("prefix\x15__RUBASH_CSB1_41;suffix"),
+            "prefix\\Asuffix"
+        );
+    }
 }
