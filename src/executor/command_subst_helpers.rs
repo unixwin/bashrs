@@ -1,3 +1,5 @@
+use crate::executor::substitution_metadata::bytes_to_shell_text;
+
 pub(in crate::executor) fn collect_braced_parameter_name(
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
 ) -> String {
@@ -142,7 +144,7 @@ pub(super) fn unescape_remaining_shell_escapes(value: &str) -> String {
 pub(in crate::executor) fn echo_command_substitution_output(args: &[String]) -> String {
     let mut bytes = echo_raw_output_bytes(args);
     bytes.retain(|byte| *byte != 0);
-    String::from_utf8_lossy(&bytes)
+    bytes_to_shell_text(&bytes)
         .trim_end_matches('\n')
         .to_string()
 }
