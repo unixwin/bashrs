@@ -130,8 +130,7 @@ impl Executor {
             // GNU read receives raw bytes from redir.c-opened inputs. Keep
             // invalid UTF-8 inside the RAW_BYTE_MARKER carrier instead of
             // dropping the whole record at this boundary.
-            let Ok(input) =
-                crate::executor::substitution_metadata::read_shell_input_file(path)
+            let Ok(input) = crate::executor::substitution_metadata::read_shell_input_file(path)
             else {
                 return None;
             };
@@ -296,7 +295,10 @@ impl Executor {
         }
 
         match result {
-            Ok(()) | Err(ExecuteError::ExitCode(_)) | Err(ExecuteError::ExpansionFailure(_)) | Err(ExecuteError::Return(_)) => Some(output),
+            Ok(())
+            | Err(ExecuteError::ExitCode(_))
+            | Err(ExecuteError::ExpansionFailure(_))
+            | Err(ExecuteError::Return(_)) => Some(output),
             Err(_) => None,
         }
     }
