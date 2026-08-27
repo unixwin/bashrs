@@ -94,12 +94,28 @@ impl Executor {
         if empty_quoted_operand_has_operator(&expression) {
             return None;
         }
+        // Save a snapshot to detect variable changes from arithmetic side effects
+        let pre_eval_vars: HashMap<String, String> = self.env_vars.clone();
         let value = eval_mutable_arith_value_with_random(
             &expression,
             &mut self.env_vars,
             Some(&self.random_state),
         );
         self.report_arithmetic_readonly_error();
+        
+        // Sync any variable changes from env_vars to shell_state.variables
+        // so that subsequent parameter expansions see arithmetic side effects
+        // (e.g., ++i in array subscripts like a[++i]=value).
+        for (name, new_value) in &self.env_vars {
+            if pre_eval_vars.get(name) != Some(new_value) {
+                if let Some(variable) = self.shell_state.variables.get_mut(name) {
+                    variable.value = crate::shell::ShellValue::Scalar(new_value.clone());
+                } else if !name.starts_with("__RUBASH_") {
+                    let _ = self.shell_state.variables.set_scalar(name, new_value);
+                }
+            }
+        }
+        
         value
     }
 
