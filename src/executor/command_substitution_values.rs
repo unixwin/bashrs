@@ -124,10 +124,10 @@ impl Executor {
                     .stderr(Stdio::null())
                     .spawn()
                     .ok()?;
-                child.stdin.as_mut()?.write_all(input.as_bytes()).ok()?;
+                child.stdin.as_mut()?.write_all(&crate::executor::substitution_metadata::shell_text_to_raw_bytes(input)).ok()?;
                 let output = child.wait_with_output().ok()?;
                 Some((
-                    String::from_utf8_lossy(&output.stdout)
+                    crate::executor::substitution_metadata::bytes_to_shell_text(&output.stdout)
                         .trim_end_matches('\n')
                         .to_string(),
                     output.status.code().unwrap_or(1),
@@ -182,7 +182,7 @@ impl Executor {
         }
         self.last_command_substitution_status.set(Some(status));
         Some(
-            String::from_utf8_lossy(&stdout)
+            crate::executor::substitution_metadata::bytes_to_shell_text(&stdout)
                 .trim_end_matches('\n')
                 .to_string(),
         )

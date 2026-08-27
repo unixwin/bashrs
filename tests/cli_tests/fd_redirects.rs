@@ -22,6 +22,19 @@ fn c_external_cat_reads_raw_bytes_from_persistent_fd() {
 }
 
 #[test]
+fn c_filtered_command_substitution_preserves_raw_bytes() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("x=$(printf 'x\\377\\n' | sed -n '1p'); printf '%s\\n' \"$x\"")
+        .output()
+        .expect("run filtered command substitution probe");
+
+    assert!(output.status.success());
+    assert_eq!(output.stdout, [b'x', 0xff, b'\n']);
+    assert_eq!(output.stderr, b"");
+}
+
+#[test]
 fn c_external_command_redirects_stdout_to_stderr_fd() {
     let bin_dir = external_fd_copy_bin_dir();
     let script_path = helper_path(&bin_dir, "emitout");
