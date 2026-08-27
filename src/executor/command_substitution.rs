@@ -501,6 +501,7 @@ impl Executor {
             arithmetic_expansion_error: Cell::new(false),
             arithmetic_nonfatal_error: Cell::new(false),
             arithmetic_fatal_error: Cell::new(false),
+            inside_compound_condition: Cell::new(false),
             background_children: HashMap::new(),
             background_jobs: HashMap::new(),
             background_job_order: Vec::new(),

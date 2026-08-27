@@ -418,6 +418,10 @@ pub struct Executor {
     arithmetic_expansion_error: Cell<bool>,
     arithmetic_nonfatal_error: Cell<bool>,
     arithmetic_fatal_error: Cell<bool>,
+    /// True while an if/elif condition list is executing: word-expansion
+    /// failures must pierce function frames so the enclosing compound
+    /// command can abandon itself entirely (GNU probe f4).
+    pub(crate) inside_compound_condition: Cell<bool>,
     last_command_substitution_status: Cell<Option<i32>>,
     last_command_substitution_parse_error: Cell<bool>,
     stdout_capture: Option<Vec<u8>>,

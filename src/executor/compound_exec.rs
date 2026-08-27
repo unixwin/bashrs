@@ -624,7 +624,9 @@ impl Executor {
         let ast = Ast {
             commands: condition.to_vec(),
         };
+        let saved_condition = self.inside_compound_condition.replace(true);
         let result = self.with_errexit_suppressed(|executor| executor.execute_ast(&ast));
+        self.inside_compound_condition.set(saved_condition);
         match result {
             Err(ExecuteError::ExpansionFailure(code)) => {
                 self.exit_code = code;
