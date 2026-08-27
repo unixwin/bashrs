@@ -32,8 +32,8 @@ impl Executor {
         result?;
 
         Ok((
-            String::from_utf8_lossy(&output).into_owned(),
-            String::from_utf8_lossy(&stderr).into_owned(),
+            crate::executor::substitution_metadata::bytes_to_shell_text(&output),
+            crate::executor::substitution_metadata::bytes_to_shell_text(&stderr),
             self.last_exit_code(),
         ))
     }
@@ -92,8 +92,8 @@ impl Executor {
         };
 
         Ok((
-            String::from_utf8_lossy(&output).into_owned(),
-            String::from_utf8_lossy(&stderr).into_owned(),
+            crate::executor::substitution_metadata::bytes_to_shell_text(&output),
+            crate::executor::substitution_metadata::bytes_to_shell_text(&stderr),
             status,
         ))
     }
@@ -153,8 +153,8 @@ impl Executor {
             Err(error) => return Err(error),
         };
         Ok(Some((
-            String::from_utf8_lossy(&output).into_owned(),
-            String::from_utf8_lossy(&stderr).into_owned(),
+            crate::executor::substitution_metadata::bytes_to_shell_text(&output),
+            crate::executor::substitution_metadata::bytes_to_shell_text(&stderr),
             status,
         )))
     }
@@ -202,8 +202,8 @@ impl Executor {
             Err(error) => return Err(error),
         };
         Ok(Some((
-            String::from_utf8_lossy(&output).into_owned(),
-            String::from_utf8_lossy(&stderr).into_owned(),
+            crate::executor::substitution_metadata::bytes_to_shell_text(&output),
+            crate::executor::substitution_metadata::bytes_to_shell_text(&stderr),
             status,
         )))
     }
@@ -232,8 +232,8 @@ impl Executor {
         };
         if let Some(output) = self.invoke_host_external_command(command) {
             return Ok(Some((
-                String::from_utf8_lossy(&output.stdout).into_owned(),
-                String::from_utf8_lossy(&output.stderr).into_owned(),
+                crate::executor::substitution_metadata::bytes_to_shell_text(&output.stdout),
+                crate::executor::substitution_metadata::bytes_to_shell_text(&output.stderr),
                 output.status,
             )));
         }
@@ -287,13 +287,13 @@ impl Executor {
 
         let mut child = process.spawn()?;
         if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(input.as_bytes())?;
+            stdin.write_all(&crate::executor::substitution_metadata::shell_text_to_raw_bytes(&input))?;
         }
         let output = child.wait_with_output()?;
 
         Ok(Some((
-            String::from_utf8_lossy(&output.stdout).into_owned(),
-            String::from_utf8_lossy(&output.stderr).into_owned(),
+            crate::executor::substitution_metadata::bytes_to_shell_text(&output.stdout),
+            crate::executor::substitution_metadata::bytes_to_shell_text(&output.stderr),
             output.status.code().unwrap_or(1),
         )))
     }
@@ -303,21 +303,26 @@ impl Executor {
         command: &CommandNode,
         output: &str,
     ) -> Result<(), ExecuteError> {
-        if let Some(redirect) = &command.redirect_out {
+        // Final pipeline output is a byte boundary: decode owner-tagged
+        // raw-byte markers exactly once before reaching files, captures,
+        // or stdout.
+        let payload =
+            crate::executor::substitution_metadata::shell_text_to_raw_bytes(output);
+if let Some(redirect) = &command.redirect_out {
             let target = self.expand_word(&redirect.target);
             let mut file = self.create_redirect_output(&target, redirect.clobber)?;
-            file.write_all(output.as_bytes())?;
+            file.write_all(&payload)?;
         } else if let Some(redirect) = &command.append {
             let target = self.expand_word(&redirect.target);
             let mut file = OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(shell_path_to_windows(&target, &self.env_vars))?;
-            file.write_all(output.as_bytes())?;
+            file.write_all(&payload)?;
         } else if let Some(capture) = &mut self.stdout_capture {
-            capture.write_all(output.as_bytes())?;
+            capture.write_all(&payload)?;
         } else {
-            self.write_default_stdout(output.as_bytes())?;
+            self.write_default_stdout(&payload)?;
         }
         Ok(())
     }

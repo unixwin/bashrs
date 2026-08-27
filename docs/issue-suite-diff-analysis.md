@@ -66,6 +66,47 @@ single-quoted word and remains open. The raw run is retained at
 `target/issue-suites/results/current-cli-full-r2.out`; this classification is not
 proof that every bashdb runtime failure is a Rubash semantic defect.
 
+## Pipeline Raw-Byte Transport Slice (2026-08-24)
+
+Objective: make `printf '%s' "$x" | od -An -tx1` byte-exact after a read
+record captured raw bytes, closing probes p2/d3/p3/u1/u2/mixed against
+GNU Bash 5.2.37.
+
+Root cause: in-process pipeline stages exchanged capture buffers converted
+with `String::from_utf8_lossy`, and child stdin/final output writers fed
+`.as_bytes()` of those Strings. printf's internal byte buffer carries real
+raw bytes (marker-decoded by its raw_bytes writer), so the stage boundary
+corrupted them to U+FFFD before `od` ever saw the stream.
+
+Fix: both transport directions now honor the owner-tagged codec contract.
+- Producers encode exactly once with `substitution_metadata::bytes_to_shell_text`:
+  printf/trap/builtin/function/compound/lastpipe capture sites, external
+  child stdout/stderr, host-invoked externals, and cat file reads inside
+  `pipeline_exec.rs` / `pipeline_stages.rs`.
+- Consumers decode exactly once with the new inverse helper
+  `shell_text_to_raw_bytes`: child stdin feeds, final `write_pipeline_output`
+  payload, and stderr emission sinks.
+
+Result: all seven byte probes match GNU byte-for-byte (p2, d3, p3, u1, u2,
+mixed, v1). Artifacts updated under
+`target/issue-suites/results/read-raw-byte-inputs-1/*.pipeline-fix.rubash.out`.
+
+Gates: cargo check clean; unit suite includes new
+shell_text roundtrip test (lib substitution_metadata green);
+executor_tests full run shows the identical pre-existing failure set as
+stashed HEAD (39 failures on both sides; +2 passed are the new regressions)
+-- note HEAD itself is not lib-green:
+`executor::arithmetic::fatality_tests::invalid_literals_are_fatal_arithmetic_expansion_errors`
+fails at 08c2aac3 without local changes and belongs to the arithmetic
+owner. cli slices all pass (read 31, heredoc 12, printf 14, mapfile 3,
+pipeline 32, c_command 62, coproc 17, trap 9); upstream run-redir and
+run-vredir remain 100%.
+
+Newly classified out-of-scope defect found while probing `$()` captures:
+an external child spawned for `$(cat file)` cannot open even absolute
+Windows-style paths while `head -c` and pipeline-stage children work
+(probe c1/c5 vs c6/c3). This is an external-child setup/path family gap,
+not byte transport; recorded here as the next gate for that family.
 ## Read Input Raw-Byte Carrier Slice (2026-08-24)
 
 Handoff objective: close the read raw-byte record gap
@@ -100,13 +141,9 @@ cli_tests read (31), heredoc (12), mapfile (3); upstream run-redir and
 run-vredir both 1/1 exit 0. semantic map validated after the evidence
 update.
 
-Remaining boundaries for this family (each needs its own small commit):
-- pipeline stage seam: `pipeline_stages.rs` returns stage capture as
-  lossy String, so builtin->external `printf | od` still prints U+FFFD;
-  probes p2/d3/u1/u2/mixed od parity is blocked on that seam
-  (`pipeline_exec.rs`/`pipeline_stages.rs` String coupling).
-- command-substitution scalar assignment still stores `from_utf8_lossy`
-  output (`p3`: expected `41 42 ff 43 44`).
+2026-08-24 follow-up: the pipeline transport seam is also closed; see the
+newer entry below. The command-substitution assignment shape (`p3`) now
+matches GNU through the pipeline replay as well.
 - coproc read record conversion (`read_io.rs` coproc stdout lossy).
 - echo/other builtin write paths do not decode marker payloads yet.
 - external child env/stdin mirrors (`external_setup.rs`) remain text.

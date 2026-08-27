@@ -142,6 +142,26 @@ pub(crate) fn read_shell_input_file(
     let bytes = std::fs::read(path)?;
     Ok(bytes_to_shell_text(&bytes))
 }
+/// Decode owner-tagged raw-byte markers back into real bytes.
+///
+/// This is the exact-once consumer boundary for byte sinks such as
+/// child-process stdin writers and final pipeline output materialization.
+/// Characters outside the RAW_BYTE_MARKER range keep their UTF-8 encoding.
+pub(crate) fn shell_text_to_raw_bytes(text: &str) -> Vec<u8> {
+    let mut output = Vec::new();
+    for ch in text.chars() {
+        let codepoint = ch as u32;
+        if (RAW_BYTE_MARKER_BASE..=RAW_BYTE_MARKER_BASE + u8::MAX as u32)
+            .contains(&codepoint)
+        {
+            output.push((codepoint - RAW_BYTE_MARKER_BASE) as u8);
+        } else {
+            let mut encoded = [0; 4];
+            output.extend_from_slice(ch.encode_utf8(&mut encoded).as_bytes());
+        }
+    }
+    output
+}
 pub(crate) fn bytes_to_shell_text(bytes: &[u8]) -> String {
     let mut output = String::new();
     let mut remaining = bytes;
@@ -602,5 +622,18 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn shell_text_roundtrip_preserves_raw_bytes_and_valid_utf8() {
+        let bytes = vec![b'a', 0xff, b'\n', 0xe4, 0xbd, 0xa0];
+        let encoded = bytes_to_shell_text(&bytes);
+        assert_eq!(shell_text_to_raw_bytes(&encoded), bytes);
+        // Valid UTF-8 passes through without marker encoding.
+        let text = "plain \u{4f60} text";
+        assert_eq!(
+            String::from_utf8(shell_text_to_raw_bytes(text)).unwrap(),
+            text.to_string()
+        );
     }
 }

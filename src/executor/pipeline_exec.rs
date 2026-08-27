@@ -374,7 +374,7 @@ impl Executor {
             {
                 next_input.push_str(&next_stderr);
             } else if !next_stderr.is_empty() {
-                std::io::stderr().write_all(next_stderr.as_bytes())?;
+                std::io::stderr().write_all(&crate::executor::substitution_metadata::shell_text_to_raw_bytes(&next_stderr))?;
             }
             input = next_input;
             statuses.push(next_status);
@@ -722,7 +722,7 @@ impl Executor {
         if let Some(mut stdin) = processes[0].stdin.take() {
             let input = self.initial_pipeline_input(commands[0]);
             if !input.is_empty() {
-                stdin.write_all(input.as_bytes())?;
+                stdin.write_all(&crate::executor::substitution_metadata::shell_text_to_raw_bytes(&input))?;
             }
         }
 
@@ -730,8 +730,8 @@ impl Executor {
         let last = processes.pop().expect("pipeline has at least two stages");
         let output = last.wait_with_output()?;
         results.push((
-            String::from_utf8_lossy(&output.stdout).into_owned(),
-            String::from_utf8_lossy(&output.stderr).into_owned(),
+            crate::executor::substitution_metadata::bytes_to_shell_text(&output.stdout),
+            crate::executor::substitution_metadata::bytes_to_shell_text(&output.stderr),
             output.status.code().unwrap_or(1),
         ));
         for mut process in processes.into_iter().rev() {
@@ -750,7 +750,7 @@ impl Executor {
         self.write_pipeline_output(commands[commands.len() - 1], &results.last().unwrap().0)?;
         if let Some((_, stderr, _)) = results.last() {
             if !stderr.is_empty() {
-                std::io::stderr().write_all(stderr.as_bytes())?;
+                std::io::stderr().write_all(&crate::executor::substitution_metadata::shell_text_to_raw_bytes(&stderr))?;
             }
         }
         let statuses = results
@@ -863,15 +863,15 @@ impl Executor {
 
         if let Some(mut stdin) = first_stdin {
             let input = self.initial_pipeline_input(commands[0]);
-            stdin.write_all(input.as_bytes())?;
+            stdin.write_all(&crate::executor::substitution_metadata::shell_text_to_raw_bytes(&input))?;
         }
 
         let mut results = Vec::with_capacity(processes.len());
         let last = processes.pop().expect("pipeline has at least two stages");
         let output = last.wait_with_output()?;
         results.push((
-            String::from_utf8_lossy(&output.stdout).into_owned(),
-            String::from_utf8_lossy(&output.stderr).into_owned(),
+            crate::executor::substitution_metadata::bytes_to_shell_text(&output.stdout),
+            crate::executor::substitution_metadata::bytes_to_shell_text(&output.stderr),
             output.status.code().unwrap_or(1),
         ));
         for mut process in processes.into_iter().rev() {
@@ -897,9 +897,9 @@ impl Executor {
         if let Some((_, stderr, _)) = results.last() {
             if !stderr.is_empty() {
                 if let Some(capture) = &mut self.stderr_capture {
-                    capture.write_all(stderr.as_bytes())?;
+                    capture.write_all(&crate::executor::substitution_metadata::shell_text_to_raw_bytes(&stderr))?;
                 } else {
-                    std::io::stderr().write_all(stderr.as_bytes())?;
+                    std::io::stderr().write_all(&crate::executor::substitution_metadata::shell_text_to_raw_bytes(&stderr))?;
                 }
             }
         }
@@ -1014,8 +1014,8 @@ impl Executor {
                     &mut stderr,
                 )?;
                 Ok(Some((
-                    String::from_utf8_lossy(&output).into_owned(),
-                    String::from_utf8_lossy(&stderr).into_owned(),
+                    crate::executor::substitution_metadata::bytes_to_shell_text(&output),
+                    crate::executor::substitution_metadata::bytes_to_shell_text(&stderr),
                     status,
                 )))
             }
@@ -1034,8 +1034,8 @@ impl Executor {
                     &mut stderr,
                 )?;
                 Ok(Some((
-                    String::from_utf8_lossy(&output).into_owned(),
-                    String::from_utf8_lossy(&stderr).into_owned(),
+                    crate::executor::substitution_metadata::bytes_to_shell_text(&output),
+                    crate::executor::substitution_metadata::bytes_to_shell_text(&stderr),
                     status,
                 )))
             }
@@ -1060,7 +1060,7 @@ impl Executor {
                     let mut status = 0;
                     for path in file_operands {
                         match fs::read(shell_path_to_windows(&path, &self.env_vars)) {
-                            Ok(bytes) => output.push_str(&String::from_utf8_lossy(&bytes)),
+                            Ok(bytes) => output.push_str(&crate::executor::substitution_metadata::bytes_to_shell_text(&bytes)),
                             Err(_) => {
                                 stderr.push_str(&format!(
                                     "{}cat: {path}: No such file or directory\n",

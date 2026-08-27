@@ -679,3 +679,43 @@ fn test_exec_persistent_fd_read_preserves_raw_non_utf8_bytes() {
     let _ = fs::remove_file(output_path);
     let _ = fs::remove_file(output_move_path);
 }
+
+// Builtin -> external pipeline stages keep raw-byte provenance across the
+// stage boundary (GNU transports raw bytes through the OS pipe).
+#[test]
+fn test_pipeline_builtin_to_external_preserves_raw_non_utf8_bytes() {
+    let output_path = "target/rubash-pipeline-raw-bytes-consumer.txt";
+    let _ = fs::remove_file(output_path);
+    let input = "printf 'AB\\377CD' | cat > ".to_string() + output_path + ";";
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read(output_path).unwrap(), b"AB\xFFCD".to_vec());
+    let _ = fs::remove_file(output_path);
+}
+
+// Shell read records carry bytes into later pipeline replays, matching the
+// probe read x < <(printf \\\377...) once the stage seam decodes markers.
+#[test]
+fn test_read_record_replay_through_pipeline_keeps_raw_bytes() {
+    let output_path = "target/rubash-read-replay-pipeline-bytes.txt";
+    let _ = fs::remove_file(output_path);
+    let input = "x=$(printf 'QR\\377S'); printf '%s' \"$x\" | cat > ".to_string()
+        + output_path
+        + ";";
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read(output_path).unwrap(), b"QR\xFFS".to_vec());
+    let _ = fs::remove_file(output_path);
+}
