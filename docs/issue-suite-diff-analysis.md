@@ -3222,3 +3222,19 @@ returned status 0, and stderr was empty. This does not reproduce the older
 external-child path note; no change to `external_setup.rs` or path conversion is
 justified. The remaining external-child gate is typed environment/fd ownership,
 not cwd/path lookup.
+
+### 2026-08-24 external child persistent-fd raw-byte closure
+
+GNU `redir.c` passes the bytes behind a duplicated persistent input fd to an
+external child. Rubash previously opened `exec 3<file` through
+`read_shell_input_file`, storing marker-encoded text in the `FdTable`;
+`external_setup.rs` then wrote those marker bytes to the child's temporary stdin
+file. A minimal probe (`exec 3<binary; cat <&3 | od`) reproduced the defect:
+GNU emitted `ff 0a`, while Rubash emitted `ee 83 bf 0a`.
+
+The owner boundary is now raw: `trap_exec.rs` uses `fs::read` plus
+`set_fd_input_bytes` for persistent file descriptors, and `external_setup.rs`
+uses `virtual_fd_stdin_remaining_bytes` plus
+`write_process_substitution_temp_bytes`. GNU/Rubash now both emit `ff 0a`.
+The focused `fd_redirects` slice passes 18/18, including
+`c_external_cat_reads_raw_bytes_from_persistent_fd`.
