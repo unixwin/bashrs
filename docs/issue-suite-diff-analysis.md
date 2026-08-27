@@ -3167,3 +3167,28 @@ Differential evidence:
   regressions.
 - Source correspondence: GNU `builtins/read.def`; Rubash owner
   `src/executor/read_io.rs`; carrier `src/executor/substitution_metadata.rs`.
+
+### Scalar command-substitution assignment C0 boundary (2026-08-24)
+
+GNU `subst.c` preserves command-substitution bytes through assignment. Rubash's
+legacy assignment adapter also uses `\x14..\x1f` as parser/array metadata, so a
+raw `0x1d` from `$(printf '\\035')` previously entered the adapter as an
+array marker and read back empty.
+
+`SubstitutionOutput::assignment_text` now materializes assignment values through
+an owner-specific marker conversion: raw bytes that collide with the legacy C0
+protocol are converted to `RAW_BYTE_MARKER`, while ordinary text and already
+invalid UTF-8 bytes retain their existing representation. This is intentionally
+limited to whole command-substitution assignment paths; mixed substitution,
+backtick assignment, and the final typed variable store remain open.
+
+Evidence:
+
+- GNU/Rubash whole assignment probe for `0xff` and `0x1d` emits `ff 1d`.
+- The focused scope probe covers function `local`, subshell assignment, and
+  exported scalar readback; GNU and Rubash both emit `ff ff x=ff`.
+- `cargo test --test cli_tests scalar_` passes 5/5.
+- Source correspondence: GNU `subst.c` assignment readback and `variables.c`;
+  Rubash owners `src/executor/assignment_expansion.rs` and
+  `src/executor/substitution_metadata.rs`, with legacy storage in
+  `src/executor/temporary_assignments.rs`.
