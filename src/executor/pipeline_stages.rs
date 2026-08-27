@@ -287,7 +287,9 @@ impl Executor {
 
         let mut child = process.spawn()?;
         if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(&crate::executor::substitution_metadata::shell_text_to_raw_bytes(&input))?;
+            stdin.write_all(
+                &crate::executor::substitution_metadata::shell_text_to_raw_bytes(&input),
+            )?;
         }
         let output = child.wait_with_output()?;
 
@@ -306,9 +308,8 @@ impl Executor {
         // Final pipeline output is a byte boundary: decode owner-tagged
         // raw-byte markers exactly once before reaching files, captures,
         // or stdout.
-        let payload =
-            crate::executor::substitution_metadata::shell_text_to_raw_bytes(output);
-if let Some(redirect) = &command.redirect_out {
+        let payload = crate::executor::substitution_metadata::shell_text_to_raw_bytes(output);
+        if let Some(redirect) = &command.redirect_out {
             let target = self.expand_word(&redirect.target);
             let mut file = self.create_redirect_output(&target, redirect.clobber)?;
             file.write_all(&payload)?;

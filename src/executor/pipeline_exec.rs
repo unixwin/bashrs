@@ -384,7 +384,9 @@ impl Executor {
             {
                 next_input.push_str(&next_stderr);
             } else if !next_stderr.is_empty() {
-                std::io::stderr().write_all(&crate::executor::substitution_metadata::shell_text_to_raw_bytes(&next_stderr))?;
+                std::io::stderr().write_all(
+                    &crate::executor::substitution_metadata::shell_text_to_raw_bytes(&next_stderr),
+                )?;
             }
             input = next_input;
             statuses.push(next_status);
@@ -732,7 +734,9 @@ impl Executor {
         if let Some(mut stdin) = processes[0].stdin.take() {
             let input = self.initial_pipeline_input(commands[0]);
             if !input.is_empty() {
-                stdin.write_all(&crate::executor::substitution_metadata::shell_text_to_raw_bytes(&input))?;
+                stdin.write_all(
+                    &crate::executor::substitution_metadata::shell_text_to_raw_bytes(&input),
+                )?;
             }
         }
 
@@ -760,7 +764,9 @@ impl Executor {
         self.write_pipeline_output(commands[commands.len() - 1], &results.last().unwrap().0)?;
         if let Some((_, stderr, _)) = results.last() {
             if !stderr.is_empty() {
-                std::io::stderr().write_all(&crate::executor::substitution_metadata::shell_text_to_raw_bytes(&stderr))?;
+                std::io::stderr().write_all(
+                    &crate::executor::substitution_metadata::shell_text_to_raw_bytes(&stderr),
+                )?;
             }
         }
         let statuses = results
@@ -873,7 +879,9 @@ impl Executor {
 
         if let Some(mut stdin) = first_stdin {
             let input = self.initial_pipeline_input(commands[0]);
-            stdin.write_all(&crate::executor::substitution_metadata::shell_text_to_raw_bytes(&input))?;
+            stdin.write_all(
+                &crate::executor::substitution_metadata::shell_text_to_raw_bytes(&input),
+            )?;
         }
 
         let mut results = Vec::with_capacity(processes.len());
@@ -907,9 +915,13 @@ impl Executor {
         if let Some((_, stderr, _)) = results.last() {
             if !stderr.is_empty() {
                 if let Some(capture) = &mut self.stderr_capture {
-                    capture.write_all(&crate::executor::substitution_metadata::shell_text_to_raw_bytes(&stderr))?;
+                    capture.write_all(
+                        &crate::executor::substitution_metadata::shell_text_to_raw_bytes(&stderr),
+                    )?;
                 } else {
-                    std::io::stderr().write_all(&crate::executor::substitution_metadata::shell_text_to_raw_bytes(&stderr))?;
+                    std::io::stderr().write_all(
+                        &crate::executor::substitution_metadata::shell_text_to_raw_bytes(&stderr),
+                    )?;
                 }
             }
         }
@@ -1070,7 +1082,11 @@ impl Executor {
                     let mut status = 0;
                     for path in file_operands {
                         match fs::read(shell_path_to_windows(&path, &self.env_vars)) {
-                            Ok(bytes) => output.push_str(&crate::executor::substitution_metadata::bytes_to_shell_text(&bytes)),
+                            Ok(bytes) => output.push_str(
+                                &crate::executor::substitution_metadata::bytes_to_shell_text(
+                                    &bytes,
+                                ),
+                            ),
                             Err(_) => {
                                 stderr.push_str(&format!(
                                     "{}cat: {path}: No such file or directory\n",
