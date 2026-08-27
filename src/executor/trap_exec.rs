@@ -638,8 +638,8 @@ impl Executor {
                     .write(true)
                     .open(&path)?;
             }
-            let input = crate::executor::substitution_metadata::read_shell_input_file(&path)?;
-            self.set_fd_input_text(fd, input, fd != 0);
+            let input = std::fs::read(&path)?;
+            self.set_fd_input_bytes(fd, input, fd != 0);
             if redirect.operator == "<>" {
                 self.fd_table
                     .open_output(fd, FdWriteEndpoint::File(path), fd >= 10);

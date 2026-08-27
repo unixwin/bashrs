@@ -252,8 +252,8 @@ impl Executor {
                 let target = self.expand_word(&redirect.target);
                 if let Some(fd) = redirect_target_fd(&target) {
                     if self.fd_table.is_open_for_read(fd) {
-                        if let Some(input) = self.virtual_fd_stdin_remaining(fd) {
-                            let path = self.write_process_substitution_temp(&input)?;
+                        if let Some(input) = self.virtual_fd_stdin_remaining_bytes(fd) {
+                            let path = self.write_process_substitution_temp_bytes(&input)?;
                             let input_len = self.virtual_fd_stdin_len(fd);
                             self.fd_table.consume_all_text(fd);
                             self.env_vars.insert(fd_stdin_offset_key(fd), input_len);

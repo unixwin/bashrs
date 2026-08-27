@@ -5,6 +5,23 @@ use std::{
 };
 
 #[test]
+fn c_external_cat_reads_raw_bytes_from_persistent_fd() {
+    let path = env::temp_dir().join(format!("rubash-external-fd-{}.bin", std::process::id()));
+    fs::write(&path, [0xff, b'\n']).expect("write raw fd input");
+    let shell_path = path.to_string_lossy().replace('\\', "/");
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(format!("exec 3< '{shell_path}'; cat <&3"))
+        .output()
+        .expect("run external cat persistent fd probe");
+    let _ = fs::remove_file(&path);
+
+    assert!(output.status.success());
+    assert_eq!(output.stdout, [0xff, b'\n']);
+    assert_eq!(output.stderr, b"");
+}
+
+#[test]
 fn c_external_command_redirects_stdout_to_stderr_fd() {
     let bin_dir = external_fd_copy_bin_dir();
     let script_path = helper_path(&bin_dir, "emitout");
@@ -450,7 +467,10 @@ fn c_dynamic_varredir_close_closes_fd_after_command() {
         .expect("run varredir_close lifetime probe");
 
     assert!(output.status.success());
-    assert_eq!(stream_text(&output.stdout), "allocated=10\nwrite_status=1\n");
+    assert_eq!(
+        stream_text(&output.stdout),
+        "allocated=10\nwrite_status=1\n"
+    );
     assert_eq!(
         stream_text(&output.stderr),
         "rubash: $fd: Bad file descriptor\n"
