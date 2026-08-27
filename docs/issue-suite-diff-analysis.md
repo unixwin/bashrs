@@ -3211,3 +3211,14 @@ Rubash-owned storage defect was found, so `temporary_assignments.rs` was not
 changed. The remaining scalar assignment work is the final typed-store owner
 and broader mixed/compound expansion interactions, not overwrite/unset behavior
 itself.
+
+### 2026-08-24 external-child cwd/path negative probe
+
+A fresh GNU Bash/Rubash probe checked an absolute Windows-native path passed to
+`cat` directly and through `$(cat ...)`, followed by `cd target/probe-rawbytes`
+and a relative `$(cat external-child.txt)`. All stdout bytes matched
+(`child-path-ok` without the command-substitution trailing newline), both shells
+returned status 0, and stderr was empty. This does not reproduce the older
+external-child path note; no change to `external_setup.rs` or path conversion is
+justified. The remaining external-child gate is typed environment/fd ownership,
+not cwd/path lookup.
