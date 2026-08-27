@@ -509,6 +509,7 @@ impl Executor {
             coproc_stdout_readers: HashMap::new(),
             coproc_stderr_forwarders: HashMap::new(),
             assignment_output_process_substitutions: HashMap::new(),
+            pending_scalar_assignment: false,
             suppress_errexit: self.suppress_errexit,
             debug_trap_running: false,
             return_trap_running: false,

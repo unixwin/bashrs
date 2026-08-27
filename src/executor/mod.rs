@@ -409,6 +409,7 @@ pub struct Executor {
     coproc_stdout_readers: HashMap<u32, std::io::PipeReader>,
     coproc_stderr_forwarders: HashMap<u32, std::thread::JoinHandle<Result<(), std::io::Error>>>,
     assignment_output_process_substitutions: HashMap<String, String>,
+    pending_scalar_assignment: bool,
     suppress_errexit: usize,
     debug_trap_running: bool,
     return_trap_running: bool,

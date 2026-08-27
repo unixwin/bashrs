@@ -173,10 +173,27 @@ impl Executor {
             value
         };
         let value = self.apply_case_assignment_attributes(base_name, value);
-        if value.starts_with('\x1d') && !is_marked_var(&self.env_vars, ASSOC_VARS, base_name) {
+        let protocol_scalar = self.pending_scalar_assignment;
+        self.pending_scalar_assignment = false;
+        if value.starts_with('\x1d')
+            && !protocol_scalar
+            && !is_marked_var(&self.env_vars, ASSOC_VARS, base_name)
+        {
             mark_env_name(&mut self.env_vars, ARRAY_VARS, base_name);
         }
         unmark_env_name(&mut self.env_vars, DECLARED_UNSET_VARS, base_name);
+        let is_array = compound_assignment
+            || is_marked_var(&self.env_vars, ARRAY_VARS, base_name)
+            || is_marked_var(&self.env_vars, ASSOC_VARS, base_name);
+        if !is_array {
+            if let Some(variable) = self.shell_state.variables.get_mut(base_name) {
+                if let crate::shell::ShellValue::Scalar(current) = &mut variable.value {
+                    *current = value.clone();
+                }
+            } else {
+                let _ = self.shell_state.variables.set_scalar(base_name, value.clone());
+            }
+        }
         self.env_vars.insert(base_name.to_string(), value.clone());
         sync_shell_assignment_process_env(&self.env_vars, base_name, value);
         true

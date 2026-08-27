@@ -124,6 +124,8 @@ impl Executor {
             if let Some(substitution_status) = substitution_status {
                 status = substitution_status;
             }
+            self.pending_scalar_assignment = expanded_value.starts_with('\x1d')
+                && value.contains(['$', '`']);
             if !self.apply_shell_assignment(name, expanded_value) {
                 status = 1;
                 let (base_name, _) = assignment_name_and_append(name);

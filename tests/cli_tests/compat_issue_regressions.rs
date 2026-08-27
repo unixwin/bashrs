@@ -269,6 +269,19 @@ fn printf_b_emits_octals_as_raw_bytes() {
 }
 
 #[test]
+fn scalar_command_substitution_round_trips_c0_1d_byte() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("x=$(printf '\\035'); printf '%s' \"$x\" | od -An -tx1")
+        .output()
+        .expect("run scalar C0 assignment probe");
+
+    assert!(output.status.success(), "stderr: {:?}", output.stderr);
+    assert_eq!(output.stdout, b" 1d\n");
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
 fn printf_q_uses_ansi_c_quotes_for_control_bytes() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

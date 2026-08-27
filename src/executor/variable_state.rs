@@ -76,6 +76,13 @@ impl Executor {
         if let Some(value) = self.array_element_parameter_value(&name) {
             return Some(value);
         }
+        if let Some(crate::shell::Variable {
+            value: crate::shell::ShellValue::Scalar(value),
+            ..
+        }) = self.shell_state.variables.get(&name)
+        {
+            return Some(value.clone());
+        }
         self.env_vars
             .get(&name)
             .and_then(|value| self.scalar_parameter_value(&name, value))
