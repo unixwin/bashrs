@@ -71,6 +71,19 @@ fn scalar_command_substitution_assignment_preserves_c0_and_raw_bytes() {
 }
 
 #[test]
+fn backtick_assignment_preserves_c0_bytes() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"value=`printf '\035'`; printf '%s' "$value""#)
+        .output()
+        .expect("run backtick assignment raw-byte probe");
+
+    assert!(output.status.success());
+    assert_eq!(output.stdout, [0x1d]);
+    assert_eq!(output.stderr, b"");
+}
+
+#[test]
 fn scalar_assignment_preserves_bytes_across_local_subshell_and_export() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

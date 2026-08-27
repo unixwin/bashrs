@@ -106,11 +106,19 @@ impl Executor {
         }
 
         if !compound_assignment {
-            if let Some(expanded) = self.expand_mixed_command_substitution_assignment(value) {
-                return expanded;
-            }
             if let Some(output) = self.expand_backtick_substitution_typed(value, quoted) {
                 return output.assignment_text();
+            }
+            if let Some(separator) = value.find('=') {
+                let (prefix, rhs) = value.split_at(separator);
+                if is_shell_name(prefix) {
+                    if let Some(output) = self.expand_backtick_substitution_typed(&rhs[1..], quoted) {
+                        return format!("{prefix}={}", output.assignment_text());
+                    }
+                }
+            }
+            if let Some(expanded) = self.expand_mixed_command_substitution_assignment(value) {
+                return expanded;
             }
         }
 
