@@ -3098,3 +3098,26 @@ probes (`target/probe-rawbytes/{a1,b1,b3,b5,e5,g0..g3,s1..s3,x1..x3,z1,z2,y1..y3
 3. `f4`: when the aborting call sits inside an if/elif CONDITION, GNU
    abandons the whole compound command; rubash falls into the else arm
    because the function frame absorbs before the if frame can react.
+
+### Frame-absorption follow-up (2026-08-24, later round)
+
+Closed two of the three remaining divergences from the reslice:
+
+- **Brace groups** absorb word-expansion aborts at the group frame
+  (`execute_brace_group_pipeline`); probes y1/y3 now match GNU (`out`, rc=0).
+  Commit e23c5af9.
+- **If conditions**: function frames no longer absorb while an if/elif
+  condition list is evaluating (`inside_compound_condition` gate); the
+  whole compound command is abandoned (probe f4: only `tail`, rc=0).
+  Commit 226a706d.
+
+**Deferred — per-physical-line list boundary (z1/z2).** First attempt routed
+file scripts through the stdin incremental feeder (`drive_command_stream`).
+It fixed z1/z2 byte-for-byte but regressed/hung 11 unrelated CLI fixtures
+(examples::*, fd_redirects::c_external_* expected fd state evidently depends
+on whole-file parse timing; malformed_script prefix semantics differ), so it
+was reverted to keep the slice bounded. The z1/z2 GNU rule stands as measured:
+a top-level word-expansion failure ends the statement LIST on its physical
+line; later LINES still execute. Re-attempt needs a feeder that also models
+bash's command-boundary reader for file input, plus heredoc/continuation gates
+proven against the hanging fixture families above.
