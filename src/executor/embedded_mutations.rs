@@ -499,7 +499,9 @@ impl Executor {
         let status = match result {
             Ok(()) => self.exit_code,
             Err(ExecuteError::Return(status)) => status,
-            Err(ExecuteError::ExitCode(status)) | Err(ExecuteError::ExpansionFailure(status)) => status,
+            Err(ExecuteError::ExitCode(status)) | Err(ExecuteError::ExpansionFailure(status)) => {
+                status
+            }
             Err(_) => 1,
         };
 
@@ -546,7 +548,9 @@ impl Executor {
         let status = match result {
             Ok(()) => self.exit_code,
             Err(ExecuteError::Return(status)) => status,
-            Err(ExecuteError::ExitCode(status)) | Err(ExecuteError::ExpansionFailure(status)) => status,
+            Err(ExecuteError::ExitCode(status)) | Err(ExecuteError::ExpansionFailure(status)) => {
+                status
+            }
             Err(_) => 1,
         };
         self.env_vars = saved_env;

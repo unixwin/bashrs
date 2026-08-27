@@ -88,7 +88,10 @@ pub(super) fn invalid_number_error(value: &str) -> String {
         format!("rubash: printf: {value}: invalid hex number")
     } else if value.len() > 1
         && value.starts_with('0')
-        && value.as_bytes().iter().any(|byte| matches!(byte, b'8' | b'9'))
+        && value
+            .as_bytes()
+            .iter()
+            .any(|byte| matches!(byte, b'8' | b'9'))
     {
         format!("rubash: printf: {value}: invalid octal number")
     } else {

@@ -112,7 +112,8 @@ impl Executor {
             if let Some(separator) = value.find('=') {
                 let (prefix, rhs) = value.split_at(separator);
                 if is_shell_name(prefix) {
-                    if let Some(output) = self.expand_backtick_substitution_typed(&rhs[1..], quoted) {
+                    if let Some(output) = self.expand_backtick_substitution_typed(&rhs[1..], quoted)
+                    {
                         return format!("{prefix}={}", output.assignment_text());
                     }
                 }

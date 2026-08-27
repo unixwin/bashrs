@@ -371,7 +371,9 @@ impl Executor {
                 // fails inside the subshell the subshell exits with that
                 // status but the parent script continues. Catch the error at
                 // the subshell boundary instead of propagating it.
-                Err(ExecuteError::ExitCode(code)) | Err(ExecuteError::ExpansionFailure(code)) if subshell_env.is_some() => {
+                Err(ExecuteError::ExitCode(code)) | Err(ExecuteError::ExpansionFailure(code))
+                    if subshell_env.is_some() =>
+                {
                     self.exit_code = code;
                     while index + 1 < ast.commands.len() && !ast.commands[index + 1].subshell_end {
                         index += 1;

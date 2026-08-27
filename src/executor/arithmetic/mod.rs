@@ -56,7 +56,7 @@ impl Executor {
             Some(&self.random_state),
         );
         self.report_arithmetic_readonly_error();
-        
+
         // Sync any variable changes from env_vars to shell_state.variables
         // so that subsequent variable expansions see the updated values.
         for (name, new_value) in &self.env_vars {
@@ -70,7 +70,7 @@ impl Executor {
                 }
             }
         }
-        
+
         value
     }
 
@@ -102,7 +102,7 @@ impl Executor {
             Some(&self.random_state),
         );
         self.report_arithmetic_readonly_error();
-        
+
         // Sync any variable changes from env_vars to shell_state.variables
         // so that subsequent parameter expansions see arithmetic side effects
         // (e.g., ++i in array subscripts like a[++i]=value).
@@ -115,7 +115,7 @@ impl Executor {
                 }
             }
         }
-        
+
         value
     }
 

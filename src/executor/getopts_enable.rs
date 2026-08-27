@@ -201,7 +201,7 @@ impl Executor {
         let value = optind.to_string();
         self.env_vars.insert("OPTIND".to_string(), value.clone());
         set_process_env("OPTIND", &value);
-        
+
         // Also sync to shell_state.variables so parameter expansion sees the update
         if let Some(variable) = self.shell_state.variables.get_mut("OPTIND") {
             variable.value = crate::shell::ShellValue::Scalar(value.clone());
