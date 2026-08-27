@@ -265,7 +265,7 @@ impl Executor {
             return None;
         }
         Some(trim_read_input(
-            String::from_utf8_lossy(&bytes).to_string(),
+            bytes_to_shell_text(&bytes),
             delimiter,
             char_limit,
             exact_char_limit,

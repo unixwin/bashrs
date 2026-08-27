@@ -45,6 +45,19 @@ fn c_command_reads_named_coproc_stdout_through_array_fd() {
 }
 
 #[test]
+fn c_command_reads_coproc_raw_bytes_without_utf8_loss() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("coproc C { printf '\\377\n'; }; read -r value <&${C[0]}; printf '%s' \"$value\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(output.stdout, [0xff]);
+    assert_eq!(output.stderr, b"");
+}
+
+#[test]
 fn c_command_keeps_unread_coproc_records_for_later_reads() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
