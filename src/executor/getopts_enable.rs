@@ -121,6 +121,9 @@ impl Executor {
         let requires_arg = optspec[spec_index + option.len_utf8()..].starts_with(':');
         if requires_arg {
             let argument = if !consumed_arg {
+                // Inline argument: offset already points past the option character,
+                // so option_chars[offset..] contains the inline argument value.
+                // For -w2 with offset=2 after consuming 'w', this collects "2".
                 let value = option_chars[offset..].iter().collect::<String>();
                 optind += 1;
                 offset = 1;
@@ -197,7 +200,14 @@ impl Executor {
     pub(in crate::executor) fn set_optind(&mut self, optind: usize) {
         let value = optind.to_string();
         self.env_vars.insert("OPTIND".to_string(), value.clone());
-        set_process_env("OPTIND", value);
+        set_process_env("OPTIND", &value);
+        
+        // Also sync to shell_state.variables so parameter expansion sees the update
+        if let Some(variable) = self.shell_state.variables.get_mut("OPTIND") {
+            variable.value = crate::shell::ShellValue::Scalar(value.clone());
+        } else {
+            let _ = self.shell_state.variables.set_scalar("OPTIND", value);
+        }
     }
 
     pub(in crate::executor) fn execute_enable(
