@@ -3252,3 +3252,16 @@ file bytes. All streams and files matched byte-for-byte, with empty stderr and
 status 0. No ordered-redirection root cause is currently reproducible; the next
 redir gate is the narrower combination of ordered redirects with dynamic fd or
 process-substitution endpoints. A follow-up probe also covered `sh -c 'cat <&3' 3<&0 <file` and `<file 3<&0`: GNU returned the expected fd-snapshot data in both orders, while Rubash failed both with the missing-fd path. This confirms the implementation must build an ordered child-fd snapshot, not only special-case stdin.
+
+### 2026-08-24 Windows arbitrary child-fd backend boundary
+
+The design audit confirms that `FdTable::materialize_for_child` is currently a
+logical map and `std::process::Command` exposes only stdio handles. A Windows
+`HANDLE_LIST`/`CreateProcessW` backend can pass inheritable handles, but native
+Windows or MSYS/Cygwin children do not thereby receive a POSIX/CRT fd with the
+requested number. Transparent `<&3` therefore requires a cooperating child
+bootstrap that maps an agreed fd-number-to-handle protocol; a temp-file path or
+`__RUBASH_FD_*` environment mirror is not equivalent. The current `sh -c` probe
+is consequently a real external-child backend gap, with the implementation gate
+scoped to a Windows child-fd backend plus cooperating-child tests and an explicit
+MSYS/native limitation record.
