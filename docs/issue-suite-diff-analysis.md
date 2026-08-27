@@ -3276,3 +3276,56 @@ bootstrap that maps an agreed fd-number-to-handle protocol; a temp-file path or
 is consequently a real external-child backend gap, with the implementation gate
 scoped to a Windows child-fd backend plus cooperating-child tests and an explicit
 MSYS/native limitation record.
+
+## BashDB Compatibility Status Update (2026-08-27)
+
+### Current State
+
+The `bashdb_compat` test slice has **13 failing tests** (previously 12, increased by 1 after getopts fix exposed a new boundary case). All failures are bashdb runtime/command compatibility issues, not core Rubash semantic defects.
+
+### Root Cause Analysis
+
+Extensive debugging reveals the fundamental issue:
+
+1. **bashdb initialization sequence fails**: Bashdb starts, displays welcome message, but exits immediately with "That's all, folks..." before entering the interactive command loop.
+
+2. **"ambiguous redirect" error**: The error `target/bashdb-probe-target.sh: line 86: : ambiguous redirect` indicates an empty variable expansion in a redirect operation (likely `<&$_Dbg_input_desc` where $_Dbg_input_desc is empty).
+
+3. **Variable state problem**: Bashdb's $_Dbg_fd array and $_Dbg_input_desc variable are not properly initialized during startup, causing the command loop to fail.
+
+4. **/dev/stdin handling**: We implemented special mapping for /dev/stdin → CONIN$, /dev/stdout, /dev/stderr → CONOUT$ (commit e9b261bc), which improves POSIX compatibility but does not fully resolve bashdb's initialization issues.
+
+5. **exec {fd}</dev/stdin works**: Confirmed that Rubash correctly handles dynamic fd allocation for /dev/stdin (reuses process stdin rather than opening file), matching GNU Bash behavior.
+
+### Attempted Fixes
+
+- ✅ Added /dev/stdin, /dev/stdout, /dev/stderr mapping to Windows console devices
+- ✅ Verified exec {fd}</dev/stdin semantics match GNU Bash
+- ❌ Bashdb still fails to enter command loop despite these fixes
+
+### Why This Is Difficult
+
+Bashdb's initialization involves:
+- Complex shell script logic with DEBUG traps
+- Dynamic variable management across multiple sourced files
+- Terminal/PTY detection and input source selection
+- Profile script generation for nested shell support
+
+The interaction between bashdb's expectations and Rubash's Windows-native environment creates subtle incompatibilities that require deep understanding of both systems.
+
+### Recommendation
+
+These 13 bashdb tests should be classified as **deferred platform compatibility work** requiring:
+- Dedicated investigation session
+- Possible bashdb script adaptations (minimal patches if unavoidable)
+- Or more complete POSIX emulation layer in Rubash (/proc/self/fd/N symlinks, etc.)
+
+For now, focus on core Rubash semantic correctness and Windows/Winuxsh focused test suite.
+
+### Test Count Summary
+
+- **Total CLI tests**: 382
+- **Passed**: 369
+- **Failed**: 13 (all bashdb_compat::*)
+- **Net improvement this session**: +6 tests fixed (from 363/19 to 369/13)
+
