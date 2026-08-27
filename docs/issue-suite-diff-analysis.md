@@ -3243,3 +3243,12 @@ A companion inherited-environment probe opened fd 3 and ran external `env`; GNU
 and Rubash both emitted no `__RUBASH_FD_STDIN_*` or `__RUBASH_FD_CLOSED` entries,
 with status 0 and empty stderr. The fd environment mirror remains an internal
 adapter to audit, but this leakage shape is not currently reproducible.
+
+### 2026-08-24 ordered stderr/vredir negative probe
+
+A bounded GNU/Rubash matrix covered `{ printf A; printf B >&2; } 2>&1 >file`,
+`>file 2>&1`, and `&>file`, including parent stdout/stderr and the resulting
+file bytes. All streams and files matched byte-for-byte, with empty stderr and
+status 0. No ordered-redirection root cause is currently reproducible; the next
+redir gate is the narrower combination of ordered redirects with dynamic fd or
+process-substitution endpoints.
