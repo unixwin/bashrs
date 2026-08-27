@@ -3179,15 +3179,24 @@ array marker and read back empty.
 an owner-specific marker conversion: raw bytes that collide with the legacy C0
 protocol are converted to `RAW_BYTE_MARKER`, while ordinary text and already
 invalid UTF-8 bytes retain their existing representation. This is intentionally
-limited to whole command-substitution assignment paths; mixed substitution,
-backtick assignment, and the final typed variable store remain open.
+limited to assignment-owned substitution paths. Whole command substitution and
+whole backtick assignment now use the carrier; mixed/compound backtick forms,
+overwrite/unset interactions, and the final typed variable store remain open.
 
 Evidence:
 
 - GNU/Rubash whole assignment probe for `0xff` and `0x1d` emits `ff 1d`.
 - The focused scope probe covers function `local`, subshell assignment, and
   exported scalar readback; GNU and Rubash both emit `ff ff x=ff`.
-- `cargo test --test cli_tests scalar_` passes 5/5.
+- A GNU/Rubash mixed/backtick matrix emits identical bytes for `pre$(...)post`,
+  whole backtick assignment, and `pre`backtick`post`; the prior whole-backtick
+  `0x1d` loss was caused by the legacy fallback ordering.
+- `cargo test --test cli_tests assignment_` passes 39/39, including the new
+  `backtick_assignment_preserves_c0_bytes` regression.
+- Source correspondence for the backtick fix: GNU `subst.c` backquote readback;
+  Rubash `src/executor/assignment_expansion.rs` now checks a `name=` prefix
+  before the mixed legacy fallback and routes the whole RHS through the typed
+  `SubstitutionOutput` carrier.
 - Source correspondence: GNU `subst.c` assignment readback and `variables.c`;
   Rubash owners `src/executor/assignment_expansion.rs` and
   `src/executor/substitution_metadata.rs`, with legacy storage in
