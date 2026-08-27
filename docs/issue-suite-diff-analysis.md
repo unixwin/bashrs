@@ -3201,3 +3201,13 @@ Evidence:
   Rubash owners `src/executor/assignment_expansion.rs` and
   `src/executor/substitution_metadata.rs`, with legacy storage in
   `src/executor/temporary_assignments.rs`.
+
+### Scalar assignment overwrite/unset matrix (2026-08-24)
+
+A bounded GNU/Rubash probe covered overwrite from `0x1d` to `0xff`, `unset`
+followed by reconstruction, empty-value overwrite, unquoted readback, and
+`${x:-default}` readback. All stdout bytes and stderr were identical; no new
+Rubash-owned storage defect was found, so `temporary_assignments.rs` was not
+changed. The remaining scalar assignment work is the final typed-store owner
+and broader mixed/compound expansion interactions, not overwrite/unset behavior
+itself.
