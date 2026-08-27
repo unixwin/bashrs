@@ -694,7 +694,18 @@ pub(crate) fn shell_path_to_windows(path: &str, env_vars: &HashMap<String, Strin
         return PathBuf::from("NUL");
     }
 
-    // `/dev` is a capability namespace. Only `/dev/null` is currently mapped
+    // Map standard I/O pseudo-devices to Windows console devices.
+    // CON is the Windows console device that can be used for both input and output.
+    // This provides better compatibility with tools expecting POSIX /dev/stdin etc.
+    if cfg!(windows) {
+        match normalized.as_str() {
+            "/dev/stdin" => return PathBuf::from("CONIN$"),
+            "/dev/stdout" | "/dev/stderr" => return PathBuf::from("CONOUT$"),
+            _ => {}
+        }
+    }
+
+    // `/dev` is a capability namespace. Only specific /dev paths are mapped
     // on Windows; do not let unsupported fd/tty spellings become ordinary
     // files below the logical root.
     if cfg!(windows) && (normalized == "/dev" || normalized.starts_with("/dev/")) {
