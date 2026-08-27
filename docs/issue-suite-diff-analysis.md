@@ -3251,7 +3251,18 @@ A bounded GNU/Rubash matrix covered `{ printf A; printf B >&2; } 2>&1 >file`,
 file bytes. All streams and files matched byte-for-byte, with empty stderr and
 status 0. No ordered-redirection root cause is currently reproducible; the next
 redir gate is the narrower combination of ordered redirects with dynamic fd or
-process-substitution endpoints. A follow-up probe also covered `sh -c 'cat <&3' 3<&0 <file` and `<file 3<&0`: GNU returned the expected fd-snapshot data in both orders, while Rubash failed both with the missing-fd path. This confirms the implementation must build an ordered child-fd snapshot, not only special-case stdin.
+process-substitution endpoints.
+
+### 2026-08-24 specialized command-substitution byte carrier
+
+The `command_substitution_values.rs` specialized external-filter path previously
+wrote marker text to child stdin and decoded child stdout with lossy UTF-8. The
+GNU `subst.c` command-substitution boundary requires byte-preserving transport.
+It now uses `shell_text_to_raw_bytes` before stdin and `bytes_to_shell_text` on
+stdout. The focused `c_filtered_command_substitution_preserves_raw_bytes`
+probe matches GNU byte-for-byte (`78 ff 0a`) and the `fd_redirects` slice is
+19/19 green.
+ A follow-up probe also covered `sh -c 'cat <&3' 3<&0 <file` and `<file 3<&0`: GNU returned the expected fd-snapshot data in both orders, while Rubash failed both with the missing-fd path. This confirms the implementation must build an ordered child-fd snapshot, not only special-case stdin.
 
 ### 2026-08-24 Windows arbitrary child-fd backend boundary
 
