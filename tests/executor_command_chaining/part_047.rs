@@ -596,7 +596,6 @@ fn test_read_upper_n_zero_succeeds_with_empty_value() {
     let _ = fs::remove_file(output_path);
 }
 
-
 fn write_raw_byte_probe_input(path: &str, bytes: &[u8]) {
     let _ = fs::remove_file(path);
     fs::write(path, bytes).unwrap();
@@ -608,8 +607,8 @@ fn write_raw_byte_probe_input(path: &str, bytes: &[u8]) {
 fn test_read_process_substitution_preserves_raw_non_utf8_bytes() {
     let output_path = "target/rubash-read-procsub-raw-bytes.txt";
     let _ = fs::remove_file(output_path);
-    let input = "read x < <(printf 'AB\\377CD\\n'); printf '%s' \"$x\" > ".to_string()
-        + output_path;
+    let input =
+        "read x < <(printf 'AB\\377CD\\n'); printf '%s' \"$x\" > ".to_string() + output_path;
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
     let mut executor = Executor::new();
@@ -656,7 +655,8 @@ fn test_exec_persistent_fd_read_preserves_raw_non_utf8_bytes() {
     let input = "exec 3< ".to_string()
         + input_path
         + "; read -u 3 x; printf '%s' \"$x\" > "
-        + output_path + ";";
+        + output_path
+        + ";";
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
     let mut executor = Executor::new();
@@ -705,9 +705,8 @@ fn test_pipeline_builtin_to_external_preserves_raw_non_utf8_bytes() {
 fn test_read_record_replay_through_pipeline_keeps_raw_bytes() {
     let output_path = "target/rubash-read-replay-pipeline-bytes.txt";
     let _ = fs::remove_file(output_path);
-    let input = "x=$(printf 'QR\\377S'); printf '%s' \"$x\" | cat > ".to_string()
-        + output_path
-        + ";";
+    let input =
+        "x=$(printf 'QR\\377S'); printf '%s' \"$x\" | cat > ".to_string() + output_path + ";";
     let tokens = tokenize(&input);
     let ast = parse(&tokens);
     let mut executor = Executor::new();
@@ -717,5 +716,25 @@ fn test_read_record_replay_through_pipeline_keeps_raw_bytes() {
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(fs::read(output_path).unwrap(), b"QR\xFFS".to_vec());
+    let _ = fs::remove_file(output_path);
+}
+
+// GNU echo writes a read record's raw bytes at the builtin output boundary,
+// including direct file redirection (builtins/echo.def).
+#[test]
+fn test_echo_direct_redirect_decodes_read_raw_bytes() {
+    let input_path = "target/rubash-echo-raw-bytes-input.bin";
+    let output_path = "target/rubash-echo-raw-bytes-output.bin";
+    write_raw_byte_probe_input(input_path, &[b'a', 0xff, b'b', b'\n']);
+    let input = "read x < ".to_string() + input_path + "; echo -n \"$x\" > " + output_path;
+    let ast = parse(&tokenize(&input));
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read(output_path).unwrap(), b"a\xffb".to_vec());
+    let _ = fs::remove_file(input_path);
     let _ = fs::remove_file(output_path);
 }

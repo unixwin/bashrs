@@ -141,7 +141,7 @@ impl Executor {
                         echo_args_without_background_marker(&cmd.words[1..redirect_index]);
                     let target = self.expand_word(target);
                     let mut file = self.create_redirect_output(&target, false)?;
-                    crate::builtins::echo::write_echo(
+                    crate::builtins::echo::write_echo_decoded(
                         echo_args.iter().map(String::as_str),
                         &mut file,
                     )?;
@@ -152,7 +152,10 @@ impl Executor {
 
         let echo_args = echo_args_without_background_marker(&cmd.words[1..]);
         let mut output = Vec::new();
-        crate::builtins::echo::write_echo(echo_args.iter().map(String::as_str), &mut output)?;
+        crate::builtins::echo::write_echo_decoded(
+            echo_args.iter().map(String::as_str),
+            &mut output,
+        )?;
         if self.write_ordered_command_output(cmd, &output, &[])? {
             return Ok(());
         }
@@ -164,21 +167,24 @@ impl Executor {
                 return Ok(());
             }
             if target == "&2" {
-                crate::builtins::echo::write_echo(
+                crate::builtins::echo::write_echo_decoded(
                     echo_args.iter().map(String::as_str),
                     &mut std::io::stderr().lock(),
                 )?;
                 return Ok(());
             }
             if is_closed_redirect_target(&target) || is_null_device(&target) {
-                crate::builtins::echo::write_echo(
+                crate::builtins::echo::write_echo_decoded(
                     echo_args.iter().map(String::as_str),
                     &mut std::io::sink(),
                 )?;
                 return Ok(());
             }
             let mut file = self.create_redirect_output(&target, redirect.clobber)?;
-            crate::builtins::echo::write_echo(echo_args.iter().map(String::as_str), &mut file)?;
+            crate::builtins::echo::write_echo_decoded(
+                echo_args.iter().map(String::as_str),
+                &mut file,
+            )?;
             return Ok(());
         }
 
@@ -186,7 +192,7 @@ impl Executor {
             let target = self.expand_word(&redirect.target);
             if self.has_output_fd_target(&target) {
                 let mut output = Vec::new();
-                crate::builtins::echo::write_echo(
+                crate::builtins::echo::write_echo_decoded(
                     echo_args.iter().map(String::as_str),
                     &mut output,
                 )?;
@@ -194,21 +200,21 @@ impl Executor {
                 return Ok(());
             }
             if target == "&2" {
-                crate::builtins::echo::write_echo(
+                crate::builtins::echo::write_echo_decoded(
                     echo_args.iter().map(String::as_str),
                     &mut std::io::stderr().lock(),
                 )?;
                 return Ok(());
             }
             if target == "&1" {
-                crate::builtins::echo::write_echo(
+                crate::builtins::echo::write_echo_decoded(
                     echo_args.iter().map(String::as_str),
                     &mut std::io::stdout().lock(),
                 )?;
                 return Ok(());
             }
             if is_closed_redirect_target(&target) {
-                crate::builtins::echo::write_echo(
+                crate::builtins::echo::write_echo_decoded(
                     echo_args.iter().map(String::as_str),
                     &mut std::io::sink(),
                 )?;
@@ -218,7 +224,10 @@ impl Executor {
                 .create(true)
                 .append(true)
                 .open(shell_path_to_windows(&target, &self.env_vars))?;
-            crate::builtins::echo::write_echo(echo_args.iter().map(String::as_str), &mut file)?;
+            crate::builtins::echo::write_echo_decoded(
+                echo_args.iter().map(String::as_str),
+                &mut file,
+            )?;
             return Ok(());
         }
 

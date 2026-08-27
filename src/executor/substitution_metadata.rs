@@ -136,9 +136,7 @@ impl ExpandedWord {
 /// when the file contained invalid sequences. Encode invalid bytes with the
 /// owner-tagged RAW_BYTE_MARKER contract so downstream owners keep byte
 /// provenance until their own output boundary decodes exactly once.
-pub(crate) fn read_shell_input_file(
-    path: impl AsRef<std::path::Path>,
-) -> std::io::Result<String> {
+pub(crate) fn read_shell_input_file(path: impl AsRef<std::path::Path>) -> std::io::Result<String> {
     let bytes = std::fs::read(path)?;
     Ok(bytes_to_shell_text(&bytes))
 }
@@ -151,13 +149,40 @@ pub(crate) fn shell_text_to_raw_bytes(text: &str) -> Vec<u8> {
     let mut output = Vec::new();
     for ch in text.chars() {
         let codepoint = ch as u32;
-        if (RAW_BYTE_MARKER_BASE..=RAW_BYTE_MARKER_BASE + u8::MAX as u32)
-            .contains(&codepoint)
-        {
+        if (RAW_BYTE_MARKER_BASE..=RAW_BYTE_MARKER_BASE + u8::MAX as u32).contains(&codepoint) {
             output.push((codepoint - RAW_BYTE_MARKER_BASE) as u8);
         } else {
             let mut encoded = [0; 4];
             output.extend_from_slice(ch.encode_utf8(&mut encoded).as_bytes());
+        }
+    }
+    output
+}
+
+/// Decode marker characters embedded in an otherwise byte-oriented output.
+///
+/// Echo can receive shell text from a `read` record, but it also emits raw
+/// bytes for `-e` octal and hexadecimal escapes. Decode the reserved UTF-8
+/// encoding in-place so those already-raw bytes remain untouched.
+pub(crate) fn decode_raw_byte_markers(bytes: &[u8]) -> Vec<u8> {
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if index + 2 < bytes.len()
+            && bytes[index] == 0xee
+            && (bytes[index + 1] == 0x80
+                || bytes[index + 1] == 0x81
+                || bytes[index + 1] == 0x82
+                || bytes[index + 1] == 0x83)
+            && (bytes[index + 2] & 0xc0) == 0x80
+        {
+            let codepoint =
+                0xe000 + ((bytes[index + 1] as u32 - 0x80) << 6) + (bytes[index + 2] as u32 - 0x80);
+            output.push((codepoint - RAW_BYTE_MARKER_BASE) as u8);
+            index += 3;
+        } else {
+            output.push(bytes[index]);
+            index += 1;
         }
     }
     output
@@ -593,10 +618,8 @@ mod tests {
 
     #[test]
     fn read_shell_input_file_preserves_invalid_utf8_as_raw_markers() {
-        let dir = std::env::temp_dir().join(format!(
-            "rubash-read-input-bytes-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("rubash-read-input-bytes-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("input.bin");
         std::fs::write(&path, [b'a', b'b', 0xff, b'\n']).unwrap();
@@ -618,7 +641,12 @@ mod tests {
         let mixed = read_shell_input_file(&path).unwrap();
         assert_eq!(
             mixed.chars().map(|ch| ch as u32).collect::<Vec<_>>(),
-            vec![0x4f60, RAW_BYTE_MARKER_BASE + 0xff, b'o' as u32, b'k' as u32],
+            vec![
+                0x4f60,
+                RAW_BYTE_MARKER_BASE + 0xff,
+                b'o' as u32,
+                b'k' as u32
+            ],
         );
 
         let _ = std::fs::remove_dir_all(&dir);

@@ -8,7 +8,7 @@ use std::io::{self, Write};
 /// Execute `echo` with arguments after the command name.
 pub fn execute(args: &[String]) -> io::Result<()> {
     let mut stdout = io::stdout().lock();
-    write_echo(args.iter().map(String::as_str), &mut stdout)
+    write_echo_decoded(args.iter().map(String::as_str), &mut stdout)
 }
 
 pub(crate) fn write_echo<'a, I, W>(args: I, writer: &mut W) -> io::Result<()>
@@ -67,6 +67,18 @@ where
     }
 
     Ok(())
+}
+
+/// Write echo output after consuming shell-text raw-byte markers.
+pub(crate) fn write_echo_decoded<'a, I, W>(args: I, writer: &mut W) -> io::Result<()>
+where
+    I: IntoIterator<Item = &'a str>,
+    W: Write,
+{
+    let mut raw = Vec::new();
+    write_echo(args, &mut raw)?;
+    let decoded = crate::executor::substitution_metadata::decode_raw_byte_markers(&raw);
+    writer.write_all(&decoded)
 }
 
 fn remove_residual_shell_quotes(arg: &str, unescape_alias_quotes: bool) -> String {
@@ -240,6 +252,20 @@ mod tests {
         assert_eq!(render_bytes(&["-e", "\\0400"]), b"\0\n");
         assert_eq!(render_bytes(&["-e", "\\0777"]), vec![0xff, b'\n']);
         assert_eq!(render_bytes(&["-e", "\\xff"]), vec![0xff, b'\n']);
+    }
+
+    #[test]
+    fn decodes_read_markers_without_changing_echo_raw_escapes() {
+        let marker =
+            char::from_u32(crate::executor::substitution_metadata::RAW_BYTE_MARKER_BASE + 0xff)
+                .unwrap();
+        let argument = format!("a{marker}b");
+        let mut output = Vec::new();
+        write_echo_decoded([argument.as_str()], &mut output).unwrap();
+        assert_eq!(output, b"a\xffb\n");
+        let start = output.len();
+        write_echo_decoded(["-e", "\\xff"], &mut output).unwrap();
+        assert_eq!(&output[start..], b"\xff\n");
     }
 
     #[test]

@@ -3121,3 +3121,29 @@ a top-level word-expansion failure ends the statement LIST on its physical
 line; later LINES still execute. Re-attempt needs a feeder that also models
 bash's command-boundary reader for file input, plus heredoc/continuation gates
 proven against the hanging fixture families above.
+
+### Echo raw-byte output boundary (2026-08-24)
+
+GNU `builtins/echo.def` writes the expanded argument bytes directly. The existing
+read path represents invalid input bytes as `RAW_BYTE_MARKER` shell text, so a
+direct `echo -n "$x" > file` previously wrote the marker's UTF-8 bytes
+(`61 ee 83 bf 62`) instead of the source byte (`61 ff 62`).
+
+The owner fix is deliberately limited to the final echo sink:
+`src/builtins/echo.rs::write_echo_decoded` first runs the existing echo option and
+escape logic into bytes, then decodes only the reserved marker UTF-8 sequences.
+Raw bytes already emitted by `echo -e` remain unchanged. All executor echo
+redirection branches use this sink; command-substitution production continues
+to use the undecoded writer so marker provenance survives until its owning
+boundary.
+
+Evidence:
+
+- GNU Bash 5.2.37 and rebuilt Rubash `target/probe-rawbytes/echo-direct.sh`
+  both produce `61 ff 62`.
+- `cargo test --lib builtins::echo::tests` passes 9/9.
+- `cargo test --test executor_tests command_chaining::part_047` passes 38/38,
+  including `test_echo_direct_redirect_decodes_read_raw_bytes`.
+- Source correspondence: `builtins/echo.def` output handling; Rubash owners
+  `src/builtins/echo.rs` and `src/executor/shift_echo_builtins.rs`; byte carrier
+  `src/executor/substitution_metadata.rs`.
