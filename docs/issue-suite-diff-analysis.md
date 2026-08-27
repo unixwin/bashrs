@@ -3147,3 +3147,23 @@ Evidence:
 - Source correspondence: `builtins/echo.def` output handling; Rubash owners
   `src/builtins/echo.rs` and `src/executor/shift_echo_builtins.rs`; byte carrier
   `src/executor/substitution_metadata.rs`.
+
+### Coproc `read -u` raw-byte boundary (2026-08-24)
+
+GNU `builtins/read.def` must preserve bytes read from the coprocess output
+descriptor. Rubash previously converted the record with
+`String::from_utf8_lossy(&bytes)` in `src/executor/read_io.rs`, which replaced
+invalid bytes before parameter readback. The owner now uses
+`bytes_to_shell_text(&bytes)`, matching the existing marker carrier used by file
+and pipeline input paths.
+
+Differential evidence:
+
+- GNU Bash 5.2.37 and Rubash both run `coproc C { printf '\\377\n'; }; read -r value <&${C[0]}; printf '%s' "$value"` and emit `ff`.
+- `c_command_reads_coproc_raw_bytes_without_utf8_loss` asserts the exact
+  stdout byte `[0xff]`.
+- The bounded `cargo test --test cli_tests c_command_` slice passes 61/61,
+  including existing coproc multi-record, fd-move, EOF, and writer-lifetime
+  regressions.
+- Source correspondence: GNU `builtins/read.def`; Rubash owner
+  `src/executor/read_io.rs`; carrier `src/executor/substitution_metadata.rs`.

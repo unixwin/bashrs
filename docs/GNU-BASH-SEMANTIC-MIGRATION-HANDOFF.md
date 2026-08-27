@@ -20,7 +20,7 @@ Windows/Winuxsh 是当前 release scope。Linux-only 差异不得驱动破坏 Wi
 
 - Repository: D:/repo/rubash
 - Branch: agentteams/typed-provenance
-- HEAD: cb39127a fix: decode raw markers at echo output boundary
+- HEAD: 3e3e3142 fix: preserve raw bytes through coproc read
 - Remote origin/agentteams/typed-provenance 已同步
 - Worktree clean except the pre-existing untracked `max_line` diagnostic artifact
 - GNU executable: D:/Git/bin/bash.exe，GNU Bash 5.2.37（差分基准）
@@ -34,6 +34,7 @@ Windows/Winuxsh 是当前 release scope。Linux-only 差异不得驱动破坏 Wi
 - 226a706d fix(arith): word failures in if conditions abandon the whole compound
 - 18a88b75 docs: record frame-absorption wins and defer per-line list boundary
 - cb39127a fix: decode raw markers at echo output boundary
+- 3e3e3142 fix: preserve raw bytes through coproc read
 
 工具链事实（本会话实测）：增量构建后二进制可能滞后于源码；行为矩阵前强制清除 target/debug/.fingerprint 后 cargo build 并核对行为。多轮字符串拼接编辑 CRLF 文件曾造成重复块/未闭合括号——对复杂锚点先 dump 精确字节再单次替换。
 
@@ -77,7 +78,7 @@ grand 矩阵现状：24 形 19 平。z1/z2 见第 5 节延迟项；逐形差异�
 
 ## 5. 仍然开放的 owner 边界（按优先级）
 
-1. coproc/read raw-byte 边界：`src/executor/read_io.rs` 仍有 `String::from_utf8_lossy(&bytes)`，需要对照 GNU `builtins/read.def`，补充 `read -u` coproc `0xff` differential probe 并闭合 marker carrier。
+1. coproc/read raw-byte 边界已闭合：对照 GNU `builtins/read.def`，`src/executor/read_io.rs` 的 coproc `read -u` 记录现在通过 `bytes_to_shell_text` 保留 RAW_BYTE_MARKER；GNU/Rubash 均输出 `ff`，新增 CLI differential test 通过，bounded `c_command_` slice 61/61。提交 `3e3e3142`。
 2. SubstitutionOutput 在 assignment/legacy consumer 处仍 text_lossy 转 String 的 scalar typed carrier 问题（继承自第一版文档，未变）。需要覆盖 overwrite、unset、function local、subshell clone 和 export。
 3. z1/z2 每物理行列表边界：GNU 规则=顶层词错只终止所在行的命令列表，后续行照跑。首次尝试（文件脚本走 stdin drive_command_stream 增量喂入器）使两形状平价但挂死/回归 examples::* 与 fd_redirects::c_external_* 共 11 个夹具，已回退。重试前提：设计真正的命令边界读取器（含 heredoc 收集与续行门控），先针对挂死夹具族做饥饿探针定位。
 4. ordered stderr 与 native vredir4/5/7/8 probes（redir 家族，未动）。
@@ -101,8 +102,8 @@ grand 矩阵现状：24 形 19 平。z1/z2 见第 5 节延迟项；逐形差异�
 
 1. 读取本文件和四份入口文档：gnu-bash-compatibility-implementation-plan.md、issue-suite-diff-analysis.md、bash-compat-issues.md、bash-source-map.md。
 2. git status / 进程卫生 / 最新 raw result 三查。
-3. 下一切片：对照 GNU `builtins/read.def`，闭合 `src/executor/read_io.rs` 中 coproc `read -u` 的 raw-byte carrier；先做 `0xff` differential probe，再修 owner。
-4. 随后处理 scalar command-substitution assignment carrier，覆盖 overwrite、unset、function local、subshell clone 和 export。
+3. 下一切片：处理 scalar command-substitution assignment carrier，覆盖 overwrite、unset、function local、subshell clone 和 export。
+4. 随后处理 ordered stderr/vredir primitive，并保持每个 GNU source family 一个 focused commit。
 5. z1/z2 物理行边界、ordered stderr/vredir、external child cwd/path、bashdb 失败和 arrays 保持在开放清单中。
 6. 若跨越多个 owner boundary，拆成连续小提交；每个 source family 都必须更新 semantic map 和 dated attribution。
 
