@@ -149,6 +149,16 @@ impl Executor {
             let ast = Ast { commands: body };
             let result =
                 self.with_command_input_redirects(command, |executor| executor.execute_ast(&ast));
+            // GNU Bash 5.2 (probes y1/y3, 2026-08-24): a word-expansion failure
+            // inside a brace group ends only the group tail. The command
+            // following the group still runs with the carried status.
+            let result = match result {
+                Err(ExecuteError::ExpansionFailure(code)) => {
+                    self.exit_code = code;
+                    Ok(())
+                }
+                other => other,
+            };
             let finish_result = self.finish_compound_output_process_substitutions(group_outputs);
             result?;
             finish_result?;
