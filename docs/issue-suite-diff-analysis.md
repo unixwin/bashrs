@@ -66,6 +66,50 @@ single-quoted word and remains open. The raw run is retained at
 `target/issue-suites/results/current-cli-full-r2.out`; this classification is not
 proof that every bashdb runtime failure is a Rubash semantic defect.
 
+## Read Input Raw-Byte Carrier Slice (2026-08-24)
+
+Handoff objective: close the read raw-byte record gap
+(`read x < <(printf '\377\n')`, file and `exec N<file` forms) against
+GNU Bash 5.2.37. Probes and raw artifacts:
+`target/issue-suites/results/read-raw-byte-inputs-1/` plus working scripts
+under `target/probe-rawbytes/`.
+
+Root cause: input redirection targets registered by
+`read_io.rs`, `read_redirected_fd.rs`, and the three fd-input sites in
+`trap_exec.rs` used strict `fs::read_to_string`. Files produced by
+process-substitution materialization contain raw bytes, so every
+invalid-UTF-8 record either aborted the whole redirect (`exec 3<binary`
+ emitted "stream did not contain valid UTF-8") or dropped the record to an
+EOF-style empty assignment.
+
+Fix: added the owner-tagged reader
+`substitution_metadata::read_shell_input_file` (bytes -> RAW_BYTE_MARKER
+shell text) and routed all five input-file sites through it. Storage,
+declare formatting, `$x` expansion, the shared fd table (`TextInput.data`
+is already byte-native), and printf's final `raw_bytes` decode now carry
+provenance end to end. Pipeless verification matches GNU byte-for-byte:
+`printf 'hi\377\n' > f; read x < f; printf '%s' "$x" > out` yields
+`68 69 ff` in both shells; `declare -p x` shows the single marker payload;
+`exec 3<f` + `read -u 3` / `<&3` no longer error and replay raw bytes into
+redirected files.
+
+Gates: cargo check; cargo test --lib executor::substitution_metadata (16);
+executor_tests command_chaining::part_047 (35, including three new
+raw-byte regressions); part_080 dynamic fd (13) and full slice (156);
+cli_tests read (31), heredoc (12), mapfile (3); upstream run-redir and
+run-vredir both 1/1 exit 0. semantic map validated after the evidence
+update.
+
+Remaining boundaries for this family (each needs its own small commit):
+- pipeline stage seam: `pipeline_stages.rs` returns stage capture as
+  lossy String, so builtin->external `printf | od` still prints U+FFFD;
+  probes p2/d3/u1/u2/mixed od parity is blocked on that seam
+  (`pipeline_exec.rs`/`pipeline_stages.rs` String coupling).
+- command-substitution scalar assignment still stores `from_utf8_lossy`
+  output (`p3`: expected `41 42 ff 43 44`).
+- coproc read record conversion (`read_io.rs` coproc stdout lossy).
+- echo/other builtin write paths do not decode marker payloads yet.
+- external child env/stdin mirrors (`external_setup.rs`) remain text.
 ## Runner Infrastructure Checkpoint (2026-08-21)
 
 The Bash upstream runner preserves the caller toolchain, validates positive

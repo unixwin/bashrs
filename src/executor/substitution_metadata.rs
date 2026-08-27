@@ -127,6 +127,21 @@ impl ExpandedWord {
     }
 }
 
+/// Read a file-backed input redirection target as shell text.
+///
+/// GNU redir.c opens input redirection targets and feeds raw bytes to the
+/// reading owner (read builtin and descriptors duplicated from the entry).
+/// Rubash stores virtual input records as String, so strict UTF-8 decoding
+/// here either dropped the record entirely or aborted the whole redirect
+/// when the file contained invalid sequences. Encode invalid bytes with the
+/// owner-tagged RAW_BYTE_MARKER contract so downstream owners keep byte
+/// provenance until their own output boundary decodes exactly once.
+pub(crate) fn read_shell_input_file(
+    path: impl AsRef<std::path::Path>,
+) -> std::io::Result<String> {
+    let bytes = std::fs::read(path)?;
+    Ok(bytes_to_shell_text(&bytes))
+}
 pub(crate) fn bytes_to_shell_text(bytes: &[u8]) -> String {
     let mut output = String::new();
     let mut remaining = bytes;
@@ -554,5 +569,38 @@ mod tests {
             SubstitutionQuoteContext::DoubleQuoted,
         );
         assert_eq!(output.text_lossy(), "\"x y\"");
+    }
+
+    #[test]
+    fn read_shell_input_file_preserves_invalid_utf8_as_raw_markers() {
+        let dir = std::env::temp_dir().join(format!(
+            "rubash-read-input-bytes-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("input.bin");
+        std::fs::write(&path, [b'a', b'b', 0xff, b'\n']).unwrap();
+
+        let text = read_shell_input_file(&path).unwrap();
+        assert_eq!(
+            text.chars().map(|ch| ch as u32).collect::<Vec<_>>(),
+            vec![
+                b'a' as u32,
+                b'b' as u32,
+                RAW_BYTE_MARKER_BASE + 0xff,
+                b'\n' as u32,
+            ]
+        );
+
+        // Valid UTF-8 segments keep their exact bytes, including multibyte
+        // characters adjacent to an invalid sequence.
+        std::fs::write(&path, vec![0xe4, 0xbd, 0xa0, 0xff, b'o', b'k']).unwrap();
+        let mixed = read_shell_input_file(&path).unwrap();
+        assert_eq!(
+            mixed.chars().map(|ch| ch as u32).collect::<Vec<_>>(),
+            vec![0x4f60, RAW_BYTE_MARKER_BASE + 0xff, b'o' as u32, b'k' as u32],
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

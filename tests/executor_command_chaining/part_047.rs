@@ -595,3 +595,87 @@ fn test_read_upper_n_zero_succeeds_with_empty_value() {
     assert_eq!(fs::read_to_string(output_path).unwrap(), "<>:0");
     let _ = fs::remove_file(output_path);
 }
+
+
+fn write_raw_byte_probe_input(path: &str, bytes: &[u8]) {
+    let _ = fs::remove_file(path);
+    fs::write(path, bytes).unwrap();
+}
+
+// GNU keeps raw bytes through a process-substitution read record and a later
+// printf %s replay (od probe prints ff).
+#[test]
+fn test_read_process_substitution_preserves_raw_non_utf8_bytes() {
+    let output_path = "target/rubash-read-procsub-raw-bytes.txt";
+    let _ = fs::remove_file(output_path);
+    let input = "read x < <(printf 'AB\\377CD\\n'); printf '%s' \"$x\" > ".to_string()
+        + output_path;
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read(output_path).unwrap(), b"AB\xFFCD".to_vec());
+    let _ = fs::remove_file(output_path);
+}
+
+// GNU read preserves invalid UTF-8 stored in a regular input file.
+#[test]
+fn test_read_file_redirect_preserves_raw_non_utf8_bytes() {
+    let input_path = "target/rubash-read-file-raw-bytes-input.bin";
+    let output_path = "target/rubash-read-file-raw-bytes.txt";
+    let _ = fs::remove_file(output_path);
+    write_raw_byte_probe_input(input_path, &[b'h', b'i', 0xff, b'\n']);
+    let input = "read x < ".to_string() + input_path + "; printf '%s' \"$x\" > " + output_path;
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read(output_path).unwrap(), b"hi\xFF".to_vec());
+    let _ = fs::remove_file(input_path);
+    let _ = fs::remove_file(output_path);
+}
+
+// A persistent descriptor opened with exec N<file feeds read -u / <&N with
+// the same byte provenance (GNU redir.c descriptor duplication).
+#[test]
+fn test_exec_persistent_fd_read_preserves_raw_non_utf8_bytes() {
+    let input_path = "target/rubash-exec-fd-raw-bytes-input.bin";
+    let output_path = "target/rubash-exec-fd-raw-bytes-u.txt";
+    let output_move_path = "target/rubash-exec-fd-raw-bytes-dup.txt";
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(output_move_path);
+    write_raw_byte_probe_input(input_path, &[b'a', 0xff, b'b', b'\n']);
+    let input = "exec 3< ".to_string()
+        + input_path
+        + "; read -u 3 x; printf '%s' \"$x\" > "
+        + output_path + ";";
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+    let result = executor.execute_ast(&ast);
+    assert!(result.is_ok());
+    assert_eq!(fs::read(output_path).unwrap(), b"a\xFFb".to_vec());
+
+    // Second form: dup the closed-over fd onto stdin for read.
+    let mut executor_dup = Executor::new();
+    let input_dup = "exec 3< ".to_string()
+        + input_path
+        + "; exec 0<&3; read x; printf '%s' \"$x\" > "
+        + output_move_path;
+    let ast_dup = parse(&tokenize(&input_dup));
+    let result_dup = executor_dup.execute_ast(&ast_dup);
+    assert!(result_dup.is_ok());
+    assert_eq!(fs::read(output_move_path).unwrap(), b"a\xFFb".to_vec());
+
+    let _ = fs::remove_file(input_path);
+    let _ = fs::remove_file(output_path);
+    let _ = fs::remove_file(output_move_path);
+}

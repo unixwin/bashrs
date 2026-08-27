@@ -638,7 +638,7 @@ impl Executor {
                     .write(true)
                     .open(&path)?;
             }
-            let input = fs::read_to_string(&path)?;
+            let input = crate::executor::substitution_metadata::read_shell_input_file(&path)?;
             self.set_fd_input_text(fd, input, fd != 0);
             if redirect.operator == "<>" {
                 self.fd_table
@@ -991,7 +991,7 @@ impl Executor {
                     .write(true)
                     .open(&path)?;
             }
-            let input = fs::read_to_string(path)?;
+            let input = crate::executor::substitution_metadata::read_shell_input_file(path)?;
             let fd = self.allocate_dynamic_fd();
             self.set_dynamic_fd_variable(name, fd);
             self.set_fd_input_text(fd, input, true);
@@ -1132,7 +1132,7 @@ impl Executor {
                 let input = if is_null_device(&target) {
                     String::new()
                 } else {
-                    fs::read_to_string(&path)?
+                    crate::executor::substitution_metadata::read_shell_input_file(&path)?
                 };
                 let fd = self.allocate_dynamic_fd();
                 self.set_fd_input_text(fd, input, true);

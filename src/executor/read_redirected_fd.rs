@@ -40,7 +40,14 @@ impl Executor {
                 .write(true)
                 .open(&path);
         }
-        let input = fs::read_to_string(path).ok()?;
+        // Same byte-preserving contract as read_io.rs for the shell-owned
+        // descriptor path (GNU redir.c feeds raw bytes to the read owner).
+        let input =
+            match crate::executor::substitution_metadata::read_shell_input_file(&path)
+        {
+            Ok(text) => text,
+            Err(_) => return None,
+        };
         Some(trim_read_input(
             input,
             delimiter,

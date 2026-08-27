@@ -127,7 +127,14 @@ impl Executor {
                     .write(true)
                     .open(&path);
             }
-            let input = fs::read_to_string(path).ok()?;
+            // GNU read receives raw bytes from redir.c-opened inputs. Keep
+            // invalid UTF-8 inside the RAW_BYTE_MARKER carrier instead of
+            // dropping the whole record at this boundary.
+            let Ok(input) =
+                crate::executor::substitution_metadata::read_shell_input_file(path)
+            else {
+                return None;
+            };
             if input.is_empty() {
                 return None;
             }
