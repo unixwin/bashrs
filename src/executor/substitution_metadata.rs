@@ -42,6 +42,15 @@ impl SubstitutionOutput {
         bytes_to_shell_text(&self.bytes)
     }
 
+    /// Materialize assignment values without colliding with legacy C0 metadata.
+    ///
+    /// `\x14..\x1f` are still used by parser/assignment adapters, so a raw
+    /// command-substitution byte in that range must use the owner-tagged byte
+    /// marker before entering the legacy scalar map.
+    pub(in crate::executor) fn assignment_text(&self) -> String {
+        bytes_to_assignment_shell_text(&self.bytes)
+    }
+
     /// Convert capture metadata into an expansion fragment without decoding payload bytes.
     pub(in crate::executor) fn into_fragment(self) -> ExpandedFragment {
         let quoted = !matches!(self.context, SubstitutionQuoteContext::Unquoted);
@@ -187,6 +196,20 @@ pub(crate) fn decode_raw_byte_markers(bytes: &[u8]) -> Vec<u8> {
     }
     output
 }
+pub(crate) fn bytes_to_assignment_shell_text(bytes: &[u8]) -> String {
+    let text = bytes_to_shell_text(bytes);
+    let mut output = String::with_capacity(text.len());
+    for ch in text.chars() {
+        let codepoint = ch as u32;
+        if (0x14..=0x1f).contains(&codepoint) {
+            output.push(char::from_u32(RAW_BYTE_MARKER_BASE + codepoint).unwrap());
+        } else {
+            output.push(ch);
+        }
+    }
+    output
+}
+
 pub(crate) fn bytes_to_shell_text(bytes: &[u8]) -> String {
     let mut output = String::new();
     let mut remaining = bytes;

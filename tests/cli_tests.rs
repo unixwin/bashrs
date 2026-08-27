@@ -58,6 +58,32 @@ fn c_command_reads_coproc_raw_bytes_without_utf8_loss() {
 }
 
 #[test]
+fn scalar_command_substitution_assignment_preserves_c0_and_raw_bytes() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"x=$(printf '\377'); y=$(printf '\035'); printf '%s%s' "$x" "$y""#)
+        .output()
+        .expect("run scalar assignment raw-byte probe");
+
+    assert!(output.status.success());
+    assert_eq!(output.stdout, [0xff, 0x1d]);
+    assert_eq!(output.stderr, b"");
+}
+
+#[test]
+fn scalar_assignment_preserves_bytes_across_local_subshell_and_export() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"x=$(printf '\377'); y=$(printf '\035'); foo() { local x=$(printf '\377'); printf '%s' "$x"; }; foo; (x=$(printf '\377'); printf '%s' "$x"); x=$(printf '\377'); export x; env | grep '^x='"#)
+        .output()
+        .expect("run scalar assignment scope probe");
+
+    assert!(output.status.success());
+    assert_eq!(output.stdout, [0xff, 0xff, b'x', b'=', 0xff, b'\n']);
+    assert_eq!(output.stderr, b"");
+}
+
+#[test]
 fn c_command_keeps_unread_coproc_records_for_later_reads() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

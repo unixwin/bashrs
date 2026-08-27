@@ -101,7 +101,7 @@ impl Executor {
                         SubstitutionQuoteContext::Unquoted
                     },
                 );
-                return result.text_lossy();
+                return result.assignment_text();
             }
         }
 
@@ -110,7 +110,7 @@ impl Executor {
                 return expanded;
             }
             if let Some(output) = self.expand_backtick_substitution_typed(value, quoted) {
-                return output.text_lossy();
+                return output.assignment_text();
             }
         }
 
