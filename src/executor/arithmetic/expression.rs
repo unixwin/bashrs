@@ -120,6 +120,10 @@ impl ConditionalArithParser<'_> {
             }
             self.skip_ws();
             if self.assignment_lvalue_is_next() {
+                // GNU names this case explicitly: assignment targets must be
+                // variables even behind || evaluation.
+                self.error_category =
+                    Some(super::super::ArithmeticErrorCategory::NonVariableAssignment);
                 return None;
             }
             if left != 0 {
@@ -141,6 +145,8 @@ impl ConditionalArithParser<'_> {
             }
             self.skip_ws();
             if self.assignment_lvalue_is_next() {
+                self.error_category =
+                    Some(super::super::ArithmeticErrorCategory::NonVariableAssignment);
                 return None;
             }
             if left == 0 {

@@ -169,11 +169,16 @@ fn empty_quoted_operand_has_operator(expression: &str) -> bool {
         })
 }
 
+// Word-expansion arithmetic failures abort the enclosing command list:
+// top-level lists end the noninteractive run while function bodies stop
+// before their remaining commands. GNU Bash 5.2 evidence (2026-08-24):
+// $((08)), $((2#2)), $((1/0)), $((1=2)), $((1++)) and $((4 ? 20 : )) all
+// print one diagnostic then skip every later command with status 1. A
+// `( )` frame ends only the subshell; the caller continues. `let` and
+// `(( ))` never reach this predicate: their evaluation failures stay
+// nonfatal status-1 continuations (probes d2/d3).
 pub(crate) fn arithmetic_expansion_is_fatal(expression: &str) -> bool {
-    matches!(
-        arithmetic_error_category(expression),
-        Some(ArithmeticErrorCategory::EmptyArraySubscript)
-    )
+    arithmetic_error_category(expression).is_some()
 }
 
 pub(crate) fn arithmetic_error_category(expression: &str) -> Option<ArithmeticErrorCategory> {
@@ -307,6 +312,23 @@ pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<
     if let Some((token, error)) = invalid_based_literal(expression) {
         return Some(format!(
             "{expression}: {error} (error token is \"{token}\")"
+        ));
+    }
+
+    // GNU Bash rejects a bare assignment target behind && / || even when
+    // short-circuit skips it: `$((0 && B=42))` fails with
+    // "attempted assignment to non-variable" (error token is "=42").
+    if let Some(token) = logical_rhs_assignment_token(expression) {
+        return Some(format!(
+            "{expression}: attempted assignment to non-variable (error token is \"{token}\")"
+        ));
+    }
+
+    // An empty ternary branch is a parse failure in Bash:
+    // `$((4 ? 20 : ))` reports "expression expected" (error token is ": ").
+    if let Some(token) = empty_ternary_branch_token(expression) {
+        return Some(format!(
+            "{expression}: expression expected (error token is \"{token}\")"
         ));
     }
 
@@ -698,8 +720,64 @@ mod fatality_tests {
         assert!(arithmetic_expansion_is_fatal("2#2"));
     }
 
+
+    /// Word-expansion probe evidence (GNU Bash 5.2.37, 2026-08-24):
+    /// `$((1/0)); echo after` never reaches `after`, status 1. Only
+    /// command-context evaluation (`let`, `(( ))`) keeps running.
     #[test]
-    fn division_by_zero_remains_nonfatal_for_script_continuation() {
-        assert!(!arithmetic_expansion_is_fatal("1/0"));
+    fn division_by_zero_in_word_expansion_is_fatal() {
+        assert!(arithmetic_expansion_is_fatal("1/0"));
+    }
+}
+
+
+/// Detects `&& B=...` / `|| B=...` shapes whose right-hand side starts with
+/// an identifier assignment. Returns the operator-prefixed error token
+/// (for example `"=42"` for `0 && B=42`), mirroring GNU expr.c diagnostics.
+fn logical_rhs_assignment_token(expression: &str) -> Option<String> {
+    for op in ["&&", "||"] {
+        let mut from = 0;
+        while let Some(at) = expression[from..].find(op) {
+            let rest = expression[from + at + op.len()..].trim_start();
+            let first = match rest.chars().next() {
+                Some(ch) => ch,
+                None => return None,
+            };
+            if !(first.is_ascii_alphabetic() || first == '_') {
+                from += at + op.len();
+                continue;
+            }
+            let mut len = first.len_utf8();
+            while rest[len..]
+                .chars()
+                .next()
+                .is_some_and(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+            {
+                len += rest[len..].chars().next().unwrap().len_utf8();
+            }
+            let after_trimmed = rest[len..].trim_start();
+            if !after_trimmed.starts_with('=') {
+                return None;
+            }
+            let operand: String = after_trimmed[1..]
+                .trim_start()
+                .chars()
+                .take_while(|ch| !matches!(ch, ' ' | '\t' | ')' | ',' | ';'))
+                .collect();
+            return Some(format!("={operand}"));
+        }
+    }
+    None
+}
+
+/// Detects `$((cond ? true :))` shapes where the false branch holds only
+/// whitespace; returns the `": "` error token GNU prints.
+fn empty_ternary_branch_token(expression: &str) -> Option<String> {
+    let question = expression.find('?')?;
+    let colon = expression[question..].find(':')? + question;
+    if expression[colon + 1..].trim().is_empty() {
+        Some(": ".to_string())
+    } else {
+        None
     }
 }

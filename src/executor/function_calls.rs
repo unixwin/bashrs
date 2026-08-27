@@ -203,6 +203,13 @@ impl Executor {
             }
         }
         match result {
+            // GNU Bash 5.2 (probes f3/f4, 2026-08-24): a word-expansion
+            // failure ends only this function invocation; the caller sees
+            // the failure status and keeps its own remaining list running.
+            Err(ExecuteError::ExpansionFailure(status)) => {
+                self.exit_code = status;
+                Ok(())
+            }
             Err(ExecuteError::Return(status)) => {
                 self.exit_code = status;
                 Ok(())

@@ -585,8 +585,12 @@ fn arithmetic_conditional_false_branch_assignment_matches_bash() {
     assert!(stderr.contains("error token is \"=9"), "stderr: {stderr}");
 }
 
+// GNU Bash 5.2.37 evidence (2026-08-24 probes): every ordinary-word
+// arithmetic expansion error aborts the whole noninteractive run with
+// status 1; later commands never execute. Command-context evaluation
+// (`let`, `(( ))`) keeps its own nonfatal status-1 continuation.
 #[test]
-fn arithmetic_word_errors_continue_without_errexit() {
+fn arithmetic_word_errors_abort_noninteractive_scripts() {
     for expression in ["1=2", "1++", "1/0", "08"] {
         let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
             .arg("-c")
@@ -594,10 +598,10 @@ fn arithmetic_word_errors_continue_without_errexit() {
             .output()
             .expect("run ordinary-word arithmetic probe");
 
-        assert_eq!(output.status.code(), Some(0), "expression: {expression}");
+        assert_eq!(output.status.code(), Some(1), "expression: {expression}");
         assert_eq!(
             String::from_utf8_lossy(&output.stdout),
-            "after\n",
+            "",
             "expression: {expression}"
         );
         assert!(
@@ -637,16 +641,19 @@ fn inherit_errexit_aborts_command_substitution_body() {
     assert_eq!(String::from_utf8_lossy(&output.stdout), "");
 }
 
+// GNU Bash 5.2.37 (probe 2026-08-24): an integer-declared assignment
+// with a literal ternary assignment target fails with "attempted
+// assignment to non-variable" and aborts the run (status 1).
 #[test]
-fn arithmetic_assignment_error_continues_without_errexit() {
+fn arithmetic_assignment_error_aborts_without_errexit() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
         .arg("declare -i x=2; y=$((1 ? 20 : x+=2)); echo after:$? y:$y x:$x")
         .output()
         .expect("run nonfatal arithmetic assignment probe");
 
-    assert_eq!(output.status.code(), Some(0));
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "after:1 y: x:2\n");
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("attempted assignment to non-variable"));
     assert!(
@@ -671,6 +678,35 @@ fn associative_arithmetic_subscript_preserves_escaped_command_substitution() {
     assert!(String::from_utf8_lossy(&output.stderr).is_empty());
 }
 
+// GNU Bash 5.2.37 (2026-08-24): $((4 ? 20 : )) aborts the run with
+// status 1 and prints one diagnostic; "after" never executes.
+// GNU Bash 5.2.37 (probes f3/f4, 2026-08-24): a word-expansion failure
+// inside a function body ends only that invocation; the caller keeps its
+// remaining list and observes status 1 (`end-sub:1`).
+#[test]
+fn arithmetic_word_error_inside_function_returns_early_only() {
+    let script_dir = env!("CARGO_MANIFEST_DIR");
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("f() { x=$((08)); echo post; }\nf\necho end-sub:$?")
+        .current_dir(script_dir)
+        .output()
+        .expect("run function containment probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "end-sub:1\n",
+        "stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("value too great for base"),
+        "stderr: {stderr}"
+    );
+}
+
 #[test]
 fn arithmetic_conditional_requires_false_branch_expression() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
@@ -679,9 +715,13 @@ fn arithmetic_conditional_requires_false_branch_expression() {
         .output()
         .expect("run empty arithmetic conditional probe");
 
-    assert_eq!(output.status.code(), Some(0));
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "after\n");
-    assert!(String::from_utf8_lossy(&output.stderr).contains("syntax error"));
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("expression expected"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
@@ -1245,6 +1285,9 @@ fn assignment_shaped_argument_preserves_quoted_rhs_spaces() {
     );
 }
 
+// GNU Bash 5.2.37 (2026-08-24): the subshell frame ends on the word
+// error, so only "outer:9" is printed and the parent continues with
+// status 0.
 #[test]
 fn arithmetic_error_aborts_current_subshell_only() {
     let script = concat!(
@@ -1257,24 +1300,28 @@ fn arithmetic_error_aborts_current_subshell_only() {
         .expect("run arithmetic subshell error probe");
 
     assert_eq!(output.status.code(), Some(0));
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        "inner:9\nouter:9\n"
-    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "outer:9\n");
     assert!(!String::from_utf8_lossy(&output.stderr).is_empty());
 }
 
+// GNU Bash 5.2.37 (2026-08-24): even behind a false && left side the
+// literal assignment target fails with "attempted assignment to
+// non-variable" and aborts the run; status 1, stdout empty.
 #[test]
-fn arithmetic_logical_short_circuit_still_parses_bare_assignment() {
+fn arithmetic_logical_short_circuit_literal_assignment_aborts() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
         .arg("B=9; echo $((0 && B=42)); echo after")
         .output()
         .expect("run arithmetic short-circuit assignment probe");
 
-    assert_eq!(output.status.code(), Some(0));
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "after\n");
-    assert!(!String::from_utf8_lossy(&output.stderr).is_empty());
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("attempted assignment to non-variable"),
+        "stderr: {stderr}"
+    );
 }
 
 #[test]

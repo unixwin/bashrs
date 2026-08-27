@@ -311,6 +311,11 @@ pub enum ExecuteError {
     FunctionNotFound(String),
     IoError(std::io::Error),
     ExitCode(i32),
+    /// A word-expansion failure that aborts only the current command
+    /// list: function frames absorb it as an early return carrying this
+    /// status, `( )` frames end just the subshell, and a top-level list
+    /// ends the noninteractive run (GNU probes f3/f4, 2026-08-24).
+    ExpansionFailure(i32),
     Break(usize),
     Continue(usize),
     Return(i32),
@@ -326,6 +331,7 @@ impl std::fmt::Display for ExecuteError {
             }
             ExecuteError::IoError(e) => write!(f, "rubash: {}", e),
             ExecuteError::ExitCode(code) => write!(f, "exit code: {}", code),
+            ExecuteError::ExpansionFailure(code) => write!(f, "exit code: {}", code),
             ExecuteError::Break(level) => write!(f, "break {}", level),
             ExecuteError::Continue(level) => write!(f, "continue {}", level),
             ExecuteError::Return(status) => write!(f, "return {}", status),

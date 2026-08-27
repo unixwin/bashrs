@@ -662,7 +662,7 @@ fn command_substitution_result_status(result: Result<(), ExecuteError>, exit_cod
     match result {
         Ok(()) => exit_code,
         Err(ExecuteError::Return(status)) => status,
-        Err(ExecuteError::ExitCode(status)) => status,
+        Err(ExecuteError::ExitCode(status)) | Err(ExecuteError::ExpansionFailure(status)) => status,
         Err(_) => 1,
     }
 }

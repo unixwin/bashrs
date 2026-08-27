@@ -1009,17 +1009,23 @@ fn env_file_assignments_are_printed_when_no_command_is_given() {
     let _ = fs::remove_file(env_file);
 }
 
+// GNU Bash 5.2.37 (2026-08-24): $((1/0)) as a command word ends the
+// noninteractive run with status 1 before any later command.
 #[test]
-fn arithmetic_expansion_error_aborts_the_shell() {
+fn arithmetic_word_division_error_exits_noninteractive_shell() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
         .arg("echo $((1/0)); echo after")
         .output()
         .expect("run rubash");
 
-    assert_eq!(output.status.code(), Some(0));
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "after\n");
-    assert!(String::from_utf8_lossy(&output.stderr).contains("division by 0"));
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("division by 0"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]

@@ -87,7 +87,7 @@ impl Executor {
         }
         let status = match result {
             Ok(()) => status,
-            Err(ExecuteError::ExitCode(code)) => code,
+            Err(ExecuteError::ExitCode(code)) | Err(ExecuteError::ExpansionFailure(code)) => code,
             Err(error) => return Err(error),
         };
 
@@ -149,7 +149,7 @@ impl Executor {
         }
         let status = match result {
             Ok(()) => status,
-            Err(ExecuteError::ExitCode(code)) => code,
+            Err(ExecuteError::ExitCode(code)) | Err(ExecuteError::ExpansionFailure(code)) => code,
             Err(error) => return Err(error),
         };
         Ok(Some((
@@ -198,7 +198,7 @@ impl Executor {
         crate::executor::shell_options::restore_stdout_capture(saved_capture);
         let status = match result {
             Ok(()) => status,
-            Err(ExecuteError::ExitCode(code)) => code,
+            Err(ExecuteError::ExitCode(code)) | Err(ExecuteError::ExpansionFailure(code)) => code,
             Err(error) => return Err(error),
         };
         Ok(Some((

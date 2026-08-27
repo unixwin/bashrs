@@ -113,14 +113,13 @@ impl Executor {
                     1
                 };
                 self.exit_code = failure_status;
-                let script_mode_nonfatal = self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
-                    && self.subshell_depth.get() == 0
-                    && (!self.errexit_enabled() || !self.errexit_is_active());
-                if assignment_result.arithmetic_nonfatal_error || script_mode_nonfatal {
-                    status = failure_status;
-                    continue;
-                }
-                return Err(ExecuteError::ExitCode(failure_status));
+                // Only genuinely nonfatal categories continue here. GNU Bash
+                // 5.2 evidence: an invalid literal (`08`, `2#2`) inside an
+                // assignment word abandons the whole enclosing list even in
+                // plain script mode with no errexit (later commands never run,
+                // status 1); readonly/division-by-zero classes keep their
+                // recorded nonfatal continuation.
+                return Err(ExecuteError::ExpansionFailure(failure_status));
             }
             if let Some(substitution_status) = substitution_status {
                 status = substitution_status;

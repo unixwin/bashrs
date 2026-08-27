@@ -296,7 +296,7 @@ impl Executor {
         }
 
         match result {
-            Ok(()) | Err(ExecuteError::ExitCode(_)) | Err(ExecuteError::Return(_)) => Some(output),
+            Ok(()) | Err(ExecuteError::ExitCode(_)) | Err(ExecuteError::ExpansionFailure(_)) | Err(ExecuteError::Return(_)) => Some(output),
             Err(_) => None,
         }
     }

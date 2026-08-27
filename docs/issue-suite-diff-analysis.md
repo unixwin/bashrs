@@ -3063,3 +3063,38 @@ The specialized mutable `printf` command-substitution dispatch now routes captur
 ## 2026-08-26 output process-substitution byte carrier
 
 GNU `subst.c`/`process_substitution.c` output-process-substitution execution must feed the command's fd 0 with the completed temporary payload before the process-substitution cleanup boundary. `src/executor/fd_table.rs` now stores virtual text/process-substitution input as byte vectors with shared byte offsets; `MaterializedRead::Bytes` and `set_fd_input_bytes` preserve arbitrary payloads. `src/executor/external_setup.rs` reads output substitution temp files with `fs::read`, uses the typed fd table as authoritative state for invalid UTF-8, and keeps the String mirror only for valid text. Focused differential `output_process_substitution_preserves_printf_raw_bytes` verifies `printf '\377' > >(od -An -tx1)` emits `ff`, while the existing external and assignment process-substitution regressions remain green. The combined shell-owned `read` case `shell_read_with_input_and_output_process_substitutions_preserves_streams` also passes, covering `< <(...)` input and `> >(cat)` output in one function invocation. A separate GNU differential probe, `read x < <(printf '\377\n'); printf '%s' "$x" | od -An -tx1`, emits `ff` under Bash but currently emits no bytes under Rubash; this remaining loss belongs to the `read_io.rs`/`read_helpers.rs` shell-variable text boundary and is the next focused gate.
+
+
+## Arithmetic Word-Expansion Fatality Reslice (2026-08-24)
+
+**Supersedes** the earlier "Arithmetic Expansion Status (2026-08-24)" claim that
+plain word errors continue without errexit. Fresh per-shape GNU Bash 5.2.37
+probes (`target/probe-rawbytes/{a1,b1,b3,b5,e5,g0..g3,s1..s3,x1..x3,z1,z2,y1..y3,f3,f4,d1..d3}.sh`,
+`bash.exe` vs `rubash.exe` from repo root) establish:
+
+- A categorized word-expansion arithmetic failure (`08`, `2#2`, `1/0`, `1=2`,
+  `1++`, empty ternary branch, literal assignment target behind `&&`/`||`)
+  abandons the rest of the CURRENT command list.
+- Rubash now matches GNU byte-for-byte on diagnostics for all probed shapes
+  (GNU texts: "expression expected", "attempted assignment to non-variable",
+  "value too great for base"). New evaluator helpers:
+  `logical_rhs_assignment_token`, `empty_ternary_branch_token`; logical RHS
+  classifications added in `arithmetic/expression.rs`.
+- New `ExecuteError::ExpansionFailure(i32)` carries list-abort semantics.
+  Function frames absorb it as an early return (probe f3: caller sees
+  `end-sub:1` and continues), while `exit N` still pierces function frames
+  (probe x2, rc=3 unchanged). Capture boundaries (subshell bodies, command
+  substitution status helpers, pipeline stages) map it to a captured status.
+- Grand probe matrix on final build: **19/24 exact parity**, including every
+  top-level word-error halt (rc=1, no later output).
+
+**Remaining known divergences (next small slices):**
+
+1. `z1/z2`: GNU continues to the NEXT PHYSICAL LINE after an assignment-word
+   failure at top level; rubash currently keeps sibling commands of the same
+   line running instead of stopping the line remainder first.
+2. `y1/y3`: brace-group frames should absorb like function frames (GNU runs
+   `out` after `{ x=$((08)); echo g2; }` skips only the group tail).
+3. `f4`: when the aborting call sits inside an if/elif CONDITION, GNU
+   abandons the whole compound command; rubash falls into the else arm
+   because the function frame absorbs before the if frame can react.

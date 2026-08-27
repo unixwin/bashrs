@@ -188,9 +188,9 @@ impl Executor {
             return Ok(());
         }
         let cmd = alias_expanded;
-        // An arithmetic expansion fails the current command. Ordinary words
-        // continue the surrounding list without errexit; arithmetic commands
-        // and assignment contexts retain their own status handling above.
+        // A categorized word-expansion arithmetic failure abandons the rest
+        // of the current command list in every mode (GNU Bash 5.2 probes:
+        // a1/b*/e5/z*, 2026-08-24).
         if self.arithmetic_expansion_error.get() {
             self.arithmetic_expansion_error.set(false);
             self.arithmetic_fatal_error.replace(false);
@@ -204,16 +204,7 @@ impl Executor {
                 1
             };
             self.exit_code = status;
-            let script_mode_nonfatal = (self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
-                || self.env_vars.contains_key("BASH_EXECUTION_STRING"))
-                && self.subshell_depth.get() == 0
-                && (!self.errexit_enabled() || !self.errexit_is_active());
-            if self.arithmetic_nonfatal_error.replace(false)
-                && (script_mode_nonfatal || self.subshell_depth.get() > 0)
-            {
-                return Ok(());
-            }
-            return Err(ExecuteError::ExitCode(status));
+            return Err(ExecuteError::ExpansionFailure(status));
         }
 
         if alias_expansion_changed_words

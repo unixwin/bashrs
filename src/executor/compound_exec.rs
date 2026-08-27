@@ -439,7 +439,7 @@ impl Executor {
         // Catch ExitCode errors at the subshell boundary.
         let status = match result {
             Ok(()) => self.exit_code,
-            Err(ExecuteError::ExitCode(code)) => code,
+            Err(ExecuteError::ExitCode(code)) | Err(ExecuteError::ExpansionFailure(code)) => code,
             Err(error) => {
                 self.restore_shell_env(saved_env);
                 self.pipestatus = saved_pipestatus;
@@ -576,7 +576,14 @@ impl Executor {
     }
 
     fn execute_if_command(&mut self, if_command: &IfCommand) -> Result<(), ExecuteError> {
-        if self.if_condition_matches(&if_command.condition)? {
+        // GNU Bash 5.2 (probe f4, 2026-08-24): a word-expansion failure in
+        // an if/elif condition abandons the whole compound command instead
+        // of selecting the else branch.
+        let matched = match self.if_condition_matches(&if_command.condition)? {
+            Some(matched) => matched,
+            None => return Ok(()),
+        };
+        if matched {
             return self.execute_ast(&Ast {
                 commands: crate::builtins::source::normalize_inline_compound_commands(
                     if_command.then_body.clone(),
@@ -585,7 +592,11 @@ impl Executor {
         }
 
         for branch in &if_command.elif_branches {
-            if self.if_condition_matches(&branch.condition)? {
+            let matched = match self.if_condition_matches(&branch.condition)? {
+                Some(matched) => matched,
+                None => return Ok(()),
+            };
+            if matched {
                 return self.execute_ast(&Ast {
                     commands: crate::builtins::source::normalize_inline_compound_commands(
                         branch.body.clone(),
@@ -604,12 +615,26 @@ impl Executor {
         Ok(())
     }
 
-    fn if_condition_matches(&mut self, condition: &[CommandNode]) -> Result<bool, ExecuteError> {
+    /// Returns `None` when a word-expansion failure abandoned the whole
+    /// enclosing if command; `Some(true)` when the condition held.
+    fn if_condition_matches(
+        &mut self,
+        condition: &[CommandNode],
+    ) -> Result<Option<bool>, ExecuteError> {
         let ast = Ast {
             commands: condition.to_vec(),
         };
-        self.with_errexit_suppressed(|executor| executor.execute_ast(&ast))?;
-        Ok(self.exit_code == 0)
+        let result = self.with_errexit_suppressed(|executor| executor.execute_ast(&ast));
+        match result {
+            Err(ExecuteError::ExpansionFailure(code)) => {
+                self.exit_code = code;
+                Ok(None)
+            }
+            other => {
+                other?;
+                Ok(Some(self.exit_code == 0))
+            }
+        }
     }
 
     pub(in crate::executor) fn execute_coproc_command(
