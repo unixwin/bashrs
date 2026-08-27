@@ -3238,3 +3238,8 @@ uses `virtual_fd_stdin_remaining_bytes` plus
 `write_process_substitution_temp_bytes`. GNU/Rubash now both emit `ff 0a`.
 The focused `fd_redirects` slice passes 18/18, including
 `c_external_cat_reads_raw_bytes_from_persistent_fd`.
+
+A companion inherited-environment probe opened fd 3 and ran external `env`; GNU
+and Rubash both emitted no `__RUBASH_FD_STDIN_*` or `__RUBASH_FD_CLOSED` entries,
+with status 0 and empty stderr. The fd environment mirror remains an internal
+adapter to audit, but this leakage shape is not currently reproducible.
