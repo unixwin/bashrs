@@ -93,9 +93,20 @@ pub(crate) fn sync_typed_attributes(
         let Some(base) = declare_base_name(name) else {
             continue;
         };
+        // If the variable doesn't exist in the typed store, create it from env_vars.
         if store.get(base).is_none() {
             let value = variables.get(base).cloned().unwrap_or_default();
             let _ = store.set_scalar(base, value);
+        } else if arg.contains('=') {
+            // When there's an assignment in a declare/typed command and the
+            // variable already exists in the typed store, update its value
+            // to match env_vars (this handles local shadowing of parent vars).
+            if let Some(value) = variables.get(base) {
+                if let Some(variable) = store.get_mut(base) {
+                    // Update the scalar value while preserving the variable's type state.
+                    variable.value = crate::shell::ShellValue::Scalar(value.clone());
+                }
+            }
         }
         if arrays.contains(base)
             && !matches!(

@@ -48,12 +48,29 @@ impl Executor {
         if empty_quoted_operand_has_operator(&expression) {
             return None;
         }
+        // Save a snapshot of variable values before evaluation to detect changes.
+        let pre_eval_vars: HashMap<String, String> = self.env_vars.clone();
         let value = eval_mutable_arith_value_with_random(
             &expression,
             &mut self.env_vars,
             Some(&self.random_state),
         );
         self.report_arithmetic_readonly_error();
+        
+        // Sync any variable changes from env_vars to shell_state.variables
+        // so that subsequent variable expansions see the updated values.
+        for (name, new_value) in &self.env_vars {
+            if pre_eval_vars.get(name) != Some(new_value) {
+                // Variable was modified during arithmetic evaluation
+                if let Some(variable) = self.shell_state.variables.get_mut(name) {
+                    variable.value = crate::shell::ShellValue::Scalar(new_value.clone());
+                } else if !name.starts_with("__RUBASH_") {
+                    // Create a new entry in shell_state for non-internal variables
+                    let _ = self.shell_state.variables.set_scalar(name, new_value);
+                }
+            }
+        }
+        
         value
     }
 
@@ -720,7 +737,6 @@ mod fatality_tests {
         assert!(arithmetic_expansion_is_fatal("2#2"));
     }
 
-
     /// Word-expansion probe evidence (GNU Bash 5.2.37, 2026-08-24):
     /// `$((1/0)); echo after` never reaches `after`, status 1. Only
     /// command-context evaluation (`let`, `(( ))`) keeps running.
@@ -729,7 +745,6 @@ mod fatality_tests {
         assert!(arithmetic_expansion_is_fatal("1/0"));
     }
 }
-
 
 /// Detects `&& B=...` / `|| B=...` shapes whose right-hand side starts with
 /// an identifier assignment. Returns the operator-prefixed error token
