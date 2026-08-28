@@ -188,23 +188,23 @@ impl Executor {
             return Ok(());
         }
         let cmd = alias_expanded;
-        // A categorized word-expansion arithmetic failure abandons the rest
-        // of the current command list in every mode (GNU Bash 5.2 probes:
-        // a1/b*/e5/z*, 2026-08-24).
+        // A fatal word-expansion arithmetic failure in a bare command
+        // (e.g. bare `$((1/0))` with no other words) abandons the rest
+        // of the current command list (GNU Bash 5.2.37 evidence).
+        // When the expansion is an argument to another command (e.g.
+        // `echo $((1/0))`), the error is nonfatal and execution
+        // continues. Nonfatal errors always report and continue.
         if self.arithmetic_expansion_error.get() {
             self.arithmetic_expansion_error.set(false);
-            self.arithmetic_fatal_error.replace(false);
-            let status = if self
-                .env_vars
-                .remove("__RUBASH_ARITH_NOUNSET_ERROR")
-                .is_some()
-            {
-                127
-            } else {
-                1
-            };
+            let was_fatal = self.arithmetic_fatal_error.replace(false);
+            let nounset = self.env_vars.remove("__RUBASH_ARITH_NOUNSET_ERROR").is_some();
+            let status = if nounset { 127 } else { 1 };
+            let has_other_words = cmd.words.iter().any(|w| !w.is_empty());
+            if (was_fatal || nounset) && !has_other_words {
+                self.exit_code = status;
+                return Err(ExecuteError::ExpansionFailure(status));
+            }
             self.exit_code = status;
-            return Err(ExecuteError::ExpansionFailure(status));
         }
 
         if alias_expansion_changed_words

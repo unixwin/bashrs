@@ -687,6 +687,23 @@ fn is_standard_unix_bash_path(name: &str) -> bool {
 }
 
 pub(crate) fn shell_path_to_windows(path: &str, env_vars: &HashMap<String, String>) -> PathBuf {
+    // On Windows, a single leading backslash indicates a UNC path whose
+    // prefix was consumed by shell backslash escaping.  For example, the
+    // user types `cd \\DFDB-A1`, bash escaping reduces `\\` to `\`, and
+    // the cd builtin receives `\DFDB-A1`.  Restore the UNC prefix so the
+    // path is not misinterpreted as a logical-shell-relative path under
+    // the shell root.  Paths like `\C:\...` (root-relative with drive
+    // letter) are left to the normal normalization path.
+    if cfg!(windows) && path.starts_with('\\') && !path.starts_with("\\\\") {
+        let rest = &path[1..];
+        if !(rest.len() >= 2
+            && rest.as_bytes()[0].is_ascii_alphabetic()
+            && rest.as_bytes()[1] == b':')
+        {
+            return PathBuf::from(format!("\\\\{}", rest));
+        }
+    }
+
     let normalized = path.replace('\\', "/");
     let shell_root = configured_shell_root(env_vars);
 
@@ -1720,6 +1737,59 @@ mod tests {
     }
 
     #[cfg(windows)]
+    #[test]
+    fn windows_unc_path_with_single_leading_backslash_is_restored() {
+        let mut env_vars = HashMap::new();
+        env_vars.insert("WINUXSH_ROOT".to_string(), std::env::temp_dir().to_string_lossy().to_string());
+
+        // After shell backslash escaping, `\\DFDB-A1` becomes `\DFDB-A1`.
+        // shell_path_to_windows should restore it to `\\DFDB-A1` (UNC).
+        assert_eq!(
+            shell_path_to_windows(r"\DFDB-A1", &env_vars),
+            PathBuf::from(r"\\DFDB-A1")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_unc_path_with_share_is_restored() {
+        let mut env_vars = HashMap::new();
+        env_vars.insert("WINUXSH_ROOT".to_string(), std::env::temp_dir().to_string_lossy().to_string());
+
+        // `\DFDB-A1\share` after shell escaping should become UNC.
+        assert_eq!(
+            shell_path_to_windows(r"\DFDB-A1\share", &env_vars),
+            PathBuf::from(r"\\DFDB-A1\share")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_root_relative_drive_path_not_treated_as_unc() {
+        let mut env_vars = HashMap::new();
+        env_vars.insert("WINUXSH_ROOT".to_string(), std::env::temp_dir().to_string_lossy().to_string());
+
+        // A path like `\C:\Users` with a drive letter after the first
+        // backslash should NOT be treated as UNC.
+        assert_eq!(
+            shell_path_to_windows(r"\C:\Users", &env_vars),
+            PathBuf::from(r"C:\Users")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_bare_leading_backslash_becomes_unc_root() {
+        let mut env_vars = HashMap::new();
+        env_vars.insert("WINUXSH_ROOT".to_string(), std::env::temp_dir().to_string_lossy().to_string());
+
+        // A bare single backslash should become UNC root.
+        assert_eq!(
+            shell_path_to_windows(r"\", &env_vars),
+            PathBuf::from(r"\\")
+        );
+    }
+
     fn windows_shell_path(path: &Path) -> String {
         let value = path.to_string_lossy().replace('\\', "/");
         let bytes = value.as_bytes();

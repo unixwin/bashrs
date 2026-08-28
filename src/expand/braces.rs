@@ -294,4 +294,9 @@ mod tests {
         assert_eq!(expand_braces(r"{a\{b,c}"), vec![r"a\{b", "c"]);
         assert_eq!(expand_braces(r"{a\}b,c}"), vec![r"a\}b", "c"]);
     }
+
+    #[test]
+    fn test_adjacent_brace_groups() {
+        assert_eq!(expand_braces("{a,b}{1..2}"), vec!["a1", "a2", "b1", "b2"]);
+    }
 }

@@ -98,10 +98,10 @@ impl Executor {
             let assignment_result = self.expand_assignment_value_result(value);
             let expanded_value = assignment_result.value;
             let substitution_status = assignment_result.substitution_status;
-            if assignment_result.arithmetic_error {
-                // An arithmetic expansion error in an assignment word aborts
-                // the current command list in Bash. Do not install a partial
-                // assignment or let the AST walker skip only the next
+            if assignment_result.arithmetic_error && !assignment_result.arithmetic_nonfatal_error {
+                // A fatal arithmetic expansion error in an assignment word
+                // aborts the current command list in Bash. Do not install a
+                // partial assignment or let the AST walker skip only the next
                 // command as if this were an ordinary word expansion.
                 let failure_status = if self
                     .env_vars
@@ -113,13 +113,18 @@ impl Executor {
                     1
                 };
                 self.exit_code = failure_status;
-                // Only genuinely nonfatal categories continue here. GNU Bash
-                // 5.2 evidence: an invalid literal (`08`, `2#2`) inside an
+                // Fatal categories: invalid literal (`08`, `2#2`) inside an
                 // assignment word abandons the whole enclosing list even in
                 // plain script mode with no errexit (later commands never run,
-                // status 1); readonly/division-by-zero classes keep their
-                // recorded nonfatal continuation.
+                // status 1).
                 return Err(ExecuteError::ExpansionFailure(failure_status));
+            }
+            if assignment_result.arithmetic_error {
+                // Nonfatal arithmetic errors (e.g. "attempted assignment to
+                // non-variable" inside a ternary branch) report the diagnostic
+                // on stderr and continue without aborting the command list
+                // (GNU Bash 5.2: `y=$((1 ? 20 : x+=2))` continues).
+                self.exit_code = 1;
             }
             if let Some(substitution_status) = substitution_status {
                 status = substitution_status;
@@ -488,7 +493,7 @@ impl Executor {
                 }))
         {
             let braced = expand_braces_with_optional_raw(word, raw);
-            if braced.len() > 1 {
+            if braced.len() > 1 || (braced.len() == 1 && braced[0] != word) {
                 return braced;
             }
         }
