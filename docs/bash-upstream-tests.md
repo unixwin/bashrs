@@ -166,7 +166,7 @@ Current local baseline:
 
 This table is the `.right` expectation-file runner baseline. It is intentionally
 separate from the actual-output ledger, which compares Rubash with native Bash
-per test and currently reports `13/83 PASS` and `70 DIFF`; see
+per test and currently reports `13/83 PASS` and `70 DIFF` (注: 16个是平台噪音, 3个rubash优于bash, 真正bug约13个, 详见 docs/bash-83-test-root-cause-analysis.md); see
 `docs/compatibility-attribution-20260822.md`.
 
 The runner stays non-strict for ordinary compatibility differences in CI so it

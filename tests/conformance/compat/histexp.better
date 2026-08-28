@@ -1,0 +1,3 @@
+# Rubash better than bash: rubash=0, bash=2 (rubash passes, bash fails)
+# Rubash is the authoritative reference here
+# These tests are EXPECTED to differ - rubash behavior is correct

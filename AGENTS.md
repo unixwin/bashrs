@@ -9,6 +9,7 @@ Before making compatibility changes, read:
 
 Key rules:
 
+- **CRITICAL: Always use GNU bash (D:/Git/bin/bash.exe) for comparisons, NOT winuxsh shim.** The winuxsh shim is at PATH bash and is an older version with different behavior. Run comparisons as: `D:/Git/bin/bash.exe third_party/bash/tests/X.tests` NOT: `bash third_party/bash/tests/X.tests`
 - Fix by root-cause subsystem, not by individual expected-output lines.
 - Keep raw suite artifacts under `target/issue-suites/results/`; keep durable
   interpretation in `docs/`.
