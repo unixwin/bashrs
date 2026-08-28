@@ -218,7 +218,30 @@ impl Executor {
             }
 
             if let Some(inverted_command) = &command.inverted_command {
-                self.execute_inverted_ast_command(inverted_command)?;
+                let execution_result = self.execute_inverted_ast_command(inverted_command);
+                match execution_result {
+                    Ok(()) => {}
+                    Err(ExecuteError::CommandNotFound(cmd)) => {
+                        eprintln!("{}{}", self.diagnostic_prefix(), ExecuteError::CommandNotFound(cmd));
+                        self.exit_code = 127;
+                    }
+                    Err(ExecuteError::UnknownBuiltin(name)) => {
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            ExecuteError::UnknownBuiltin(name)
+                        );
+                        self.exit_code = 1;
+                    }
+                    Err(ExecuteError::ExpansionFailure(code)) => {
+                        self.exit_code = code;
+                    }
+                    Err(ExecuteError::IoError(error)) => {
+                        eprintln!("{}{}", self.diagnostic_prefix(), error);
+                        self.exit_code = 1;
+                    }
+                    Err(error) => return Err(error),
+                }
                 if let Some(next_index) = self.skip_and_or_rhs(ast, index) {
                     index = next_index;
                 } else {
@@ -237,6 +260,33 @@ impl Executor {
                 };
                 match execution_result {
                     Ok(()) => {}
+                    Err(ExecuteError::Break(_) | ExecuteError::Continue(_))
+                        if self.loop_depth == 0 =>
+                    {
+                        self.exit_code = 0;
+                    }
+                    Err(ExecuteError::CommandNotFound(cmd)) => {
+                        eprintln!("{}{}", self.diagnostic_prefix(), ExecuteError::CommandNotFound(cmd));
+                        self.exit_code = 127;
+                    }
+                    Err(ExecuteError::UnknownBuiltin(name)) => {
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            ExecuteError::UnknownBuiltin(name)
+                        );
+                        self.exit_code = 1;
+                    }
+                    Err(ExecuteError::ExpansionFailure(code)) => {
+                        self.exit_code = code;
+                    }
+                    Err(ExecuteError::IoError(error)) if is_closed_output_io_error(&error) => {
+                        return Err(ExecuteError::IoError(error));
+                    }
+                    Err(ExecuteError::IoError(error)) => {
+                        eprintln!("{}{}", self.diagnostic_prefix(), error);
+                        self.exit_code = 1;
+                    }
                     Err(error) => return Err(error),
                 }
                 if let Some(next_index) = self.skip_and_or_rhs(ast, index) {
@@ -248,13 +298,67 @@ impl Executor {
             }
 
             if let Some(background_command) = &command.background_command {
-                self.execute_background_ast_command(background_command)?;
+                let execution_result = self.execute_background_ast_command(background_command);
+                match execution_result {
+                    Ok(()) => {}
+                    Err(ExecuteError::CommandNotFound(cmd)) => {
+                        eprintln!("{}{}", self.diagnostic_prefix(), ExecuteError::CommandNotFound(cmd));
+                        self.exit_code = 127;
+                    }
+                    Err(ExecuteError::UnknownBuiltin(name)) => {
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            ExecuteError::UnknownBuiltin(name)
+                        );
+                        self.exit_code = 1;
+                    }
+                    Err(ExecuteError::ExpansionFailure(code)) => {
+                        self.exit_code = code;
+                    }
+                    Err(ExecuteError::IoError(error)) => {
+                        eprintln!("{}{}", self.diagnostic_prefix(), error);
+                        self.exit_code = 1;
+                    }
+                    Err(error) => return Err(error),
+                }
                 index += 1;
                 continue;
             }
 
             if command_is_time_prefixed_compound(command) {
-                self.execute_time_prefixed_compound_command(command)?;
+                let execution_result = self.execute_time_prefixed_compound_command(command);
+                match execution_result {
+                    Ok(()) => {}
+                    Err(ExecuteError::Break(_) | ExecuteError::Continue(_))
+                        if self.loop_depth == 0 =>
+                    {
+                        self.exit_code = 0;
+                    }
+                    Err(ExecuteError::CommandNotFound(cmd)) => {
+                        eprintln!("{}{}", self.diagnostic_prefix(), ExecuteError::CommandNotFound(cmd));
+                        self.exit_code = 127;
+                    }
+                    Err(ExecuteError::UnknownBuiltin(name)) => {
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            ExecuteError::UnknownBuiltin(name)
+                        );
+                        self.exit_code = 1;
+                    }
+                    Err(ExecuteError::ExpansionFailure(code)) => {
+                        self.exit_code = code;
+                    }
+                    Err(ExecuteError::IoError(error)) if is_closed_output_io_error(&error) => {
+                        return Err(ExecuteError::IoError(error));
+                    }
+                    Err(ExecuteError::IoError(error)) => {
+                        eprintln!("{}{}", self.diagnostic_prefix(), error);
+                        self.exit_code = 1;
+                    }
+                    Err(error) => return Err(error),
+                }
                 if let Some(next_index) = self.skip_and_or_rhs(ast, index) {
                     index = next_index;
                 } else {
@@ -273,6 +377,41 @@ impl Executor {
                 };
                 match execution_result {
                     Ok(()) => {}
+                    Err(ExecuteError::Break(_) | ExecuteError::Continue(_))
+                        if self.loop_depth == 0 =>
+                    {
+                        self.exit_code = 0;
+                    }
+                    Err(ExecuteError::CommandNotFound(cmd)) => {
+                        // Bash treats a command-not-found in a pipeline as
+                        // the last stage's exit status 127 and continues.
+                        eprintln!("{}{}", self.diagnostic_prefix(), ExecuteError::CommandNotFound(cmd));
+                        self.exit_code = 127;
+                    }
+                    Err(ExecuteError::UnknownBuiltin(name)) => {
+                        // Bash treats an unknown-builtin error as the
+                        // command's status 1 and continues.
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            ExecuteError::UnknownBuiltin(name)
+                        );
+                        self.exit_code = 1;
+                    }
+                    Err(ExecuteError::ExpansionFailure(code)) => {
+                        // Word-expansion failure aborts only the current
+                        // command; the surrounding list continues.
+                        self.exit_code = code;
+                    }
+                    Err(ExecuteError::IoError(error))
+                        if is_closed_output_io_error(&error) =>
+                    {
+                        return Err(ExecuteError::IoError(error));
+                    }
+                    Err(ExecuteError::IoError(error)) => {
+                        eprintln!("{}{}", self.diagnostic_prefix(), error);
+                        self.exit_code = 1;
+                    }
                     Err(error) => return Err(error),
                 }
                 if command.inverted {
@@ -280,8 +419,10 @@ impl Executor {
                 }
                 if self.errexit_enabled()
                     && self.errexit_is_active()
+                    && self.suppress_errexit == 0
                     && self.exit_code != 0
                     && !command.inverted
+                    && command.and_or().is_none()
                 {
                     return Err(ExecuteError::ExitCode(self.exit_code));
                 }
@@ -294,23 +435,118 @@ impl Executor {
             }
 
             if let Some(and_or_list) = &command.and_or_list {
-                self.execute_and_or_list_command(and_or_list)?;
+                let execution_result = self.execute_and_or_list_command(and_or_list);
+                match execution_result {
+                    Ok(()) => {}
+                    Err(ExecuteError::Break(_) | ExecuteError::Continue(_))
+                        if self.loop_depth == 0 =>
+                    {
+                        self.exit_code = 0;
+                    }
+                    Err(ExecuteError::CommandNotFound(cmd)) => {
+                        eprintln!("{}{}", self.diagnostic_prefix(), ExecuteError::CommandNotFound(cmd));
+                        self.exit_code = 127;
+                    }
+                    Err(ExecuteError::UnknownBuiltin(name)) => {
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            ExecuteError::UnknownBuiltin(name)
+                        );
+                        self.exit_code = 1;
+                    }
+                    Err(ExecuteError::ExpansionFailure(code)) => {
+                        self.exit_code = code;
+                    }
+                    Err(ExecuteError::IoError(error)) if is_closed_output_io_error(&error) => {
+                        return Err(ExecuteError::IoError(error));
+                    }
+                    Err(ExecuteError::IoError(error)) => {
+                        eprintln!("{}{}", self.diagnostic_prefix(), error);
+                        self.exit_code = 1;
+                    }
+                    Err(error) => return Err(error),
+                }
                 index += 1;
                 continue;
             }
 
-            if self.execute_brace_group_pipeline(command)? {
-                if let Some(next_index) = self.skip_and_or_rhs(ast, index) {
-                    index = next_index;
-                } else {
-                    index += 1;
+            let brace_result = self.execute_brace_group_pipeline(command);
+            match brace_result {
+                Ok(true) => {
+                    if let Some(next_index) = self.skip_and_or_rhs(ast, index) {
+                        index = next_index;
+                    } else {
+                        index += 1;
+                    }
+                    continue;
                 }
-                continue;
+                Ok(false) => {}
+                Err(ExecuteError::Break(_) | ExecuteError::Continue(_))
+                    if self.loop_depth == 0 =>
+                {
+                    self.exit_code = 0;
+                }
+                Err(ExecuteError::CommandNotFound(cmd)) => {
+                    eprintln!("{}{}", self.diagnostic_prefix(), ExecuteError::CommandNotFound(cmd));
+                    self.exit_code = 127;
+                }
+                Err(ExecuteError::UnknownBuiltin(name)) => {
+                    eprintln!(
+                        "{}{}",
+                        self.diagnostic_prefix(),
+                        ExecuteError::UnknownBuiltin(name)
+                    );
+                    self.exit_code = 1;
+                }
+                Err(ExecuteError::ExpansionFailure(code)) => {
+                    self.exit_code = code;
+                }
+                Err(ExecuteError::IoError(error)) if is_closed_output_io_error(&error) => {
+                    return Err(ExecuteError::IoError(error));
+                }
+                Err(ExecuteError::IoError(error)) => {
+                    eprintln!("{}{}", self.diagnostic_prefix(), error);
+                    self.exit_code = 1;
+                }
+                Err(error) => return Err(error),
             }
 
-            if let Some(next_index) = self.execute_simple_pipeline(ast, index)? {
-                index = next_index;
-                continue;
+            let simple_result = self.execute_simple_pipeline(ast, index);
+            match simple_result {
+                Ok(Some(next_index)) => {
+                    index = next_index;
+                    continue;
+                }
+                Ok(None) => {}
+                Err(ExecuteError::Break(_) | ExecuteError::Continue(_))
+                    if self.loop_depth == 0 =>
+                {
+                    self.exit_code = 0;
+                }
+                Err(ExecuteError::CommandNotFound(cmd)) => {
+                    eprintln!("{}{}", self.diagnostic_prefix(), ExecuteError::CommandNotFound(cmd));
+                    self.exit_code = 127;
+                }
+                Err(ExecuteError::UnknownBuiltin(name)) => {
+                    eprintln!(
+                        "{}{}",
+                        self.diagnostic_prefix(),
+                        ExecuteError::UnknownBuiltin(name)
+                    );
+                    self.exit_code = 1;
+                }
+                Err(ExecuteError::ExpansionFailure(code)) => {
+                    self.exit_code = code;
+                }
+                Err(ExecuteError::IoError(error)) if is_closed_output_io_error(&error) => {
+                    return Err(ExecuteError::IoError(error));
+                }
+                Err(ExecuteError::IoError(error)) => {
+                    eprintln!("{}{}", self.diagnostic_prefix(), error);
+                    self.exit_code = 1;
+                }
+                Err(error) => return Err(error),
             }
 
             if command.subshell && subshell_env.is_none() {

@@ -1,3 +1,4 @@
+use super::types::INHERIT_PROCESS_STDIN;
 use super::*;
 
 impl Executor {
@@ -151,7 +152,15 @@ impl Executor {
         read_fd: Option<u32>,
     ) -> Option<String> {
         let Some(fd) = read_fd else {
-            return self.stdin_string_for_command_mut(cmd);
+            if let Some(input) = self.stdin_string_for_command_mut(cmd) {
+                return Some(input);
+            }
+            // Fallback: read from inherited process stdin when INHERIT_PROCESS_STDIN is set
+            // (e.g., printf '...' | rubash -c 'mapfile arr')
+            if self.env_vars.get(INHERIT_PROCESS_STDIN).map(String::as_str) == Some("1") {
+                return self.read_inherited_process_stdin_to_string();
+            }
+            return None;
         };
 
         if let Some(input) = self.mapfile_redirected_fd_input(cmd, fd) {

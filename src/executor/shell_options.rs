@@ -1,3 +1,4 @@
+use super::types::FUNCTION_STDIN;
 use super::*;
 use crate::executor::glob::{pathname_expand_word, PathnameExpansion};
 
@@ -497,6 +498,13 @@ impl Executor {
 
         if let Some(input) = self.virtual_fd_stdin_remaining(0) {
             return Some(input);
+        }
+
+        // Check for FUNCTION_STDIN (set by pipeline execution for builtins)
+        if let Some(input) = self.env_vars.get(FUNCTION_STDIN) {
+            if !input.is_empty() {
+                return Some(input.clone());
+            }
         }
 
         let word = cmd.here_string.as_ref()?;

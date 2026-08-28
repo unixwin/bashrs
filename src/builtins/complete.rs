@@ -69,8 +69,6 @@ const SHELL_BUILTINS: &[&str] = &[
     "shift",
     "shopt",
     "source",
-    #[cfg(windows)]
-    "sudo",
     "suspend",
     "test",
     "times",
@@ -315,6 +313,18 @@ where
         return Ok(parsed.status);
     }
 
+    // Validate -V varname is a valid identifier (GNU Bash behavior)
+    if let Some(ref varname) = parsed.varname {
+        if !is_valid_identifier(varname) {
+            writeln!(
+                stderr,
+                "{diagnostic_prefix}compgen: {varname}: not a valid identifier"
+            )?;
+            write_usage(CompletionBuiltin::Compgen, stderr)?;
+            return Ok(EX_USAGE);
+        }
+    }
+
     if let Some(wordlist) = parsed.wordlist.as_deref() {
         return write_compgen_matches(wordlist.split_whitespace(), &parsed, stdout);
     }
@@ -486,7 +496,14 @@ where
                     stdout,
                 );
             }
-            _ => return Ok(EXECUTION_SUCCESS),
+            _ => {
+                writeln!(
+                    stderr,
+                    "{diagnostic_prefix}compgen: {action}: invalid action name"
+                )?;
+                write_usage(CompletionBuiltin::Compgen, stderr)?;
+                return Ok(EX_USAGE);
+            }
         };
         return write_compgen_matches(candidates.iter().copied(), &parsed, stdout);
     }
@@ -824,6 +841,7 @@ struct ParsedCompletionOptions {
     filter_pattern: Option<String>,
     prefix: Option<String>,
     suffix: Option<String>,
+    varname: Option<String>,
     operands: Vec<String>,
 }
 
@@ -843,7 +861,7 @@ impl ParsedCompletionOptions {
             'X' => self.filter_pattern = Some(value),
             'P' => self.prefix = Some(value),
             'S' => self.suffix = Some(value),
-            'V' => {}
+            'V' => self.varname = Some(value),
             _ => {}
         }
     }
@@ -925,10 +943,22 @@ where
                 'o' => {
                     if chars.peek().is_none() {
                         index += 1;
-                        if args.get(index).is_none() {
+                        let Some(option_name) = args.get(index) else {
                             writeln!(
                                 stderr,
                                 "{diagnostic_prefix}compopt: -o: option requires an argument"
+                            )?;
+                            write_usage(CompletionBuiltin::Compopt, stderr)?;
+                            return Ok(EX_USAGE);
+                        };
+                        // Validate option name (GNU Bash behavior)
+                        if !matches!(
+                            option_name.as_str(),
+                            "bashdefault" | "default" | "filenames" | "nospace" | "plusdir"
+                        ) {
+                            writeln!(
+                                stderr,
+                                "{diagnostic_prefix}compopt: {option_name}: invalid option name"
                             )?;
                             write_usage(CompletionBuiltin::Compopt, stderr)?;
                             return Ok(EX_USAGE);
@@ -978,4 +1008,17 @@ where
         }
     };
     writeln!(stderr, "{usage}")
+}
+
+/// Check if a name is a valid shell identifier.
+fn is_valid_identifier(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    let mut chars = name.chars();
+    let first = chars.next().unwrap();
+    if !first.is_ascii_alphabetic() && first != '_' {
+        return false;
+    }
+    chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }

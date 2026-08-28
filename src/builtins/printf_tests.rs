@@ -293,11 +293,11 @@ fn percent_b_octal_escapes_wrap_to_raw_bytes() {
 }
 
 #[test]
-fn percent_b_preserves_unknown_escape_backslash_like_bash() {
+fn percent_b_strips_unknown_escape_backslash_like_bash() {
     let (status, stdout, stderr, _) = run(&["%b", "x\\qy"]);
 
     assert_eq!(status, EXECUTION_SUCCESS);
-    assert_eq!(stdout, "x\\qy");
+    assert_eq!(stdout, "xqy");
     assert!(stderr.is_empty());
 }
 

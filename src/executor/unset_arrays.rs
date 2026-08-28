@@ -100,6 +100,13 @@ impl Executor {
             stderr,
         )
         .map_err(ExecuteError::from)?;
+        // Also remove from shell_state.variables so that shell_variable_value
+        // does not return a stale value for an unset variable (the builtin
+        // only cleans env_vars).  Without this, ${var-word} after
+        // `var=""; unset var` still sees the old empty value.
+        for name in variable_args.iter().filter(|a| !a.starts_with('-')) {
+            self.shell_state.variables.remove(name);
+        }
         Ok(if function_status != 0 {
             function_status
         } else {

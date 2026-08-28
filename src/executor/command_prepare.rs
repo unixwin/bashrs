@@ -798,6 +798,15 @@ pub(in crate::executor) fn expand_braces_with_optional_raw(
                     .map(|word| crate::lexer::remove_shell_quotes(&word))
                     .collect();
             }
+            // When raw has escaped braces that prevent expansion,
+            // but word has lost the escapes and would expand, preserve the
+            // raw result to avoid incorrect brace expansion.
+            if crate::expand::braces::expand_braces(word).len() > 1 {
+                return braced
+                    .into_iter()
+                    .map(|word| crate::lexer::remove_shell_quotes(&word))
+                    .collect();
+            }
         }
     }
 

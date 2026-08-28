@@ -79,7 +79,9 @@ impl Executor {
             let key = self.assoc_subscript_key(key);
             return assoc_value_at(&storage, &key);
         }
-        let key = strip_matching_quotes(&self.expand_embedded_parameters(key)).to_string();
+        // Use expand_arithmetic_special_parameters for array subscripts so that
+        // $- expands to 0 (not shell flags) in arithmetic contexts. See array.tests line 60.
+        let key = strip_matching_quotes(&self.expand_arithmetic_special_parameters(key)).to_string();
         if key.trim() == "*" || key.trim() == "@" {
             return None;
         }

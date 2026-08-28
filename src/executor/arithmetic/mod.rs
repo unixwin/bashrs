@@ -155,7 +155,12 @@ impl Executor {
     }
 
     pub(super) fn expand_arithmetic_special_parameters(&self, expression: &str) -> String {
-        let expression = expression.replace("$#", &self.positional_params.len().to_string());
+        // In arithmetic contexts, special parameters expand to numeric values:
+        // $- -> 0 (shell flags not meaningful in arithmetic), $# -> param count
+        // GNU Bash treats $- as 0 in $(( $- )). See array.tests line 60.
+        let expression = expression
+            .replace("$#", &self.positional_params.len().to_string())
+            .replace("$-", "0");
         self.expand_embedded_parameters(&expression)
     }
 }

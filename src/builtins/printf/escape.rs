@@ -104,8 +104,7 @@ pub(super) fn expand_percent_b(value: &str) -> (String, bool) {
                 push_escape_byte(&mut output, value, "");
             }
             Some(other) => {
-                // GNU printf preserves the backslash for unrecognized %b escapes.
-                output.push('\\');
+                // GNU printf treats unrecognized %b escapes as the literal character.
                 output.push(other);
             }
             None => output.push('\\'),

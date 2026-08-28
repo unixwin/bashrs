@@ -167,12 +167,25 @@ where
     }
 
     if delete {
-        writeln!(
-            stderr,
-            "{}enable: usage: {ENABLE_USAGE}",
-            diagnostic_prefix(env_vars)
-        )?;
-        return Ok(2);
+        let mut status = EXECUTION_SUCCESS;
+        for name in operands {
+            if !is_builtin(name) {
+                writeln!(
+                    stderr,
+                    "{}enable: {name}: not a shell builtin",
+                    diagnostic_prefix(env_vars)
+                )?;
+                status = EXECUTION_FAILURE;
+            } else {
+                writeln!(
+                    stderr,
+                    "{}enable: {name}: not dynamically loaded",
+                    diagnostic_prefix(env_vars)
+                )?;
+                status = EXECUTION_FAILURE;
+            }
+        }
+        return Ok(status);
     }
 
     if operands.is_empty() && (reusable || list_all || !disable) {

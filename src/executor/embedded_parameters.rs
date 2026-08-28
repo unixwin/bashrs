@@ -1,5 +1,11 @@
 use super::*;
 
+thread_local! {
+    static EXPAND_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+const MAX_EXPAND_DEPTH: usize = 50;
+
 impl Executor {
     pub(in crate::executor) fn expand_embedded_parameters(&self, word: &str) -> String {
         self.expand_embedded_parameters_with_context(word, false)
@@ -10,6 +16,17 @@ impl Executor {
     }
 
     fn expand_embedded_parameters_with_context(&self, word: &str, heredoc: bool) -> String {
+        let depth = EXPAND_DEPTH.with(|d| d.get());
+        if depth >= MAX_EXPAND_DEPTH {
+            return word.to_string();
+        }
+        EXPAND_DEPTH.with(|d| d.set(depth + 1));
+        let result = self.expand_embedded_parameters_inner(word, heredoc);
+        EXPAND_DEPTH.with(|d| d.set(depth));
+        result
+    }
+
+    fn expand_embedded_parameters_inner(&self, word: &str, heredoc: bool) -> String {
         // TODO(subst.c/subst.h): This is a narrow parameter-expansion subset.
         // GNU Bash handles quoting state, operators like ${name:-word},
         // positional/special parameters, arrays, command substitution, and IFS
