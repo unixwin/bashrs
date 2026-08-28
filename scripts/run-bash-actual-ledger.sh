@@ -36,6 +36,8 @@ for src in "$tests_dir"/*.tests; do
   (cd "$out/work/base/rubash" && "$timeout_bin" "$timeout_seconds" "$rubash" "./$name.tests" >"$result/rubash.stdout" 2>"$result/rubash.stderr")
   rrc=$?
   status=PASS
+  # Normalize CRLF to LF before comparison
+  sed -i 's/\r$//' "$result/bash.stdout" "$result/rubash.stdout" 2>/dev/null || true
   if [[ "$brc" != "$rrc" ]] || ! cmp -s "$result/bash.stdout" "$result/rubash.stdout"; then
     status=DIFF
   fi
