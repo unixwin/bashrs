@@ -1,0 +1,42 @@
+--- /d/repo/rubash/tests/gnu-compat/upstream-rights/braces.right	2026-08-29 08:56:24.575562900 +0800
++++ /d/repo/rubash/tests/gnu-compat/upstream-work/braces.rubash.out	2026-08-29 08:56:24.711224200 +0800
+@@ -15,14 +15,18 @@
+ {
+ abcd{efgh
+ foo 1 2 bar
+-
+-
++foo 1 2 bar
++foo 1 2 bar
+ foobar foobaz.
+ foobar foobaz
+ bazx bazy
+ vx vy
+ bazx bazy
+ 4
++4
++./braces.tests: command substitution: line 59: unexpected EOF while looking for matching `)'
++4
++4
+ 1 2 3 4 5 6 7 8 9 10
+ 0..10 braces
+ 0 1 2 3 4 5 6 7 8 9 10 braces
+@@ -64,12 +68,12 @@
+ 10 8 6 4 2 0
+ 10 8 6 4 2 0
+ -50 -45 -40 -35 -30 -25 -20 -15 -10 -5 0
+-1..7 1..8 1..9 2..7 2..8 2..9 3..7 3..8 3..9
+-{{a..c}..{1..3}}
+-a..1 a..10 b..1 b..10 c..1 c..10
+-a..1 a..2 a..3 a..4 c..1 c..2 c..3 c..4
+-1..4 2..4 3..4
+-6..7 6..8 6..9
++{1..7} {1..8} {1..9} {2..7} {2..8} {2..9} {3..7} {3..8} {3..9}
++{a..1} {a..2} {a..3} {b..1} {b..2} {b..3} {c..1} {c..2} {c..3}
++{a..1} {a..10} {b..1} {b..10} {c..1} {c..10}
++{a..1} {a..2} {a..3} {a..4} {c..1} {c..2} {c..3} {c..4}
++{1..4} {2..4} {3..4}
++{6..7} {6..8} {6..9}
+ a ../a.cfg
+ a.. /a.cfg
+ a..b /a.cfg

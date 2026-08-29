@@ -1,0 +1,16 @@
+--- /d/repo/rubash/tests/gnu-compat/upstream-rights/coproc.right	2026-08-29 08:56:37.361880700 +0800
++++ /d/repo/rubash/tests/gnu-compat/upstream-work/coproc.rubash.out	2026-08-29 08:56:37.475205200 +0800
+@@ -4,10 +4,7 @@
+ flop
+ coproc.tests: REFLECT: status 143
+ 63 60
+-/tmp/rubash-upstream-test/coproc.tests: line 53: xcase: command not found
+-
+-
++FOO
++63 60
+ root
+-/tmp/rubash-upstream-test/coproc.tests: line 73: echo: write error: Bad file descriptor
+-/tmp/rubash-upstream-test/coproc.tests: line 75: 4: Bad file descriptor
+-
++-1 -1

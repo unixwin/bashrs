@@ -1,0 +1,86 @@
+--- /d/repo/rubash/tests/gnu-compat/upstream-rights/quotearray.right	2026-08-29 09:01:56.934417800 +0800
++++ /d/repo/rubash/tests/gnu-compat/upstream-work/quotearray.rubash.out	2026-08-29 09:01:57.069831900 +0800
+@@ -1,7 +1,9 @@
+ declare -A assoc=(["x],b[\$(echo uname >&2)"]="1" )
+ declare -A assoc=(["\$key"]="1" ["x],b[\$(echo uname >&2)"]="1" )
+ declare -A assoc=(["\$key"]="1" ["x],b[\$(echo uname >&2)"]="2" )
++./quotearray.tests: line 31: ((: 'assoc[x\],b\[\$(echo uname >&2)]++' : arithmetic syntax error: operand expected (error token is "'assoc[x\],b\[\$(echo uname >&2)]++' ")
+ declare -A assoc=(["\$key"]="1" ["x],b[\$(echo uname >&2)"]="2" )
++./quotearray.tests: line 34: ((: 'assoc[x\],b\[\$(echo uname >&2)]'++ : arithmetic syntax error: operand expected (error token is "'assoc[x\],b\[\$(echo uname >&2)]'++ ")
+ declare -A assoc=(["\$key"]="1" ["x],b[\$(echo uname >&2)"]="2" )
+ declare -A assoc=(["\$key"]="1" ["x],b[\$(echo uname >&2)"]="3" )
+ 4
+@@ -22,9 +24,14 @@
+ declare -Ai assoc=(["']"]="3" ["\$var"]="1" )
+ 105
+ declare -A assoc=(["\` echo >&2 foo\`"]="42" ["\$( echo >&2 bar)"]="63" )
++./quotearray.tests: line 140: x],b[$(echo uname >&2): arithmetic syntax error: invalid arithmetic operator (error token is "],b[$(echo uname >&2)")
++./quotearray.tests: line 144: x],b[$(echo uname >&2): arithmetic syntax error: invalid arithmetic operator (error token is "],b[$(echo uname >&2)")
+ 1
++./quotearray.tests: line 147: x],b[$(echo uname >&2): arithmetic syntax error: invalid arithmetic operator (error token is "],b[$(echo uname >&2)")
+ 1
++./quotearray.tests: line 150: x],b[$(echo uname >&2): arithmetic syntax error: invalid arithmetic operator (error token is "],b[$(echo uname >&2)")
+ 1
++./quotearray.tests: line 153: x],b[$(echo uname >&2): arithmetic syntax error: invalid arithmetic operator (error token is "],b[$(echo uname >&2)")
+ 1
+ declare -A assoc
+ 0
+@@ -37,6 +44,7 @@
+ foo
+ 0
+ 0
++./quotearray1.sub: line 68: 0],b[1: arithmetic syntax error: invalid arithmetic operator (error token is "],b[1")
+ declare -a array
+ 0
+ 0
+@@ -49,6 +57,7 @@
+ 0
+ 1
+ 1
++./quotearray1.sub: line 113: test: aa[$(echo: binary operator expected
+ 2
+ [[ -v assoc[a] ]]; $?=0
+ [[ -v assoc["] ]]; $?=0
+@@ -58,10 +67,15 @@
+ 7
+ declare -A A=([$'\t']="2" [" "]="2" )
+ declare -A A=([$'\t']="2" ["*"]="2" [" "]="2" ["]"]="2" ["@"]="2" )
++./quotearray2.sub: line 54: read: `A[]]': not a valid identifier
+ declare -A A=([$'\t']="X" ["*"]="X" [" "]="X" ["@"]="X" )
++./quotearray2.sub: line 62: printf: `A[]]': not a valid identifier
+ declare -A A=([$'\t']="X" ["*"]="X" [" "]="X" ["@"]="X" )
++./quotearray2.sub: line 70: declare: `A[]]=X': not a valid identifier
+ declare -A A=(["*"]="X" ["@"]="X" )
++./quotearray2.sub: line 78: declare: `A[]]=X': not a valid identifier
+ declare -A A=(["*"]="X" ["@"]="X" )
++./quotearray2.sub: line 89: let: assoc[x],b[$(echo: bad array subscript (error token is "b[$(echo")
+ declare -A assoc
+ declare -A assoc=(["\$(echo foo)"]="1" )
+ 0
+@@ -80,6 +94,7 @@
+ declare -A assoc=(["!"]="bang" )
+ declare -a array=([0]="1" [1]="2" [2]="3")
+ declare -a array=()
++./quotearray3.sub: line 98: declare: array: not found
+ declare -A map=(["foo\$(uname >/dev/tty)bar"]="1" )
+ 1
+ declare -A map=()
+@@ -88,6 +103,7 @@
+ declare -A assoc=(["*"]="star" ["!"]="bang" ["@"]="at" )
+ declare -A assoc=(["*"]="star" ["!"]="bang" )
+ declare -A assoc=(["!"]="bang" )
++./quotearray4.sub: line 41: declare: assoc: not found
+ declare -A assoc=(["*"]="star" ["!"]="bang" ["@"]="at" )
+ declare -A assoc=(["*"]="star" ["!"]="bang" )
+ declare -A assoc=(["!"]="bang" )
+@@ -109,7 +125,10 @@
+ 1 2 3
+ 0
+ 0
++./quotearray4.sub: line 115: array[@]: bad array subscript
+ declare -a array=([0]="1" [1]="2" [2]="3")
++./quotearray5.sub: line 27: unset: `a[$(echo': not a valid identifier
++./quotearray5.sub: line 27: unset: `foo)]': not a valid identifier
+ declare -A a=()
+ declare -A a=()
+ declare -A a=()

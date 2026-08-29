@@ -1,0 +1,48 @@
+--- /d/repo/rubash/tests/gnu-compat/upstream-rights/comsub-posix.right	2026-08-29 08:56:30.203931000 +0800
++++ /d/repo/rubash/tests/gnu-compat/upstream-work/comsub-posix.rubash.out	2026-08-29 08:56:30.327770500 +0800
+@@ -31,7 +31,12 @@
+ ab
+ abcde
+ 
++argv[1] = <abcde^J  >
+ abcdefoo
++argv[1] = <abcde>
++argv[2] = <foo>
++argv[1] = <wxabcdeyz>
++argv[1] = <abcde>
+ '
+ after 1
+ '
+@@ -54,6 +59,8 @@
+ here-doc terminated with a parenthesis
+ ' # or a single back- or doublequote
+ line terminated with a backslash
++./comsub-posix1.sub: line 1: syntax error near unexpected token `)'
++./comsub-posix1.sub: line 1: `echo $( if x; then echo foo )'
+ swap32_posix is a function
+ swap32_posix () 
+ { 
+@@ -69,6 +76,23 @@
+                 ));
+     done
+ }
++bash: -c: line 1: syntax error near unexpected token `done' while looking for matching `)'
++bash: -c: line 1: `: $(case x in x) ;; x) done esac)'
++bash: -c: line 1: syntax error near unexpected token `done' while looking for matching `)'
++bash: -c: line 1: `: $(case x in x) ;; x) done ;; esac)'
++bash: -c: line 1: syntax error near unexpected token `esac' while looking for matching `)'
++bash: -c: line 1: `: $(case x in x) (esac) esac)'
++bash: -c: line 1: syntax error near unexpected token `in' while looking for matching `)'
++bash: -c: line 1: `: $(case x in esac|in) foo;; esac)'
++bash: -c: line 1: syntax error near unexpected token `done' while looking for matching `)'
++bash: -c: line 1: `: $(case x in x) ;; x) done)'
++case: -c: line 3: syntax error near unexpected token `esac' while looking for matching `)'
++case: -c: line 3: `$( esac ; bar=foo ; echo "$bar")) echo bad 2;;'
++ok 2
++inside outside
++ok 3
++syntax-error: -c: line 2: syntax error near unexpected token `done' while looking for matching `)'
++syntax-error: -c: line 2: `: $(case x in x) ;; x) done ;; esac)'
+ yes
+ 
+ 

@@ -1,0 +1,28 @@
+--- /d/repo/rubash/tests/gnu-compat/upstream-rights/attr.right	2026-08-29 08:56:23.954154400 +0800
++++ /d/repo/rubash/tests/gnu-compat/upstream-work/attr.rubash.out	2026-08-29 08:56:24.073975400 +0800
+@@ -1,6 +1,9 @@
+ after f1:declare -ar a=([0]="1")
++./attr.tests: line 17: f2: a: readonly variable
+ after f2:declare -ar a=([0]="1")
++./attr.tests: line 18: a: readonly variable
+ after f3:declare -ar a=([0]="1")
++./attr.tests: line 19: readonly: a: readonly variable
+ after f4:declare -ar a=([0]="1")
+ after f2:declare -ar b=([0]="2")
+ after f3:declare -ar c=([0]="(3)")
+@@ -8,10 +11,15 @@
+ declare -r m="4"
+ in func:declare -r n="4"
+ declare -r n="4"
++./attr1.sub: line 26: p: readonly variable
+ declare -r p="1"
++./attr1.sub: line 32: r: readonly variable
+ declare -ar r=([0]="1")
++./attr1.sub: line 36: r: readonly variable
+ declare -ar r=([0]="1")
++./attr1.sub: line 40: f: r: readonly variable
+ declare -ar r=([0]="1")
++./attr1.sub: line 44: readonly: r: readonly variable
+ declare -ar r=([0]="1")
+ declare -ar x=([0]="4")
+ in func:declare -ar y=([0]="4")

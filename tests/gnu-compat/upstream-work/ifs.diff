@@ -1,0 +1,8 @@
+--- /d/repo/rubash/tests/gnu-compat/upstream-rights/ifs.right	2026-08-29 08:57:51.119992200 +0800
++++ /d/repo/rubash/tests/gnu-compat/upstream-work/ifs.rubash.out	2026-08-29 08:57:51.243791600 +0800
+@@ -8,3 +8,5 @@
+ a:b:c:d:e
+ a b c d e
+ a b c d e
++argv[1] = <file>
++argv[1] = <*>

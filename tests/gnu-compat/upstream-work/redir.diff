@@ -1,0 +1,100 @@
+--- /d/repo/rubash/tests/gnu-compat/upstream-rights/redir.right	2026-08-29 09:02:08.247906200 +0800
++++ /d/repo/rubash/tests/gnu-compat/upstream-work/redir.rubash.out	2026-08-29 09:02:08.374147700 +0800
+@@ -1,8 +1,13 @@
+ abc
++./redir.tests: line 31: /tmp/redir-test: cannot overwrite existing file
+ abc
+ def
+ def
+ ghi
++./redir.tests: line 52: -1: ambiguous redirect
++./redir.tests: line 53: exec: -1: invalid option
++exec: usage: exec [-cl] [-a name] [command [argument ...]] [redirection ...]
++./redir.tests: line 58: $z: ambiguous redirect
+ Point 1
+ Point 2
+ to a
+@@ -15,12 +20,16 @@
+ Point 4
+ to c
+ Point 5
+-read line1 "ab"
+-read line2 "root"
+-read line3 "cd"
+-read line4 "daemon"
+-from stdin: aa
++this is redir1.sub
++this is redir2.sub
++read line1 "ab"
++read line2 "root"
++read line3 "cd"
++read line4 "daemon"
++from stdin: aa
+ to stdout
++./redir4.sub: line 45: $fd: ambiguous redirect
++./redir4.sub: line 46: $fd: ambiguous redirect
+ err-and-out:
+ to stdout
+ to stderr
+@@ -39,6 +48,7 @@
+ ab
+ cd
+ cd
++./redir.tests: line 184: redir1.*: No such file or directory
+ #   This program is free software: you can redistribute it and/or modify
+ #   it under the terms of the GNU General Public License as published by
+ #   the Free Software Foundation, either version 3 of the License, or
+@@ -107,6 +117,10 @@
+ c4 is 4
+ fd 10
+ fd 8
++fd 10
++next fd
++fd 10
++fd 8
+ 1
+ 2
+ 3
+@@ -124,8 +138,10 @@
+ to stdout
+ to stderr
+ 
++to stderr
+ to stdout
+ 
++to stderr
+ hey
+ to stdout
+ logfunc is a function
+@@ -144,13 +160,25 @@
+ 1
+ 7
+ after: 42
++./redir11.sub: line 55: $(ss= declare -i ss): ambiguous redirect
+ after: 42
+ a+=3
++foo
++foo
++./redir11.sub: line 77: 42: No such file or directory
+ 42
+-0 x =
++./redir12.sub: line 27: unwritable-file: Permission denied
++1 x =
++./redir12.sub: line 31: unwritable-file: cannot overwrite existing file
++1 x =
++./redir12.sub: line 34: unwritable-file: Permission denied
+ 1 x =
+-0 x =
+-after ERR trap: 0
+-after set -e: 0
+-after set -e with ERR trap: 0
+-wow this is bad
++./redir12.sub: line 38: unreadable-file: Permission denied
++./redir12.sub: line 44: unwritable-file: Permission denied
++got error ERR
++after ERR trap: 1
++./redir12.sub: line 48: unwritable-file: Permission denied
++./redir12.sub: line 53: unreadable-file: Permission denied
++got error ERR
++./redir12.sub: line 56: unreadable-file: Permission denied
++/tmp

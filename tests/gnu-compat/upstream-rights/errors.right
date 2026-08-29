@@ -1,6 +1,0 @@
-after posix select
-after posix select 2
-declare -fr func
-after f
-/mnt/d/repo/rubash
-1

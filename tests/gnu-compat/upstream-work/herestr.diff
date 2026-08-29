@@ -1,0 +1,10 @@
+--- /d/repo/rubash/tests/gnu-compat/upstream-rights/herestr.right	2026-08-29 08:57:43.392368200 +0800
++++ /d/repo/rubash/tests/gnu-compat/upstream-work/herestr.rubash.out	2026-08-29 08:57:43.597020500 +0800
+@@ -32,7 +32,3 @@
+ echo ho
+ echo off to work we go
+ declare -a uu=([0]="" [1]="kghfjk" [2]="jkfzuk" [3]=$'i\n')
+-foo        bar
+-foo        bar
+-qux:::::bax
+-qux:::::bax

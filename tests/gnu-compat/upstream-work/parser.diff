@@ -1,0 +1,23 @@
+--- /d/repo/rubash/tests/gnu-compat/upstream-rights/parser.right	2026-08-29 09:01:00.088166400 +0800
++++ /d/repo/rubash/tests/gnu-compat/upstream-work/parser.rubash.out	2026-08-29 09:01:00.221587000 +0800
+@@ -1,7 +1,20 @@
++bash: -c: line 1: unexpected EOF while looking for matching `)'
+ AAA
++bash5: line 1: `invalid-name': not a valid identifier
+ in
+ in
+ in
+ in
++bash5: -c: line 1: syntax error near unexpected token `)'
++bash5: -c: line 1: `case x in esac) echo done; esac'
++in
++bash5: -c: line 1: syntax error near unexpected token `do'
++bash5: -c: line 1: `case in do do) echo in; esac'
++bash5: -c: line 1: syntax error near unexpected token `('
++bash5: -c: line 1: `for()'
+ in
+ done
++ok 1
++x
++x
++x

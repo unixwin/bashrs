@@ -1,0 +1,45 @@
+--- /d/repo/rubash/tests/gnu-compat/upstream-rights/posixpipe.right	2026-08-29 09:01:15.267667000 +0800
++++ /d/repo/rubash/tests/gnu-compat/upstream-work/posixpipe.rubash.out	2026-08-29 09:01:15.390661700 +0800
+@@ -1,8 +1,14 @@
+ 1
+ 0
+ a
++real 0.00
++user 0.00
++sys 0.00
+ 1
+ a
++real 0.00
++user 0.00
++sys 0.00
+ 1
+ tfunc is a function
+ tfunc () 
+@@ -13,11 +19,27 @@
+ 0
+ 1
+ a
++real 0.00
++user 0.00
++sys 0.00
+ 0
+ a
++real 0.00
++user 0.00
++sys 0.00
+ 0
+ a
++real 0.00
++user 0.00
++sys 0.00
+ 0
+ 1
+ 0
+ a
++real 0.00
++user 0.00
++sys 0.00
++real 0.00
++user 0.00
++sys 0.00
++4

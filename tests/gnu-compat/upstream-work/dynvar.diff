@@ -1,0 +1,15 @@
+--- /d/repo/rubash/tests/gnu-compat/upstream-rights/dynvar.right	2026-08-29 08:56:42.666699800 +0800
++++ /d/repo/rubash/tests/gnu-compat/upstream-work/dynvar.rubash.out	2026-08-29 08:56:42.811647000 +0800
+@@ -4,10 +4,12 @@
+ SECONDS ok
+ EPOCHSECONDS ok
+ EPOCHREALTIME ok
++echo $BASH_COMMAND
+ 110
+ 111
+ 112
+ 113
+ 114
++./dynvar.tests: line 115: ((: LINENO / 0 : division by 0 (error token is "0 ")
+ 0
+ 0

@@ -1,0 +1,27 @@
+--- /d/repo/rubash/tests/gnu-compat/upstream-rights/appendop.right	2026-08-29 08:56:11.136771200 +0800
++++ /d/repo/rubash/tests/gnu-compat/upstream-work/appendop.rubash.out	2026-08-29 08:56:11.368768900 +0800
+@@ -2,7 +2,7 @@
+ 1 2 3 4 5 6
+ 1 2 3 4 51 6
+ 145
+-14
++145
+ 7
+ 42
+ 1 2 3 4 12
+@@ -14,14 +14,4 @@
+ 9
+ 4
+ 9
+-16
+-declare -A foo=([two]="baz" [three]="quux" [one]="bar" )
+-declare -A foo=([0]="zero" [two]="baz" [three]="quux" [one]="bar" )
+-declare -A foo=([four]="four" [0]="zero" [two]="baz" [three]="quux" [one]="bar" )
+-declare -ai iarr=([0]="3" [1]="2" [2]="3")
+-declare -ai iarr=([0]="3" [1]="2" [2]="3" [3]="4" [4]="5" [5]="6")
+-25 25
+-7 7
+-14
+-145
+-145 145
++9
