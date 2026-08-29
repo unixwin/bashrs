@@ -299,4 +299,11 @@ mod tests {
     fn test_adjacent_brace_groups() {
         assert_eq!(expand_braces("{a,b}{1..2}"), vec!["a1", "a2", "b1", "b2"]);
     }
+
+    #[test]
+    fn test_debug_adjacent_braces() {
+        let result = expand_braces("{a,b}{1,2}");
+        println!("Debug: expand_braces = {:?}", result);
+        assert_eq!(result, vec!["a1", "a2", "b1", "b2"]);
+    }
 }

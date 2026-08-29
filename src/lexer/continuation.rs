@@ -238,12 +238,13 @@ pub(crate) fn has_unclosed_command_substitution(input: &str) -> bool {
         }
         if ch == '$' && chars.get(index + 1) == Some(&'(') && !parameter_single {
             if chars.get(index + 2) == Some(&'(') {
-                if skip_arithmetic_substitution(&chars, index + 3).is_none() {
-                    return true;
+                if let Some(end) = skip_arithmetic_substitution(&chars, index + 3) {
+                    index = end;
+                    comment_start = false;
+                    continue;
                 }
-                index = skip_arithmetic_substitution(&chars, index + 3).unwrap();
-                comment_start = false;
-                continue;
+                // POSIX permits command substitution when the text after
+                // "$((" is not a valid arithmetic expression.
             }
             depth += 1;
             if depth == 1 {

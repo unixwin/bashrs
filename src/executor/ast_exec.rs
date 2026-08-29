@@ -240,6 +240,13 @@ impl Executor {
                         eprintln!("{}{}", self.diagnostic_prefix(), error);
                         self.exit_code = 1;
                     }
+                    Err(ExecuteError::ExitCode(code)) => {
+                        if self.parse_error_occurred {
+                            // Syntax error - terminate script (GNU Bash behavior)
+                            return Err(ExecuteError::ExitCode(code));
+                        }
+                        self.exit_code = code;
+                    }
                     Err(error) => return Err(error),
                 }
                 if let Some(next_index) = self.skip_and_or_rhs(ast, index) {
@@ -287,6 +294,13 @@ impl Executor {
                         eprintln!("{}{}", self.diagnostic_prefix(), error);
                         self.exit_code = 1;
                     }
+                    Err(ExecuteError::ExitCode(code)) => {
+                        if self.parse_error_occurred {
+                            // Syntax error - terminate script (GNU Bash behavior)
+                            return Err(ExecuteError::ExitCode(code));
+                        }
+                        self.exit_code = code;
+                    }
                     Err(error) => return Err(error),
                 }
                 if let Some(next_index) = self.skip_and_or_rhs(ast, index) {
@@ -319,6 +333,13 @@ impl Executor {
                     Err(ExecuteError::IoError(error)) => {
                         eprintln!("{}{}", self.diagnostic_prefix(), error);
                         self.exit_code = 1;
+                    }
+                    Err(ExecuteError::ExitCode(code)) => {
+                        if self.parse_error_occurred {
+                            // Syntax error - terminate script (GNU Bash behavior)
+                            return Err(ExecuteError::ExitCode(code));
+                        }
+                        self.exit_code = code;
                     }
                     Err(error) => return Err(error),
                 }
@@ -356,6 +377,13 @@ impl Executor {
                     Err(ExecuteError::IoError(error)) => {
                         eprintln!("{}{}", self.diagnostic_prefix(), error);
                         self.exit_code = 1;
+                    }
+                    Err(ExecuteError::ExitCode(code)) => {
+                        if self.parse_error_occurred {
+                            // Syntax error - terminate script (GNU Bash behavior)
+                            return Err(ExecuteError::ExitCode(code));
+                        }
+                        self.exit_code = code;
                     }
                     Err(error) => return Err(error),
                 }
@@ -412,6 +440,13 @@ impl Executor {
                         eprintln!("{}{}", self.diagnostic_prefix(), error);
                         self.exit_code = 1;
                     }
+                    Err(ExecuteError::ExitCode(code)) => {
+                        if self.parse_error_occurred {
+                            // Syntax error - terminate script (GNU Bash behavior)
+                            return Err(ExecuteError::ExitCode(code));
+                        }
+                        self.exit_code = code;
+                    }
                     Err(error) => return Err(error),
                 }
                 if command.inverted {
@@ -465,6 +500,13 @@ impl Executor {
                         eprintln!("{}{}", self.diagnostic_prefix(), error);
                         self.exit_code = 1;
                     }
+                    Err(ExecuteError::ExitCode(code)) => {
+                        if self.parse_error_occurred {
+                            // Syntax error - terminate script (GNU Bash behavior)
+                            return Err(ExecuteError::ExitCode(code));
+                        }
+                        self.exit_code = code;
+                    }
                     Err(error) => return Err(error),
                 }
                 index += 1;
@@ -509,6 +551,13 @@ impl Executor {
                     eprintln!("{}{}", self.diagnostic_prefix(), error);
                     self.exit_code = 1;
                 }
+                Err(ExecuteError::ExitCode(code)) => {
+                        if self.parse_error_occurred {
+                            // Syntax error - terminate script (GNU Bash behavior)
+                            return Err(ExecuteError::ExitCode(code));
+                        }
+                        self.exit_code = code;
+                    }
                 Err(error) => return Err(error),
             }
 

@@ -183,17 +183,20 @@ impl Executor {
         {
             return true;
         }
-        cmd.redirect_in.as_ref().is_some_and(|redirect| {
+        cmd.redirects.iter().rev().any(|redirect| {
             redirect.fd == Some(fd)
                 && !is_closed_redirect_target(&self.expand_word(&redirect.target))
         })
     }
 
     fn mapfile_redirected_fd_input(&mut self, cmd: &CommandNode, fd: u32) -> Option<String> {
-        let redirect = cmd.redirect_in.as_ref()?;
-        if redirect.fd != Some(fd) {
-            return None;
-        }
+        // Redirections are applied in source order; the last matching input
+        // redirect is the descriptor's effective source.
+        let redirect = cmd
+            .redirects
+            .iter()
+            .rev()
+            .find(|redirect| redirect.fd == Some(fd))?;
 
         if let Some(source) = redirect
             .target
