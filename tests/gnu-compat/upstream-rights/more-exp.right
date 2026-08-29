@@ -1,0 +1,133 @@
+expect <aaa bbb ccc>
+expect <aaa bbb ccc>
+expect <baz:bar>
+expect <baz:bar>
+expect <aaa bbb ccc>
+expect <bar>
+expect <bar>
+expect <bar>
+expect <abcde>
+expect <abcde>
+expect <xyz>
+expect <a b> <c> <d> <e> <f>
+expect <a b>
+expect <a> <b>
+expect <a b> <c> <d> <e> <f>
+expect <a b> <c> <d> <e> <f>
+expect </usr/homes/chet>
+expect <~>
+expect <~>
+expect <\~>
+expect <\ \~>
+expect <\ \ \~>
+expect </usr/homes/chet>
+expect </usr/homes/chet>
+expect </usr/homes/chet>
+expect <$HOME>
+expect <\ $HOME>
+expect <\ \ $HOME>
+expect <'bar'>
+expect <'bar'>
+expect <*@>
+expect <*@>
+expect <*@>
+expect <*@>
+expect <*@*>
+expect <*@*>
+expect <*@*>
+expect <*@*>
+expect <abcd>
+expect <efghijkl>
+expect <4> <2>
+expect <1>
+expect <bar> <2>
+expect <bar> <2>
+expect <4>
+expect <--\> <-->
+expect <--\^J-->
+expect <--+\> <+-->
+expect <--+\^J+-->
+expect <-+\> <+-\> <->
+expect <xy>
+expect <xy>
+expect <xy>
+expect <xy>
+expect <xy>
+expect <xy>
+expect <>
+expect nothing
+expect <>
+expect <xy>
+expect <xy>
+expect <xy>
+expect <xy>
+expect <xy>
+expect <xy>
+expect <>
+expect nothing
+expect <>
+expect <x>
+expect <x>
+expect nothing
+expect <x>
+expect <x>
+expect <x>
+expect <x>
+expect <^?>
+expect <^?>
+Number of args: 0
+<${*-x}>: <x>
+<${@-x}>: <x>
+Number of args: 1
+<${*-x}>: <>
+<${@-x}>: <>
+Number of args: 2
+<${*-x}>: < >
+<${@-x}>: < >
+expect <5>
+expect <5>
+expect <5>
+expect <5>
+expect <5>
+expect <0>
+expect nothing
+expect nothing
+expect nothing
+expect nothing
+expect <0>
+expect <0>
+expect <0>
+expect <0>
+expect <0>
+expect <posparams>
+expect <posparams>
+expect <2>
+expect <0>
+expect <0>
+expect <1>
+expect <5>
+expect <5>
+expect <0>
+expect a bad substitution error
+expect a bad substitution error
+expect a bad substitution error
+expect a bad substitution error
+expect a bad substitution error
+expect a bad substitution error
+expect a math syntax error
+expect <0>
+expect <a+b>
+expect <+>
+expect <+>
+expect <+>
+expect <G { I> <K> <}>
+expect <hi> <K> <}>
+expect <xxx> <yyy>
+expect 1
+1
+expect <>
+expect <>
+expect <>
+expect <:a:> <:b:>
+expect <>
+expect <>

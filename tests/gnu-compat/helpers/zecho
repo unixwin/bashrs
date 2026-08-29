@@ -1,0 +1,3 @@
+#!/bin/bash
+# zecho: echo arguments without trailing newline
+printf '%s' "$*"

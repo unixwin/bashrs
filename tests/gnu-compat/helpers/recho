@@ -1,0 +1,3 @@
+#!/bin/bash
+# recho: echo arguments to stderr
+echo "$@" >&2

@@ -1,0 +1,36 @@
+é
+1
+AéB
+B
+B
+ok 1
+ok 2
+aéb
+-абвгдежзиклмноп - 16
+-абвгдежзиклмноп- 15
+-абвгд- 5
+1.0000
+1.0000
+1.0000
+1.0000
+1.0000
+1.0000
+1
+bytematch
+Passed all 1318 Unicode tests
+/usr/bin/bash: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8)
+./unicode3.sub: line 5: $'5\247@3\231+\306S8\237\242\352\263': command not found
+./unicode3.sub: line 7: cd: $'5\247@3\231+\306S8\237\242\352\263': No such file or directory
+$'5\247@3\231+\306S8\237\242\352\263'
+++ : $'5\247@3\231+\306S8\237\242\352\263'
+++ set +x
+ಇಳಿಕೆಗಳು
+ಇಳ
+�
+�
+  �
+�  ---
+ಇ
+�
+   �
+�   ---

@@ -1,0 +1,321 @@
+    1  for i in one two three; do echo $i; done
+    2  /bin/sh -c 'echo this is $0'
+    3  ls
+    4  echo $BASH_VERSION
+1	 for i in one two three; do echo $i; done
+2	 /bin/sh -c 'echo this is $0'
+3	 ls
+4	 echo $BASH_VERSION
+	 for i in one two three; do echo $i; done
+	 /bin/sh -c 'echo this is $0'
+	 ls
+	 echo $BASH_VERSION
+4	 echo $BASH_VERSION
+3	 ls
+2	 /bin/sh -c 'echo this is $0'
+1	 for i in one two three; do echo $i; done
+	 echo $BASH_VERSION
+	 ls
+	 /bin/sh -c 'echo this is $0'
+	 for i in one two three; do echo $i; done
+    1  for i in one two three; do echo $i; done
+    2  /bin/sh -c 'echo this is $0'
+    3  ls
+    4  echo $BASH_VERSION
+    5  echo line for history
+echo line for history
+	 for i in one two three; do echo $i; done
+	 /bin/sh -c 'echo this is $0'
+	 ls
+	 echo $BASH_VERSION
+	 echo line for history
+displaying $HISTFILE after history -a
+echo line for history
+HISTFILE=$TMPDIR/newhistory
+    1  for i in one two three; do echo $i; done
+    2  /bin/sh -c 'echo this is $0'
+    3  ls
+    4  echo $BASH_VERSION
+    5  echo line for history
+    6  HISTFILE=$TMPDIR/newhistory
+    7  echo displaying \$HISTFILE after history -a
+    8  cat $HISTFILE
+for i in one two three; do echo $i; done
+/bin/sh -c 'echo this is $0'
+ls
+echo $BASH_VERSION
+echo line for history
+HISTFILE=$TMPDIR/newhistory
+echo displaying \$HISTFILE after history -a
+cat $HISTFILE
+    1  for i in one two three; do echo $i; done
+    2  /bin/sh -c 'echo this is $0'
+    3  ls
+    4  echo $BASH_VERSION
+    5  echo line for history
+    6  HISTFILE=$TMPDIR/newhistory
+    7  echo displaying \$HISTFILE after history -a
+    8  cat $HISTFILE
+    9  echo line 2 for history
+echo line 2 for history
+echo line 2 for history
+    1  for i in one two three; do echo $i; done
+    2  /bin/sh -c 'echo this is $0'
+    3  ls
+    4  echo $BASH_VERSION
+    5  echo line for history
+    6  HISTFILE=$TMPDIR/newhistory
+    7  echo displaying \$HISTFILE after history -a
+    8  cat $HISTFILE
+    9  echo line 2 for history
+   10  # this should show up as one history entry
+   11  for x in one two three; do 	:; done
+line 2 for history
+4	 echo $BASH_VERSION
+5	 echo line for history
+6	 HISTFILE=$TMPDIR/newhistory
+7	 echo displaying \$HISTFILE after history -a
+8	 cat $HISTFILE
+9	 echo line 2 for history
+10	 # this should show up as one history entry
+11	 for x in one two three; do 	:; done
+12	 # just a basic test.  a full test suite for history expansion should be
+13	 # created
+14	 set -H
+15	 echo line 2 for history
+16	 unset HISTSIZE
+17	 unset HISTFILE
+4	 echo $BASH_VERSION
+5	 echo line for history
+6	 HISTFILE=$TMPDIR/newhistory
+7	 echo displaying \$HISTFILE after history -a
+8	 cat $HISTFILE
+   15  echo line 2 for history
+   16  unset HISTSIZE
+   17  unset HISTFILE
+   18  # now an out-of-range error because of the one=two not found in history
+aa ab ac
+xx xb xc
+44 48 4c
+aa
+bb
+cc
+echo cc
+cc
+aa
+bb
+cc
+echo cc
+cc
+1
+one
+two
+three
+    1  cat <<!
+one
+two
+three
+!
+
+    2  history
+one
+two
+three
+42
+5.2
+echo ${BASH_VERSION%\.*}
+5.2
+	 echo ${BASH_VERSION%\.*}
+a
+b
+c
+d
+e
+    1  echo a
+    2  echo b
+    3  echo c
+    4  echo d
+    5  echo e
+
+    1  echo a
+    2  echo e
+f
+g
+h
+i
+    1  echo a
+    2  echo e
+    3  echo f
+    4  echo g
+    5  echo h
+
+    1  echo a
+    2  echo e
+    3  echo f
+    4  echo g
+    5  echo h
+
+
+0
+1
+2
+(left
+mid
+right)
+A
+B
+
+
+
+
+a
+b
+25	 # this had better fail with `no command found'
+26	 r cc
+27	 unalias -a
+28	 alias
+29	 # these two blocks had better both result in the same output
+30	 echo aa
+31	 echo bb
+32	 echo cc
+33	 echo aa
+34	 echo bb
+35	 echo cc
+36	 set +o history
+37	 echo a
+38	 echo b
+39	 fc -0	# error
+40	 fc -s -0	# error
+c
+42	 echo c
+44	 fc -l -0
+d
+d
+a
+b
+c
+d
+e
+f
+4	 echo d
+5	 echo e
+6	 echo f
+out of range 1
+6	 echo f
+7	 fc -l
+8	 echo out of range 1
+out of range 2
+8	 echo out of range 1
+9	 fc -l 502 498
+10	 echo out of range 2
+out of range 3
+10	 echo out of range 2
+11	 fc -l 498 502
+12	 echo out of range 3
+out of range 4
+13	 fc -l 1 99
+a
+b
+c
+a
+d
+e
+1	 echo a
+2	 echo b
+3	 echo c
+4	 # out of range specs aren't errors
+5	 # out of range specs aren't errors
+6	 echo a
+7	 echo d
+8	 echo e
+1
+2
+3
+4
+5
+6
+    3  echo 3
+    4  echo 4
+    5  echo 5
+    6  echo 6
+    3  echo 3
+    4  echo 4
+    5  echo 5
+6
+7
+    4  echo 4
+    5  echo 5
+    6  echo 6
+    7  echo 7
+    4  echo 4
+    5  echo 5
+    6  echo 6
+7
+8
+    5  echo 5
+    6  echo 6
+9
+10
+    5  echo 5
+    6  echo 6
+    7  echo 9
+    8  echo 10
+    5  echo 10
+a
+b
+c
+d
+    1  for i in one two three; do echo $i; done
+    2  ls
+    3  echo $BASH_VERSION
+    4  echo line for history
+    5  HISTFILE=$TMPDIR/newhistory
+    6  echo displaying \$HISTFILE after history -a
+    7  cat $HISTFILE
+    8  echo line 2 for history
+    9  # this should show up as one history entry
+   10  for x in one two three; do 	:; done
+   11  # just a basic test.  a full test suite for history expansion should be
+   12  # created
+   13  set -H
+   14  echo line 2 for history
+   15  unset HISTSIZE
+   16  unset HISTFILE
+   17  # now an out-of-range error because of the one=two not found in history
+   18  shopt -so history
+   19  shopt -s expand_aliases
+   20  alias r="fc -s"
+   21  echo aa ab ac
+   22  echo xx xb xc
+   23  echo 44 48 4c
+   24  # this had better fail with `no command found'
+   25  r cc
+   26  unalias -a
+   27  alias
+   28  # these two blocks had better both result in the same output
+   29  echo aa
+   30  echo bb
+   31  echo cc
+   32  echo aa
+   33  echo bb
+   34  echo cc
+   35  set +o history
+   36  echo a
+   37  echo b
+   38  echo c
+   39  echo d
+   40  history -d 2
+   41  history
+    1  echo below zero
+    2  cat <<EOF
+a
+b
+c
+set -o vi
+a
+bbb
+exit
+EOF
+    3  echo one	# leading blank lines get removed
+    4  echo two	# blank lines after a non-blank are preserved
+    5  echo three

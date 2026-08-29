@@ -1,0 +1,4 @@
+eval ok
+status: 1
+equals-1
+bad echo

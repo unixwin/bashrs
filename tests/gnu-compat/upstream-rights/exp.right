@@ -1,0 +1,284 @@
+expect <^A>
+expect <^A>
+expect <^?>
+expect <^?>
+expect <^A>
+expect <^?>
+expect bar
+expect <^A>
+expect <^?>
+expect <^A>
+expect <^?>
+expect <abcdefgh>
+expect <abcdefgh>
+expect <abcdefgh>
+expect <abcdefgh>
+expect <abcd>
+expect <abcd>
+expect nothing
+expect < >
+expect <-->
+expect <>
+expect <>
+expect <>
+expect <>
+expect <>
+expect <>
+expect <abc>
+expect <abc>
+expect <abc>
+expect <abc>
+expect <abcdef>
+expect <abcdef>
+expect <^A>
+expect <^?>
+expect <^A>
+expect <^?>
+expect <^A>
+expect <^?>
+expect nothing
+expect <>
+expect nothing
+expect <>
+expect <>
+expect <Hello World!>
+expect <`>
+expect <">
+expect <\^A>
+expect <\$>
+expect <\\>
+expect <a> <b>
+expect <^A> <^?>
+expect <**>
+expect <\.\./*/>
+expect <^A^?^A^?>
+expect <^A^A>
+expect <^A^?>
+expect <^A^A^?>
+expect <  abc> <def> <ghi> <jkl  >
+expect <  abc> <def> <ghi> <jkl  >
+expect <--abc> <def> <ghi> <jkl-->
+expect <a b> <cd> <ef> <gh>
+expect <a b> <cd> <ef> <gh>
+expect <a b> <cd> <ef> <gh>
+expect <  >
+expect < - >
+expect </^root:/{s/^[^:]*:[^:]*:\([^:]*\).*$/\1/>
+expect <foo bar>
+expect <foo> <bar>
+expect <abc>
+expect <abc>
+expect <posix>
+expect <10>
+expect <5>
+expect <5>
+expect <file.o>
+expect <posix>
+expect </src/cmd>
+expect <three>
+expect <abcdef>
+expect <abcdef>
+expect <abcdef>
+expect <abcdef>
+expect <\$x>
+expect <$x>
+expect <\$x>
+expect <abc> <def> <ghi> <jkl>
+expect <abc def ghi jkl>
+expect <abc:def ghi:jkl>
+expect <abc> <def ghi> <jkl>
+expect <xxabc> <def ghi> <jklyy>
+expect <abc> <def ghi> <jklabc> <def ghi> <jkl>
+expect <abcdef>
+expect <bar> <> <xyz> <> <abc>
+expect <$foo>
+expect <10>
+expect <newline expected>
+expect <got it>
+expect <got it>
+expect <one> <three> <five>
+expect <5> <5>
+expect <3>
+expect <1>
+expect <1>
+expect <5>
+expect <5>
+expect <5>
+expect <5>
+expect <42>
+expect <26>
+expect <\>
+expect <~>
+expect nothing
+expect nothing
+expect <a> <b> <c> <d> <e>
+a?b?c
+a b c
+0.net
+0.net0
+
+0.net
+0.net
+0.net
+graph
+yes
+a
+a
+ val
+val
+ val
+no arg passed
+hello
+[0;31m\]
+]
+[hello
+\[\e[0;31m\]
+
+hello
+eo
+declare -- var=$'x\001y\177z'
+var=x\001y\177z$
+declare -- var="x\001y\177z"$
+var=$'x\001y\177z'
+declare -a array=()
+declare -a array=([0]=$'x\001y\177z')
+declare -a array=([0]=$'x\001y\177z')
+declare -A array=([$'x\001y\177z']=$'a\242b\002c' )
+abc
+def
+ghi
+jkl
+abc def ghi jkl
+xxabc
+def
+ghi
+jklyy
+xxabc def ghi jklyy
+abc
+def
+ghi
+jkl
+abc
+def ghi
+jkl
+abc
+def ghi
+jkl
+abc
+def ghi
+jkl
+xxabc
+def
+ghi
+jklyy
+xxabc
+def ghi
+jklyy
+abc
+def
+ghi
+jklabc
+def
+ghi
+jkl
+abc
+def ghi
+jklabc
+def ghi
+jkl
+abc:def ghi:jkl
+abc:def ghi:jkl
+abc:def ghi:jkl
+abc
+def ghi
+jkl
+abc:def ghi:jkl
+abc:def ghi:jkl
+abc
+def ghi
+jkl
+var=abc:def ghi:jkl
+abc:def ghi:jkl
+var=abc:def ghi:jkl
+abcdef ghijkl
+abcdef ghijkl
+abcdef ghijkl
+abc
+def ghi
+jkl
+abcdef ghijkl
+abcdef ghijkl
+abcdef ghijkl
+var=abcdef ghijkl
+abcdef ghijkl
+var=abcdef ghijkl
+abc
+def ghi
+jkl
+abc def ghi jkl
+abc def ghi jkl
+abc def ghi jkl
+abc
+def
+ghi
+jkl
+abc def ghi jkl
+abc def ghi jkl
+abc
+def
+ghi
+jkl
+var=abc def ghi jkl
+abc def ghi jkl
+var=abc def ghi jkl
+abc
+def ghi
+jkl
+[foo]
+[]
+[foo]
+[]
+[foo]
+[foo]
+[foo]
+[]
+[foo]
+[]
+[foo]
+[]
+< A >< B >< A >< B >
+< A >< B >< A >< B >
+< A >< B >< a >< b >
+< A >< B >< A >< B >
+< A >< B ><' A '><' B '>
+-----
+< A >< B >< A >< B >
+< A >< B >< A >< B >
+< A >< B >< a >< b >
+< A >< B >< A >< B >
+< A >< B ><' A '><' B '>
+ok 1
+ok 2
+ok 3
+ok 4
+ok 5
+ok 6
+ok 7
+ok 8
+ok 9
+abcdefg
+abcdefg
+abcdefg
+abcdefg
+cdefg
+abcdefg
+abcde
+abcdefg
+foo
+declare -- a="foo"
+7
+declare -i a="7"
+42
+declare -- a="42"
+FOO
+declare -u A="FOO"

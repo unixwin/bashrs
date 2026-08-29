@@ -1,0 +1,216 @@
+ok 1
+ok 2
+ok 3
+ok 4
+ok 5
+ok 6
+ok 7
+ok 8
+ok 9
+ok 10
+ok 11
+ok 12
+ok 13
+ok 14
+ok 15
+ok 16
+ok 17
+ok 18
+ok 19
+ok 20
+ok 21
+ok 22
+ok 23
+ok 24
+ok 25
+ok 26
+ok 27
+ok 28
+ok 29
+ok 30
+ok 31
+ok 32
+ok 33
+ok 34
+ok 35
+ok 36
+expect !([*)*
+!([*)*
+expect +(a|b[)*
++(a|b[)*
+expect [a*(]*z
+[a*(]*)z
+expect +()c
++()c
+expect +()x
++()x
+expect abc
+abc
+expect +(*)x
++(*)x
+expect @(*)
+abc
+expect no-file+(a|b)stuff
+no-file+(a|b)stuff
+expect no-file+(a*(c)|b)stuff
+no-file+(a*(c)|b)stuff
+expect abd acd
+abd acd
+expect acd
+acd
+expect abd
+abd
+expect no
+no
+expect yes
+yes
+expect yes
+yes
+expect 1: bcdef
+1: bcdef
+expect 2: def
+2: def
+expect 3: abcde
+3: abcde
+expect 4: abc
+4: abc
+expect 5: ef
+5: ef
+expect 6: ef
+6: ef
+expect 7: abcdef
+7: abcdef
+expect ab abef
+ab abef
+expect abcfef abef
+abcfef abef
+expect abcdef
+abcdef
+expect ab abcdef abcfef abef
+ab abcdef abcfef abef
+expect abcdef abcfef abef
+abcdef abcfef abef
+ok 37
+ok 38
+ok 39
+ok 40
+ok 41
+ok 42
+a b a,b a-b a.b a:b a;b a_b
+a b a,b a-b a.b a:b a;b a_b
+a b a,b a-b a.b a:b a;b a_b
+a b a,b a-b a.b a:b a;b a_b
+a.b
+a b a,b a-b a:b a;b a_b
+a b a,b a-b a.b a:b a;b a_b
+a b a,b a-b a.b a:b a;b a_b
+a b a,b a-b a.b a:b a;b a_b
+a,b
+a.c
+a.c
+a.c
+a.c
+a.c
+a.c
+ok 1
+ok 2
+ok 3
+a ab
+a ab
+a ab
+a
+*(.)
+a.log
+*(foo)
+*(foo|bar)
+a.log
+?(foo)
+a.log
+a.log
+*(foo).*
+*(foo|bar).*
+a.log
+a.log
+.x .y .z
+a b c
+.x .y .z a b c
+a b c
+a b c
+a b c
+a b c
+.x .y .z a b c
+.x .y .z a b c
+*
+.b a
+.b a
+a .b
+.b
+.b
+.b a
+.b a
+a .b
+.b
+.b
+dotglob: .a .foo bar
+@(.foo)
+.foo
+!(.foo)
+.a bar
+@(.foo|*)
+.a .foo bar
+!(.foo|*)
+!(.foo|*)
+@(*)
+.a .foo bar
+!(*)
+!(*)
+.*
+. .. .a .foo
+@(.*)
+. .. .a .foo
+!(.*)
+bar
+no dotglob: .a .foo bar
+@(.foo)
+.foo
+!(.foo)
+bar
+@(.foo|*)
+.foo bar
+!(.foo|*)
+!(.foo|*)
+!(bar).foo
+!(bar).foo
+*(bar).foo
+.foo
+?(bar).foo
+.foo
+.?
+.. .a
+@(.?)
+.. .a
+!(.?)
+bar
+dotglob: .a .foo bar
+@(?|.?)
+.. .a
+@(?|.*)
+. .. .a .foo
+? .*
+? . .. .a .foo
+*
+.a .foo bar
+no dotglob: .a .foo bar
+@(?|.?)
+.. .a
+@(?|.*)
+. .. .a .foo
+? .*
+? . .. .a .foo
+*
+bar
+extglob        	off
+x
+extglob        	off
+extglob        	off
+extglob        	off
