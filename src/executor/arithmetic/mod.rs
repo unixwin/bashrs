@@ -1029,12 +1029,9 @@ fn trailing_operator_error(expression: &str) -> Option<String> {
         "syntax error: operand expected"
     };
     let token = &expression[last_start..];
-    // GNU expr.c includes trailing source whitespace in the error token to
-    // separate it from the closing parenthesis (e.g. "+ " not "+"), but only
-    // when the source text actually contains that whitespace.
-    let trimmed_token = token.trim_end();
-    let trailing = if token.len() > trimmed_token.len() { " " } else { "" };
+    // GNU expr.c includes a trailing space in the error token to separate
+    // it from the closing parenthesis (e.g. "+ " not "+").
     Some(format!(
-        "{expression}: {message} (error token is \"{trimmed_token}{trailing}\")"
+        "{expression}: {message} (error token is \"{token} \")"
     ))
 }

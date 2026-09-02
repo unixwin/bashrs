@@ -17,25 +17,14 @@ pub(super) fn parse_arithmetic_for_command(
     let mut part_index = 0usize;
     let mut paren_depth = 0usize;
     let mut closed = false;
-    let mut last_token_end = 0usize;
     while i + 1 < tokens.len() {
         if paren_depth == 0 && tokens[i].value == "))" {
-            if !parts[part_index].is_empty() && last_token_end > 0 && tokens[i].column > last_token_end {
-                if let Some(last) = parts[part_index].last_mut() {
-                    last.push(' ');
-                }
-            }
             i += 1;
             closed = true;
             break;
         }
 
         if paren_depth == 0 && is_keyword(tokens, i, ")") && is_keyword(tokens, i + 1, ")") {
-            if !parts[part_index].is_empty() && last_token_end > 0 && tokens[i].column > last_token_end {
-                if let Some(last) = parts[part_index].last_mut() {
-                    last.push(' ');
-                }
-            }
             i += 2;
             closed = true;
             break;
@@ -71,7 +60,6 @@ pub(super) fn parse_arithmetic_for_command(
         if is_keyword(tokens, i, "(") {
             paren_depth += 1;
             parts[part_index].push(tokens[i].value.clone());
-            last_token_end = tokens[i].column + tokens[i].raw.len();
             i += 1;
             continue;
         }
@@ -79,21 +67,17 @@ pub(super) fn parse_arithmetic_for_command(
         if is_keyword(tokens, i, ")") && paren_depth > 0 {
             paren_depth -= 1;
             parts[part_index].push(tokens[i].value.clone());
-            last_token_end = tokens[i].column + tokens[i].raw.len();
             i += 1;
             continue;
         }
 
         if let Some(combined) = arithmetic_combined_operator(&tokens[i], tokens.get(i + 1)) {
             parts[part_index].push(combined);
-            let end_tok = tokens.get(i + 1).unwrap_or(&tokens[i]);
-            last_token_end = end_tok.column + end_tok.raw.len();
             i += 2;
             continue;
         }
 
         parts[part_index].push(tokens[i].value.clone());
-        last_token_end = tokens[i].column + tokens[i].raw.len();
         i += 1;
     }
 

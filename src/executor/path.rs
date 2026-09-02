@@ -440,10 +440,13 @@ fn windows_external_absolute_argument_needs_translation(
             || configured_shell_root(env_vars).is_some();
     }
 
-    // /mnt/X drive paths need translation for all drive letters
+    // /mnt/X drive paths need translation for all drive letters.
+    // Must be exactly /mnt/X or /mnt/X/... to avoid false matches like /mnt/cfoo.
     if normalized.starts_with("/mnt/") && normalized.len() >= 6 {
         let bytes = normalized.as_bytes();
-        if bytes[5].is_ascii_alphabetic() {
+        if bytes[5].is_ascii_alphabetic()
+            && (normalized.len() == 6 || bytes[6] == b'/')
+        {
             return true;
         }
     }
@@ -758,12 +761,15 @@ pub(crate) fn shell_path_to_windows(path: &str, env_vars: &HashMap<String, Strin
     // Map /mnt/X drive paths to Windows drive letters (WSL-style convention).
     // This is a logical mapping, not a real directory - similar to /c/ -> C:\
     // Supports both /mnt/c and /mnt/c/some/path forms for all drive letters.
+    // Must be exactly /mnt/X or /mnt/X/... to avoid false matches like /mnt/cfoo.
     if cfg!(windows) && normalized.starts_with("/mnt/") && normalized.len() >= 6 {
         let bytes = normalized.as_bytes();
-        if bytes[5].is_ascii_alphabetic() {
+        if bytes[5].is_ascii_alphabetic()
+            && (normalized.len() == 6 || bytes[6] == b'/')
+        {
             let drive = bytes[5] as char;
             let rest = if normalized.len() > 6 {
-                normalized[6..].trim_start_matches('/')
+                normalized[7..].trim_start_matches('/')
             } else {
                 ""
             };
@@ -1912,6 +1918,37 @@ mod tests {
         assert!(!windows_external_absolute_argument_needs_translation(
             "/mnt/123", &env_vars
         ));
+        // /mnt/cfoo should NOT match (letter not followed by / or end-of-string)
+        assert!(!windows_external_absolute_argument_needs_translation(
+            "/mnt/cfoo", &env_vars
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_mnt_drive_paths_do_not_false_positive() {
+        let mut env_vars = HashMap::new();
+        env_vars.insert(
+            "WINUXSH_ROOT".to_string(),
+            std::env::temp_dir().to_string_lossy().to_string(),
+        );
+
+        // /mnt/cfoo should NOT map to C:\foo — it should fall through to shell root
+        let result = shell_path_to_windows("/mnt/cfoo", &env_vars);
+        let root_str = std::env::temp_dir().to_string_lossy().to_string();
+        assert!(result.starts_with(&root_str));
+        assert!(result.ends_with("mnt\\cfoo"));
+
+        // /mnt/c without trailing slash maps correctly
+        assert_eq!(
+            shell_path_to_windows("/mnt/c", &env_vars),
+            PathBuf::from(r"C:\")
+        );
+        // /mnt/c/ with trailing slash also maps correctly
+        assert_eq!(
+            shell_path_to_windows("/mnt/c/", &env_vars),
+            PathBuf::from(r"C:\")
+        );
     }
 
     fn windows_shell_path(path: &Path) -> String {
