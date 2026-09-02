@@ -247,12 +247,47 @@ impl Executor {
                 }
             }
             self.write_local_compound_readonly_assignment_errors(&args, &mut stderr)?;
-            crate::builtins::declare::execute_with_io(
+            let status = crate::builtins::declare::execute_with_io(
                 &args,
                 &mut self.env_vars,
                 &mut stdout,
                 &mut stderr,
-            )?
+            )?;
+            if status == 0 {
+                // Plain scalar locals must shadow the outer value in the typed
+                // owner as well: parameter expansion reads shell_state.variables
+                // first, so `local OPTERR=1` inside a function has to replace the
+                // stale global there (getopts5.sub: getop must print OPTERR=1,
+                // and the frame restore in restore_function_locals puts the
+                // saved outer value back).
+                for arg in &args {
+                    let Some((raw_name, _)) = arg.split_once('=') else {
+                        continue;
+                    };
+                    let name = raw_name.strip_suffix('+').unwrap_or(raw_name);
+                    let (base, _) = assignment_name_and_append(name);
+                    if is_marked_var(&self.env_vars, ARRAY_VARS, base)
+                        || is_marked_var(&self.env_vars, ASSOC_VARS, base)
+                        || is_marked_var(&self.env_vars, NAMEREF_VARS, base)
+                    {
+                        continue;
+                    }
+                    match self.env_vars.get(base) {
+                        Some(value) => match self.shell_state.variables.get_mut(base) {
+                            Some(variable) => {
+                                variable.value = crate::shell::ShellValue::Scalar(value.clone());
+                            }
+                            None => {
+                                let _ = self.shell_state.variables.set_scalar(base, value.clone());
+                            }
+                        },
+                        None => {
+                            self.shell_state.variables.remove(base);
+                        }
+                    }
+                }
+            }
+            status
         };
         let stderr = local_stderr_from_declare(stderr);
         self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
@@ -305,6 +340,11 @@ impl Executor {
                 }
             }
             self.env_vars.remove(&name);
+            // A fresh local shadows the outer variable in the typed owner too:
+            // parameter expansion reads shell_state.variables first, so a
+            // stale global scalar would keep leaking through (bash: `local X`
+            // makes ${X-unset} report unset until the frame returns).
+            self.shell_state.variables.remove(&name);
             set_var_attrs(&mut self.env_vars, &name, VarAttrs::default());
         }
     }
