@@ -64,9 +64,14 @@ run_rubash() { # $1=name  $2=outfile
 }
 
 run_gnu() { # $1=name  $2=outfile
+  # Redirect INSIDE WSL: routing the two streams through wsl.exe's relay
+  # onto one externally opened handle races on separate file positions and
+  # mangles interleaved stdout/stderr (lost diagnostics, truncated lines,
+  # stray diff-marker bytes in captured baselines). A WSL-side redirect
+  # captures the true GNU byte stream. /mnt/${2#/} mirrors the hardcoded
+  # /mnt/d/repo/rubash layout this script already assumes.
   timeout "$TIMEOUT_SECS" wsl bash -c \
-    "cd $WSL_TESTS && export PATH=\"$WSL_ENV:\$PATH\" && export THIS_SH=bash && bash ./$1.tests" \
-    > "$2" 2>&1
+    "cd $WSL_TESTS && export PATH=\"$WSL_ENV:\$PATH\" && export THIS_SH=bash && bash ./$1.tests > /mnt/${2#/} 2>&1"
 }
 
 in_gnu_timeout_list() {
