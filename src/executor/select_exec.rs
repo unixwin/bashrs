@@ -56,7 +56,10 @@ impl Executor {
                     Err(pattern) => {
                         self.report_failglob(&pattern);
                         self.finish_compound_output_process_substitutions(group_outputs)?;
-                        return Err(ExecuteError::ExitCode(1));
+                        // failglob is a fatal word-expansion error (GNU):
+                        // the select command fails with status 1 and the
+                        // next line runs.
+                        return Err(ExecuteError::ExpansionFailure(1));
                     }
                 }
             }

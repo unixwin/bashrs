@@ -39,7 +39,11 @@ impl Executor {
                     Ok(expanded) => values.extend(expanded),
                     Err(pattern) => {
                         self.report_failglob(&pattern);
-                        return Err(ExecuteError::ExitCode(1));
+                        // failglob is a fatal word-expansion error (GNU):
+                        // the for command fails with status 1 and the next
+                        // line runs; ExpansionFailure(1) rides the same
+                        // top-level command-list-abandon machinery.
+                        return Err(ExecuteError::ExpansionFailure(1));
                     }
                 }
             }

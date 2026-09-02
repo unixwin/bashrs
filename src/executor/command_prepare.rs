@@ -289,7 +289,14 @@ impl Executor {
                             .push(materialize_expanded_command_word(&word).replace('\x17', "'")),
                         PathnameExpansion::Fail(pattern) => {
                             self.report_failglob(&pattern);
-                            return Err(ExecuteError::ExitCode(1));
+                            // GNU failglob is a fatal word-expansion error:
+                            // it abandons the rest of the current command
+                            // list with status 1 but the next line still runs
+                            // (probe 2026-09-02: `echo f[12] nope*; echo x`
+                            // skips x, the next line prints). ExitCode(1) made
+                            // it abort the whole script at top level
+                            // (glob.tests line 67 truncated later output).
+                            return Err(ExecuteError::ExpansionFailure(1));
                         }
                     }
                 }
