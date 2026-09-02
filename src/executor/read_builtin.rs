@@ -884,14 +884,6 @@ impl Executor {
                     initial_text = Some(word[3..].to_string());
                     index += 1;
                 }
-                "-ei" => {
-                    initial_text = cmd.words.get(index + 1).cloned();
-                    index += 2;
-                }
-                word if word.starts_with("-ei") && word.len() > 3 => {
-                    initial_text = Some(word[3..].to_string());
-                    index += 1;
-                }
                 "-ie" => {
                     initial_text = cmd.words.get(index + 1).cloned();
                     index += 2;
@@ -1012,12 +1004,6 @@ impl Executor {
                 {
                     raw = true;
                     delimiter = word[4..].chars().next().unwrap_or('\0');
-                    index += 1;
-                }
-                "-si" => {
-                    index += 2;
-                }
-                word if word.starts_with("-si") && word.len() > 3 => {
                     index += 1;
                 }
                 "-st" => {

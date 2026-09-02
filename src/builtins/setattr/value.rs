@@ -28,7 +28,6 @@ pub(super) fn array_attribute_assignment_value(
 pub(super) fn readonly_error_subject(
     value: &str,
     explicit_array: bool,
-    env_vars: &HashMap<String, String>,
 ) -> Option<String> {
     // TODO(builtins/setattr.def/variables.c/execute_cmd.c): Bash diagnostics
     // depend on whether assignment processing or the builtin detects the

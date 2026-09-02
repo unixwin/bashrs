@@ -116,7 +116,7 @@ impl Executor {
         let mut mode = TypeDescribeMode::Verbose;
         let mut all = false;
         let mut force_path = false;
-        let mut skip_functions = false;
+        let skip_functions = false;
         let mut functions_only = false;
         let mut index = 0;
 
@@ -200,7 +200,7 @@ impl Executor {
         let mut mode = TypeDescribeMode::Verbose;
         let mut all = false;
         let mut force_path = false;
-        let mut skip_functions = false;
+        let skip_functions = false;
         let mut functions_only = false;
         let mut index = 0;
 
