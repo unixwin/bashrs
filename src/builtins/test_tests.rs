@@ -204,7 +204,7 @@ fn supports_parenthesized_logical_expressions() {
         EXECUTION_FAILURE
     );
     assert_eq!(
-        run(&["\\(", "", "-o", "x", "\\)", "-a", "x"], false).0,
+        run(&["(", "", "-o", "x", ")", "-a", "x"], false).0,
         EXECUTION_SUCCESS
     );
 }
