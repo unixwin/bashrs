@@ -77,7 +77,7 @@ where
         return Ok(EXECUTION_FAILURE);
     }
 
-    match eval_expr(&args, env_vars) {
+    match eval_expr_with_bracket(&args, bracket, env_vars) {
         Ok(true) => Ok(EXECUTION_SUCCESS),
         Ok(false) => Ok(EXECUTION_FAILURE),
         Err(message) => {
@@ -93,74 +93,280 @@ where
     }
 }
 
-fn eval_expr(args: &[&str], env_vars: &HashMap<String, String>) -> Result<bool, String> {
-    if let Some(inner) = outer_parenthesized_expr(args) {
-        return eval_expr(inner, env_vars);
-    }
-
-    if let Some(index) = find_logical_operator(args, "-o") {
-        return Ok(eval_expr(&args[..index], env_vars)? || eval_expr(&args[index + 1..], env_vars)?);
-    }
-
-    if let Some(index) = find_logical_operator(args, "-a") {
-        return Ok(eval_expr(&args[..index], env_vars)? && eval_expr(&args[index + 1..], env_vars)?);
-    }
-
-    match args {
-        [] => Ok(false),
-        ["!", rest @ ..] => Ok(!eval_expr(rest, env_vars)?),
-        [single] => Ok(!single.is_empty()),
-        [op, operand] if is_unary_operator(op) => eval_unary(op, operand, env_vars),
-        [left, op, right] if is_binary_operator(op) => eval_binary(left, op, right, env_vars),
-        _ => Err("syntax error".to_string()),
-    }
+/// Faithful port of GNU bash-5.2 `test.c` (`posixtest`/`two_arguments`/
+/// `three_arguments`/`term`/`expr`/`or`/`and` plus the leftover-argument
+/// checks in `test_command`). The baseline is WSL GNU bash 5.2.21, whose
+/// parser differs from bash-5.3 (5.2: term parens always re-enter expr();
+/// posixtest 0/1/2/(..) cases discard leftovers via pos=argc; `-t` with a
+/// non-numeric operand is FALSE; `!` in two_arguments does not advance
+/// pos). Malformed expressions report GNU's specific diagnostics
+/// (`unary operator expected`, ``syntax error: `-ne' unexpected``,
+/// `too many arguments`, ```)' expected``, ...) instead of a generic
+/// `syntax error`.
+struct TestParser<'a> {
+    args: &'a [&'a str],
+    pos: usize,
+    bracket: bool,
+    env_vars: &'a HashMap<String, String>,
 }
 
-fn find_logical_operator(args: &[&str], op: &str) -> Option<usize> {
-    let mut depth = 0usize;
-    for (index, arg) in args.iter().enumerate().rev() {
-        if is_close_paren(arg) {
-            depth += 1;
-            continue;
-        }
-        if is_open_paren(arg) {
-            depth = depth.saturating_sub(1);
-            continue;
-        }
-        if depth == 0 && *arg == op && index > 0 && index + 1 < args.len() {
-            return Some(index);
-        }
-    }
-    None
-}
-
-fn outer_parenthesized_expr<'a>(args: &'a [&str]) -> Option<&'a [&'a str]> {
-    if args.len() < 2 || !is_open_paren(args[0]) || !is_close_paren(args[args.len() - 1]) {
-        return None;
+impl TestParser<'_> {
+    /// 5.2 test.c counts `argc` including the command word (`test`/`[`), and
+    /// `pos` starts at 1 (past it), so argc = args.len() + 1 and argv[argc]
+    /// is one past the end (NULL in C).
+    fn argc(&self) -> usize {
+        self.args.len() + 1
     }
 
-    let mut depth = 0usize;
-    for (index, arg) in args.iter().enumerate() {
-        if is_open_paren(arg) {
-            depth += 1;
-        } else if is_close_paren(arg) {
-            depth = depth.checked_sub(1)?;
-            if depth == 0 && index != args.len() - 1 {
-                return None;
+    /// argv[i] in 5.2 terms: argv[0] is the command word, argv[i] = args[i-1].
+    fn argv(&self, i: usize) -> Option<&str> {
+        if i == 0 {
+            Some("test")
+        } else if i - 1 < self.args.len() {
+            Some(self.args[i - 1])
+        } else {
+            None
+        }
+    }
+
+    /// The current token (argv[pos]); only valid while pos < argc.
+    fn cur(&self) -> &str {
+        self.args[self.pos - 1]
+    }
+
+    /// GNU `advance(f)`: `++pos`; if `f` and we moved past the end, report
+    /// `argument expected`.
+    fn advance(&mut self, check: bool) -> Result<(), String> {
+        self.pos += 1;
+        if check && self.pos >= self.argc() {
+            return Err("argument expected".to_string());
+        }
+        Ok(())
+    }
+
+    /// 5.2 `posixtest()`: dispatch on the number of real arguments
+    /// (`argc - 1`); the 0/1/2 and `(...)` cases discard any leftovers by
+    /// setting pos = argc.
+    fn posixtest(&mut self) -> Result<bool, String> {
+        match self.argc() - 1 {
+            0 => {
+                self.pos = self.argc();
+                Ok(false)
             }
+            1 => {
+                let value = !self.argv(1).unwrap_or("").is_empty();
+                self.pos = self.argc();
+                Ok(value)
+            }
+            2 => {
+                let value = self.two_arguments()?;
+                self.pos = self.argc();
+                Ok(value)
+            }
+            3 => self.three_arguments(),
+            4 => {
+                if self.cur() == "!" {
+                    self.advance(true)?;
+                    let value = self.three_arguments()?;
+                    Ok(!value)
+                } else if self.cur() == "(" && self.argv(self.argc() - 1) == Some(")") {
+                    self.advance(true)?;
+                    let value = self.two_arguments()?;
+                    self.pos = self.argc();
+                    Ok(value)
+                } else {
+                    self.expr()
+                }
+            }
+            _ => self.expr(),
         }
     }
 
-    (depth == 0).then_some(&args[1..args.len() - 1])
+    /// 5.2 `two_arguments()`: the `!` form reads its operand but does not
+    /// advance pos (the callers set pos = argc to discard leftovers).
+    fn two_arguments(&mut self) -> Result<bool, String> {
+        if self.cur() == "!" {
+            return Ok(self.argv(self.pos + 1).unwrap_or("").is_empty());
+        }
+        let first = self.cur();
+        // Single-letter `-X` form: a valid unary runs it; anything else
+        // (including `-A` and long options like `-eq`) is `unary operator
+        // expected` on that token.
+        if first.starts_with('-') && first.len() == 2 {
+            if is_unary_operator(first) {
+                return self.unary_operator();
+            }
+            return Err(format!("{}: unary operator expected", first));
+        }
+        Err(format!("{}: unary operator expected", first))
+    }
+
+    /// 5.2 `three_arguments()`.
+    fn three_arguments(&mut self) -> Result<bool, String> {
+        let middle = self.argv(self.pos + 1).unwrap_or("");
+        if is_binary_operator(middle) {
+            let value = self.binary_operator()?;
+            self.pos = self.argc();
+            return Ok(value);
+        }
+        if middle == "-a" || middle == "-o" {
+            let left = !self.cur().is_empty();
+            let right = !self.argv(self.pos + 2).unwrap_or("").is_empty();
+            let value = if middle == "-a" { left && right } else { left || right };
+            self.pos = self.argc();
+            return Ok(value);
+        }
+        if self.cur() == "!" {
+            self.advance(true)?;
+            let value = self.two_arguments()?;
+            self.pos = self.argc();
+            return Ok(!value);
+        }
+        if self.cur() == "(" && self.argv(self.pos + 2) == Some(")") {
+            let value = !self.argv(self.pos + 1).unwrap_or("").is_empty();
+            self.pos = self.argc();
+            return Ok(value);
+        }
+        Err(format!("{}: binary operator expected", middle))
+    }
+
+    /// 5.2 `unary_operator()`: `-t` with a non-numeric operand is FALSE
+    /// (not an error); every other unary needs exactly one operand.
+    fn unary_operator(&mut self) -> Result<bool, String> {
+        let op = self.cur();
+        if op == "-t" {
+            self.advance(false)?;
+            if self.pos < self.argc() {
+                if self.cur().parse::<i64>().is_ok() {
+                    let operand = self.cur().to_string();
+                    self.advance(false)?;
+                    return eval_unary("-t", &operand, self.env_vars);
+                }
+                return Ok(false);
+            }
+            return eval_unary("-t", "1", self.env_vars);
+        }
+        if self.pos + 1 >= self.argc() {
+            return Err("argument expected".to_string());
+        }
+        let operand = self.argv(self.pos + 1).unwrap_or("");
+        let value = eval_unary(op, operand, self.env_vars)?;
+        self.pos += 2;
+        Ok(value)
+    }
+
+    /// 5.2 `binary_operator()`.
+    fn binary_operator(&mut self) -> Result<bool, String> {
+        let left = self.cur();
+        let op = self.argv(self.pos + 1).unwrap_or("");
+        let right = self.argv(self.pos + 2).unwrap_or("");
+        let value = eval_binary(left, op, right, self.env_vars)?;
+        self.pos += 3;
+        Ok(value)
+    }
+
+    /// 5.2 `expr()` -> `or()` -> `and()` -> `term()`.
+    fn expr(&mut self) -> Result<bool, String> {
+        if self.pos >= self.argc() {
+            return Err("argument expected".to_string());
+        }
+        self.or()
+    }
+
+    fn or(&mut self) -> Result<bool, String> {
+        let mut value = self.and()?;
+        while self.pos < self.argc() && self.cur() == "-o" {
+            self.advance(false)?;
+            // 5.2 always parses the right operand (errors propagate) even
+            // when the left value would short-circuit the boolean result.
+            let v2 = self.or()?;
+            value = value || v2;
+        }
+        Ok(value)
+    }
+
+    fn and(&mut self) -> Result<bool, String> {
+        let mut value = self.term()?;
+        while self.pos < self.argc() && self.cur() == "-a" {
+            self.advance(false)?;
+            let v2 = self.and()?;
+            value = value && v2;
+        }
+        Ok(value)
+    }
+
+    fn term(&mut self) -> Result<bool, String> {
+        if self.pos >= self.argc() {
+            return Err("argument expected".to_string());
+        }
+        // Leading `!`s toggle the result of the following term.
+        if self.cur() == "!" {
+            let mut negate = false;
+            while self.pos < self.argc() && self.cur() == "!" {
+                self.advance(true)?;
+                negate = !negate;
+            }
+            let inner = self.term()?;
+            return Ok(if negate { !inner } else { inner });
+        }
+        // Parenthesized expression: 5.2 always re-enters expr() (no short
+        // arity fast-path).
+        if self.cur() == "(" {
+            self.advance(true)?;
+            let value = self.expr()?;
+            // After the sub-expression the closing token must be a `)`. For
+            // `[ ... ]` the already-consumed `]` is reported as the offender.
+            if self.pos >= self.argc() {
+                if self.bracket {
+                    return Err("`)' expected, found ]".to_string());
+                }
+                return Err("`)' expected".to_string());
+            }
+            if self.cur() != ")" {
+                return Err(format!("`)' expected, found {}", self.cur()));
+            }
+            self.advance(false)?;
+            return Ok(value);
+        }
+        // Binary, then unary, then a plain string term.
+        if self.pos + 3 <= self.argc()
+            && is_binary_operator(self.argv(self.pos + 1).unwrap_or(""))
+        {
+            return self.binary_operator();
+        }
+        if self.pos + 2 <= self.argc() && is_unary_operator(self.cur()) {
+            return self.unary_operator();
+        }
+        let value = !self.cur().is_empty();
+        self.advance(false)?;
+        Ok(value)
+    }
 }
 
-fn is_open_paren(value: &str) -> bool {
-    matches!(value, "(" | "\\(")
+fn eval_expr_with_bracket(
+    args: &[&str],
+    bracket: bool,
+    env_vars: &HashMap<String, String>,
+) -> Result<bool, String> {
+    let mut parser = TestParser {
+        args,
+        pos: 1,
+        bracket,
+        env_vars,
+    };
+    let value = parser.posixtest()?;
+    // 5.2 test_command: any arguments not consumed by the parse are
+    // reported as `syntax error: `X' unexpected` (option-like) or
+    // `too many arguments`.
+    if parser.pos != parser.argc() {
+        if parser.pos < parser.argc() && parser.cur().starts_with('-') {
+            return Err(format!("syntax error: `{}' unexpected", parser.cur()));
+        }
+        return Err("too many arguments".to_string());
+    }
+    Ok(value)
 }
 
-fn is_close_paren(value: &str) -> bool {
-    matches!(value, ")" | "\\)")
-}
 
 fn is_unary_operator(op: &str) -> bool {
     matches!(
