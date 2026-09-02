@@ -37,28 +37,37 @@ fn ifs_whitespace(ch: char, ifs: &str) -> bool {
 /// trailing IFS delimiter (unlike word-splitting for expansion), so every
 /// delimiter boundary becomes a field. Only a leading run of IFS *whitespace*
 /// is elided (it does not create a leading empty field).
+///
+/// Ranges are byte offsets into `line` and always land on UTF-8 character
+/// boundaries, so callers can slice `line` directly without panicking on
+/// multi-byte characters (GNU read splits at multibyte character boundaries,
+/// mirroring lib/sh/stringlib.c / subst.c).
 fn split_read_field_ranges(line: &str, ifs: &str) -> Vec<(usize, usize)> {
-    let chars: Vec<char> = line.chars().collect();
+    // Track each char's byte offset (char_indices) so the returned ranges
+    // slice `line` at UTF-8 boundaries instead of splitting multi-byte
+    // sequences mid-character.
+    let chars: Vec<(usize, char)> = line.char_indices().collect();
     let n = chars.len();
+    let line_len = line.len();
     if ifs.is_empty() {
-        return vec![(0, n)];
+        return vec![(0, line_len)];
     }
 
     let mut ranges: Vec<(usize, usize)> = Vec::new();
     let mut i = 0usize;
     let mut ended_at_delimiter = false;
     // Skip a leading run of IFS whitespace (does not create a leading field).
-    while i < n && ifs_whitespace(chars[i], ifs) {
+    while i < n && ifs_whitespace(chars[i].1, ifs) {
         i += 1;
     }
     while i < n {
-        let start = i;
+        let start = chars[i].0;
         // A field runs until the next IFS character. IFS whitespace inside a
         // field is kept literally; a non-whitespace IFS delimiter ends it.
-        while i < n && !ifs.contains(chars[i]) {
+        while i < n && !ifs.contains(chars[i].1) {
             i += 1;
         }
-        let end = i;
+        let end = if i < n { chars[i].0 } else { line_len };
         ranges.push((start, end));
         if i >= n {
             ended_at_delimiter = false;
@@ -67,23 +76,23 @@ fn split_read_field_ranges(line: &str, ifs: &str) -> Vec<(usize, usize)> {
         // Consume the delimiter and any following IFS whitespace. A non-whitespace
         // IFS delimiter ends exactly one field; trailing IFS whitespace is skipped so
         // it does not spawn an extra empty field.
-        if ifs_whitespace(chars[i], ifs) {
+        if ifs_whitespace(chars[i].1, ifs) {
             ended_at_delimiter = true;
-            while i < n && ifs_whitespace(chars[i], ifs) {
+            while i < n && ifs_whitespace(chars[i].1, ifs) {
                 i += 1;
             }
             // An IFS whitespace run adjacent to a non-whitespace delimiter forms
             // one delimiter sequence; do not expose the latter as an empty field.
-            if i < n && ifs.contains(chars[i]) && !ifs_whitespace(chars[i], ifs) {
+            if i < n && ifs.contains(chars[i].1) && !ifs_whitespace(chars[i].1, ifs) {
                 i += 1;
-                while i < n && ifs_whitespace(chars[i], ifs) {
+                while i < n && ifs_whitespace(chars[i].1, ifs) {
                     i += 1;
                 }
             }
         } else {
             ended_at_delimiter = true;
             i += 1;
-            while i < n && ifs_whitespace(chars[i], ifs) {
+            while i < n && ifs_whitespace(chars[i].1, ifs) {
                 i += 1;
             }
         }
@@ -91,7 +100,7 @@ fn split_read_field_ranges(line: &str, ifs: &str) -> Vec<(usize, usize)> {
     // A final IFS delimiter creates a trailing empty field which bash drops
     // (mirroring word-splitting's omission of a trailing empty field).
     if ended_at_delimiter {
-        ranges.push((n, n));
+        ranges.push((line_len, line_len));
         if let Some((start, end)) = ranges.last().copied() {
             if start == end {
                 ranges.pop();
