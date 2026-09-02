@@ -181,6 +181,27 @@ impl Executor {
         call.append = None;
 
         let saved_capture = crate::executor::shell_options::begin_stdout_capture();
+
+        // Bash applies a pipeline element's redirections before running the
+        // command (redir.c do_redirection_internal runs for every command). A
+        // failing dup must abort the command with its diagnostic routed through
+        // the already-redirected fd2 -- which, after a 2>&1 dup, is this
+        // stage's pipe. The stripped clone below never reached that machinery,
+        // so "echo foo 2>&1 >&$v | cat" silently ran echo instead of failing
+        // with a $v: Bad file descriptor diagnostic down the pipe. Run the same
+        // ordered redirect preflight the top-level builtin path uses, while the
+        // stdout capture is active so a 2>&1-routed diagnostic lands in this
+        // stage's stdout (the pipe) exactly like GNU's.
+        if self.command_output_redirect_fails(&call)? {
+            let captured = crate::executor::shell_options::take_stdout_capture();
+            crate::executor::shell_options::restore_stdout_capture(saved_capture);
+            return Ok(Some((
+                crate::executor::substitution_metadata::bytes_to_shell_text(&captured),
+                String::new(),
+                1,
+            )));
+        }
+
         let mut subshell = self.command_substitution_executor();
         subshell
             .env_vars

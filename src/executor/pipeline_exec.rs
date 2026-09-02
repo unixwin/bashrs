@@ -987,6 +987,27 @@ impl Executor {
             return Ok(Some((String::new(), restricted, 1)));
         }
 
+        // Bash applies a pipeline element's redirections before running the
+        // command (redir.c do_redirection_internal runs for every command, and
+        // the dup arms report failures through the already-redirected fd2).
+        // This fast path historically skipped that machinery, so
+        // "echo foo 2>&1 >&$v | cat" ran echo and sent foo down the pipe
+        // instead of failing with a $v: Bad file descriptor diagnostic routed
+        // into the pipe. Run the same ordered redirect preflight the top-level
+        // builtin path uses; with the stdout capture active, a 2>&1-routed
+        // diagnostic lands in this stage's stdout (the pipe) like GNU's.
+        let saved_capture = crate::executor::shell_options::begin_stdout_capture();
+        if self.command_output_redirect_fails(command)? {
+            let captured = crate::executor::shell_options::take_stdout_capture();
+            crate::executor::shell_options::restore_stdout_capture(saved_capture);
+            return Ok(Some((
+                crate::executor::substitution_metadata::bytes_to_shell_text(&captured),
+                String::new(),
+                1,
+            )));
+        }
+        crate::executor::shell_options::restore_stdout_capture(saved_capture);
+
         match name {
             "true" | ":" => Ok(Some((String::new(), String::new(), 0))),
             "false" => Ok(Some((String::new(), String::new(), 1))),

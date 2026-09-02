@@ -435,6 +435,10 @@ fn windows_external_absolute_argument_needs_translation(
         return true;
     }
 
+    if normalized == "/var/tmp" || normalized.starts_with("/var/tmp/") {
+        return true;
+    }
+
     if normalized == "/home" || normalized.starts_with("/home/") {
         return windows_real_home_path(env_vars).is_some()
             || configured_shell_root(env_vars).is_some();
@@ -800,6 +804,19 @@ pub(crate) fn shell_path_to_windows(path: &str, env_vars: &HashMap<String, Strin
                 }
                 return shell_path_to_windows(tmpdir, env_vars).join(rest);
             }
+        }
+    }
+
+    // /var/tmp plays the same temporary-files role as /tmp in GNU tests
+    // (vredir.tests and friends default TMPDIR:=/var/tmp). With no configured
+    // shell root there is no real /var tree on Windows, so resolve it into the
+    // process temp directory just like /tmp above.
+    if cfg!(windows) && shell_root.is_none() {
+        if normalized == "/var/tmp" {
+            return std::env::temp_dir();
+        }
+        if let Some(rest) = normalized.strip_prefix("/var/tmp/") {
+            return std::env::temp_dir().join(rest);
         }
     }
 
