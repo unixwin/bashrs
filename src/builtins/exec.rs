@@ -13,7 +13,11 @@ const EX_NOTFOUND: i32 = 127;
 const EXPORTED_VARS: &str = "__RUBASH_EXPORTED_VARS";
 
 pub fn execute(args: &[String], env_vars: &HashMap<String, String>) -> io::Result<i32> {
-    let mut stdout = io::stdout().lock();
+    // Route through the capture-aware stdout: the exec builtin's direct
+    // process-stdout writes (env dumps, printenv fallback) must land in the
+    // active pipeline-stage/command-substitution capture instead of leaking
+    // past a downstream pipe element.
+    let mut stdout = crate::executor::GlobalStdout;
     let mut stderr = io::stderr().lock();
     execute_with_child_stdio(
         args,

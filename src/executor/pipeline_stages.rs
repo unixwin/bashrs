@@ -71,6 +71,14 @@ impl Executor {
         stage_command.redirect_out = None;
         stage_command.append = None;
 
+        // Builtins that write the process stdout directly (notably the exec
+        // builtin's printenv/external fallback via io::stdout()) bypass the
+        // subshell's stdout_capture field, so their output would leak past a
+        // downstream pipe element. Wrap the stage in the same thread-local
+        // stdout capture execute_builtin_pipeline_stage uses and merge both
+        // capture sources.
+        let saved_capture = crate::executor::shell_options::begin_stdout_capture();
+
         let result = if stage_command.brace_group.is_some() {
             subshell
                 .execute_brace_group_pipeline(&stage_command)
@@ -78,9 +86,13 @@ impl Executor {
         } else {
             subshell.execute_command(&stage_command)
         };
-        let output = subshell.stdout_capture.take().unwrap_or_default();
+        let mut thread_output = crate::executor::shell_options::take_stdout_capture();
+        let mut output = subshell.stdout_capture.take().unwrap_or_default();
         let stderr = subshell.stderr_capture.take().unwrap_or_default();
         let status = subshell.last_exit_code();
+
+        crate::executor::shell_options::restore_stdout_capture(saved_capture);
+        output.append(&mut thread_output);
 
         if let Some(saved_dir) = saved_dir {
             let _ = env::set_current_dir(saved_dir);
