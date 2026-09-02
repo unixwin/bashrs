@@ -809,14 +809,19 @@ pub(crate) fn shell_path_to_windows(path: &str, env_vars: &HashMap<String, Strin
 
     // /var/tmp plays the same temporary-files role as /tmp in GNU tests
     // (vredir.tests and friends default TMPDIR:=/var/tmp). With no configured
-    // shell root there is no real /var tree on Windows, so resolve it into the
-    // process temp directory just like /tmp above.
+    // shell root there is no real /var tree on Windows. Mirror the winuxsh
+    // simulated-tree layout instead of reusing the process temp directory:
+    // /var/tmp/<x> resolves under <safe-temp>/var/tmp/<x>, which keeps it
+    // distinct from /tmp (=<safe-temp> itself) and away from the generic
+    // file names other Windows processes create directly in %TEMP%.
     if cfg!(windows) && shell_root.is_none() {
-        if normalized == "/var/tmp" {
-            return std::env::temp_dir();
-        }
-        if let Some(rest) = normalized.strip_prefix("/var/tmp/") {
-            return std::env::temp_dir().join(rest);
+        if let Some(var_tmp) = windows_var_tmp_dir() {
+            if normalized == "/var/tmp" {
+                return var_tmp;
+            }
+            if let Some(rest) = normalized.strip_prefix("/var/tmp/") {
+                return var_tmp.join(rest);
+            }
         }
     }
 
@@ -903,6 +908,34 @@ pub(crate) fn resolve_shell_path_from_env(
 pub(crate) fn is_shell_null_device(path: &str) -> bool {
     let normalized = path.replace('\\', "/");
     normalized == "/dev/null" || (cfg!(windows) && normalized.eq_ignore_ascii_case("NUL"))
+}
+
+/// Windows has no real /var tree without a configured shell root. Derive the
+/// var-tmp base from the same source rubash uses for its TMPDIR default so
+/// /var/tmp stays deterministic, and keep it in a var/tmp subdirectory so it
+/// cannot collide with /tmp or with unrelated %TEMP% contents.
+pub(in crate::executor) fn windows_var_tmp_dir() -> Option<PathBuf> {
+    if !cfg!(windows) {
+        return None;
+    }
+    let base = crate::executor::local_helpers::safe_temp_dir_string();
+    Some(PathBuf::from(base).join("var").join("tmp"))
+}
+
+/// Best-effort creation of the /var/tmp backing directory at shell startup.
+/// Open() callers never mkdir, so without this every /var/tmp open fails:
+/// under a configured shell root the winuxsh simulated tree ships var
+/// without a tmp child, and with no shell root the temp-directory fallback
+/// location does not exist on a fresh machine either.
+pub(in crate::executor) fn ensure_var_tmp_dir(env_vars: &HashMap<String, String>) {
+    let target = if let Some(root) = configured_shell_root(env_vars) {
+        Some(root.join("var").join("tmp"))
+    } else {
+        windows_var_tmp_dir()
+    };
+    if let Some(dir) = target {
+        let _ = std::fs::create_dir_all(dir);
+    }
 }
 
 fn configured_shell_root(env_vars: &HashMap<String, String>) -> Option<PathBuf> {

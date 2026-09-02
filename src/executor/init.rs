@@ -75,6 +75,7 @@ impl Executor {
         env_vars
             .entry("TMPDIR".to_string())
             .or_insert_with(safe_temp_dir_string);
+        crate::executor::path::ensure_var_tmp_dir(&env_vars);
         env_vars
             .entry("SHELL".to_string())
             .or_insert_with(shell_path_value);
