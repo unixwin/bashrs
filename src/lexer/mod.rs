@@ -98,6 +98,26 @@ fn tokenize_with_heredocs(input: &str, initial_posix: bool) -> Vec<Token> {
         if let Some(updated) = line_posix_mode_change(&line_tokens) {
             parse_posix = updated;
         }
+        // Record the whitespace run before each token. Token::column stays a
+        // byte offset into the logical line (only the position field is
+        // overwritten with the line number below), so consecutive columns
+        // recover the exact inter-token spacing for raw arithmetic capture.
+        let mut previous_end = 0usize;
+        for token in line_tokens.iter_mut() {
+            let start = token.column.min(logical_line.len());
+            // Some lexer paths emit tokens whose columns do not advance
+            // monotonically through the logical line; skip the gap capture
+            // for those instead of slicing an inverted byte range.
+            if start >= previous_end {
+                let gap = &logical_line[previous_end..start];
+                if gap.chars().all(char::is_whitespace) {
+                    token.leading_ws = gap.to_string();
+                }
+            }
+            previous_end = previous_end
+                .max(start.saturating_add(token.raw.len()))
+                .min(logical_line.len());
+        }
         let has_heredoc = !heredoc_delimiters(&line_tokens, &logical_line).is_empty();
         if has_unclosed_brace_group(&logical_line)
             && !opens_function_body_after_previous_signature(&logical_line, &output)

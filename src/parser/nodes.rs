@@ -80,6 +80,12 @@ pub struct ArithmeticCommand {
     pub open_delimiter: String,
     pub open_delimiter_metadata: Box<WordMetadata>,
     pub expression: String,
+    /// Verbatim source text between the delimiters, recovered from token
+    /// leading whitespace plus raw token text. GNU bash captures this raw
+    /// slice in parse.y::parse_arith_cmd (via parse_matched_pair) and both
+    /// echoes it in arithmetic diagnostics and derives the error token from
+    /// it, so trailing blanks before `))` survive into messages.
+    pub raw_expression: Option<String>,
     pub close_delimiter: String,
     pub close_delimiter_metadata: Box<WordMetadata>,
     pub operators: Vec<ArithmeticOperator>,

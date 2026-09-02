@@ -11,18 +11,25 @@ pub(super) fn parse_arithmetic_command(
         .strip_prefix("((")
         .and_then(|value| value.strip_suffix("))"))
     {
+        let raw_inner = tokens[start]
+            .raw
+            .strip_prefix("((")
+            .and_then(|value| value.strip_suffix("))"))
+            .map(str::to_string);
         let mut command = CommandNode::new();
         command.line = tokens.get(start).map(|token| token.position);
-        set_arithmetic_command_words(&mut command, inner.to_string());
+        set_arithmetic_command_words(&mut command, inner.to_string(), raw_inner);
         return Some(finish_arithmetic_command(command, tokens, start + 1));
     }
 
     let mut i;
+    let open_end;
     let mut parts = Vec::new();
     let mut paren_depth = 0usize;
     let mut bracket_depth = 0usize;
     if first == "((" {
         i = start + 1;
+        open_end = start + 1;
     } else if is_keyword(tokens, start, "(")
         && is_keyword(tokens, start + 1, "(")
         && tokens[start + 1].column == tokens[start].column + tokens[start].raw.len()
@@ -31,6 +38,7 @@ pub(super) fn parse_arithmetic_command(
             return None;
         }
         i = start + 2;
+        open_end = start + 2;
     } else {
         return None;
     }
@@ -39,7 +47,8 @@ pub(super) fn parse_arithmetic_command(
         if paren_depth == 0 && bracket_depth == 0 && tokens[i].value == "))" {
             let mut command = CommandNode::new();
             command.line = tokens.get(start).map(|token| token.position);
-            set_arithmetic_command_words(&mut command, parts.join(" "));
+            let raw = arithmetic_raw_slice(tokens, open_end, Some(i));
+            set_arithmetic_command_words(&mut command, parts.join(" "), Some(raw));
             return Some(finish_arithmetic_command(command, tokens, i + 1));
         }
 
@@ -55,7 +64,8 @@ pub(super) fn parse_arithmetic_command(
         {
             let mut command = CommandNode::new();
             command.line = tokens.get(start).map(|token| token.position);
-            set_arithmetic_command_words(&mut command, parts.join(" "));
+            let raw = arithmetic_raw_slice(tokens, open_end, Some(i));
+            set_arithmetic_command_words(&mut command, parts.join(" "), Some(raw));
             return Some(finish_arithmetic_command(command, tokens, i + 1));
         }
 
@@ -66,7 +76,8 @@ pub(super) fn parse_arithmetic_command(
         {
             let mut command = CommandNode::new();
             command.line = tokens.get(start).map(|token| token.position);
-            set_arithmetic_command_words(&mut command, parts.join(" "));
+            let raw = arithmetic_raw_slice(tokens, open_end, Some(i));
+            set_arithmetic_command_words(&mut command, parts.join(" "), Some(raw));
             return Some(finish_arithmetic_command(command, tokens, i + 2));
         }
 
@@ -124,7 +135,8 @@ pub(super) fn parse_arithmetic_command(
 
     let mut command = CommandNode::new();
     command.line = tokens.get(start).map(|token| token.position);
-    set_arithmetic_command_words(&mut command, parts.join(" "));
+    let raw = arithmetic_raw_slice(tokens, open_end, None);
+    set_arithmetic_command_words(&mut command, parts.join(" "), Some(raw));
     Some(finish_arithmetic_command(command, tokens, i))
 }
 
@@ -146,12 +158,37 @@ fn arithmetic_token_value(token: &Token) -> String {
     }
 }
 
-fn set_arithmetic_command_words(command: &mut CommandNode, expression: String) {
+/// Verbatim source text between the arithmetic command delimiters: each
+/// inner token contributes its leading whitespace plus its raw text, and
+/// the whitespace before the closing delimiter completes the slice. This
+/// mirrors parse.y::parse_arith_cmd, which captures the bytes between
+/// `((` and `))` untouched, so trailing blanks before `))` survive into
+/// arithmetic diagnostics exactly like GNU bash.
+fn arithmetic_raw_slice(tokens: &[Token], open_end: usize, close_index: Option<usize>) -> String {
+    let end = close_index.unwrap_or(tokens.len()).min(tokens.len());
+    let mut raw = String::new();
+    for token in &tokens[open_end.min(end)..end] {
+        raw.push_str(&token.leading_ws);
+        raw.push_str(&token.raw);
+    }
+    if let Some(closer) = tokens.get(end) {
+        raw.push_str(&closer.leading_ws);
+    }
+    raw
+}
+
+fn set_arithmetic_command_words(
+    command: &mut CommandNode,
+    expression: String,
+    raw_expression: Option<String>,
+) {
     let delimiters_balanced = arithmetic_delimiters_balanced(&expression);
     command.words.push("((".to_string());
     command.words.push(expression.clone());
     command.words.push("))".to_string());
-    command.arithmetic_command = Some(arithmetic_command(expression));
+    let mut arithmetic = arithmetic_command(expression);
+    arithmetic.raw_expression = raw_expression.filter(|raw| !raw.is_empty());
+    command.arithmetic_command = Some(arithmetic);
     if !delimiters_balanced {
         command.assignments.insert(
             "__RUBASH_PARSE_ERROR__".to_string(),
@@ -203,12 +240,15 @@ fn arithmetic_delimiters_balanced(expression: &str) -> bool {
 
 fn arithmetic_command(expression: String) -> ArithmeticCommand {
     let operators = arithmetic_operators(&expression);
+    let variables = arithmetic_variables(&expression);
     ArithmeticCommand {
         open_delimiter: "((".to_string(),
         open_delimiter_metadata: delimiter_metadata("(("),
+        expression,
+        raw_expression: None,
         close_delimiter: "))".to_string(),
         close_delimiter_metadata: delimiter_metadata("))"),
-        variables: arithmetic_variables(&expression),
+        variables,
         has_assignment: operators
             .iter()
             .any(|operator| is_arithmetic_assignment_operator(&operator.text)),
@@ -222,7 +262,6 @@ fn arithmetic_command(expression: String) -> ArithmeticCommand {
             .iter()
             .any(|operator| matches!(operator.text.as_str(), "++" | "--")),
         operators,
-        expression,
     }
 }
 

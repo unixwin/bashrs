@@ -712,6 +712,7 @@ fn alias_time_arithmetic_command(command: &CommandNode, words: &[String]) -> Opt
         open_delimiter: "((".to_string(),
         open_delimiter_metadata: synthetic_keyword_metadata("(("),
         expression,
+        raw_expression: None,
         close_delimiter: "))".to_string(),
         close_delimiter_metadata: synthetic_keyword_metadata("))"),
         operators: metadata.operators,

@@ -34,6 +34,10 @@ pub struct Token {
     pub column: usize,
     /// Whether this separator came from a physical line break.
     pub line_break: bool,
+    /// Whitespace immediately before this token in the tokenized source
+    /// (parse.y keeps it so arithmetic commands can recover the raw text
+    /// between `((` and `))` the way GNU bash's parse_matched_pair does).
+    pub leading_ws: String,
 }
 
 impl Token {
@@ -45,6 +49,7 @@ impl Token {
             position,
             column: position,
             line_break: false,
+            leading_ws: String::new(),
         }
     }
 
@@ -56,6 +61,7 @@ impl Token {
             position,
             column: position,
             line_break: false,
+            leading_ws: String::new(),
         }
     }
 }
