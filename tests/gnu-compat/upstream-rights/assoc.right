@@ -1,33 +1,46 @@
+declare -A BASH_ALIASES=()
+declare -A BASH_CMDS=()
+declare -A fluff
+declare -A BASH_ALIASES=()
+declare -A BASH_CMDS=()
+declare -A fluff=([foo]="one" [bar]="two" )
+declare -A fluff=([foo]="one" [bar]="two" )
+declare -A fluff=([bar]="two" )
+declare -A fluff=([qux]="assigned" [bar]="newval" )
 ./assoc.tests: line 39: chaff: four: must use subscript when assigning associative array
+declare -A BASH_ALIASES=()
+declare -A BASH_CMDS=()
+declare -Ai chaff=([one]="10" [zero]="5" )
+declare -Ar waste=([pid]="42134" [lineno]="41" [source]="./assoc.tests" [version]="4.0-devel" )
+declare -A wheat=([two]="b" [three]="c" [one]="a" [zero]="0" )
+declare -A chaff=(["hello world"]="flip" [one]="10" [zero]="5" )
 ./assoc.tests: line 51: waste: readonly variable
 ./assoc.tests: line 52: unset: waste: cannot unset: readonly variable
+declare -A chaff=(["*"]="12" ["hello world"]="flip" [one]="a" )
+flip
+argv[1] = <multiple>
+argv[2] = <words>
+argv[3] = <12>
+argv[4] = <flip>
+argv[5] = <a>
+argv[1] = <multiple words>
+argv[2] = <12>
+argv[3] = <flip>
+argv[4] = <a>
+argv[1] = <multiple>
+argv[2] = <words>
+argv[3] = <12>
+argv[4] = <flip>
+argv[5] = <a>
+argv[1] = <multiple words 12 flip a>
 ./assoc.tests: line 71: declare: chaff: cannot destroy array variables in this way
-./assoc.tests: line 99: $unset]: bad array subscript
-./assoc5.sub: line 26: declare: `myarray[foo[bar]=bleh': not a valid identifier
-./assoc9.sub: line 84: read: `a[80's]': not a valid identifier
-./assoc9.sub: line 96: printf: `a[80's]': not a valid identifier
-./assoc9.sub: line 154: typeset: `foo[foo]bar]=bax': not a valid identifier
-./assoc10.sub: line 14: declare: a: cannot convert indexed to associative array
-./assoc10.sub: line 17: declare: a: cannot convert associative to indexed array
-./assoc11.sub: line 34: "": bad array subscript
-./assoc11.sub: line 90: foo: readonly variable
-./assoc13.sub: line 35: ia[@]: bad array subscript
-stderr
-stderr
-stderr
-stderr
-stderr
-stderr
-stderr
-stderr
-stderr
-stderr
-ix" )
+declare -A wheat=([six]="6" ["foo bar"]="qux qix" )
 argv[1] = <qux>
 argv[2] = <qix>
 argv[1] = <qux qix>
 declare -A wheat=([six]="6" ["foo bar"]="qux qix" )
 argv[1] = <2>
+./assoc.tests: line 99: $unset]: bad array subscript
 0
 argv[1] = <7>
 argv[1] = <qux>
@@ -125,6 +138,7 @@ argv[4] = <FOOQ>
 abc
 def
 def
+./assoc5.sub: line 26: declare: `myarray[foo[bar]=bleh': not a valid identifier
 def bleh abc
 myarray=(["]"]="def" [foo]="bleh" ["a]a"]="abc" ["a]=test1;#a"]="123" )
 
@@ -194,8 +208,10 @@ declare -A dict=()
 4
 a[$b]= 5
 declare -A a=(["80's"]="Depeche Mode" )
+./assoc9.sub: line 84: read: `a[80's]': not a valid identifier
 declare -A a
 declare -A a=(["80's"]="Depeche Mode" )
+./assoc9.sub: line 96: printf: `a[80's]': not a valid identifier
 declare -A a
 declare -A a=(["80's"]="Depeche Mode" )
 6
@@ -208,10 +224,13 @@ declare -A assoc=(["\$var"]="value" )
 declare -A assoc=(["\$var"]="value" )
 declare -A assoc=(["\$var"]="value" )
 declare -A assoc=()
+./assoc9.sub: line 154: typeset: `foo[foo]bar]=bax': not a valid identifier
 foo]bar
 bip
 declare -A foo=(["foo]bar"]="bip" )
+./assoc10.sub: line 14: declare: a: cannot convert indexed to associative array
 f: declare -a a
+./assoc10.sub: line 17: declare: a: cannot convert associative to indexed array
 f: declare -A a
 
 f: declare -a a
@@ -223,6 +242,7 @@ declare -A foo=([d]="4" [c]="3" [b]="2" [a]="1" )
 foo=( d "4" c "3" b "2" a "1" )
 declare -A foo=(["\\"]="5" ["@"]="3" ["holy hell this works"]="4" ["a b"]="1" ["spa ces"]="2" )
 foo=( echo "\\" "5" "@" "3" "holy hell this works" "4" "a b" "1" "spa ces" "2" )
+./assoc11.sub: line 34: "": bad array subscript
 declare -A foo=([";"]="semicolon" ["]"]="def" [a=b]="assignment" ["a]a"]="abc" ["foo[bar"]="bleh" )
 foo=( ";" "semicolon" "]" "def" a=b "assignment" "a]a" "abc" "foo[bar" "bleh" )
 declare -A foo=(["'"]="squote" ["\""]="dquote" ["\\"]="bslash" ["\`"]="backquote" )
@@ -242,6 +262,7 @@ declare -A a=([")"]="rparen" ["\""]="dquote" ["]"]="rbracket" ["\\"]="bs" )
 declare -A a=([")"]="rparen" ["\""]="dquote" ["]"]="rbracket" ["\\"]="bs" )
 declare -A a=([")"]="rparen" ["\""]="dquote" ["]"]="rbracket" ["\\"]="bs" )
 declare -Arx foo=([two]="2" [three]="3" [one]="1" )
+./assoc11.sub: line 90: foo: readonly variable
 declare -A v1=(["1 2"]="3" )
 declare -A v2=(["1 2"]="3" )
 declare -A v3=(["1 2"]="3" )
@@ -264,6 +285,7 @@ declare -A assoc=(["*"]="star" ["!"]="bang" ["@"]="at" )
 at
 star
 declare -A a=(["@"]="at" )
+./assoc13.sub: line 35: ia[@]: bad array subscript
 declare -a ia
 declare -A a=(["@"]="at2" )
 declare -A a=(["@"]="    string" )
@@ -333,24 +355,34 @@ declare -A foo=([two]=$'ab\001cd' [one]=$'\001\001\001\001' )
 declare -A foo=([$'\001']=$'ab\001cd' )
 declare -A foo=([$'\001']=$'\001\001\001\001' )
 declare -A A=(["\$(echo Darwin ; echo stderr>&2)"]="darjeeling" [Darwin]="darjeeling" )
+stderr
 darjsharking
 darjsharking
+stderr
 darj
 darj
+stderr
 DARJEELING
 DARJEELING
+stderr
 'darjeeling'
 'darjeeling'
+stderr
 darjeel
 darjeel
+stderr
 10
 10
+stderr
 darjeeling
 darjeeling
+stderr
 set
 set
+stderr
 set
 set
+stderr
 42
 42
 declare -A A=(["]"]="rbracket" ["["]="lbracket" )

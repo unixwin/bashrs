@@ -63,15 +63,23 @@ impl Executor {
         env::remove_var(crate::executor::path::COMPATIBLE_SHELL_PATH_ENV);
         env_vars.remove("BASH_ARGV0");
         env_vars.remove("BASH_EXECUTION_STRING");
-        env_vars.entry("PWD".to_string()).or_insert_with(|| {
-            std::env::current_dir()
-                .map(|path| shell_pwd_display(&path.to_string_lossy().replace('\\', "/")))
-                .unwrap_or_else(|_| "/".to_string())
-        });
-        #[cfg(windows)]
-        if let Some(pwd) = env_vars.get("PWD").cloned() {
-            env_vars.insert("PWD".to_string(), shell_pwd_display(&pwd));
-        }
+        // GNU Bash derives PWD from the real working directory at startup
+        // (variables.c initialize_shell_variables): it only trusts an
+        // inherited PWD that still matches the current directory, and
+        // otherwise falls back to getcwd(). WSL interop forwards the Windows
+        // session's PWD (e.g. D:/repo/rubash) rather than the WSL shell's
+        // actual CWD; trusting it desynchronized cd/OLDPWD, so `cd $OLDPWD`
+        // (assoc.tests) landed in the wrong directory and subsequent
+        // `./assocN.sub` lookups failed. Always align PWD with the real CWD.
+        let pwd = match std::env::current_dir() {
+            Ok(path) => shell_pwd_display(&path.to_string_lossy().replace('\\', "/")),
+            Err(_) => env_vars
+                .get("PWD")
+                .cloned()
+                .map(|value| shell_pwd_display(&value))
+                .unwrap_or_else(|| "/".to_string()),
+        };
+        env_vars.insert("PWD".to_string(), pwd);
         env_vars
             .entry("TMPDIR".to_string())
             .or_insert_with(safe_temp_dir_string);

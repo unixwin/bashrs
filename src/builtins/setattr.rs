@@ -21,6 +21,7 @@ const EX_USAGE: i32 = 2;
 const EXPORTED_VARS: &str = "__RUBASH_EXPORTED_VARS";
 const READONLY_VARS: &str = "__RUBASH_READONLY_VARS";
 const ARRAY_VARS: &str = "__RUBASH_ARRAY_VARS";
+const ASSOC_VARS: &str = "__RUBASH_ASSOC_VARS";
 const INTEGER_VARS: &str = "__RUBASH_INTEGER_VARS";
 const UPPERCASE_VARS: &str = "__RUBASH_UPPERCASE_VARS";
 const LOWERCASE_VARS: &str = "__RUBASH_LOWERCASE_VARS";
@@ -151,6 +152,7 @@ where
     let args: Vec<&str> = args.into_iter().collect();
     let mut print = false;
     let mut array = false;
+    let mut assoc = false;
     let mut index = 0;
 
     while let Some(arg) = args.get(index) {
@@ -165,6 +167,7 @@ where
             match option {
                 'p' => print = true,
                 'a' => array = true,
+                'A' => assoc = true,
                 'f' => {}
                 other => {
                     writeln!(
@@ -185,7 +188,9 @@ where
     }
 
     if index >= args.len() || print {
-        print_readonly(env_vars, stdout)?;
+        // GNU setattr.def: without names, -a/-A restrict the printed set to
+        // readonly indexed/associative arrays; -p alone prints everything.
+        print_readonly(env_vars, array, assoc, stdout)?;
         if index >= args.len() {
             return Ok(EXECUTION_SUCCESS);
         }

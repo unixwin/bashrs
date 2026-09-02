@@ -4,11 +4,14 @@ use std::io::{self, Write};
 use super::marks::marked_vars;
 use super::value::{format_array_value, is_array_value, quote_export_value};
 use super::{
-    ARRAY_VARS, EXPORTED_VARS, INTEGER_VARS, LOWERCASE_VARS, READONLY_VARS, UPPERCASE_VARS,
+    ARRAY_VARS, ASSOC_VARS, EXPORTED_VARS, INTEGER_VARS, LOWERCASE_VARS, READONLY_VARS,
+    UPPERCASE_VARS,
 };
 
 pub(super) fn print_readonly<W>(
     env_vars: &HashMap<String, String>,
+    array_filter: bool,
+    assoc_filter: bool,
     stdout: &mut W,
 ) -> io::Result<()>
 where
@@ -17,14 +20,28 @@ where
     let readonly = marked_vars(env_vars, READONLY_VARS);
     let exported = marked_vars(env_vars, EXPORTED_VARS);
     let arrays = marked_vars(env_vars, ARRAY_VARS);
+    let assocs = marked_vars(env_vars, ASSOC_VARS);
     let integers = marked_vars(env_vars, INTEGER_VARS);
     let uppercase = marked_vars(env_vars, UPPERCASE_VARS);
     let lowercase = marked_vars(env_vars, LOWERCASE_VARS);
     let mut names: Vec<_> = readonly.into_iter().collect();
     names.sort();
     for name in names {
+        // GNU setattr.def: 'readonly -a'/'readonly -A' without names list
+        // only the readonly indexed/associative arrays, while 'readonly -p'
+        // lists every readonly variable. The -a/-A attribute flags double as
+        // listing filters.
+        let is_array = arrays.contains(&name)
+            || env_vars.get(&name).is_some_and(|value| is_array_value(value));
+        let is_assoc = assocs.contains(&name);
+        if array_filter && !is_array {
+            continue;
+        }
+        if assoc_filter && !is_assoc {
+            continue;
+        }
         if let Some(value) = env_vars.get(&name) {
-            if arrays.contains(&name) || is_array_value(value) {
+            if is_array {
                 let attrs = setattr_array_attrs(
                     &name,
                     true,
