@@ -392,7 +392,11 @@ fn normalize_arithmetic_quotes(input: &str) -> String {
 /// Produces a Bash-style error message for an arithmetic expansion that
 /// failed to evaluate (`$(( 1.5 ))`, `$(( 2 ** -1 ))`, division by zero, ...).
 /// Rubash used to silently drop these; Bash reports them on stderr with rc=1.
-pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<String> {
+pub(in crate::executor) fn arithmetic_error_message(
+    expression: &str,
+    trailing_space: bool,
+) -> Option<String> {
+    let token_space = if trailing_space { " " } else { "" };
     if let Some(token) = arithmetic_division_by_zero_token(expression) {
         return Some(format!(
             "{expression}: division by 0 (error token is \"{token}\")"
@@ -425,7 +429,7 @@ pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<
     // An operator missing its right-hand operand (`j=`, `7++`, `3**`,
     // `j+=`, `7<=`, ...).  GNU expr.c reports these from the recursive
     // descent with the error token taken from lasttp.
-    if let Some(message) = trailing_operator_error(expression) {
+    if let Some(message) = trailing_operator_error(expression, trailing_space) {
         return Some(message);
     }
 
@@ -434,8 +438,25 @@ pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<
     // diagnostic instead of silently returning status 1.
     let trimmed = expression.trim();
     if trimmed == "++" || trimmed == "--" {
-        let token = if trimmed == "++" { "+ " } else { "- " };
-        let display_expression = format!("{trimmed} ");
+        let operator = if trimmed == "++" { "+" } else { "-" };
+        // A raw-captured `((` expression keeps the real trailing blank
+        // before `))`; GNU echoes it verbatim and the lasttp remainder
+        // supplies the token (e.g. `(( -- ))` -> "-- : ... \"- \"").
+        let raw_spaced = expression.ends_with([' ', '\t']);
+        let (display_expression, token) = if raw_spaced {
+            let token_start = expression
+                .rfind(operator)
+                .unwrap_or(expression.len().saturating_sub(1));
+            (
+                expression.to_string(),
+                expression[token_start..].to_string(),
+            )
+        } else {
+            (
+                format!("{trimmed}{token_space}"),
+                format!("{operator}{token_space}"),
+            )
+        };
         return Some(format!(
             "{display_expression}: syntax error: operand expected (error token is \"{token}\")"
         ));
@@ -453,9 +474,9 @@ pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<
         } else {
             "syntax error: operand expected"
         };
+        let token = trimmed.trim_start_matches(|ch: char| ch.is_ascii_digit());
         return Some(format!(
-            "{expression}: {message} (error token is \"{} \")",
-            trimmed.trim_start_matches(|ch: char| ch.is_ascii_digit())
+            "{expression}: {message} (error token is \"{token}{token_space}\")"
         ));
     }
 
@@ -490,7 +511,7 @@ pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<
             }
             let token = &expression[index + 1..end];
             return Some(format!(
-                "{expression}: syntax error: invalid arithmetic operator (error token is \"{token} \")"
+                "{expression}: syntax error: invalid arithmetic operator (error token is \"{token}{token_space}\")"
             ));
         }
     }
@@ -507,7 +528,7 @@ pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<
             .filter(|digits| !digits.is_empty())
         {
             return Some(format!(
-                "{expression}: exponent less than 0 (error token is \"{digits} \")"
+                "{expression}: exponent less than 0 (error token is \"{digits}{token_space}\")"
             ));
         }
     }
@@ -523,7 +544,7 @@ pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<
             .unwrap_or(expression.len());
         let token = &expression[start..end];
         return Some(format!(
-            "{expression}: syntax error: operand expected (error token is \"{token} \")"
+            "{expression}: syntax error: operand expected (error token is \"{token}{token_space}\")"
         ));
     }
 
@@ -652,7 +673,7 @@ fn invalid_based_literal(expression: &str) -> Option<(String, &'static str)> {
     })
 }
 
-pub(super) fn arithmetic_division_by_zero_token(expression: &str) -> Option<&'static str> {
+pub(super) fn arithmetic_division_by_zero_token(expression: &str) -> Option<String> {
     let bytes = expression.as_bytes();
     let mut index = 0;
     while index < bytes.len() {
@@ -667,6 +688,12 @@ pub(super) fn arithmetic_division_by_zero_token(expression: &str) -> Option<&'st
         {
             index += 1;
         }
+        // GNU expr.c::expmuldiv points lasttp at the first non-whitespace
+        // position after the operator before raising "division by 0", and
+        // evalerror prints the raw remainder from lasttp to the end of the
+        // expression string (unary sign included, trailing blanks kept):
+        // "44 / 0 " -> "0 ", "i < 4/0" -> "0".
+        let operand_start = index;
         if matches!(bytes.get(index), Some(b'+' | b'-')) {
             index += 1;
         }
@@ -679,7 +706,7 @@ pub(super) fn arithmetic_division_by_zero_token(expression: &str) -> Option<&'st
                 .parse::<i128>()
                 .is_ok_and(|value| value == 0)
         {
-            return Some("0");
+            return Some(expression[operand_start..].to_string());
         }
     }
     None
@@ -888,7 +915,7 @@ fn empty_ternary_branch_token(expression: &str) -> Option<String> {
 /// (`if (lasttok != STR)`) is `attempted assignment to non-variable`,
 /// while a variable left-hand side passes the lvalue check and then fails
 /// with `operand expected` once the missing operand is read.
-fn trailing_operator_error(expression: &str) -> Option<String> {
+fn trailing_operator_error(expression: &str, trailing_space: bool) -> Option<String> {
     // Bare `++` / `--` keep their dedicated diagnostic.
     let trimmed = expression.trim();
     if trimmed == "++" || trimmed == "--" {
@@ -1030,8 +1057,10 @@ fn trailing_operator_error(expression: &str) -> Option<String> {
     };
     let token = &expression[last_start..];
     // GNU expr.c includes a trailing space in the error token to separate
-    // it from the closing parenthesis (e.g. "+ " not "+").
+    // it from the closing parenthesis (e.g. "+ " not "+"), except in the
+    // `[[ ... ]]` conditional context where the token has no trailing space.
     Some(format!(
-        "{expression}: {message} (error token is \"{token} \")"
+        "{expression}: {message} (error token is \"{token}{space}\")",
+        space = if trailing_space { " " } else { "" },
     ))
 }

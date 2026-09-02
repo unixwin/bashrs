@@ -127,7 +127,7 @@ impl Executor {
                 self.arithmetic_nonfatal_error.set(true);
             }
             if !self.arithmetic_expansion_error.replace(true) {
-                let message = crate::executor::arithmetic::arithmetic_error_message(expression)
+                let message = crate::executor::arithmetic::arithmetic_error_message(expression, true)
                     .unwrap_or_else(|| {
                         format!(
                             "{expression}: syntax error in expression (error token is \"{expression}\")"

@@ -532,7 +532,7 @@ impl Executor {
             &mut self.env_vars,
             Some(&self.random_state),
         ) else {
-            self.report_arithmetic_error_with_label("[[", &left);
+            self.report_conditional_arithmetic_error(&left);
             return false;
         };
         let (Some(right), _) = eval_mutable_arith_value_with_random(
@@ -540,7 +540,7 @@ impl Executor {
             &mut self.env_vars,
             Some(&self.random_state),
         ) else {
-            self.report_arithmetic_error_with_label("[[", &right);
+            self.report_conditional_arithmetic_error(&right);
             return false;
         };
         match op {

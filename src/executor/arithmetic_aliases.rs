@@ -42,6 +42,7 @@ impl Executor {
         &self,
         label: &str,
         expression: &str,
+        trailing_space: bool,
     ) {
         if let Some(token) = arithmetic_division_by_zero_token(expression) {
             eprintln!(
@@ -50,7 +51,7 @@ impl Executor {
                 label
             );
         } else if let Some(message) =
-            crate::executor::arithmetic::arithmetic_error_message(expression)
+            crate::executor::arithmetic::arithmetic_error_message(expression, trailing_space)
         {
             eprintln!("{}{}: {message}", self.diagnostic_prefix(), label);
         }
@@ -59,14 +60,47 @@ impl Executor {
     }
 
     pub(in crate::executor) fn report_arithmetic_error(&self, expression: &str) {
-        self.report_arithmetic_error_with_label("((", expression);
+        self.report_arithmetic_error_with_label("((", expression, true);
+    }
+
+    /// GNU expr.c::evalerror against a raw-captured `(( ))` expression: the
+    /// echoed expression skips leading blanks only, and the error token is
+    /// the real lasttp remainder (any trailing blank included), so no
+    /// synthesized token space is added on top.
+    pub(in crate::executor) fn report_arithmetic_error_raw(&self, raw: &str) {
+        let display = raw.trim_start_matches([' ', '\t']);
+        if let Some(token) = arithmetic_division_by_zero_token(display) {
+            eprintln!(
+                "{}((: {display}: division by 0 (error token is \"{token}\")",
+                self.diagnostic_prefix()
+            );
+        } else if let Some(message) =
+            crate::executor::arithmetic::arithmetic_error_message(display, false)
+        {
+            eprintln!("{}((: {message}", self.diagnostic_prefix());
+        }
+        use std::io::Write;
+        let _ = std::io::stderr().flush();
     }
 
     pub(in crate::executor) fn report_let_arithmetic_error(&self, expression: &str) {
-        self.report_arithmetic_error_with_label("let", expression);
+        self.report_arithmetic_error_with_label("let", expression, true);
+    }
+
+    pub(in crate::executor) fn report_conditional_arithmetic_error(
+        &self,
+        expression: &str,
+    ) {
+        // [[ ]] conditional context: GNU expr.c omits the trailing space
+        // in the error token (e.g. "+" not "+ ").
+        self.report_arithmetic_error_with_label("[[", expression, false);
     }
 
     pub(in crate::executor) fn execute_arithmetic_command(&mut self, cmd: &CommandNode) -> i32 {
+        let raw_expression = cmd
+            .arithmetic_command
+            .as_ref()
+            .and_then(|command| command.raw_expression.as_deref());
         let expression = cmd
             .arithmetic_command
             .as_ref()
@@ -77,7 +111,10 @@ impl Executor {
             Some(0) => 1,
             Some(_) => 0,
             None => {
-                self.report_arithmetic_error(expression);
+                match raw_expression {
+                    Some(raw) => self.report_arithmetic_error_raw(raw),
+                    None => self.report_arithmetic_error(expression),
+                }
                 if self.arithmetic_nounset_error.replace(false) {
                     127
                 } else {

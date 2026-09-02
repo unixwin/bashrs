@@ -266,6 +266,7 @@ impl Executor {
                             } else if !self.arithmetic_expansion_error.replace(true) {
                                 let message = crate::executor::arithmetic::arithmetic_error_message(
                                     &expression,
+                                    true,
                                 )
                                 .unwrap_or_else(|| {
                                     format!(

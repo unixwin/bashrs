@@ -231,7 +231,7 @@ impl Executor {
             // silently producing nothing, and abandons the enclosing command
             // list (status 1; GNU probe d2: `echo $((1/0)); echo after` never
             // prints "after").
-            let message = crate::executor::arithmetic::arithmetic_error_message(&expression)
+            let message = crate::executor::arithmetic::arithmetic_error_message(&expression, true)
                 .unwrap_or_else(|| {
                     format!(
                         "{expression}: syntax error in expression (error token is \"{expression}\")"
