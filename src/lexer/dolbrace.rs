@@ -67,7 +67,7 @@ pub(crate) fn scan_braced_parameter(input: &str, options: BraceContext) -> Optio
     while cursor < chars.len() {
         let (offset, ch) = chars[cursor];
         cursor += 1;
-        if ch == '\\' {
+        if ch == '\\' && !single {
             cursor = cursor.saturating_add(1);
             continue;
         }
@@ -124,10 +124,14 @@ pub(crate) fn scan_braced_parameter(input: &str, options: BraceContext) -> Optio
                 kind: QuoteEventKind::Single,
                 state,
             });
-            if (options.outer_double_quote && options.posix)
-                || single_quote_has_pair(&chars, cursor)
-                || matches!(state, DolbraceState::Quote | DolbraceState::Quote2)
-            {
+            // GNU parse.y (Austin Group Interp 221): single quotes inside
+            // `${...}` open a nested quoted string everywhere except in POSIX
+            // mode inside double quotes while scanning the parameter,
+            // operator, or word, where they are literal characters.
+            let literal = options.outer_double_quote
+                && options.posix
+                && !matches!(state, DolbraceState::Quote | DolbraceState::Quote2);
+            if !literal {
                 single = !single;
             }
             continue;
@@ -169,24 +173,6 @@ pub(crate) fn scan_braced_parameter(input: &str, options: BraceContext) -> Optio
     None
 }
 
-fn single_quote_has_pair(chars: &[(usize, char)], mut cursor: usize) -> bool {
-    while cursor < chars.len() {
-        let ch = chars[cursor].1;
-        if ch == '\\' {
-            cursor = cursor.saturating_add(2);
-            continue;
-        }
-        if ch == '$' && chars.get(cursor + 1).is_some_and(|(_, next)| *next == '{') {
-            return false;
-        }
-        if ch == '\'' {
-            return true;
-        }
-        cursor += 1;
-    }
-    false
-}
-
 fn skip_backtick(chars: &[(usize, char)], mut cursor: usize) -> usize {
     while cursor < chars.len() {
         if chars[cursor].1 == '\\' {
@@ -211,6 +197,8 @@ fn skip_parenthesized(chars: &[(usize, char)], mut cursor: usize) -> usize {
             continue;
         }
         if let Some(active) = quote {
+            // A single quote is literal while inside double quotes (and
+            // vice versa); only the active quote closes this nested command.
             if ch == active {
                 quote = None;
             }
@@ -305,19 +293,34 @@ mod tests {
     }
 
     #[test]
-    fn outer_quote_does_not_imply_posix_scanning() {
+    fn posix_double_quote_literalizes_operator_quotes() {
+        // GNU parse.y (Interp 221): in POSIX mode inside double quotes,
+        // single quotes in PARAM/OP/WORD state are literal, so the first
+        // unquoted `}` closes; outside POSIX mode they open nested quotes,
+        // so the same input is unterminated.
         let input = "${x:-'}";
-        assert!(scan_braced_parameter(input, OUTER_DOUBLE_DEFAULT).is_some());
-        assert!(scan_braced_parameter(input, OUTER_DOUBLE_POSIX).is_none());
+        assert!(scan_braced_parameter(input, OUTER_DOUBLE_DEFAULT).is_none());
+        assert!(scan_braced_parameter(input, OUTER_DOUBLE_POSIX).is_some());
     }
 
     #[test]
     fn records_operator_word_quote_metadata() {
         let input = "${IFS+'}'z}";
         let scan = scan_braced_parameter(input, OUTER_DOUBLE_POSIX).unwrap();
-        assert_eq!(scan.end, input.len());
-        assert_eq!(scan.quote_events.len(), 2);
+        // POSIX+dquote Op state: the quote is literal and the expansion
+        // closes at the first `}`.
+        assert_eq!(scan.end, "${IFS+'}".len());
+        assert_eq!(scan.quote_events.len(), 1);
         assert_eq!(scan.quote_events[0].kind, QuoteEventKind::Single);
         assert_eq!(scan.quote_events[0].state, DolbraceState::Op);
+    }
+
+    #[test]
+    fn adjacent_expansions_close_at_their_own_brace() {
+        let input = "IFS+'a'bc}\n${IFS+'}'z}";
+        let scan = scan_braced_parameter_body(input, PLAIN).unwrap();
+        assert_eq!(scan.end, "IFS+'a'bc}".len());
+        let scan = scan_braced_parameter_body("IFS+'}'z}", PLAIN).unwrap();
+        assert_eq!(scan.end, "IFS+'}'z}".len());
     }
 }

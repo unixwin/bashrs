@@ -2231,6 +2231,18 @@ mod conditional_tests {
     }
 
     #[test]
+    fn test_conditional_extra_binary_operand_is_parse_error() {
+        for input in ["[[ a = b c ]]", "[[ a < b c ]]"] {
+            let ast = parse(&tokenize(input));
+            assert_eq!(
+                ast.commands[0].assignments.get("__RUBASH_PARSE_ERROR__").map(String::as_str),
+                Some("unexpected token in conditional expression"),
+                "expected Bash-style parse error for {input}",
+            );
+        }
+    }
+
+    #[test]
     fn test_conditional_command_records_group_and_negation_expression() {
         let input = "[[ ! ( -z $empty || $value =~ ^a ) ]]";
         let tokens = tokenize(input);

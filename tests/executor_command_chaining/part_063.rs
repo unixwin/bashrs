@@ -257,6 +257,22 @@ fn test_parameter_substring_uses_offset_and_length() {
     assert!(result.is_ok());
     assert_eq!(executor.last_exit_code(), 0);
     assert_eq!(fs::read_to_string(output_path).unwrap(), "cde def abc\n");
+}
+
+#[test]
+fn test_double_quoted_assignment_preserves_apostrophe_for_pattern_removal() {
+    let output_path = "target/rubash-param-pattern-assignment-apostrophe-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!("foo=\"x'a'y\"; printf '<%s>\\n' \"${{foo%*'a'*}}\" > {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "<x'>\n");
     let _ = fs::remove_file(output_path);
 }
 

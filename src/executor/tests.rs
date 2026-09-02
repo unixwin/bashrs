@@ -175,6 +175,27 @@ mod unit_tests {
         assert_eq!(executor.get_env("STARSHIP_START_TIME"), Some("12345"));
     }
 
+    #[test]
+    fn prompt_expansion_decodes_raw_escape_markers() {
+        let executor = Executor::new();
+        let marker =
+            char::from_u32(crate::executor::substitution_metadata::RAW_BYTE_MARKER_BASE + 0x1b)
+                .unwrap();
+
+        assert_eq!(
+            executor.expand_prompt_string(&format!("left{marker}[31mright")),
+            "left\x1b[31mright"
+        );
+    }
+
+    #[test]
+    fn shell_identity_is_used_for_default_dollar_zero() {
+        let mut executor = Executor::new();
+        executor.set_env("__RUBASH_SHELL_NAME", "niu");
+
+        assert_eq!(executor.expand_word("$0"), "niu");
+    }
+
     #[cfg(windows)]
     #[test]
     fn sudo_uses_host_elevation_handler() {

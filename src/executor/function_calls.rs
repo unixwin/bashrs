@@ -77,6 +77,39 @@ impl Executor {
         let Some(body) = self.functions.get(name).cloned() else {
             return Ok(());
         };
+        // GNU Bash (execute_cmd.c): enforce a maximum function call nesting
+        // depth. The limit is taken from $FUNCNEST when set (0 disables the
+        // limit), otherwise 100 in default mode and 20 under POSIX mode. The
+        // chosen limit is reported in the diagnostic.
+        let default_limit = if self.posix_mode_enabled() {
+            20usize
+        } else {
+            100usize
+        };
+        // $FUNCNEST of 0 (or unset) uses the default; any other positive
+        // value sets the limit. A parsed value of exactly 0 means "no limit"
+        // and disables the check entirely.
+        let funcnest: Option<usize> = self
+            .env_vars
+            .get("FUNCNEST")
+            .and_then(|value| value.trim().parse::<usize>().ok());
+        let nesting_limit: Option<usize> = match funcnest {
+            Some(0) => None,
+            Some(limit) => Some(limit),
+            None => Some(default_limit),
+        };
+        if let Some(nesting_limit) = nesting_limit {
+            if self.function_depth >= nesting_limit {
+                eprintln!(
+                    "{}{}: maximum function nesting level exceeded ({})",
+                    self.diagnostic_prefix(),
+                    name,
+                    nesting_limit
+                );
+                self.exit_code = 1;
+                return Ok(());
+            }
+        }
         if self.execute_upstream_cprint_function(name) {
             return Ok(());
         }
@@ -143,7 +176,7 @@ impl Executor {
             for arg in args {
                 self.bash_argv_stack.insert(0, arg.clone());
             }
-            self.positional_params = args.to_vec();
+            self.set_positional_params(args.to_vec());
             (
                 old_function,
                 old_function_stdin,
@@ -165,7 +198,7 @@ impl Executor {
         {
             self.function_depth -= 1;
             self.restore_function_locals();
-            self.positional_params = old_positional_params;
+            self.set_positional_params(old_positional_params);
             if !self.function_name_stack.is_empty() {
                 self.function_name_stack.remove(0);
             }

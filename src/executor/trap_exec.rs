@@ -636,9 +636,11 @@ impl Executor {
                     .create(true)
                     .read(true)
                     .write(true)
-                    .open(&path)?;
+                    .open(&path)
+                    .map_err(|e| crate::posix_errors::path_error(&target, e))?;
             }
-            let input = std::fs::read(&path)?;
+            let input =
+                std::fs::read(&path).map_err(|e| crate::posix_errors::path_error(&target, e))?;
             self.set_fd_input_bytes(fd, input, fd != 0);
             if redirect.operator == "<>" {
                 self.fd_table
@@ -817,6 +819,7 @@ impl Executor {
             });
         self.fd_table.close_output(fd);
         if let Some(pid) = coproc_pid {
+            self.mark_coproc_array_endpoint_closed(pid, fd);
             let has_alias = self.fd_table.entries.values().any(|entry| {
                 !entry.closed
                     && matches!(
@@ -852,6 +855,7 @@ impl Executor {
             });
         self.fd_table.close_input(fd);
         if let Some(pid) = coproc_pid {
+            self.mark_coproc_array_endpoint_closed(pid, fd);
             let has_alias = self.fd_table.entries.values().any(|entry| {
                 !entry.closed
                     && matches!(
@@ -867,6 +871,31 @@ impl Executor {
         self.env_vars.remove(&fd_stdin_key(fd));
         self.env_vars.remove(&fd_stdin_offset_key(fd));
         self.env_vars.remove(&fd_dynamic_input_key(fd));
+    }
+
+    fn mark_coproc_array_endpoint_closed(&mut self, pid: u32, fd: u32) {
+        let names: Vec<String> = self
+            .env_vars
+            .iter()
+            .filter_map(|(name, value)| {
+                (name.ends_with("_PID") && value.parse::<u32>().ok() == Some(pid))
+                    .then(|| name.trim_end_matches("_PID").to_string())
+            })
+            .collect();
+        for name in names {
+            let Some(storage) = self.env_vars.get(&name).cloned() else { continue };
+            let mut entries = indexed_array_entries(&storage);
+            let mut changed = false;
+            for value in entries.values_mut() {
+                if value == &fd.to_string() {
+                    *value = "-1".to_string();
+                    changed = true;
+                }
+            }
+            if changed {
+                self.env_vars.insert(name, format_indexed_array_storage(entries));
+            }
+        }
     }
 
     fn close_persistent_fd(&mut self, fd: u32) -> Result<(), ExecuteError> {
@@ -928,7 +957,21 @@ impl Executor {
             return Ok(None);
         }
 
+        let closes_existing_fd = cmd
+            .redirect_in
+            .as_ref()
+            .or(cmd.redirect_out.as_ref())
+            .or(cmd.append.as_ref())
+            .is_some_and(|redirect| is_closed_redirect_target(&self.expand_word(&redirect.target)));
+        // GNU sets up the redirection itself (creating output targets, opening
+        // input files) before failing the fd assignment to a readonly variable.
+        let readonly_blocked = !closes_existing_fd && self.dynamic_fd_assignment_readonly(name);
+
         if cmd.here_string.is_some() || cmd.heredoc.is_some() {
+            if readonly_blocked {
+                self.report_readonly_fd_assignment(name);
+                return Ok(Some(1));
+            }
             let Some(input) = self.stdin_string_for_command_mut(cmd) else {
                 return Ok(None);
             };
@@ -947,8 +990,12 @@ impl Executor {
 
             if let Some((source_fd, move_source)) = redirect_target_fd_and_move(&target) {
                 let fd = self.allocate_dynamic_fd();
-                self.set_dynamic_fd_variable(name, fd);
                 self.copy_persistent_input_fd(fd, source_fd);
+                if readonly_blocked {
+                    self.report_readonly_fd_assignment(name);
+                    return Ok(Some(1));
+                }
+                self.set_dynamic_fd_variable(name, fd);
                 if move_source {
                     self.close_persistent_fd(source_fd)?;
                 }
@@ -961,13 +1008,17 @@ impl Executor {
             {
                 if let Some(input) = self.process_substitution_output(source) {
                     let fd = self.allocate_dynamic_fd();
-                    self.set_dynamic_fd_variable(name, fd);
                     self.fd_table.open_input(
                         fd,
                         FdReadEndpoint::process_substitution(&input),
                         true,
                     );
                     self.set_fd_input_text(fd, input, true);
+                    if readonly_blocked {
+                        self.report_readonly_fd_assignment(name);
+                        return Ok(Some(1));
+                    }
+                    self.set_dynamic_fd_variable(name, fd);
                     return Ok(Some(0));
                 }
             }
@@ -977,9 +1028,13 @@ impl Executor {
                 "/dev/stdin" | "/proc/self/fd/0" | "/dev/fd/0"
             ) {
                 let fd = self.allocate_dynamic_fd();
-                self.set_dynamic_fd_variable(name, fd);
                 self.fd_table
                     .open_input(fd, FdReadEndpoint::InheritedProcessStdin, true);
+                if readonly_blocked {
+                    self.report_readonly_fd_assignment(name);
+                    return Ok(Some(1));
+                }
+                self.set_dynamic_fd_variable(name, fd);
                 return Ok(Some(0));
             }
 
@@ -991,8 +1046,13 @@ impl Executor {
                     .write(true)
                     .open(&path)?;
             }
-            let input = crate::executor::substitution_metadata::read_shell_input_file(path)?;
+            let input = crate::executor::substitution_metadata::read_shell_input_file(path)
+                .map_err(|io| crate::posix_errors::path_error(&target, io))?;
             let fd = self.allocate_dynamic_fd();
+            if readonly_blocked {
+                self.report_readonly_fd_assignment(name);
+                return Ok(Some(1));
+            }
             self.set_dynamic_fd_variable(name, fd);
             self.set_fd_input_text(fd, input, true);
             if redirect.operator == "<>" {
@@ -1009,18 +1069,32 @@ impl Executor {
             }
 
             let fd = self.allocate_dynamic_fd();
-            self.set_dynamic_fd_variable(name, fd);
             if let Some((source_fd, move_source)) = redirect_target_fd_and_move(&target) {
                 self.copy_persistent_output_fd(fd, source_fd);
+                if readonly_blocked {
+                    self.report_readonly_fd_assignment(name);
+                    return Ok(Some(1));
+                }
+                self.set_dynamic_fd_variable(name, fd);
                 if move_source {
                     self.close_persistent_fd(source_fd)?;
                 }
                 return Ok(Some(0));
             }
             if self.open_persistent_output_process_substitution(fd, &target)? {
+                if readonly_blocked {
+                    self.report_readonly_fd_assignment(name);
+                    return Ok(Some(1));
+                }
+                self.set_dynamic_fd_variable(name, fd);
                 return Ok(Some(0));
             }
             self.create_redirect_output(&target, redirect.clobber)?;
+            if readonly_blocked {
+                self.report_readonly_fd_assignment(name);
+                return Ok(Some(1));
+            }
+            self.set_dynamic_fd_variable(name, fd);
             self.set_fd_output_file(fd, target, true);
             return Ok(Some(0));
         }
@@ -1033,6 +1107,10 @@ impl Executor {
             }
             let fd = self.allocate_dynamic_fd();
             if self.open_persistent_output_process_substitution(fd, &target)? {
+                if readonly_blocked {
+                    self.report_readonly_fd_assignment(name);
+                    return Ok(Some(1));
+                }
                 self.set_dynamic_fd_variable(name, fd);
                 return Ok(Some(0));
             }
@@ -1040,6 +1118,10 @@ impl Executor {
                 .create(true)
                 .append(true)
                 .open(shell_path_to_windows(&target, &self.env_vars))?;
+            if readonly_blocked {
+                self.report_readonly_fd_assignment(name);
+                return Ok(Some(1));
+            }
             self.set_dynamic_fd_variable(name, fd);
             self.set_fd_output_file(fd, target, true);
             return Ok(Some(0));
@@ -1057,6 +1139,48 @@ impl Executor {
             return Ok(false);
         };
         let target = self.expand_word(&redirect.target);
+        let is_close = matches!(
+            redirect.kind,
+            crate::parser::RedirectKind::CloseInput | crate::parser::RedirectKind::CloseOutput
+        );
+        if !is_close && self.dynamic_fd_assignment_readonly(name) {
+            // GNU sets up the redirection (creating output targets, opening
+            // input files) before failing the assignment, and the command
+            // itself never runs.
+            match redirect.kind {
+                crate::parser::RedirectKind::Output => {
+                    self.create_redirect_output(&target, redirect.clobber)?;
+                }
+                crate::parser::RedirectKind::Append => {
+                    OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(shell_path_to_windows(&target, &self.env_vars))?;
+                }
+                crate::parser::RedirectKind::ReadWrite => {
+                    OpenOptions::new()
+                        .create(true)
+                        .read(true)
+                        .write(true)
+                        .open(shell_path_to_windows(&target, &self.env_vars))?;
+                }
+                crate::parser::RedirectKind::Input => {
+                    let _ = crate::executor::substitution_metadata::read_shell_input_file(
+                        shell_path_to_windows(&target, &self.env_vars),
+                    )
+                    .map_err(|io| crate::posix_errors::path_error(&target, io))?;
+                }
+                _ => {}
+            }
+            let prefix = self.diagnostic_prefix();
+            let payload = format!(
+                "{name}: readonly variable\n{prefix}{name}: cannot assign fd to variable"
+            );
+            return Err(ExecuteError::IoError(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                payload,
+            )));
+        }
         let close_after_command =
             auto_close && crate::builtins::shopt::option_enabled(&self.env_vars, "varredir_close");
 
@@ -1291,6 +1415,26 @@ impl Executor {
         self.env_vars
             .get(&storage_name)
             .and_then(|value| value.parse::<u32>().ok())
+    }
+
+    fn dynamic_fd_assignment_readonly(&self, name: &str) -> bool {
+        let base_name = parse_array_numeric_subscript(name)
+            .map(|(array_name, _)| array_name)
+            .unwrap_or(name);
+        let resolved = self
+            .resolved_variable_name(base_name)
+            .unwrap_or_else(|| base_name.to_string());
+        is_marked_var(&self.env_vars, READONLY_VARS, &resolved)
+    }
+
+    fn report_readonly_fd_assignment(&mut self, name: &str) {
+        eprintln!("{}{}: readonly variable", self.diagnostic_prefix(), name);
+        eprintln!(
+            "{}{}: cannot assign fd to variable",
+            self.diagnostic_prefix(),
+            name
+        );
+        self.exit_code = 1;
     }
 
     fn set_dynamic_fd_variable(&mut self, name: &str, fd: u32) {

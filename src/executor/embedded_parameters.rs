@@ -33,6 +33,7 @@ impl Executor {
         // word splitting here. Keep extending this toward subst.c semantics.
         let mut output = String::new();
         let mut chars = word.chars().peekable();
+        let mut in_double = false;
 
         while let Some(ch) = chars.next() {
             if ch == '\x1a' {
@@ -52,6 +53,25 @@ impl Executor {
 
             if ch == '\x18' {
                 output.push('"');
+                continue;
+            }
+
+            // Quotes that survive to expansion belong to parameter-expansion
+            // bodies (the lexer keeps `${...}` verbatim): GNU removes them
+            // here, with single-quoted content staying literal. Heredoc text
+            // treats quotes as data.
+            if !heredoc && ch == '"' {
+                in_double = !in_double;
+                continue;
+            }
+
+            if !heredoc && ch == '\'' && !in_double {
+                for quoted_ch in chars.by_ref() {
+                    if quoted_ch == '\'' {
+                        break;
+                    }
+                    output.push(quoted_ch);
+                }
                 continue;
             }
 
@@ -158,15 +178,30 @@ impl Executor {
                             }
                         }
                         let expression = self.expand_arithmetic_special_parameters(&expression);
-                        if let Some(value) =
-                            eval_conditional_arith_value(&expression, &self.env_vars)
-                        {
+                        let (value, actual_category) =
+                            eval_conditional_arith_value_categorized(&expression, &self.env_vars);
+                        if let Some(value) = value {
                             output.push_str(&value.to_string());
                         } else {
+                            self.arithmetic_last_error_category.set(actual_category);
                             // Bash reports arithmetic expansion errors
                             // (floating point, negative exponent, division
                             // by zero, ...) on stderr and sets rc=1; Rubash
-                            // was silently dropping them.
+                            // was silently dropping them. Classify fatality
+                            // unconditionally: a readonly diagnostic may have
+                            // consumed the print gate, but the evaluation
+                            // error still decides list abandonment.
+                            let actual_fatal =
+                                self.arithmetic_last_error_category.take().is_some();
+                            if !actual_fatal
+                                && !crate::executor::arithmetic::arithmetic_expansion_is_fatal(
+                                    &expression,
+                                )
+                            {
+                                self.arithmetic_nonfatal_error.set(true);
+                            } else {
+                                self.arithmetic_fatal_error.set(true);
+                            }
                             if !self.arithmetic_expansion_error.replace(true) {
                                 let message = crate::executor::arithmetic::arithmetic_error_message(
                                     &expression,
@@ -176,13 +211,6 @@ impl Executor {
                                         "{expression}: syntax error in expression (error token is \"{expression}\")"
                                     )
                                 });
-                                if !crate::executor::arithmetic::arithmetic_expansion_is_fatal(
-                                    &expression,
-                                ) {
-                                    self.arithmetic_nonfatal_error.set(true);
-                                } else {
-                                    self.arithmetic_fatal_error.set(true);
-                                }
                                 eprintln!("{}: {message}", self.diagnostic_prefix());
                             }
                         }

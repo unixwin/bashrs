@@ -2,7 +2,7 @@
 # Test: Error message format consistency
 set -euo pipefail
 
-# Test that error messages go to stderr
+# Test that error messages go to stder
 output=$(nonexistent_command 2>&1)
 if [[ -n "$output" ]]; then
     echo "PASS: error messages work"

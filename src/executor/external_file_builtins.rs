@@ -124,7 +124,23 @@ impl Executor {
             };
 
             if let Err(error) = fs::copy(&source_path, &target_path) {
-                eprintln!("{}cp: {error}", self.diagnostic_prefix());
+                // GNU cp wording: source stat failures use "cannot stat",
+                // everything else reports the destination operation.
+                if !source_path.exists() {
+                    eprintln!(
+                        "{}cp: cannot stat '{}': {}",
+                        self.diagnostic_prefix(),
+                        source,
+                        crate::posix_errors::message(&error)
+                    );
+                } else {
+                    eprintln!(
+                        "{}cp: cannot create '{}': {}",
+                        self.diagnostic_prefix(),
+                        target_path.display(),
+                        crate::posix_errors::message(&error)
+                    );
+                }
                 self.exit_code = 1;
                 return Ok(true);
             }
@@ -161,7 +177,7 @@ impl Executor {
                     {
                         "No such file or directory".to_string()
                     } else {
-                        error.to_string()
+                        crate::posix_errors::message(&error)
                     };
                     writeln!(&mut stderr, "rm: cannot remove '{}': {message}", expanded)?;
                 }

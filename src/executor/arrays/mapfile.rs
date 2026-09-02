@@ -8,9 +8,7 @@ pub(in crate::executor) fn split_mapfile_input(
             .split_inclusive('\n')
             .map(|line| {
                 if trim_delimiter {
-                    line.trim_end_matches('\n')
-                        .trim_end_matches('\r')
-                        .to_string()
+                    line.trim_end_matches('\n').to_string()
                 } else {
                     line.to_string()
                 }
@@ -23,7 +21,9 @@ pub(in crate::executor) fn split_mapfile_input(
     for ch in input.chars() {
         current.push(ch);
         if ch == delimiter {
-            if trim_delimiter {
+            // Bash treats NUL as a delimiter even without -t because a NUL
+            // cannot be retained in a shell variable's value.
+            if trim_delimiter || delimiter == '\0' {
                 current.pop();
             }
             values.push(std::mem::take(&mut current));

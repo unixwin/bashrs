@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Test: glob matching behavior
+# Test: glob matching behavio
 # Root cause: glob matching differs from bash
 set -uo pipefail
 
-# Create test files in current dir
+# Create test files in current di
 cd "$(mktemp -d 2>/dev/null || echo .)"
 touch rb_glob_a.txt rb_glob_b.txt rb_glob_c.txt 2>/dev/null || true
 

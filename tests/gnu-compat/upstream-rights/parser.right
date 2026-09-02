@@ -1,0 +1,19 @@
+AAA
+in
+in
+in
+in
+in
+in
+done
+ok 1
+ while looking for matching `)'
+bash5: line 1: `invalid-name': not a valid identifier
+bash5: -c: line 1: syntax error near unexpected token `)'
+bash5: -c: line 1: `case x in esac) echo done; esac'
+bash5: -c: line 1: syntax error near unexpected token `do'
+bash5: -c: line 1: `case in do do) echo in; esac'
+bash5: -c: line 1: syntax error near unexpected token `('
+bash5: -c: line 1: `for()'
+./posix2syntax.sub: line 72: syntax error near unexpected token `do'
+./posix2syntax.sub: line 72: `do'

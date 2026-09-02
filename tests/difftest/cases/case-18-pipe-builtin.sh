@@ -8,7 +8,7 @@ echo "== B: 特殊内建进管道 =="
 set -o 2>&1 | head -n 2
 echo "B-rc=$?"
 echo "== C: export 进管道 =="
-export FOO=bar
+export FOO=ba
 export | head -n 2
 echo "C-rc=$?"
 echo "== DONE =="

@@ -1,0 +1,57 @@
+./test-glue-functions: line 2: $'\r': command not found
+./test-glue-functions: line 4: syntax error near unexpected token `$'\r''
+./test-glue-functions: line 4: `_intl_normalize_spaces()'
+./nquote3.sub: line 5: _intl_normalize_spaces: command not found
+./nquote3.sub: line 6: _intl_normalize_spaces: command not found
+./nquote4.sub: line 6: quux: command not found
+test-glue-functions: line 2: $'\r': command not found
+test-glue-functions: line 4: syntax error near unexpected token `$'\r''
+test-glue-functions: line 4: `_intl_normalize_spaces()'
+./nquote5.sub: line 25: _intl_normalize_spaces: command not found
+./nquote5.sub: line 30: _intl_normalize_spaces: command not found
+./nquote5.sub: line 36: _intl_normalize_spaces: command not found
+[1] = <ab$cde>
+A\CB
+A\CB
+A\CB
+argv[1] = <hello, $"world">
+argv[1] = <hello, \$"world">
+argv[1] = <hello, $"world">
+argv[1] = <hello, $world>
+1
+1
+;foo
+argv[1] = <^I>
+argv[1] = <'A^IB'>
+argv[1] = <a^Ib^Ic>
+argv[1] = <$'a\tb\tc'>
+		AD
+E
+hello' world
+hello world!
+hello' world!
+'  |  '
+'  |  '
+x  |  x
+x  |  x
+'  |  '
+'  |  '
+'  |  '
+'  |  '
+'  |  '
+'  |  '
+x  |  x
+'
+$'\''
+'
+'abcd'
+$'\'abcd\''
+'
+1
+argv[1] = <^?>
+\q
+foo
+argv[1] = <a^A)b>
+argv[1] = <a^Ab>
+argv[1] = <^A>
+argv[1] = <\^A>

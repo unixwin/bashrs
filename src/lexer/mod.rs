@@ -32,11 +32,20 @@ pub use token::{Token, TokenKind};
 pub(crate) const QUOTED_HEREDOC_MARKER: &str = "__RUBASH_HD1__";
 
 pub fn tokenize(input: &str) -> Vec<Token> {
+    tokenize_with_initial_posix(input, false)
+}
+
+/// Tokenize with an initial POSIX parse mode. GNU Bash parses commands
+/// lazily, so a runtime `set -o posix` changes the parse rules only for
+/// commands read afterwards. Batch input is tokenized ahead of execution, so
+/// the line loop below approximates that by flipping the parse mode when it
+/// sees a top-level `set -o posix` / `set +o posix` command.
+pub fn tokenize_with_initial_posix(input: &str, posix: bool) -> Vec<Token> {
     if input.trim().is_empty() {
         return Vec::new();
     }
 
-    let mut tokens = tokenize_with_heredocs(input);
+    let mut tokens = tokenize_with_heredocs(input, posix);
     if tokens
         .last()
         .is_some_and(|token| token.kind == TokenKind::Semicolon)
@@ -46,7 +55,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
     tokens
 }
 
-fn tokenize_with_heredocs(input: &str) -> Vec<Token> {
+fn tokenize_with_heredocs(input: &str, initial_posix: bool) -> Vec<Token> {
     // TODO(parse.y/redir.c): Bash parses here-documents after reading the
     // complete command and performs delimiter-specific expansion rules. This
     // line-oriented collector handles the simple `<<word` and `<<'word'`
@@ -58,6 +67,7 @@ fn tokenize_with_heredocs(input: &str) -> Vec<Token> {
     let mut logical_start_line = 1;
     let mut logical_line = String::new();
     let mut continued_line = false;
+    let mut parse_posix = initial_posix;
 
     while let Some(line) = lines.next() {
         if logical_line.is_empty() {
@@ -84,7 +94,10 @@ fn tokenize_with_heredocs(input: &str) -> Vec<Token> {
         if has_unclosed_command_substitution(&logical_line) {
             continue;
         }
-        let mut line_tokens = tokenize_plain(&logical_line);
+        let mut line_tokens = tokenize_plain(&logical_line, parse_posix);
+        if let Some(updated) = line_posix_mode_change(&line_tokens) {
+            parse_posix = updated;
+        }
         let has_heredoc = !heredoc_delimiters(&line_tokens, &logical_line).is_empty();
         if has_unclosed_brace_group(&logical_line)
             && !opens_function_body_after_previous_signature(&logical_line, &output)
@@ -155,7 +168,7 @@ fn tokenize_with_heredocs(input: &str) -> Vec<Token> {
     }
 
     if !logical_line.is_empty() {
-        let mut line_tokens = tokenize_plain(&logical_line);
+        let mut line_tokens = tokenize_plain(&logical_line, parse_posix);
         for token in &mut line_tokens {
             token.position = logical_start_line;
         }
@@ -172,8 +185,8 @@ pub fn has_unclosed_input_syntax(input: &str) -> bool {
     has_unclosed_quotes(input) || has_unclosed_command_substitution(input)
 }
 
-fn tokenize_plain(input: &str) -> Vec<Token> {
-    let lexer = Lexer::new(input);
+fn tokenize_plain(input: &str, posix: bool) -> Vec<Token> {
+    let lexer = Lexer::new(input, posix);
     let mut tokens = Vec::new();
     for token in lexer {
         if token.kind == TokenKind::Eof {
@@ -182,4 +195,65 @@ fn tokenize_plain(input: &str) -> Vec<Token> {
         tokens.push(token);
     }
     tokens
+}
+
+/// Detect top-level `set -o posix` / `set +o posix` commands in a tokenized
+/// logical line, returning the POSIX mode that should apply to later lines.
+fn line_posix_mode_change(tokens: &[Token]) -> Option<bool> {
+    let mut result = None;
+    let mut command_start = true;
+    let mut index = 0usize;
+    while index < tokens.len() {
+        let token = &tokens[index];
+        let is_separator = token.line_break
+            || matches!(
+                token.kind,
+                TokenKind::Semicolon
+                    | TokenKind::And
+                    | TokenKind::Or
+                    | TokenKind::Background
+                    | TokenKind::Pipe
+                    | TokenKind::PipeErr
+            );
+        if is_separator {
+            command_start = true;
+            index += 1;
+            continue;
+        }
+        if command_start && token.kind == TokenKind::Word && token.value == "set" {
+            if let Some(enabled) = set_command_posix_change(&tokens[index + 1..]) {
+                result = Some(enabled);
+            }
+        }
+        command_start = false;
+        index += 1;
+    }
+    result
+}
+
+fn set_command_posix_change(tokens: &[Token]) -> Option<bool> {
+    let mut index = 0usize;
+    while index < tokens.len() {
+        let token = &tokens[index];
+        if token.kind != TokenKind::Word {
+            return None;
+        }
+        let value = token.value.as_str();
+        if value == "--" {
+            return None;
+        }
+        if value == "-o" || value == "+o" {
+            let next = tokens.get(index + 1)?;
+            if next.kind == TokenKind::Word && next.value == "posix" {
+                return Some(value == "-o");
+            }
+            return None;
+        }
+        if value.starts_with('-') || value.starts_with('+') {
+            index += 1;
+            continue;
+        }
+        return None;
+    }
+    None
 }

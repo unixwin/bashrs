@@ -527,7 +527,7 @@ impl Executor {
     pub(super) fn conditional_numeric_binary(&mut self, left: &str, op: &str, right: &str) -> bool {
         let left = self.expand_word(left);
         let right = self.expand_word(right);
-        let Some(left) = eval_mutable_arith_value_with_random(
+        let (Some(left), _) = eval_mutable_arith_value_with_random(
             &left,
             &mut self.env_vars,
             Some(&self.random_state),
@@ -535,7 +535,7 @@ impl Executor {
             self.report_arithmetic_error_with_label("[[", &left);
             return false;
         };
-        let Some(right) = eval_mutable_arith_value_with_random(
+        let (Some(right), _) = eval_mutable_arith_value_with_random(
             &right,
             &mut self.env_vars,
             Some(&self.random_state),

@@ -12,7 +12,7 @@ set | head -2
 echo "B rc=$?"
 
 echo "== C: export 进管道 =="
-export FOO=bar
+export FOO=ba
 export | head -2
 echo "C rc=$?"
 

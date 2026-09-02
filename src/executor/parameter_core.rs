@@ -38,7 +38,9 @@ impl Executor {
         }
 
         if let Some(word) = word.strip_prefix('\x1d') {
-            return self.expand_quoted_parameter_word_mut(word);
+            //  marks a quoted word; quoted defaults never tilde-expand.
+            return self
+                .expand_quoted_parameter_word_mut(word, SubstitutionQuoteContext::DoubleQuoted);
         }
 
         if let Some((raw_name, value)) = word.split_once('=') {
@@ -113,6 +115,17 @@ impl Executor {
             if let Some(value) = self.eval_arithmetic_expansion_value(expression) {
                 return value.to_string();
             }
+            // Classify fatality unconditionally: a readonly diagnostic may
+            // already have consumed the print gate, but the evaluation error
+            // still decides whether the command list is abandoned.
+            let actual_fatal = self.arithmetic_last_error_category.take().is_some();
+            if actual_fatal
+                || crate::executor::arithmetic::arithmetic_expansion_is_fatal(expression)
+            {
+                self.arithmetic_fatal_error.set(true);
+            } else {
+                self.arithmetic_nonfatal_error.set(true);
+            }
             if !self.arithmetic_expansion_error.replace(true) {
                 let message = crate::executor::arithmetic::arithmetic_error_message(expression)
                     .unwrap_or_else(|| {
@@ -120,11 +133,6 @@ impl Executor {
                             "{expression}: syntax error in expression (error token is \"{expression}\")"
                         )
                     });
-                if !crate::executor::arithmetic::arithmetic_expansion_is_fatal(expression) {
-                    self.arithmetic_nonfatal_error.set(true);
-                } else {
-                    self.arithmetic_fatal_error.set(true);
-                }
                 eprintln!("{}{}", self.diagnostic_prefix(), message);
             }
         }
@@ -147,8 +155,15 @@ impl Executor {
             .and_then(|rest| rest.strip_suffix('}'))
             .is_some()
         {
-            if braced_parameter_spans_whole_word(word) {
-                return self.expand_quoted_parameter_word_mut(word);
+            let posix_dquote = matches!(context, SubstitutionQuoteContext::DoubleQuoted)
+                && self.posix_mode_enabled();
+            let spans = if posix_dquote {
+                braced_parameter_spans_whole_word_in_context(word, true, true)
+            } else {
+                braced_parameter_spans_whole_word(word)
+            };
+            if spans {
+                return self.expand_quoted_parameter_word_mut(word, context);
             }
         }
 

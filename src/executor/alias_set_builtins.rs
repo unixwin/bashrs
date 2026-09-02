@@ -98,7 +98,7 @@ impl Executor {
             // positional parameters. Full set option parsing lives in
             // builtins::set; this branch covers upstream source tests that
             // inspect `$@`.
-            self.positional_params = cmd.words[2..].to_vec();
+            self.set_positional_params(cmd.words[2..].to_vec());
             self.exit_code = 0;
             return Ok(());
         }

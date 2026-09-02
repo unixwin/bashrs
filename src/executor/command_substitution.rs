@@ -414,7 +414,8 @@ impl Executor {
         source: &str,
         context: SubstitutionQuoteContext,
     ) -> Option<SubstitutionOutput> {
-        let tokens = crate::lexer::tokenize(source);
+        let tokens =
+            crate::lexer::tokenize_with_initial_posix(source, self.posix_mode_enabled());
         let ast = crate::parser::parse(&tokens);
 
         if ast.commands.iter().any(command_has_parse_error) {
@@ -501,6 +502,8 @@ impl Executor {
             arithmetic_expansion_error: Cell::new(false),
             arithmetic_nonfatal_error: Cell::new(false),
             arithmetic_fatal_error: Cell::new(false),
+            arithmetic_nounset_error: Cell::new(false),
+            arithmetic_last_error_category: Cell::new(None),
             inside_compound_condition: Cell::new(false),
             background_children: HashMap::new(),
             background_jobs: HashMap::new(),
@@ -526,6 +529,8 @@ impl Executor {
             external_file_builtins_enabled: self.external_file_builtins_enabled,
             process_env_snapshot: self.process_env_snapshot.clone(),
             history_provider: self.history_provider.clone(),
+            last_notified_job_ids: HashSet::new(),
+            completion_specs: HashMap::new(),
         }
     }
 

@@ -21,6 +21,10 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.bak
+*.jsonl
+
+*.out
+*.diff
 
 # Environment files
 .env

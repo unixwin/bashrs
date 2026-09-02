@@ -57,11 +57,53 @@ fn test_nested_braced_parameter_stays_in_one_word() {
 }
 
 #[test]
-fn test_braced_parameter_single_quotes_do_not_swallow_closing_brace() {
-    let tokens = tokenize("echo ${IFS+'bar} ${v/$'\\''/x}");
+fn test_braced_parameter_single_quotes_follow_gnu_pairing() {
+    // GNU parse.y pairs the first `'` with the quote inside `$'`, leaving
+    // the final `'` unmatched: bash 5.2 reports "unexpected EOF while
+    // looking for matching `'" for this input.
+    assert!(has_unclosed_input_syntax(
+        "echo ${IFS+'bar} ${v/$'\\''/x}"
+    ));
+}
 
-    assert_eq!(tokens[1].value, "${IFS+'bar}");
-    assert_eq!(tokens[2].value, "${v/$'\\''/x}");
+#[test]
+fn braced_quote_tokens_follow_gnu_pairing() {
+    let tokens = tokenize("echo ${IFS+'}'z}");
+    assert_eq!(tokens[0].value, "echo");
+    assert_eq!(tokens[1].value, "${IFS+'}'z}");
+
+    let tokens = tokenize("v=${IFS+'}'z}");
+    let assignment = tokens
+        .iter()
+        .find(|token| token.kind == TokenKind::Assignment)
+        .expect("assignment token");
+    assert!(assignment.value.contains("${IFS+'}'z}"));
+}
+
+#[test]
+fn runtime_set_o_posix_switches_dolbrace_scan() {
+    // GNU parses lazily: after `set -o posix` runs, single quotes inside a
+    // double-quoted `${...}` are literal (Austin Group Interp 221), so the
+    // first `}` closes the expansion.
+    let source = "set -o posix\necho \"${IFS+'}'z}\"\n";
+    let tokens = tokenize_with_initial_posix(source, false);
+    assert!(
+        tokens
+            .iter()
+            .any(|token| token.value == "\"${IFS+'}'z}\"" || token.raw == "\"${IFS+'}'z}\""),
+        "posix-mode scan must close the expansion at the first `}}`: {tokens:?}"
+    );
+
+    // Before the switch the same text keeps the non-posix pairing where the
+    // quote protects the first `}`.
+    let source = "echo \"${IFS+'a'bc}\"\nset -o posix\n";
+    let tokens = tokenize_with_initial_posix(source, false);
+    assert!(
+        tokens
+            .iter()
+            .any(|token| token.value == "\"${IFS+'a'bc}\"" || token.raw == "\"${IFS+'a'bc}\""),
+        "non-posix scan must keep the quoted pairing: {tokens:?}"
+    );
 }
 
 #[test]
@@ -102,4 +144,14 @@ fn test_escaped_quote_array_assignment_stays_one_word() {
     assert_eq!(words[0].raw, r#"a[\" \"]=15"#);
     assert_eq!(words[1].value, "echo");
     assert_eq!(words[2].value, "after");
+}
+
+#[test]
+fn heredoc_body_paren_does_not_close_command_substitution() {
+    // GNU make_here_document reads the here-doc body from the input stream,
+    // so a ) inside the body never closes the surrounding $(). The fast-path
+    // paren balancer must skip the here-doc body like the slow path already does.
+    assert!(has_unclosed_command_substitution("echo $(cat <<eof\nhere doc with )"));
+    assert!(has_unclosed_command_substitution("echo $(cat <<eof\nhere doc with )\neof"));
+    assert!(!has_unclosed_command_substitution("echo $(cat <<eof\nhere doc with )\neof\n)"));
 }

@@ -222,7 +222,11 @@ impl Executor {
                 match execution_result {
                     Ok(()) => {}
                     Err(ExecuteError::CommandNotFound(cmd)) => {
-                        eprintln!("{}{}", self.diagnostic_prefix(), ExecuteError::CommandNotFound(cmd));
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            ExecuteError::CommandNotFound(cmd)
+                        );
                         self.exit_code = 127;
                     }
                     Err(ExecuteError::UnknownBuiltin(name)) => {
@@ -237,7 +241,11 @@ impl Executor {
                         self.exit_code = code;
                     }
                     Err(ExecuteError::IoError(error)) => {
-                        eprintln!("{}{}", self.diagnostic_prefix(), error);
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            crate::posix_errors::message(&error)
+                        );
                         self.exit_code = 1;
                     }
                     Err(ExecuteError::ExitCode(code)) => {
@@ -273,7 +281,11 @@ impl Executor {
                         self.exit_code = 0;
                     }
                     Err(ExecuteError::CommandNotFound(cmd)) => {
-                        eprintln!("{}{}", self.diagnostic_prefix(), ExecuteError::CommandNotFound(cmd));
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            ExecuteError::CommandNotFound(cmd)
+                        );
                         self.exit_code = 127;
                     }
                     Err(ExecuteError::UnknownBuiltin(name)) => {
@@ -291,7 +303,11 @@ impl Executor {
                         return Err(ExecuteError::IoError(error));
                     }
                     Err(ExecuteError::IoError(error)) => {
-                        eprintln!("{}{}", self.diagnostic_prefix(), error);
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            crate::posix_errors::message(&error)
+                        );
                         self.exit_code = 1;
                     }
                     Err(ExecuteError::ExitCode(code)) => {
@@ -316,7 +332,11 @@ impl Executor {
                 match execution_result {
                     Ok(()) => {}
                     Err(ExecuteError::CommandNotFound(cmd)) => {
-                        eprintln!("{}{}", self.diagnostic_prefix(), ExecuteError::CommandNotFound(cmd));
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            ExecuteError::CommandNotFound(cmd)
+                        );
                         self.exit_code = 127;
                     }
                     Err(ExecuteError::UnknownBuiltin(name)) => {
@@ -331,7 +351,11 @@ impl Executor {
                         self.exit_code = code;
                     }
                     Err(ExecuteError::IoError(error)) => {
-                        eprintln!("{}{}", self.diagnostic_prefix(), error);
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            crate::posix_errors::message(&error)
+                        );
                         self.exit_code = 1;
                     }
                     Err(ExecuteError::ExitCode(code)) => {
@@ -357,7 +381,11 @@ impl Executor {
                         self.exit_code = 0;
                     }
                     Err(ExecuteError::CommandNotFound(cmd)) => {
-                        eprintln!("{}{}", self.diagnostic_prefix(), ExecuteError::CommandNotFound(cmd));
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            ExecuteError::CommandNotFound(cmd)
+                        );
                         self.exit_code = 127;
                     }
                     Err(ExecuteError::UnknownBuiltin(name)) => {
@@ -375,7 +403,11 @@ impl Executor {
                         return Err(ExecuteError::IoError(error));
                     }
                     Err(ExecuteError::IoError(error)) => {
-                        eprintln!("{}{}", self.diagnostic_prefix(), error);
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            crate::posix_errors::message(&error)
+                        );
                         self.exit_code = 1;
                     }
                     Err(ExecuteError::ExitCode(code)) => {
@@ -413,7 +445,11 @@ impl Executor {
                     Err(ExecuteError::CommandNotFound(cmd)) => {
                         // Bash treats a command-not-found in a pipeline as
                         // the last stage's exit status 127 and continues.
-                        eprintln!("{}{}", self.diagnostic_prefix(), ExecuteError::CommandNotFound(cmd));
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            ExecuteError::CommandNotFound(cmd)
+                        );
                         self.exit_code = 127;
                     }
                     Err(ExecuteError::UnknownBuiltin(name)) => {
@@ -431,13 +467,15 @@ impl Executor {
                         // command; the surrounding list continues.
                         self.exit_code = code;
                     }
-                    Err(ExecuteError::IoError(error))
-                        if is_closed_output_io_error(&error) =>
-                    {
+                    Err(ExecuteError::IoError(error)) if is_closed_output_io_error(&error) => {
                         return Err(ExecuteError::IoError(error));
                     }
                     Err(ExecuteError::IoError(error)) => {
-                        eprintln!("{}{}", self.diagnostic_prefix(), error);
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            crate::posix_errors::message(&error)
+                        );
                         self.exit_code = 1;
                     }
                     Err(ExecuteError::ExitCode(code)) => {
@@ -479,7 +517,11 @@ impl Executor {
                         self.exit_code = 0;
                     }
                     Err(ExecuteError::CommandNotFound(cmd)) => {
-                        eprintln!("{}{}", self.diagnostic_prefix(), ExecuteError::CommandNotFound(cmd));
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            ExecuteError::CommandNotFound(cmd)
+                        );
                         self.exit_code = 127;
                     }
                     Err(ExecuteError::UnknownBuiltin(name)) => {
@@ -497,7 +539,11 @@ impl Executor {
                         return Err(ExecuteError::IoError(error));
                     }
                     Err(ExecuteError::IoError(error)) => {
-                        eprintln!("{}{}", self.diagnostic_prefix(), error);
+                        eprintln!(
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            crate::posix_errors::message(&error)
+                        );
                         self.exit_code = 1;
                     }
                     Err(ExecuteError::ExitCode(code)) => {
@@ -524,13 +570,15 @@ impl Executor {
                     continue;
                 }
                 Ok(false) => {}
-                Err(ExecuteError::Break(_) | ExecuteError::Continue(_))
-                    if self.loop_depth == 0 =>
-                {
+                Err(ExecuteError::Break(_) | ExecuteError::Continue(_)) if self.loop_depth == 0 => {
                     self.exit_code = 0;
                 }
                 Err(ExecuteError::CommandNotFound(cmd)) => {
-                    eprintln!("{}{}", self.diagnostic_prefix(), ExecuteError::CommandNotFound(cmd));
+                    eprintln!(
+                        "{}{}",
+                        self.diagnostic_prefix(),
+                        ExecuteError::CommandNotFound(cmd)
+                    );
                     self.exit_code = 127;
                 }
                 Err(ExecuteError::UnknownBuiltin(name)) => {
@@ -548,16 +596,20 @@ impl Executor {
                     return Err(ExecuteError::IoError(error));
                 }
                 Err(ExecuteError::IoError(error)) => {
-                    eprintln!("{}{}", self.diagnostic_prefix(), error);
+                    eprintln!(
+                        "{}{}",
+                        self.diagnostic_prefix(),
+                        crate::posix_errors::message(&error)
+                    );
                     self.exit_code = 1;
                 }
                 Err(ExecuteError::ExitCode(code)) => {
-                        if self.parse_error_occurred {
-                            // Syntax error - terminate script (GNU Bash behavior)
-                            return Err(ExecuteError::ExitCode(code));
-                        }
-                        self.exit_code = code;
+                    if self.parse_error_occurred {
+                        // Syntax error - terminate script (GNU Bash behavior)
+                        return Err(ExecuteError::ExitCode(code));
                     }
+                    self.exit_code = code;
+                }
                 Err(error) => return Err(error),
             }
 
@@ -568,13 +620,15 @@ impl Executor {
                     continue;
                 }
                 Ok(None) => {}
-                Err(ExecuteError::Break(_) | ExecuteError::Continue(_))
-                    if self.loop_depth == 0 =>
-                {
+                Err(ExecuteError::Break(_) | ExecuteError::Continue(_)) if self.loop_depth == 0 => {
                     self.exit_code = 0;
                 }
                 Err(ExecuteError::CommandNotFound(cmd)) => {
-                    eprintln!("{}{}", self.diagnostic_prefix(), ExecuteError::CommandNotFound(cmd));
+                    eprintln!(
+                        "{}{}",
+                        self.diagnostic_prefix(),
+                        ExecuteError::CommandNotFound(cmd)
+                    );
                     self.exit_code = 127;
                 }
                 Err(ExecuteError::UnknownBuiltin(name)) => {
@@ -592,7 +646,11 @@ impl Executor {
                     return Err(ExecuteError::IoError(error));
                 }
                 Err(ExecuteError::IoError(error)) => {
-                    eprintln!("{}{}", self.diagnostic_prefix(), error);
+                    eprintln!(
+                        "{}{}",
+                        self.diagnostic_prefix(),
+                        crate::posix_errors::message(&error)
+                    );
                     self.exit_code = 1;
                 }
                 Err(error) => return Err(error),
@@ -632,6 +690,32 @@ impl Executor {
                 Err(ExecuteError::Break(_) | ExecuteError::Continue(_)) if self.loop_depth == 0 => {
                     self.exit_code = 0;
                 }
+                // GNU expr.c: a fatal word-expansion error abandons the
+                // current command list with status 1. Inside loops, functions
+                // and compound conditions the error unwinds to the frame
+                // boundary (loop_select/function_calls handle it there); at
+                // script top level the remainder of the same logical line is
+                // skipped and the next line runs (GNU probe 2026-09-01:
+                // `echo $((1/0)); echo same-line` never prints "same-line",
+                // the next line does).
+                Err(ExecuteError::ExpansionFailure(code))
+                    if self.loop_depth == 0
+                        && self.function_depth == 0
+                        && subshell_env.is_none()
+                        && !self.inside_compound_condition.get() =>
+                {
+                    self.exit_code = code;
+                    let failed_line = command.line;
+                    if failed_line.is_some_and(|line| line != 0) {
+                        while let Some(next) = ast.commands.get(index + 1) {
+                            if next.line == failed_line && !next.subshell_end {
+                                index += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                }
                 Err(ExecuteError::IoError(error)) if is_closed_output_io_error(&error) => {
                     return Err(ExecuteError::IoError(error));
                 }
@@ -641,7 +725,11 @@ impl Executor {
                     // It does not abort the surrounding list unless errexit
                     // is active; propagating the raw I/O error here made a
                     // script stop after `cmd >/missing/path`.
-                    eprintln!("{}{}", self.diagnostic_prefix(), error);
+                    eprintln!(
+                        "{}{}",
+                        self.diagnostic_prefix(),
+                        crate::posix_errors::message(&error)
+                    );
                     self.exit_code = 1;
                     if self.errexit_enabled()
                         && self.errexit_is_active()
@@ -824,31 +912,6 @@ impl Executor {
         }
         self.exit_code = invert_exit_status(self.exit_code);
         Ok(Some(end + 1))
-    }
-
-    pub(in crate::executor) fn evaluate_status_only_pipeline(
-        &self,
-        pipeline: &[&CommandNode],
-    ) -> Option<i32> {
-        if pipeline.len() != 2 {
-            return None;
-        }
-
-        let left = pipeline[0];
-        let right = pipeline[1];
-        match (
-            left.words.first().map(String::as_str),
-            right.words.first().map(String::as_str),
-        ) {
-            (Some("true"), Some("false")) => Some(self.pipeline_exit_status(&[0, 1])),
-            (Some("false"), Some("true")) => Some(self.pipeline_exit_status(&[1, 0])),
-            (Some("echo"), Some("grep")) => {
-                let text = left.words[1..].join(" ");
-                let pattern = right.words.get(1)?;
-                Some(self.pipeline_exit_status(&[0, i32::from(!text.contains(pattern))]))
-            }
-            _ => None,
-        }
     }
 }
 

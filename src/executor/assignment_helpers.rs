@@ -79,10 +79,32 @@ pub(in crate::executor) fn append_assoc_value(current: &str, value: &str) -> Str
             entries.push((key, rhs));
             continue;
         }
-        entries.push(("0".to_string(), unquote_storage_value(&token)));
+        // Bare element (no `[key]=` form): GNU rejects it with
+        // "<name>: <word>: must use subscript when assigning associative
+        // array" and skips the element. The error is emitted by the caller
+        // (apply_shell_assignment) which owns the diagnostic context.
     }
 
     format_assoc_storage(entries)
+}
+
+/// Return every bare (non `[key]=value`) element of an associative array
+/// compound assignment so the caller can emit the GNU "must use subscript"
+/// error for each one. Returns an empty vec for the alternating `key value`
+/// form (no explicit subscripts) — that form has no bare elements.
+pub(in crate::executor) fn assoc_bare_elements(value: &str) -> Vec<String> {
+    let tokens = array_assignment_tokens(value);
+    let explicit_subscripts = tokens
+        .iter()
+        .any(|token| assoc_assignment_token(token).is_some());
+    if !explicit_subscripts {
+        return Vec::new();
+    }
+    tokens
+        .iter()
+        .filter(|token| assoc_assignment_token(token).is_none())
+        .map(|token| unquote_storage_value(token))
+        .collect()
 }
 
 fn assoc_assignment_token(token: &str) -> Option<(&str, &str, bool)> {

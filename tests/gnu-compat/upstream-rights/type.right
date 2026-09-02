@@ -1,0 +1,27 @@
+function
+keyword
+builtin
+file
+file
+file
+func is a function
+func () 
+{ 
+    echo this is func
+}
+while is a shell keyword
+while is a shell keyword
+builtin is a shell builtin
+/bin/sh is /bin/sh
+f./type.tests: line 59: type: morealias: not found
+./type.tests: line 81: type: func: not found
+./type.tests: line 83: type: m: not found
+./type.tests: line 107: /tmp/bash: No such file or directory
+./type.tests: line 108: /tmp/bash: No such file or directory
+./type.tests: line 109: /tmp/bash: No such file or directory
+./type.tests: line 110: /tmp/bash: No such file or directory
+./type.tests: line 111: /tmp/bash: No such file or directory
+f () 
+{ 
+    v='^A'
+}

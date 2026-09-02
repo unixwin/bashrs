@@ -51,7 +51,8 @@ impl ConditionalArithParser<'_> {
                         Some(super::super::ArithmeticErrorCategory::EmptyArraySubscript);
                     return None;
                 }
-                eval_mutable_arith_value_with_random(&expression, self.env_vars, self.random_state)?
+                eval_mutable_arith_value_with_random(&expression, self.env_vars, self.random_state)
+                    .0?
             } else {
                 let index = self.parse_comma()?;
                 self.skip_ws();

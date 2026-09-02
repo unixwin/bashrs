@@ -1,12 +1,25 @@
 //! bind module.
 //!
-//! GNU Bash source ownership:
+// GNU Bash source ownership:
 // - builtins/bind.def
 
 use std::io::{self, Write};
 
 const EXECUTION_SUCCESS: i32 = 0;
 const EX_USAGE: i32 = 2;
+
+const DEFAULT_BINDINGS: &[&str] = &[
+    r#""\e[1~": beginning-of-line"#,
+    r#""\e[4~": end-of-line"#,
+    r#""\e[5~": beginning-of-history"#,
+    r#""\e[6~": end-of-history"#,
+    r#""\e[A": previous-history"#,
+    r#""\e[B": next-history"#,
+    r#""\e[C": forward-char"#,
+    r#""\e[D": backward-char"#,
+    r#""\e[3~": delete-char"#,
+    r#""\e": emacs-editing-mode"#,
+];
 
 pub fn execute_with_io<E>(
     args: &[String],
@@ -16,6 +29,13 @@ pub fn execute_with_io<E>(
 where
     E: Write,
 {
+    if args.iter().any(|a| a.starts_with('-') && a.contains('p')) {
+        for binding in DEFAULT_BINDINGS {
+            writeln!(stderr, "{}", binding)?;
+        }
+        return Ok(EXECUTION_SUCCESS);
+    }
+
     writeln!(
         stderr,
         "{diagnostic_prefix}bind: warning: line editing not enabled"

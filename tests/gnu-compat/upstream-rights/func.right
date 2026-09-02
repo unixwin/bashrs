@@ -1,0 +1,193 @@
+./func4.sub: line 23: foo: maximum function nesting level exceeded (100)
+./func4.sub: line 23: foo: maximum function nesting level exceeded (100)
+./func4.sub: line 23: foo: maximum function nesting level exceeded (20)
+./func5.sub: line 31: `sys$read': not a valid identifier
+./func5.sub: line 44: `<(:)': not a valid identifier
+./func5.sub: line 45: <(:): command not found
+./func5.sub: line 46: type: <(:): not found
+./func5.sub: line 51: `'a b c'': not a valid identifier
+./func5.sub: line 52: a b c: command not found
+./func5.sub: line 53: type: a b c: not found
+./func5.sub: line 94: `break': is a special builtin
+./func5.sub: line 101: `!!': not a valid identifier
+./func5.sub: line 105: `!!': not a valid identifier
+on f3 () 
+    { 
+        echo f3-a;
+        echo f3-b
+    } 1>&2;
+    f3
+}
+f4 is a function
+f4 () 
+{ 
+    echo f4-a;
+    function f5 () 
+    { 
+        echo f5-a;
+        echo f5-b
+    } 1>&2;
+    f5
+} 2>&1
+subshell
+f4 is a function
+f4 () 
+{ 
+    echo f4-a;
+    function f5 () 
+    { 
+        echo f5-a;
+        echo f5-b
+    } 1>&2;
+    f5
+} 2>&1
+testgrp is a function
+testgrp () 
+{ 
+    echo testgrp-a;
+    { 
+        echo tg-x;
+        echo tg-y
+    } 1>&2;
+    echo testgrp-b
+}
+subshell
+testgrp is a function
+testgrp () 
+{ 
+    echo testgrp-a;
+    { 
+        echo tg-x;
+        echo tg-y
+    } 1>&2;
+    echo testgrp-b
+}
+funca is a function
+funca () 
+{ 
+    ( echo func-a )
+}
+funcb is a function
+funcb () 
+{ 
+    ( echo func-b )
+}
+funcc is a function
+funcc () 
+{ 
+    ( echo func-c ) 2>&1
+}
+func-a
+func-b
+func-c
+foo-bar
+foo-bar () 
+{ 
+    :
+}
+expect 5 10
+5 10
+expect 20
+20
+expect 5 20
+5 20
+expect 5 20
+5 20
+expect 2 40
+2 40
+expect 5 20
+5 20
+1
+after: f = 100
+1
+after: f = 100
+7
+after FUNCNEST reset: f = 201
+7
+after FUNCNEST unset: f = 201
+1
+after FUNCNEST assign: f = 38
+11111 () 
+{ 
+    printf "FUNCNAME: %s\n" $FUNCNAME
+}
+a=2 () 
+{ 
+    printf "FUNCNAME: %s\n" $FUNCNAME
+}
+11111 () 
+{ 
+    printf "FUNCNAME: %s\n" $FUNCNAME
+}
+a=2 () 
+{ 
+    printf "FUNCNAME: %s\n" $FUNCNAME
+}
+FUNCNAME: a=2
+posix mode:
+type
+break is a function
+break () 
+{ 
+    echo inside function $FUNCNAME
+}
+function
+command -v
+break
+command -V
+break is a function
+break () 
+{ 
+    echo inside function $FUNCNAME
+}
+type -a
+break is a function
+break () 
+{ 
+    echo inside function $FUNCNAME
+}
+break is a special shell builtin
+declare
+break () 
+{ 
+    echo inside function $FUNCNAME
+}
+execution
+default mode:
+type
+break is a function
+break () 
+{ 
+    echo inside function $FUNCNAME
+}
+function
+command -v
+break
+command -V
+break is a function
+break () 
+{ 
+    echo inside function $FUNCNAME
+}
+type -a
+break is a function
+break () 
+{ 
+    echo inside function $FUNCNAME
+}
+break is a shell builtin
+declare
+break () 
+{ 
+    echo inside function $FUNCNAME
+}
+execution
+inside function break
+5
+rfunc () 
+{ 
+    local -;
+    local var;
+    local -p
+}
+declare -fr rfunc

@@ -1,0 +1,25 @@
+real 0.00
+user 0.00
+sys 0.00
+real 0.00
+user 0.00
+sys 0.00
+real 0.00
+user 0.00
+sys 0.00
+real 0.00
+user 0.00
+sys 0.00
+real 0.00
+user 0.00
+sys 0.00
+real 0.00
+user 0.00
+sys 0.00
+real 0.00
+user 0.00
+sys 0.00
+./test-glue-functions: line 2: $'\r': command not found
+./test-glue-functions: line 4: syntax error near unexpected token `$'\r''
+./test-glue-functions: line 4: `_intl_normalize_spaces()'
+./posixpipe.tests: line 63: _cut_leading_spaces: command not found

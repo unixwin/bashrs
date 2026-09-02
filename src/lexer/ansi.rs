@@ -23,10 +23,9 @@ pub(super) fn decode_ansi_c_quoted(value: &str) -> String {
             Some('?') => output.push('?'),
             Some('x') => {
                 if chars.peek().copied() == Some('{') {
-                    // ksh93/bash `\x{hex}` form (lib/sh/strtrans.c): consume
-                    // hex digits until a non-xdigit or `}`, cap at 0xFF.
-                    // `\x{}` yields NUL (bash outputs it verbatim; recho shows
-                    // `<ab>` because the NUL terminates the C string).
+                    // ksh93/bash backslash x open-brace form (lib/sh/strtrans.c): consume
+                    // hex digits until a non-xdigit or close-brace, cap at 0xFF.
+                    // backslash x open-brace close-brace yields NUL.
                     chars.next();
                     let mut value = String::new();
                     while let Some(next) = chars.peek().copied() {
@@ -87,7 +86,7 @@ pub(super) fn decode_ansi_c_quoted(value: &str) -> String {
                 }
             }
             Some('c') => {
-                // Control character: \cx
+                // Control character: backslash c X
                 if let Some(c) = chars.next() {
                     output.push((c as u32 & 0x1f) as u8 as char);
                 }
@@ -98,6 +97,14 @@ pub(super) fn decode_ansi_c_quoted(value: &str) -> String {
                 output.push(other);
             }
         }
+    }
+
+    // GNU Bash stores words as NUL-terminated C strings, so a NUL byte inside a
+    // dollar-single-quote ANSI-C string ends the word: everything from the
+    // first NUL onward is dropped (e.g. $'ab\x{}cd' becomes ab). Truncate to
+    // match that semantics.
+    if let Some(nul) = output.find('\0') {
+        output.truncate(nul);
     }
 
     output

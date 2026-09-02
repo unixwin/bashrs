@@ -26,6 +26,13 @@ pub(super) fn has_unclosed_quotes(input: &str) -> bool {
     // continuations, command substitutions, arithmetic contexts, and here-doc
     // deferral. This tracks only enough single/double quote state to keep a
     // multi-line alias definition as one parser unit.
+    //
+    // Crucially, quote characters that live *inside* a parameter expansion
+    // (`${...}`), command substitution (`$(...)` / backticks), or ANSI-C string
+    // (`$'...'`) must NOT toggle the surrounding word's quote state. GNU Bash
+    // scans these nested contexts with their own quote rules; a `'` inside
+    // `${IFS+'}'z}` is balanced within the expansion and must not leak a
+    // dangling single-quote into the rest of the line.
     let mut single = false;
     let mut double = false;
     let mut ansi_single = false;
@@ -78,6 +85,46 @@ pub(super) fn has_unclosed_quotes(input: &str) -> bool {
             continue;
         }
 
+        // Skip a parameter expansion `${...}` as a self-contained unit so that
+        // quotes inside its word/operator body do not affect outer state.
+        if ch == '$' && !single && !double && chars.get(index + 1) == Some(&'{') {
+            let body: String = chars[index + 2..].iter().collect();
+            let context = crate::lexer::dolbrace::BraceContext {
+                outer_double_quote: false,
+                posix: false,
+                replacement_context: false,
+                initial_state: crate::lexer::dolbrace::DolbraceState::Param,
+            };
+            if let Some(scan) = crate::lexer::dolbrace::scan_braced_parameter_body(&body, context) {
+                index += 2 + body[..scan.end].chars().count();
+                comment_start = false;
+                continue;
+            }
+            // Unterminated/odd expansion: fall through and let the caller treat
+            // the input as having unclosed syntax.
+        }
+
+        // Skip a command substitution `$(...)` (and `$((...))` arithmetic) as a
+        // self-contained unit.
+        // A balanced command substitution owns its nested quote state, even
+        // when the substitution itself appears inside an outer double quote.
+        if ch == '$' && !single && chars.get(index + 1) == Some(&'(') {
+            if let Some(end) = skip_parenthesized_unit(&chars, index + 1) {
+                index = end;
+                comment_start = false;
+                continue;
+            }
+        }
+
+        // Skip a backtick command substitution as a self-contained unit.
+        if ch == '`' && !single && !double {
+            if let Some(end) = skip_backtick_unit(&chars, index) {
+                index = end;
+                comment_start = false;
+                continue;
+            }
+        }
+
         if ch == '$' && !single && !double && chars.get(index + 1) == Some(&'\'') {
             ansi_single = true;
             comment_start = false;
@@ -108,6 +155,78 @@ pub(super) fn has_unclosed_quotes(input: &str) -> bool {
     }
 
     single || double || ansi_single
+}
+
+/// Skip a balanced `(` ... `)` unit starting at `open` (the index of the `(`),
+/// returning the index just past the matching `)`. Returns `None` if unbalanced.
+fn skip_parenthesized_unit(chars: &[char], open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut index = open;
+    let mut single = false;
+    let mut double = false;
+    while index < chars.len() {
+        let ch = chars[index];
+        if single {
+            if ch == '\'' {
+                single = false;
+            }
+            index += 1;
+            continue;
+        }
+        if double {
+            if ch == '"' {
+                double = false;
+            }
+            index += 1;
+            continue;
+        }
+        // Skip a here-document body so its ) and quote bytes stay opaque to
+        // parenthesis balancing, mirroring how GNU make_here_document reads
+        // the body from the input stream (parse.y gather_here_documents)
+        // instead of feeding it back to the token scanner. Matches the heredoc
+        // skip already present in has_unclosed_command_substitution below.
+        if !single
+            && !double
+            && ch == '<'
+            && chars.get(index + 1) == Some(&'<')
+            && chars.get(index + 2) != Some(&'<')
+        {
+            index = skip_heredoc_in_chars(chars, index);
+            continue;
+        }
+        match ch {
+            '\'' => single = true,
+            '"' => double = true,
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(index + 1);
+                }
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    None
+}
+
+/// Skip a backtick command substitution starting at `open` (the index of the
+/// opening backtick), returning the index just past the closing backtick.
+/// Returns `None` if unbalanced.
+fn skip_backtick_unit(chars: &[char], open: usize) -> Option<usize> {
+    let mut index = open + 1;
+    while index < chars.len() {
+        if chars[index] == '\\' {
+            index += 2;
+            continue;
+        }
+        if chars[index] == '`' {
+            return Some(index + 1);
+        }
+        index += 1;
+    }
+    None
 }
 
 pub(crate) fn has_unclosed_command_substitution(input: &str) -> bool {
@@ -236,7 +355,16 @@ pub(crate) fn has_unclosed_command_substitution(input: &str) -> bool {
             index += 1;
             continue;
         }
-        if ch == '$' && chars.get(index + 1) == Some(&'(') && !parameter_single {
+        // A balanced command substitution owns its nested quote state even
+        // inside an outer double-quoted word. Keep it atomic here as well as
+        // in has_unclosed_quotes; an unbalanced unit falls through so this
+        // checker still reports the missing closing delimiter.
+        if ch == '$' && !single && chars.get(index + 1) == Some(&'(') && !parameter_single {
+            if let Some(end) = skip_parenthesized_unit(&chars, index + 1) {
+                index = end;
+                comment_start = false;
+                continue;
+            }
             if chars.get(index + 2) == Some(&'(') {
                 if let Some(end) = skip_arithmetic_substitution(&chars, index + 3) {
                     index = end;
@@ -515,4 +643,15 @@ fn command_substitution_reserved_word_allows_next(word: &str) -> bool {
             | "done"
             | "esac"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_unclosed_quotes;
+
+    #[test]
+    fn command_substitution_quotes_do_not_leak_from_outer_double_quote() {
+        let input = r#"echo \"$(echo \"\${IFS+'}'z}\")\""#;
+        assert!(!has_unclosed_quotes(input));
+    }
 }

@@ -1,0 +1,262 @@
+./complete.tests: line 123: complete: notthere: no completion specification
+./complete.tests: line 130: complete: -V: invalid option
+complete: usage: complete [-abcdefgjksuv] [-pr] [-DEI] [-o option] [-A action] [-G globpat] [-W wordlist] [-F function] [-C command] [-X filterpat] [-P prefix] [-S suffix] [name ...]
+./complete.tests: line 132: compgen: -V: invalid option
+compgen: usage: compgen [-abcdefgjksuv] [-o option] [-A action] [-G globpat] [-W wordlist] [-F function] [-C command] [-X filterpat] [-P prefix] [-S suffix] [word]
+./complete.tests: line 133: compgen: -V: invalid option
+compgen: usage: compgen [-abcdefgjksuv] [-o option] [-A action] [-G globpat] [-W wordlist] [-F function] [-C command] [-X filterpat] [-P prefix] [-S suffix] [word]
+./complete.tests: line 139: compgen: -V: invalid option
+comcomplete -A hostname rlogin
+complete -v getopts
+complete -c nice
+complete -c gdb
+complete -j -P '%' fg
+complete -f -X '!*.dvi' dvips
+complete -f -X '!*.texi*' te./complete.tests: line 152: complete: -z: invalid option
+complete: usage: complete [-abcdefgjksuv] [-pr] [-DEI] [-o option] [-A action] [-G globpat] [-W wordlist] [-F function] [-C command] [-X filterpat] [-P prefix] [-S suffix] [name ...]
+complete: usage: complete [-abcdefgjksuv] [-pr] [-DEI] [-o option] [-A action] [-G globpat] [-W wordlist] [-F function] [-C command] [-X filterpat] [-P prefix] [-S suffix] [name ...]
+./complete.tests: line 154: compgen: -r: invalid option
+compgen: usage: compgen [-abcdefgjksuv] [-o option] [-A action] [-G globpat] [-W wordlist] [-F function] [-C command] [-X filterpat] [-P prefix] [-S suffix] [word]
+./complete.tests: line 155: compgen: noaction: invalid action name
+./complete.tests: line 156: compgen: -D: invalid option
+compgen: usage: compgen [-abcdefgjksuv] [-o option] [-A action] [-G globpat] [-W wordlist] [-F function] [-C command] [-X filterpat] [-P prefix] [-S suffix] [word]
+./complete.tests: line 157: compgen: nooption: invalid option name
+./complete.tests: line 159: compopt: nooption: invalid option name
+peset
+ulimit
+umask
+unalias
+unset
+until
+variables
+wait
+while
+{ ... }
+allexport
+braceexpand
+emacs
+errexit
+errtrace
+functrace
+hashall
+histexpand
+history
+ignoreeof
+interactive-comments
+keyword
+monitor
+noclobber
+noexec
+noglob
+nolog
+notify
+nounset
+onecmd
+physical
+pipefail
+posix
+privileged
+verbose
+vi
+xtrace
+autocd
+assoc_expand_once
+cdable_vars
+cdspell
+checkhash
+checkjobs
+checkwinsize
+cmdhist
+compat31
+compat32
+compat40
+compat41
+compat42
+compat43
+compat44
+complete_fullquote
+direxpand
+dirspell
+dotglob
+execfail
+expand_aliases
+extdebug
+extglob
+extquote
+failglob
+force_fignore
+globasciiranges
+globskipdots
+globstar
+gnu_errfmt
+histappend
+histreedit
+histverify
+hostcomplete
+huponexit
+inherit_errexit
+interactive_comments
+lastpipe
+lithist
+localvar_inherit
+localvar_unset
+login_shell
+mailwarn
+no_empty_cmd_completion
+nocaseglob
+nocasematch
+noexpand_translation
+nullglob
+patsub_replacement
+progcomp
+progcomp_alias
+promptvars
+restricted_shell
+shift_verbose
+sourcepath
+varredir_close
+xpg_echo
+.
+:
+[
+alias
+bg
+bind
+break
+builtin
+caller
+cd
+command
+compgen
+complete
+compopt
+continue
+declare
+dirs
+disown
+echo
+enable
+eval
+exec
+exit
+export
+false
+fc
+fg
+getopts
+hash
+help
+history
+jobs
+kill
+let
+local
+logout
+mapfile
+popd
+printf
+pushd
+pwd
+read
+readarray
+readonly
+return
+set
+shift
+shopt
+source
+suspend
+test
+times
+trap
+true
+type
+typeset
+ulimit
+umask
+unalias
+unset
+wait
+.
+:
+[
+alias
+bg
+bind
+break
+builtin
+caller
+cd
+command
+compgen
+complete
+compopt
+continue
+declare
+dirs
+disown
+echo
+enable
+eval
+exec
+exit
+export
+false
+fc
+fg
+getopts
+hash
+help
+history
+jobs
+kill
+let
+local
+logout
+mapfile
+popd
+printf
+pushd
+pwd
+read
+readarray
+readonly
+return
+set
+shift
+shopt
+source
+suspend
+test
+times
+trap
+true
+type
+typeset
+ulimit
+umask
+unalias
+unset
+wait
+if
+then
+else
+elif
+fi
+case
+esac
+for
+select
+while
+until
+do
+done
+in
+function
+time
+{
+}
+!
+[[
+]]
+coproc

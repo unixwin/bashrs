@@ -16,6 +16,7 @@ impl Executor {
         let mut invalid_name = false;
         let mut stop_scalar_names = false;
         let mut prompt: Option<String> = None;
+        let mut initial_text: Option<String> = None;
         let mut read_fd: Option<u32> = None;
         let mut timeout_zero = false;
         let mut index = 1;
@@ -395,6 +396,7 @@ impl Executor {
                     index += 2;
                 }
                 "-i" => {
+                    initial_text = cmd.words.get(index + 1).cloned();
                     index += 2;
                 }
                 "-t" => {
@@ -668,23 +670,28 @@ impl Executor {
                     index += 1;
                 }
                 "-ei" => {
+                    initial_text = cmd.words.get(index + 1).cloned();
                     index += 2;
                 }
                 word if word.starts_with("-ei") && word.len() > 3 => {
+                    initial_text = Some(word[3..].to_string());
                     index += 1;
                 }
                 "-rei" | "-eri" => {
                     raw = true;
+                    initial_text = cmd.words.get(index + 1).cloned();
                     index += 2;
                 }
                 word if (word.starts_with("-rei") || word.starts_with("-eri"))
                     && word.len() > 4 =>
                 {
                     raw = true;
+                    initial_text = Some(word[4..].to_string());
                     index += 1;
                 }
                 "-ersi" | "-esri" | "-resi" | "-rsei" | "-seri" | "-srei" => {
                     raw = true;
+                    initial_text = cmd.words.get(index + 1).cloned();
                     index += 2;
                 }
                 word if (word.starts_with("-ersi")
@@ -696,6 +703,7 @@ impl Executor {
                     && word.len() > 5 =>
                 {
                     raw = true;
+                    initial_text = Some(word[5..].to_string());
                     index += 1;
                 }
                 "-et" => {
@@ -1713,7 +1721,7 @@ impl Executor {
                 scalar_names.clone()
             };
             if !scalar_names.is_empty() {
-                self.assign_read_scalar_names(&scalar_names, "", raw);
+                self.assign_read_scalar_names(&scalar_names, initial_text.as_deref().unwrap_or(""), raw);
             }
             return if invalid_name {
                 self.finish_read_error(cmd, &stderr, 1)
@@ -1799,15 +1807,20 @@ impl Executor {
                 } else {
                     line
                 };
+                let line = if line.is_empty() && initial_text.is_some() {
+                    initial_text.as_deref().unwrap()
+                } else {
+                    &line
+                };
                 self.assign_read_scalar_names_with_field_count(
                     &scalar_names,
-                    &line,
+                    line,
                     raw,
                     scalar_field_count,
                 );
                 0
             } else if command_closes_stdin(cmd) || self.fd_table.is_closed(0) {
-                self.assign_read_scalar_names(&scalar_names, "", raw);
+                self.assign_read_scalar_names(&scalar_names, initial_text.as_deref().unwrap_or(""), raw);
                 let _ = writeln!(
                     &mut stderr,
                     "{}read: read error: 0: Bad file descriptor",
@@ -1815,17 +1828,16 @@ impl Executor {
                 );
                 self.finish_read_error(cmd, &stderr, 1)
             } else if read_fd.is_some() || command_redirects_stdin(cmd) {
-                self.assign_read_scalar_names(&scalar_names, "", raw);
-                1
+                self.assign_read_scalar_names(&scalar_names, initial_text.as_deref().unwrap_or(""), raw);
+                if initial_text.is_none() { 1 } else { 0 }
             } else if self.env_vars.contains_key(FUNCTION_STDIN) {
-                // FUNCTION_STDIN is exhausted - EOF on heredoc/redirect
-                self.assign_read_scalar_names(&scalar_names, "", raw);
-                1
+                self.assign_read_scalar_names(&scalar_names, initial_text.as_deref().unwrap_or(""), raw);
+                if initial_text.is_none() { 1 } else { 0 }
             } else {
                 match read_stdin_until(delimiter, char_limit, exact_char_limit) {
                     Ok((0, _)) => {
-                        self.assign_read_scalar_names(&scalar_names, "", raw);
-                        1
+                        self.assign_read_scalar_names(&scalar_names, initial_text.as_deref().unwrap_or(""), raw);
+                        if initial_text.is_none() { 1 } else { 0 }
                     }
                     Ok((_, line)) => {
                         let line = if !raw
@@ -1837,7 +1849,12 @@ impl Executor {
                         } else {
                             line
                         };
-                        self.assign_read_scalar_names(&scalar_names, &line, raw);
+                        let line = if line.is_empty() && initial_text.is_some() {
+                            initial_text.as_deref().unwrap()
+                        } else {
+                            &line
+                        };
+                        self.assign_read_scalar_names(&scalar_names, line, raw);
                         0
                     }
                     Err(_) => 1,

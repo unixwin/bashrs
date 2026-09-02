@@ -379,7 +379,7 @@ impl Executor {
     }
 
     fn background_jobs_output(
-        &self,
+        &mut self,
         options: crate::builtins::jobs::JobsListOptions,
         requested_jobs: &[String],
         stderr: &mut Vec<u8>,
@@ -430,13 +430,13 @@ impl Executor {
     }
 
     fn render_background_jobs(
-        &self,
+        &mut self,
         options: crate::builtins::jobs::JobsListOptions,
         jobs: Vec<(usize, u32, String)>,
     ) -> String {
         let mut output = String::new();
         for (job_number, pid, source) in jobs {
-            let state_text = self
+            let state_text_opt = self
                 .job_table
                 .pid_to_job
                 .get(&pid)
@@ -448,8 +448,23 @@ impl Executor {
                         0 => "Done".to_string(),
                         status => format!("Exit {status}"),
                     },
-                })
-                .unwrap_or_else(|| "Unknown".to_string());
+                });
+            // Apply state-based filters
+            if options.running_only {
+                if !state_text_opt.as_ref().map_or(false, |s| s == "Running") {
+                    continue;
+                }
+            }
+            if options.stopped_only {
+                if !state_text_opt.as_ref().map_or(false, |s| s == "Stopped") {
+                    continue;
+                }
+            }
+            if options.changed_only && self.last_notified_job_ids.contains(&job_number) {
+                continue;
+            }
+            let state_text = state_text_opt.unwrap_or_else(|| "Unknown".to_string());
+
             if options.pids_only {
                 output.push_str(&format!("{pid}\n"));
             } else if options.long {
@@ -458,6 +473,9 @@ impl Executor {
                 ));
             } else {
                 output.push_str(&format!("[{job_number}]  {state_text:<22} {source} &\n"));
+            }
+            if options.changed_only {
+                self.last_notified_job_ids.insert(job_number);
             }
         }
         output
@@ -736,8 +754,64 @@ impl Executor {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let args = &cmd.words[1..];
-        if let Some(provider) = self.history_provider.as_ref() {
-            let clear = args.iter().any(|arg| arg == "-c" || arg == "-pc");
+        let provider = self.history_provider.as_ref().cloned();
+        if let Some(provider) = provider {
+            // Detect history file I/O modes (-a/-n/-r/-w) and optional -c.
+            let mut has_io = false;
+            let mut do_append = false;
+            let mut do_read_new = false;
+            let mut do_read = false;
+            let mut do_write = false;
+            let mut do_clear = false;
+            let mut file_arg: Option<String> = None;
+            {
+                let mut idx = 0;
+                while let Some(arg) = args.get(idx) {
+                    if arg == "--" {
+                        idx += 1;
+                        break;
+                    }
+                    if !arg.starts_with('-') || arg == "-" {
+                        break;
+                    }
+                    for option in arg[1..].chars() {
+                        match option {
+                            'a' => { has_io = true; do_append = true; }
+                            'n' => { has_io = true; do_read_new = true; }
+                            'r' => { has_io = true; do_read = true; }
+                            'w' => { has_io = true; do_write = true; }
+                            'c' => { do_clear = true; }
+                            _ => {}
+                        }
+                    }
+                    idx += 1;
+                }
+                if has_io {
+                    file_arg = args.get(idx).cloned();
+                }
+            }
+
+            if has_io {
+                let file = file_arg
+                    .or_else(|| self.get_env("HISTFILE").map(String::from))
+                    .ok_or_else(|| {
+                        let _ = writeln!(stderr, "history: filename not specified");
+                        ExecuteError::ExitCode(2)
+                    })?;
+                let mut p = provider.borrow_mut();
+                if do_clear {
+                    p.clear()?;
+                    let _ = std::fs::write(&file, "");
+                }
+                if do_append { p.append_history(&file)?; }
+                if do_read_new { p.read_new_history(&file)?; }
+                if do_read { p.read_history(&file)?; }
+                if do_write { p.write_history(&file)?; }
+                self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+                return Ok(0);
+            }
+
+            let clear = do_clear || args.iter().any(|arg| arg == "-c" || arg == "-pc");
             let save = args.iter().position(|arg| arg == "-s" || arg == "-ps");
             let delete = args.iter().position(|arg| arg == "-d");
             let entries = if clear {
@@ -829,8 +903,52 @@ impl Executor {
         cmd: &CommandNode,
         builtin: crate::builtins::complete::CompletionBuiltin,
     ) -> Result<i32, ExecuteError> {
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+
+        // Handle complete -p and complete -r at the executor level
+        let mut stdout: Vec<u8> = Vec::new();
+        let mut stderr: Vec<u8> = Vec::new();
+        if matches!(builtin, crate::builtins::complete::CompletionBuiltin::Complete) {
+            let args = &cmd.words[1..];
+            if args.iter().any(|a| a == "-p") {
+                let mut status = 0;
+                let targets: Vec<&str> = args.iter()
+                    .filter(|a| !a.starts_with('-'))
+                    .map(String::as_str)
+                    .collect();
+                for (name, spec) in &self.completion_specs {
+                    if !targets.is_empty() && !targets.contains(&name.as_str()) {
+                        continue;
+                    }
+                    writeln!(stdout, "complete {}", spec)?;
+                }
+                if !targets.is_empty() && targets.iter().all(|t| !self.completion_specs.contains_key(*t)) {
+                    status = 1;
+                }
+                self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+                return Ok(status);
+            }
+            if args.iter().any(|a| a == "-r") {
+                let targets: Vec<&str> = args.iter()
+                    .filter(|a| !a.starts_with('-'))
+                    .map(String::as_str)
+                    .collect();
+                if targets.is_empty() {
+                    self.completion_specs.clear();
+                } else {
+                    for t in targets {
+                        self.completion_specs.remove(t);
+                    }
+                }
+                self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+                return Ok(0);
+            }
+            // Store spec: last non-option arg is the command name
+            let spec = args.join(" ");
+            let last_arg = args.iter().filter(|a| !a.starts_with('-')).last();
+            if let Some(target) = last_arg {
+                self.completion_specs.insert(target.to_string(), spec);
+            }
+        }
         let function_names: Vec<String> = self.functions.keys().cloned().collect();
         let job_names: Vec<String> = self
             .job_table

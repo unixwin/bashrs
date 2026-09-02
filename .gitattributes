@@ -1,2 +1,9 @@
-*.sh text eol=lf
-scripts/run-* text eol=lf
+tests/gnu-compat/upstream-rights/*.right -text
+tests/gnu-compat/GNU-TIMEOUT.txt -text
+
+# Agent/handoff discipline: keep shell scripts and Rust sources LF in the
+# working tree. core.autocrlf=true otherwise re-CRLFs them on checkout, which
+# breaks WSL-side test running (bash sees spurious CR => $'\r': command not found).
+*.sh eol=lf
+*.rs eol=lf
+

@@ -153,7 +153,7 @@ impl Executor {
                 .insert(INHERIT_PROCESS_STDIN.to_string(), "1".to_string());
         }
         self.set_env("__RUBASH_SCRIPT_NAME", script);
-        self.positional_params = cmd.words[1..].to_vec();
+        self.set_positional_params(cmd.words[1..].to_vec());
         self.subshell_depth.set(saved_depth + 1);
 
         let result = self.execute_ast(&ast);
@@ -164,7 +164,7 @@ impl Executor {
             self.shell_state = saved_shell_state;
         }
         self.pipestatus = saved_pipestatus;
-        self.positional_params = saved_positional_params;
+        self.set_positional_params(saved_positional_params);
         self.functions = saved_functions;
         self.function_definition_redirects = saved_function_redirects;
         self.aliases = saved_aliases;

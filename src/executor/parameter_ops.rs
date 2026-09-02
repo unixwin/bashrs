@@ -225,6 +225,18 @@ pub(in crate::executor) fn parse_parameter_assignment_operator(
 }
 
 pub(in crate::executor) fn matching_parameter_brace(input: &str) -> Option<usize> {
+    matching_parameter_brace_in_context(input, false, false)
+}
+
+/// Locate the `}` closing a `${` body, honoring the outer quote context and
+/// POSIX mode. GNU parse.y's dolbrace state machine (Austin Group Interp 221)
+/// treats single quotes inside a double-quoted `${...}` as literal in POSIX
+/// mode, so the first `}` closes there.
+pub(in crate::executor) fn matching_parameter_brace_in_context(
+    input: &str,
+    outer_double_quote: bool,
+    posix: bool,
+) -> Option<usize> {
     let replacement_context = input.find('/').is_some_and(|slash| {
         !input[..slash].contains(':')
             && input[..slash]
@@ -232,8 +244,8 @@ pub(in crate::executor) fn matching_parameter_brace(input: &str) -> Option<usize
                 .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '#')
     });
     let context = BraceContext {
-        outer_double_quote: false,
-        posix: false,
+        outer_double_quote,
+        posix,
         replacement_context,
         initial_state: DolbraceState::Param,
     };
@@ -308,10 +320,19 @@ pub(in crate::executor) fn matching_parameter_brace(input: &str) -> Option<usize
 }
 
 pub(in crate::executor) fn braced_parameter_spans_whole_word(word: &str) -> bool {
+    braced_parameter_spans_whole_word_in_context(word, false, false)
+}
+
+pub(in crate::executor) fn braced_parameter_spans_whole_word_in_context(
+    word: &str,
+    outer_double_quote: bool,
+    posix: bool,
+) -> bool {
     let Some(rest) = word.strip_prefix("${") else {
         return false;
     };
-    matching_parameter_brace(rest).is_some_and(|index| index + 1 == rest.len())
+    matching_parameter_brace_in_context(rest, outer_double_quote, posix)
+        .is_some_and(|index| index + 1 == rest.len())
 }
 
 pub(in crate::executor) fn command_substitution_spans_whole_word(word: &str) -> bool {

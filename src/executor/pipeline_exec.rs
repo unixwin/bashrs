@@ -1149,13 +1149,20 @@ impl Executor {
                     .collect::<Vec<_>>();
                 if args.len() == 2 && matches!(args[0].as_str(), "\\n" | "\n") {
                     Ok(Some((input.replace('\n', &args[1]), String::new(), 0)))
-                } else if args.len() == 2 {
+                } else if args.len() == 2
+                    && inline_expand_tr_set(&args[0]).is_some()
+                    && inline_expand_tr_set(&args[1]).is_some()
+                {
                     Ok(Some((
                         translate_tr(input, &args[0], &args[1]),
                         String::new(),
                         0,
                     )))
                 } else {
+                    // Specs the inline fast path cannot represent (POSIX
+                    // classes it does not know, `[x*n]` repeats, escapes)
+                    // must run the real external `tr`; silently returning the
+                    // input unchanged is never acceptable.
                     self.execute_external_pipeline_stage(command, input)
                 }
             }
@@ -1334,11 +1341,11 @@ pub(in crate::executor) fn head_line_count(args: &[String]) -> Option<usize> {
 }
 
 pub(in crate::executor) fn translate_tr(input: &str, source: &str, target: &str) -> String {
-    let source_chars = expand_tr_set(source);
-    let target_chars = expand_tr_set(target);
-    if source_chars.is_empty() || target_chars.is_empty() {
+    let (Some(source_chars), Some(target_chars)) =
+        (inline_expand_tr_set(source), inline_expand_tr_set(target))
+    else {
         return input.to_string();
-    }
+    };
     input
         .chars()
         .map(|ch| {
@@ -1351,20 +1358,95 @@ pub(in crate::executor) fn translate_tr(input: &str, source: &str, target: &str)
         .collect()
 }
 
-fn expand_tr_set(spec: &str) -> Vec<char> {
-    let chars = spec.chars().collect::<Vec<_>>();
+/// Expands a `tr` set for the inline pipeline fast path. Returns `None` for
+/// syntax it does not implement (unknown POSIX classes, `[x*n]` repeats,
+/// backslash escapes, non-ASCII, reversed ranges) so callers can run the real
+/// external `tr` instead of silently translating nothing.
+pub(in crate::executor) fn inline_expand_tr_set(spec: &str) -> Option<Vec<char>> {
+    if !spec.is_ascii() {
+        return None;
+    }
+    let chars: Vec<char> = spec.chars().collect();
     let mut expanded = Vec::new();
     let mut index = 0;
     while index < chars.len() {
-        if index + 2 < chars.len() && chars[index + 1] == '-' && chars[index] <= chars[index + 2] {
-            expanded.extend(chars[index]..=chars[index + 2]);
-            index += 3;
-        } else {
-            expanded.push(chars[index]);
-            index += 1;
+        match chars[index] {
+            '\\' => return None,
+            '[' => {
+                let class = spec[index..].strip_prefix("[:")?;
+                let end = class.find(":]")?;
+                expanded.extend(tr_class_chars(&class[..end])?);
+                index += end + 4;
+            }
+            current if index + 2 < chars.len() && chars[index + 1] == '-' => {
+                if current > chars[index + 2] {
+                    // A reversed range is an error in real `tr`; let the
+                    // external binary surface it instead of eating input.
+                    return None;
+                }
+                expanded.extend(current..=chars[index + 2]);
+                index += 3;
+            }
+            current => {
+                expanded.push(current);
+                index += 1;
+            }
         }
     }
-    expanded
+    Some(expanded)
+}
+
+fn tr_class_chars(class: &str) -> Option<Vec<char>> {
+    Some(match class {
+        "alpha" => ('a'..='z').chain('A'..='Z').collect(),
+        "digit" => ('0'..='9').collect(),
+        "lower" => ('a'..='z').collect(),
+        "upper" => ('A'..='Z').collect(),
+        "space" => vec![' ', '\t', '\n', '\r', '\x0b', '\x0c'],
+        "blank" => vec![' ', '\t'],
+        "punct" => ('!'..='/')
+            .chain(':'..='@')
+            .chain('['..='`')
+            .chain('{'..='~')
+            .collect(),
+        "xdigit" => ('0'..='9').chain('a'..='f').chain('A'..='F').collect(),
+        "cntrl" => (0u8..=0x1f)
+            .map(|byte| byte as char)
+            .chain(['\x7f'])
+            .collect(),
+        "graph" => ('!'..='~').collect(),
+        "print" => (' '..='~').collect(),
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod inline_tr_tests {
+    use super::*;
+
+    #[test]
+    fn translate_tr_maps_ranges_and_classes() {
+        assert_eq!(translate_tr("Hello", "a-z", "A-Z"), "HELLO");
+        assert_eq!(
+            translate_tr("Hello World", "[:upper:]", "[:lower:]"),
+            "hello world"
+        );
+        assert_eq!(translate_tr("a b c", "[:space:]", "-"), "a-b-c");
+        assert_eq!(translate_tr("abc123", "[:digit:]", "#"), "abc###");
+        assert_eq!(translate_tr("abc", "b", "x"), "axc");
+    }
+
+    #[test]
+    fn unknown_tr_syntax_is_not_supported() {
+        assert!(inline_expand_tr_set("[x*n]").is_none());
+        assert!(inline_expand_tr_set(r"\n").is_none());
+        assert!(inline_expand_tr_set("héllo").is_none());
+        assert!(inline_expand_tr_set("[:bogus:]").is_none());
+        assert!(inline_expand_tr_set("z-a").is_none());
+        assert!(inline_expand_tr_set("a-z").is_some());
+        assert!(inline_expand_tr_set("[:upper:]").is_some());
+        assert!(inline_expand_tr_set("abc").is_some());
+    }
 }
 
 fn command_has_non_concurrent_pipeline_redirects(

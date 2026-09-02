@@ -28,11 +28,17 @@ pub fn expand_braces(word: &str) -> Vec<String> {
 fn expand_single_brace(s: &str) -> Option<Vec<String>> {
     let bytes = s.as_bytes();
     let mut i = 0;
+    let mut escaped = false;
 
     while i < bytes.len() {
-        // Skip escaped characters
+        if escaped {
+            escaped = false;
+            i += 1;
+            continue;
+        }
         if bytes[i] == b'\\' {
-            i += 2;
+            escaped = true;
+            i += 1;
             continue;
         }
         // Skip single-quoted strings
@@ -63,6 +69,16 @@ fn expand_single_brace(s: &str) -> Option<Vec<String>> {
             i += 1;
             continue;
         }
+        // Bash ignores a brace opener at a word boundary when it is followed
+        // by whitespace or a closing brace; this keeps `{ a,b}` literal.
+        let preceded_by_whitespace = i == 0 || bytes[i - 1].is_ascii_whitespace();
+        let followed_by_whitespace_or_close = i + 1 >= bytes.len()
+            || bytes[i + 1].is_ascii_whitespace()
+            || bytes[i + 1] == b'}';
+        if preceded_by_whitespace && followed_by_whitespace_or_close {
+            i += 1;
+            continue;
+        }
         // Skip ${...} parameter expansions
         if i > 0 && bytes[i - 1] == b'$' {
             i += 1;
@@ -75,11 +91,18 @@ fn expand_single_brace(s: &str) -> Option<Vec<String>> {
         let mut j = inner_start;
         let mut has_comma = false;
         let mut has_double_dot = false;
+        let mut j_escaped = false;
 
         while j < bytes.len() && depth > 0 {
+            if j_escaped {
+                j_escaped = false;
+                j += 1;
+                continue;
+            }
             match bytes[j] {
                 b'\\' => {
-                    j += 2;
+                    j_escaped = true;
+                    j += 1;
                     continue;
                 }
                 b'{' => depth += 1,
@@ -123,11 +146,60 @@ fn expand_single_brace(s: &str) -> Option<Vec<String>> {
                 }
                 return Some(out);
             }
+            // GNU removes an invalid outer sequence wrapper, but still expands
+            // nested comma groups. Nested sequence groups remain literal.
+            if inner.contains('{') {
+                let nested = expand_nested_commas(inner);
+                if nested.len() > 1 || nested.first().is_some_and(|item| item != inner) {
+                    return Some(
+                        nested
+                            .into_iter()
+                            .map(|item| format!("{prefix}{item}{suffix}"))
+                            .collect(),
+                    );
+                }
+            }
         }
 
         i += 1;
     }
     None
+}
+
+fn expand_nested_commas(s: &str) -> Vec<String> {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'{' { i += 1; continue; }
+        let start = i;
+        let mut depth = 1u32;
+        let mut j = i + 1;
+        while j < bytes.len() && depth > 0 {
+            match bytes[j] {
+                b'\\' => j += 1,
+                b'{' => depth += 1,
+                b'}' => depth -= 1,
+                _ => {}
+            }
+            j += 1;
+        }
+        if depth != 0 { break; }
+        let inner = &s[start + 1..j - 1];
+        let items = split_brace_commas(inner);
+        if items.len() >= 2 {
+            let prefix = &s[..start];
+            let suffix = &s[j..];
+            let mut out = Vec::new();
+            for item in items {
+                for expanded in expand_nested_commas(item) {
+                    out.push(format!("{prefix}{expanded}{suffix}"));
+                }
+            }
+            return out;
+        }
+        i = j;
+    }
+    vec![s.to_string()]
 }
 
 fn split_brace_commas(s: &str) -> Vec<&str> {
@@ -136,10 +208,17 @@ fn split_brace_commas(s: &str) -> Vec<&str> {
     let mut start = 0;
     let bytes = s.as_bytes();
     let mut i = 0;
+    let mut escaped = false;
     while i < bytes.len() {
+        if escaped {
+            escaped = false;
+            i += 1;
+            continue;
+        }
         match bytes[i] {
             b'\\' => {
-                i += 2;
+                escaped = true;
+                i += 1;
                 continue;
             }
             b'{' => depth += 1,
@@ -298,6 +377,36 @@ mod tests {
     #[test]
     fn test_adjacent_brace_groups() {
         assert_eq!(expand_braces("{a,b}{1..2}"), vec!["a1", "a2", "b1", "b2"]);
+    }
+
+    #[test]
+    fn test_escaped_brace_group_adjacent_to_real_group() {
+        // Escaped braces stay literal (backslashes stripped later by quote
+        // removal in command_prepare) while unescaped groups still expand.
+        assert_eq!(expand_braces(r"\{a,b}{1,2}"), vec![r"\{a,b}1", r"\{a,b}2"]);
+        assert_eq!(
+            expand_braces(r"a\{b,c}d{e,f}g"),
+            vec![r"a\{b,c}deg", r"a\{b,c}dfg"]
+        );
+    }
+
+    #[test]
+    fn test_invalid_nested_sequences_expand_only_nested_commas() {
+        assert_eq!(
+            expand_braces("{{1,2,3}..4}"),
+            vec!["1..4", "2..4", "3..4"],
+        );
+        assert_eq!(
+            expand_braces("{6..{7,8,9}}"),
+            vec!["6..7", "6..8", "6..9"],
+        );
+        assert_eq!(
+            expand_braces("{{a..c}..{1..3}}"),
+            vec![
+                "{a..1}", "{a..2}", "{a..3}", "{b..1}", "{b..2}", "{b..3}",
+                "{c..1}", "{c..2}", "{c..3}",
+            ],
+        );
     }
 
     #[test]

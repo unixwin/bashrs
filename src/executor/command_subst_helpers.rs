@@ -6,7 +6,34 @@ pub(in crate::executor) fn collect_braced_parameter_name(
     let mut name = String::new();
     let mut nested = 0usize;
     let mut in_bracket_expression = false;
+    let mut single = false;
+    let mut double = false;
     while let Some(ch) = chars.next() {
+        // Inside single quotes everything is literal, including backslashes;
+        // only the next single quote ends the quoted region.
+        if single {
+            if ch == '\'' {
+                single = false;
+            }
+            name.push(ch);
+            continue;
+        }
+        if double {
+            if ch == '"' {
+                double = false;
+                name.push(ch);
+                continue;
+            }
+            if ch == '\\' {
+                name.push(ch);
+                if let Some(escaped) = chars.next() {
+                    name.push(escaped);
+                }
+                continue;
+            }
+            name.push(ch);
+            continue;
+        }
         // GNU Bash scans `\` plus the following character as one unit
         // (extract_dollar_brace_string advances by two). `\\` is a literal
         // backslash, `\}` a literal closing brace; neither closes the name.
@@ -17,6 +44,16 @@ pub(in crate::executor) fn collect_braced_parameter_name(
             } else {
                 name.push('\\');
             }
+            continue;
+        }
+        if ch == '\'' {
+            single = true;
+            name.push(ch);
+            continue;
+        }
+        if ch == '"' {
+            double = true;
+            name.push(ch);
             continue;
         }
         if ch == '[' {

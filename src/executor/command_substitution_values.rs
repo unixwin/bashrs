@@ -42,11 +42,17 @@ impl Executor {
                 }
                 if matches!(args[0].as_str(), "\\n" | "\n") {
                     Some((input.replace('\n', &args[1]), 0))
-                } else {
+                } else if crate::executor::pipeline_exec::inline_expand_tr_set(&args[0]).is_some()
+                    && crate::executor::pipeline_exec::inline_expand_tr_set(&args[1]).is_some()
+                {
                     Some((
                         crate::executor::pipeline_exec::translate_tr(input, &args[0], &args[1]),
                         0,
                     ))
+                } else {
+                    // Syntax the inline fast path cannot represent must run
+                    // the real external `tr`.
+                    None
                 }
             }
             "head" => {
@@ -124,7 +130,13 @@ impl Executor {
                     .stderr(Stdio::null())
                     .spawn()
                     .ok()?;
-                child.stdin.as_mut()?.write_all(&crate::executor::substitution_metadata::shell_text_to_raw_bytes(input)).ok()?;
+                child
+                    .stdin
+                    .as_mut()?
+                    .write_all(
+                        &crate::executor::substitution_metadata::shell_text_to_raw_bytes(input),
+                    )
+                    .ok()?;
                 let output = child.wait_with_output().ok()?;
                 Some((
                     crate::executor::substitution_metadata::bytes_to_shell_text(&output.stdout)
@@ -174,7 +186,7 @@ impl Executor {
         let mut status = 0;
         for name in &words[1 + first_name..] {
             let name = self.expand_word(name);
-            match self.describe_name_with_io(&name, mode, use_standard_path, false, &mut stdout) {
+            match self.describe_name_with_io(&name, mode, use_standard_path, false, false, &mut stdout) {
                 Ok(true) => {}
                 Ok(false) => status = 1,
                 Err(_) => status = 1,
@@ -465,6 +477,15 @@ impl Executor {
             } else {
                 "not a tty".to_string()
             });
+        }
+        // Don't route shell builtins through the external-command path.
+        // On Windows, "fc" resolves to system32\fc.exe (file compare),
+        // not the shell's "fc" builtin. Also respect "enable -n".
+        let first_word = stdio.expanded_words.first().map(String::as_str).unwrap_or("");
+        if is_shell_builtin_name(first_word)
+            && !crate::builtins::enable::is_disabled(&self.env_vars, first_word)
+        {
+            return None;
         }
         let Some(program) = find_user_command(&stdio.expanded_words[0], &self.env_vars) else {
             if stdio.expanded_words.first().map(String::as_str) == Some("mktemp") {

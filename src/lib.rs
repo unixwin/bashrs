@@ -10,6 +10,7 @@ pub mod invocation;
 pub mod jobs;
 pub mod lexer;
 pub mod parser;
+pub mod posix_errors;
 pub mod shell;
 
 // Re-export commonly used types

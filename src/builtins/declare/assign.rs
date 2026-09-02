@@ -5,7 +5,7 @@ use super::diagnostic::diagnostic_prefix;
 use super::marks::{mark_typed, marked_vars, unmark_typed};
 use super::storage::{
     append_array_value, append_assoc_value, eval_arith_value, format_indexed_array_storage,
-    indexed_array_entries, is_noassign_bash_array,
+    indexed_array_entries, is_noassign_bash_array, parse_array_tokens,
 };
 use super::{
     ARRAY_VARS, ASSOC_VARS, COMPOUND_ASSIGNMENT_MARKER, DECLARED_UNSET_VARS, EXECUTION_FAILURE,
@@ -107,6 +107,19 @@ where
         let value = if append {
             let current = variables.get(var_name).cloned().unwrap_or_default();
             if assoc || marked_vars(variables, ASSOC_VARS).contains(var_name) {
+                if value.starts_with('(') && value.ends_with(')') {
+                    if let Some(bare) = assoc_bare_element(value) {
+                        writeln!(
+                            stderr,
+                            "{}declare: {}: {}: must use subscript when assigning associative array",
+                            diagnostic_prefix(),
+                            var_name,
+                            bare
+                        )?;
+                        status = EXECUTION_FAILURE;
+                        continue;
+                    }
+                }
                 append_assoc_value(&current, value)
             } else if array
                 || marked_vars(variables, ARRAY_VARS).contains(var_name)
@@ -127,7 +140,24 @@ where
             } else {
                 eval_arith_value(value).to_string()
             }
-        } else if assoc && value.starts_with('(') && value.ends_with(')') {
+        } else if (assoc || marked_vars(variables, ASSOC_VARS).contains(var_name))
+            && value.starts_with('(')
+            && value.ends_with(')')
+        {
+            // GNU Bash (array.c/arrayassign.c): every element of an associative
+            // array compound assignment must use the [key]=value form. A bare
+            // word (no subscript) is rejected with the must-use-subscript error.
+            if let Some(bare) = assoc_bare_element(value) {
+                writeln!(
+                    stderr,
+                    "{}declare: {}: {}: must use subscript when assigning associative array",
+                    diagnostic_prefix(),
+                    var_name,
+                    bare
+                )?;
+                status = EXECUTION_FAILURE;
+                continue;
+            }
             append_assoc_value("()", value)
         } else if value.starts_with('(') && value.ends_with(')') {
             append_array_value("()", value, false)
@@ -138,6 +168,23 @@ where
         unmark_typed(variables, DECLARED_UNSET_VARS, var_name);
     }
     Ok(status)
+}
+
+/// Return the first bare (non `[key]=value`) element of an associative array
+/// compound assignment value, or `None` if every element uses a subscript.
+fn assoc_bare_element(value: &str) -> Option<String> {
+    let inner = value.strip_prefix('(').and_then(|v| v.strip_suffix(')'))?;
+    for token in parse_array_tokens(inner) {
+        let subscript_end = token.trim_end_matches(']').rfind(']');
+        let eq = token.find('=');
+        let is_subscript = token.starts_with('[')
+            && token.contains('=')
+            && subscript_end.map_or(false, |i| eq.map_or(false, |e| i < e));
+        if !is_subscript && !token.contains('=') {
+            return Some(token);
+        }
+    }
+    None
 }
 
 fn declare_indexed_element(name: &str) -> Option<(&str, &str)> {

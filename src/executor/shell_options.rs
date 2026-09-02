@@ -8,6 +8,7 @@ impl Executor {
             return File::open(shell_path_to_windows("/dev/null", &self.env_vars));
         }
         File::open(shell_path_to_windows(target, &self.env_vars))
+            .map_err(|e| crate::posix_errors::path_error(target, e))
     }
 
     pub(in crate::executor) fn create_redirect_output(
@@ -23,9 +24,25 @@ impl Executor {
         let target = self.redirect_output_path_target(target);
         let path = shell_path_to_windows(&target, &self.env_vars);
         if !clobber && crate::builtins::set::shell_option_enabled(&self.env_vars, "noclobber") {
-            return OpenOptions::new().write(true).create_new(true).open(path);
+            // GNU wording (bash builtins/common.c): "<target>: cannot
+            // overwrite existing file"; the redirect machinery prints the
+            // payload after its script/line prefix.
+            return OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+                .map_err(|e| {
+                    if e.kind() == io::ErrorKind::AlreadyExists {
+                        io::Error::new(
+                            io::ErrorKind::AlreadyExists,
+                            format!("{target}: cannot overwrite existing file"),
+                        )
+                    } else {
+                        e
+                    }
+                });
         }
-        File::create(path)
+        File::create(path).map_err(|e| crate::posix_errors::path_error(&target, e))
     }
 
     pub(in crate::executor) fn redirect_output_path_target(&self, target: &str) -> String {
@@ -318,7 +335,7 @@ impl Executor {
             let arg = &args[index];
             if arg == "--" {
                 self.apply_set_flag_updates(&flag_updates);
-                self.positional_params = args[index + 1..].to_vec();
+                self.set_positional_params(args[index + 1..].to_vec());
                 return true;
             }
 
@@ -327,21 +344,21 @@ impl Executor {
                 self.env_vars.remove("__RUBASH_XTRACE");
                 crate::builtins::set::set_shell_option(&mut self.env_vars, "xtrace", false);
                 if index + 1 < args.len() {
-                    self.positional_params = args[index + 1..].to_vec();
+                    self.set_positional_params(args[index + 1..].to_vec());
                 }
                 return true;
             }
 
             let Some(prefix) = arg.chars().next().filter(|ch| matches!(ch, '-' | '+')) else {
                 self.apply_set_flag_updates(&flag_updates);
-                self.positional_params = args[index..].to_vec();
+                self.set_positional_params(args[index..].to_vec());
                 return true;
             };
 
             let flags = &arg[1..];
             if flags.is_empty() {
                 self.apply_set_flag_updates(&flag_updates);
-                self.positional_params = args[index + 1..].to_vec();
+                self.set_positional_params(args[index + 1..].to_vec());
                 return true;
             }
 

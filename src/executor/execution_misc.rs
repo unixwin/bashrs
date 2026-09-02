@@ -311,6 +311,12 @@ pub(in crate::executor) fn shell_display_path(path: &str) -> String {
     if cfg!(windows) {
         let path = path.strip_prefix("//?/").unwrap_or(path);
         let path = crate::executor::path::shell_path_display_from_windows(path);
+        // GNU process_substitute (subst.c) emits forward-slash paths
+        // (/dev/fd/N, or sh_mktmpname /-separated names) so the substituted
+        // word survives eval/source re-parsing: a literal backslash would be
+        // consumed as a shell escape. Normalize Windows backslashes to slashes
+        // before the drive-letter check so bytes[2]=='/' fires too.
+        let path = path.replace('\\', "/");
         return windows_native_to_slash_drive_display(&path);
     }
     path.to_string()
@@ -405,6 +411,10 @@ pub(in crate::executor) fn command_substitution_word_split(value: &str) -> Strin
 }
 
 const COMMAND_SUBSTITUTION_PAYLOAD_PREFIX: &str = "__RUBASH_CSB1_";
+
+pub(in crate::executor) fn contains_command_substitution_payload(value: &str) -> bool {
+    value.contains(COMMAND_SUBSTITUTION_PAYLOAD_PREFIX)
+}
 
 pub(in crate::executor) fn command_substitution_value_needs_payload_protection(
     source: &str,

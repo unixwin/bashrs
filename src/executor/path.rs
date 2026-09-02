@@ -440,6 +440,14 @@ fn windows_external_absolute_argument_needs_translation(
             || configured_shell_root(env_vars).is_some();
     }
 
+    // /mnt/X drive paths need translation for all drive letters
+    if normalized.starts_with("/mnt/") && normalized.len() >= 6 {
+        let bytes = normalized.as_bytes();
+        if bytes[5].is_ascii_alphabetic() {
+            return true;
+        }
+    }
+
     if configured_shell_root(env_vars).is_some()
         && matches!(
             normalized.split('/').nth(1),
@@ -745,6 +753,28 @@ pub(crate) fn shell_path_to_windows(path: &str, env_vars: &HashMap<String, Strin
         return PathBuf::from(
             format!("{}:\\{}", drive.to_ascii_uppercase(), &normalized[3..]).replace('/', "\\"),
         );
+    }
+
+    // Map /mnt/X drive paths to Windows drive letters (WSL-style convention).
+    // This is a logical mapping, not a real directory - similar to /c/ -> C:\
+    // Supports both /mnt/c and /mnt/c/some/path forms for all drive letters.
+    if cfg!(windows) && normalized.starts_with("/mnt/") && normalized.len() >= 6 {
+        let bytes = normalized.as_bytes();
+        if bytes[5].is_ascii_alphabetic() {
+            let drive = bytes[5] as char;
+            let rest = if normalized.len() > 6 {
+                normalized[6..].trim_start_matches('/')
+            } else {
+                ""
+            };
+            if rest.is_empty() {
+                return PathBuf::from(format!("{}:\\", drive.to_ascii_uppercase()));
+            } else {
+                return PathBuf::from(
+                    format!("{}:\\{}", drive.to_ascii_uppercase(), rest).replace('/', "\\"),
+                );
+            }
+        }
     }
 
     if cfg!(windows) && shell_root.is_none() && normalized == "/tmp" {
@@ -1740,7 +1770,10 @@ mod tests {
     #[test]
     fn windows_unc_path_with_single_leading_backslash_is_restored() {
         let mut env_vars = HashMap::new();
-        env_vars.insert("WINUXSH_ROOT".to_string(), std::env::temp_dir().to_string_lossy().to_string());
+        env_vars.insert(
+            "WINUXSH_ROOT".to_string(),
+            std::env::temp_dir().to_string_lossy().to_string(),
+        );
 
         // After shell backslash escaping, `\\DFDB-A1` becomes `\DFDB-A1`.
         // shell_path_to_windows should restore it to `\\DFDB-A1` (UNC).
@@ -1754,7 +1787,10 @@ mod tests {
     #[test]
     fn windows_unc_path_with_share_is_restored() {
         let mut env_vars = HashMap::new();
-        env_vars.insert("WINUXSH_ROOT".to_string(), std::env::temp_dir().to_string_lossy().to_string());
+        env_vars.insert(
+            "WINUXSH_ROOT".to_string(),
+            std::env::temp_dir().to_string_lossy().to_string(),
+        );
 
         // `\DFDB-A1\share` after shell escaping should become UNC.
         assert_eq!(
@@ -1767,7 +1803,10 @@ mod tests {
     #[test]
     fn windows_root_relative_drive_path_not_treated_as_unc() {
         let mut env_vars = HashMap::new();
-        env_vars.insert("WINUXSH_ROOT".to_string(), std::env::temp_dir().to_string_lossy().to_string());
+        env_vars.insert(
+            "WINUXSH_ROOT".to_string(),
+            std::env::temp_dir().to_string_lossy().to_string(),
+        );
 
         // A path like `\C:\Users` with a drive letter after the first
         // backslash should NOT be treated as UNC.
@@ -1781,13 +1820,98 @@ mod tests {
     #[test]
     fn windows_bare_leading_backslash_becomes_unc_root() {
         let mut env_vars = HashMap::new();
-        env_vars.insert("WINUXSH_ROOT".to_string(), std::env::temp_dir().to_string_lossy().to_string());
+        env_vars.insert(
+            "WINUXSH_ROOT".to_string(),
+            std::env::temp_dir().to_string_lossy().to_string(),
+        );
 
         // A bare single backslash should become UNC root.
-        assert_eq!(
-            shell_path_to_windows(r"\", &env_vars),
-            PathBuf::from(r"\\")
+        assert_eq!(shell_path_to_windows(r"\", &env_vars), PathBuf::from(r"\\"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_mnt_drive_paths_map_to_windows_drives() {
+        let mut env_vars = HashMap::new();
+        env_vars.insert(
+            "WINUXSH_ROOT".to_string(),
+            std::env::temp_dir().to_string_lossy().to_string(),
         );
+
+        // /mnt/c -> C:\
+        assert_eq!(
+            shell_path_to_windows("/mnt/c", &env_vars),
+            PathBuf::from(r"C:\")
+        );
+        // /mnt/c/some/path -> C:\some\path
+        assert_eq!(
+            shell_path_to_windows("/mnt/c/some/path", &env_vars),
+            PathBuf::from(r"C:\some\path")
+        );
+        // /mnt/d -> D:\
+        assert_eq!(
+            shell_path_to_windows("/mnt/d", &env_vars),
+            PathBuf::from(r"D:\")
+        );
+        // /mnt/e/Users -> E:\Users
+        assert_eq!(
+            shell_path_to_windows("/mnt/e/Users", &env_vars),
+            PathBuf::from(r"E:\Users")
+        );
+        // /mnt/z -> Z:\
+        assert_eq!(
+            shell_path_to_windows("/mnt/z", &env_vars),
+            PathBuf::from(r"Z:\")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_mnt_drive_paths_are_case_insensitive() {
+        let mut env_vars = HashMap::new();
+        env_vars.insert(
+            "WINUXSH_ROOT".to_string(),
+            std::env::temp_dir().to_string_lossy().to_string(),
+        );
+
+        // /mnt/C -> C:\ (uppercase drive letter)
+        assert_eq!(
+            shell_path_to_windows("/mnt/C", &env_vars),
+            PathBuf::from(r"C:\")
+        );
+        // /mnt/D/path -> D:\path
+        assert_eq!(
+            shell_path_to_windows("/mnt/D/path", &env_vars),
+            PathBuf::from(r"D:\path")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_mnt_drive_paths_need_translation() {
+        let env_vars = HashMap::new();
+
+        // All /mnt/X paths should need translation
+        assert!(windows_external_absolute_argument_needs_translation(
+            "/mnt/c", &env_vars
+        ));
+        assert!(windows_external_absolute_argument_needs_translation(
+            "/mnt/d/some/path", &env_vars
+        ));
+        assert!(windows_external_absolute_argument_needs_translation(
+            "/mnt/z", &env_vars
+        ));
+
+        // Invalid /mnt paths should not need translation
+        assert!(!windows_external_absolute_argument_needs_translation(
+            "/mnt", &env_vars
+        ));
+        assert!(!windows_external_absolute_argument_needs_translation(
+            "/mnt/", &env_vars
+        ));
+        assert!(!windows_external_absolute_argument_needs_translation(
+            "/mnt/123", &env_vars
+        ));
     }
 
     fn windows_shell_path(path: &Path) -> String {

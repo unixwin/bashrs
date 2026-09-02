@@ -35,7 +35,12 @@ impl Executor {
                     Ok(_) => {}
                     Err(ExecuteError::IoError(error)) => {
                         let mut stderr = Vec::new();
-                        writeln!(&mut stderr, "{}{}", self.diagnostic_prefix(), error)?;
+                        writeln!(
+                            &mut stderr,
+                            "{}{}",
+                            self.diagnostic_prefix(),
+                            crate::posix_errors::message(&error)
+                        )?;
                         self.write_default_stderr(&stderr)?;
                         self.exit_code = 1;
                         redirect_failed = true;

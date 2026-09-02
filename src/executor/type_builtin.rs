@@ -11,7 +11,7 @@ impl Executor {
         let saved_path = self.use_standard_path_for_lookup(use_standard_path);
         let mut status = 0;
         for name in &args[first_name..] {
-            if !self.describe_name(name, mode, false, false) {
+            if !self.describe_name(name, mode, false, false, false) {
                 status = 1;
                 if mode == TypeDescribeMode::Verbose {
                     eprintln!("{}command: {name}: not found", self.diagnostic_prefix());
@@ -64,7 +64,7 @@ impl Executor {
         let saved_path = self.use_standard_path_for_lookup(use_standard_path);
         let mut status = 0;
         for name in &args[first_name..] {
-            if !self.describe_name_with_io(name, mode, false, false, stdout)? {
+            if !self.describe_name_with_io(name, mode, false, false, false, stdout)? {
                 status = 1;
                 if mode == TypeDescribeMode::Verbose {
                     writeln!(
@@ -117,6 +117,7 @@ impl Executor {
         let mut all = false;
         let mut force_path = false;
         let mut skip_functions = false;
+        let mut functions_only = false;
         let mut index = 0;
 
         while let Some(arg) = args.get(index) {
@@ -131,7 +132,7 @@ impl Executor {
             for option in normalized[1..].chars() {
                 match option {
                     'a' => all = true,
-                    'f' => skip_functions = true,
+                    'f' => functions_only = true,
                     'p' => mode = TypeDescribeMode::PathOnly,
                     'P' => {
                         mode = TypeDescribeMode::PathOnly;
@@ -159,7 +160,7 @@ impl Executor {
                     }
                 }
             } else {
-                self.describe_name(name, mode, force_path, skip_functions)
+                self.describe_name(name, mode, force_path, skip_functions, functions_only)
             };
             if !found {
                 status = 1;
@@ -200,6 +201,7 @@ impl Executor {
         let mut all = false;
         let mut force_path = false;
         let mut skip_functions = false;
+        let mut functions_only = false;
         let mut index = 0;
 
         while let Some(arg) = args.get(index) {
@@ -214,7 +216,7 @@ impl Executor {
             for option in normalized[1..].chars() {
                 match option {
                     'a' => all = true,
-                    'f' => skip_functions = true,
+                    'f' => functions_only = true,
                     'p' => mode = TypeDescribeMode::PathOnly,
                     'P' => {
                         mode = TypeDescribeMode::PathOnly;
@@ -238,9 +240,9 @@ impl Executor {
         let mut status = 0;
         for name in &args[index..] {
             let found = if all {
-                self.describe_name_all_with_io(name, mode, force_path, skip_functions, stdout)?
+                self.describe_name_all_with_io(name, mode, force_path, skip_functions, functions_only, stdout)?
             } else {
-                self.describe_name_with_io(name, mode, force_path, skip_functions, stdout)?
+                self.describe_name_with_io(name, mode, force_path, skip_functions, functions_only, stdout)?
             };
             if !found {
                 status = 1;

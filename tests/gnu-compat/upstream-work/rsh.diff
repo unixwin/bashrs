@@ -1,4 +1,0 @@
---- /d/repo/rubash/tests/gnu-compat/upstream-rights/rsh.right	2026-08-29 09:02:17.834795100 +0800
-+++ /d/repo/rubash/tests/gnu-compat/upstream-work/rsh.rubash.out	2026-08-29 09:02:17.942105800 +0800
-@@ -1 +0,0 @@
--/tmp/rubash-upstream-test/rsh.tests: after exec

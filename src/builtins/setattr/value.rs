@@ -34,8 +34,11 @@ pub(super) fn readonly_error_subject(
     // depend on whether assignment processing or the builtin detects the
     // readonly attribute. Preserve attr.tests' split until assignment words
     // carry full parse metadata.
+    // GNU Bash (variables.c/execute_cmd.c): a readonly array reassignment reports
+    // `<name>: readonly variable` using the variable name, never the enclosing
+    // function name. Drop the subject so the caller prints `{name}: readonly variable`.
     if explicit_array && value.starts_with(COMPOUND_ASSIGNMENT_MARKER) {
-        return env_vars.get("__RUBASH_CURRENT_FUNCTION").cloned();
+        return None;
     }
     if explicit_array {
         return Some("readonly".to_string());

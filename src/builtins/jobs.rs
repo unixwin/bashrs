@@ -22,6 +22,9 @@ pub enum JobsAction {
 pub struct JobsListOptions {
     pub long: bool,
     pub pids_only: bool,
+    pub changed_only: bool,
+    pub running_only: bool,
+    pub stopped_only: bool,
 }
 
 pub fn execute_with_io<E>(
@@ -46,7 +49,9 @@ where
             match option {
                 'l' => options.long = true,
                 'p' => options.pids_only = true,
-                'n' | 'r' | 's' => {}
+                'n' => options.changed_only = true,
+                'r' => options.running_only = true,
+                's' => options.stopped_only = true,
                 'x' => {
                     let command = args[index + 1..].to_vec();
                     return Ok(if command.is_empty() {

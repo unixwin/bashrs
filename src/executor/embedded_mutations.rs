@@ -45,6 +45,7 @@ impl Executor {
     ) -> String {
         let mut output = String::new();
         let mut chars = word.chars().peekable();
+        let mut in_double = false;
 
         while let Some(ch) = chars.next() {
             if ch == '\x1a' {
@@ -69,7 +70,35 @@ impl Executor {
             }
 
             if ch == '\x18' {
+                // Quoted double marks are lexer sentinels; preserve the
+                // quote and its expansion context for nested single quotes.
+                if matches!(context, SubstitutionQuoteContext::Unquoted) {
+                    in_double = !in_double;
+                }
                 output.push('"');
+                continue;
+            }
+
+            // Quotes that survive to expansion belong to parameter-expansion
+            // bodies (the lexer keeps `${...}` verbatim). GNU removes them
+            // only in unquoted expansions; a double-quoted expansion keeps
+            // them in its result (`"${IFS+'}'z}"` -> `'}'z`). Heredoc text
+            // treats quotes as data.
+            if matches!(context, SubstitutionQuoteContext::Unquoted) && ch == '"' {
+                in_double = !in_double;
+                continue;
+            }
+
+            if matches!(context, SubstitutionQuoteContext::Unquoted)
+                && ch == '\''
+                && !in_double
+            {
+                for quoted_ch in chars.by_ref() {
+                    if quoted_ch == '\'' {
+                        break;
+                    }
+                    output.push(quoted_ch);
+                }
                 continue;
             }
 
@@ -158,13 +187,47 @@ impl Executor {
                     chars.next();
                     if let Some(value) = self.expand_current_shell_braced_substitution(&mut chars) {
                         output.push_str(&value);
+                    } else if matches!(context, SubstitutionQuoteContext::DoubleQuoted)
+                        && self.posix_mode_enabled()
+                    {
+                        let remainder: String = chars.clone().collect();
+                        if let Some(close) = matching_parameter_brace_in_context(&remainder, true, true) {
+                            let consumed = word.len() - remainder.len();
+                            let name = remainder[..close].to_string();
+                            chars = word[consumed + close + 1..].chars().peekable();
+                            output.push_str(&self.expand_with_parameter_env(
+                                saved_parameter_state,
+                                |executor| {
+                                    executor.expand_word_mut_with_context(
+                                        &format!("${{{name}}}"),
+                                        context,
+                                    )
+                                },
+                            ));
+                        } else {
+                            let name = collect_braced_parameter_name(&mut chars);
+                            output.push_str(&self.expand_with_parameter_env(
+                                saved_parameter_state,
+                                |executor| {
+                                    executor.expand_word_mut_with_context(
+                                        &format!("${{{name}}}"),
+                                        context,
+                                    )
+                                },
+                            ));
+                        }
                     } else {
                         let name = collect_braced_parameter_name(&mut chars);
-                        output.push_str(
-                            &self.expand_with_parameter_env(saved_parameter_state, |executor| {
-                                executor.expand_word_mut(&format!("${{{name}}}"))
-                            }),
-                        );
+                        output.push_str(&self.expand_with_parameter_env(
+                            saved_parameter_state,
+                            |executor| {
+                                // Propagate the outer quote context so a
+                                // double-quoted "${v:-~}" keeps its quoted
+                                // default-word semantics (no tilde expansion).
+                                executor
+                                    .expand_word_mut_with_context(&format!("${{{name}}}"), context)
+                            },
+                        ));
                     }
                 }
                 Some('(') => {
@@ -350,7 +413,7 @@ impl Executor {
         source: &str,
         pipe_output: bool,
     ) -> String {
-        let tokens = crate::lexer::tokenize(source);
+        let tokens = crate::lexer::tokenize_with_initial_posix(source, self.posix_mode_enabled());
         let ast = crate::parser::parse(&tokens);
         let saved_exit_code = self.exit_code;
 
@@ -392,11 +455,11 @@ impl Executor {
         }
         let saved_positional_params = self.positional_params.clone();
         if let Some(output) = self.run_function_command_substitution(&words) {
-            self.positional_params = saved_positional_params;
+            self.set_positional_params(saved_positional_params);
             let status = self.last_command_substitution_status.get().unwrap_or(0);
             return SubstitutionOutput::readback(output.into_bytes(), status, context);
         }
-        self.positional_params = saved_positional_params;
+        self.set_positional_params(saved_positional_params);
         if command_substitution_words_contain_here_string(&words) {
             let alias_source = words.join(" ");
             if let Some(output) =
@@ -459,7 +522,8 @@ impl Executor {
             return None;
         }
 
-        let tokens = crate::lexer::tokenize(source);
+        let tokens =
+            crate::lexer::tokenize_with_initial_posix(source, self.posix_mode_enabled());
         let ast = crate::parser::parse(&tokens);
         if !command_substitution_needs_ast_execution(&ast) {
             return None;
@@ -514,7 +578,7 @@ impl Executor {
             let _ = env::set_current_dir(saved_dir);
         }
         self.subshell_depth.set(saved_depth);
-        self.positional_params = saved_positional_params;
+        self.set_positional_params(saved_positional_params);
         self.exit_code = saved_exit_code;
         self.last_command_substitution_status.set(Some(status));
 

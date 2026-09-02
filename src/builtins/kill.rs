@@ -182,6 +182,15 @@ where
             continue;
         };
 
+        // Negative pid → Unix process group.  Windows has no such target,
+        // so silently skip delivery (signal 0 already handled above for
+        // existence probes of the current group).
+        if pid < 0 {
+            continue;
+        }
+
+        let pid = pid as u32;
+
         // Bash treats pid 0 as the current process group. Windows does not
         // expose that target through OpenProcess, but signal 0 is only an
         // existence probe, so the shell can answer it from its own group
@@ -268,9 +277,8 @@ fn signal_number_from_spec(value: &str) -> Option<i32> {
     signal_number(name)?.parse::<i32>().ok()
 }
 
-fn parse_pid(value: &str) -> Option<u32> {
-    let pid = value.parse::<u32>().ok()?;
-    Some(pid)
+fn parse_pid(value: &str) -> Option<i32> {
+    value.parse::<i32>().ok()
 }
 
 pub fn process_exists(pid: u32) -> bool {

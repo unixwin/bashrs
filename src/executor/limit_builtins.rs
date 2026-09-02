@@ -40,13 +40,9 @@ impl Executor {
             let mut status = 0;
             for operand in request.operands {
                 let Some(pid) = operand.parse::<u32>().ok() else {
-                    writeln!(
-                        stderr,
-                        "{}kill: {operand}: arguments must be process or job IDs",
-                        self.diagnostic_prefix()
-                    )?;
-                    status = 1;
-                    continue;
+                    // Not a u32 pid or job spec — fall through to kill::execute_with_io
+                    // for negative pids (Unix process groups) and other formats.
+                    return Ok(None);
                 };
                 if request.check_only && pid == 0 {
                     continue;

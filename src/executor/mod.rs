@@ -6,11 +6,11 @@ pub(crate) mod arithmetic;
 pub(crate) mod glob;
 pub(crate) mod path;
 pub(crate) mod types;
-pub(crate) use types::COMPOUND_ASSIGNMENT_MARKER;
+pub(crate) use types::*;
 mod upstream_scripts;
 use arithmetic::{
     arithmetic_division_by_zero_token, arithmetic_unbound_variable, eval_arith_value,
-    eval_conditional_arith_value,
+    eval_conditional_arith_value, eval_conditional_arith_value_categorized,
 };
 
 mod arrays;
@@ -228,36 +228,9 @@ use self::path::{
     find_user_command, shell_path_to_process, shell_path_to_windows, standard_path,
 };
 
-const EXPORTED_VARS: &str = "__RUBASH_EXPORTED_VARS";
-const EXPORTED_FUNCTIONS: &str = "__RUBASH_EXPORTED_FUNCTIONS";
-const READONLY_VARS: &str = "__RUBASH_READONLY_VARS";
-const READONLY_FUNCTIONS: &str = "__RUBASH_READONLY_FUNCTIONS";
-const INTEGER_VARS: &str = "__RUBASH_INTEGER_VARS";
-const UPPERCASE_VARS: &str = "__RUBASH_UPPERCASE_VARS";
-const LOWERCASE_VARS: &str = "__RUBASH_LOWERCASE_VARS";
-const NAMEREF_VARS: &str = "__RUBASH_NAMEREF_VARS";
-const ARRAY_VARS: &str = "__RUBASH_ARRAY_VARS";
-const ASSOC_VARS: &str = "__RUBASH_ASSOC_VARS";
-const SHELL_START_EPOCH: &str = "__RUBASH_SHELL_START_EPOCH";
-const SECONDS_OFFSET: &str = "__RUBASH_SECONDS_OFFSET";
-const FUNCTION_STDIN: &str = "__RUBASH_FUNCTION_STDIN";
-const FUNCTION_STDIN_OFFSET: &str = "__RUBASH_FUNCTION_STDIN_OFFSET";
-const FD_STDIN_PREFIX: &str = "__RUBASH_FD_STDIN_";
-const FD_STDIN_OFFSET_PREFIX: &str = "__RUBASH_FD_STDIN_OFFSET_";
-const FD_DYNAMIC_INPUT_PREFIX: &str = "__RUBASH_FD_DYNAMIC_INPUT_";
-const FD_OUTPUT_PREFIX: &str = "__RUBASH_FD_OUTPUT_";
-const FD_OUTPUT_PROCESS_SUBSTITUTION_PREFIX: &str = "__RUBASH_FD_OUTPUT_PROCESS_SUBSTITUTION_";
-const FD_CLOSED_PREFIX: &str = "__RUBASH_FD_CLOSED_";
-const FD_STDOUT_TARGET: &str = "__RUBASH_FD_STDOUT";
-const FD_STDERR_TARGET: &str = "__RUBASH_FD_STDERR";
-const FD_COPROC_STDIN_TARGET_PREFIX: &str = "__RUBASH_COPROC_STDIN:";
-const FD_PROCESS_STDIN_TARGET: &str = "__RUBASH_FD_PROCESS_STDIN";
-const INHERIT_PROCESS_STDIN: &str = "__RUBASH_INHERIT_PROCESS_STDIN";
-const LOCAL_EXPORT_ENV: &str = "__RUBASH_LOCAL_EXPORT_ENV";
-const POSIX_FUNCTION_EXPORT_TOUCHED: &str = "__RUBASH_POSIX_FUNCTION_EXPORT_TOUCHED";
-const DECLARED_UNSET_VARS: &str = "__RUBASH_DECLARED_UNSET_VARS";
-const ARRAY_FIELD_SPLIT_MARKER: char = '\x10';
-const SKIP_POSIXPIPE_TIME_COUNT_REMAINDER: &str = "__RUBASH_SKIP_POSIXPIPE_TIME_COUNT_REMAINDER";
+// NOTE: The executor's shared constants (env-var markers, fd-table key
+// prefixes, etc.) live in `types.rs` and are re-exported via
+// `pub(crate) use types::*;` above. Do not redeclare them here.
 
 static EXECUTION_LOCK: Mutex<()> = Mutex::new(());
 
@@ -329,7 +302,7 @@ impl std::fmt::Display for ExecuteError {
             ExecuteError::FunctionNotFound(name) => {
                 write!(f, "rubash: {}: function not found", name)
             }
-            ExecuteError::IoError(e) => write!(f, "rubash: {}", e),
+            ExecuteError::IoError(e) => write!(f, "rubash: {}", crate::posix_errors::message(e)),
             ExecuteError::ExitCode(code) => write!(f, "exit code: {}", code),
             ExecuteError::ExpansionFailure(code) => write!(f, "exit code: {}", code),
             ExecuteError::Break(level) => write!(f, "break {}", level),
@@ -419,6 +392,14 @@ pub struct Executor {
     arithmetic_expansion_error: Cell<bool>,
     arithmetic_nonfatal_error: Cell<bool>,
     arithmetic_fatal_error: Cell<bool>,
+    /// `set -u` unbound-variable error raised during arithmetic evaluation.
+    /// A Cell because word-expansion paths hold `&self` (GNU expr.c raises
+    /// FORCE_EOF; the shell exits 127 in -c mode).
+    arithmetic_nounset_error: Cell<bool>,
+    /// Error category reported by the most recent arithmetic evaluation that
+    /// used the real shell environment (GNU expr.c reports fatality from the
+    /// actual evaluation, not from a re-evaluation in a fresh environment).
+    arithmetic_last_error_category: Cell<Option<crate::executor::arithmetic::ArithmeticErrorCategory>>,
     /// True while an if/elif condition list is executing: word-expansion
     /// failures must pierce function frames so the enclosing compound
     /// command can abandon itself entirely (GNU probe f4).
@@ -433,6 +414,8 @@ pub struct Executor {
     external_file_builtins_enabled: bool,
     process_env_snapshot: HashMap<String, String>,
     history_provider: Option<crate::history::SharedHistoryProvider>,
+    last_notified_job_ids: HashSet<usize>,
+    completion_specs: HashMap<String, String>,
 }
 
 #[cfg(test)]

@@ -8,7 +8,6 @@ use std::io::{self, Write};
 
 const EXECUTION_SUCCESS: i32 = 0;
 const EXECUTION_FAILURE: i32 = 1;
-const ENABLE_USAGE: &str = "enable [-a] [-dnps] [-f filename] [name ...]";
 
 const DISABLED_BUILTINS: &str = "__RUBASH_DISABLED_BUILTINS";
 const ALL_BUILTINS: &[&str] = &[

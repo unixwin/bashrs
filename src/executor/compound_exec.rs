@@ -693,6 +693,21 @@ impl Executor {
                 child.env(key, value);
             }
         }
+        // Preserve the parent script location for diagnostics emitted by the
+        // coprocess shell, while keeping internal executor state isolated.
+        if let Some(script) = self.env_vars.get("__RUBASH_SCRIPT_NAME") {
+            child.env("__RUBASH_SCRIPT_NAME", script);
+            let line = cmd
+                .line
+                .map(|line| line.to_string())
+                .or_else(|| self.env_vars.get("__RUBASH_CURRENT_LINE").cloned())
+                .unwrap_or_else(|| "1".to_string());
+            child.env("__RUBASH_CURRENT_LINE", line.clone());
+            // The child re-parses `-c` source from line 1. Preserve the
+            // parent's physical call-site line when assigning child AST lines.
+            let line_offset = line.parse::<usize>().unwrap_or(1).saturating_sub(1);
+            child.env("__RUBASH_LINE_OFFSET", line_offset.to_string());
+        }
         // Coprocess children own a shell-created stdin pipe. Keep builtin
         // readers attached to it and let TERM use native termination when a
         // blocked read cannot consume the shell signal mailbox.
@@ -875,6 +890,7 @@ impl Executor {
         // operators used by simple `case` clauses.
         let word = self.expand_case_word(&case_command.word);
         let word = tilde_expand::strip_assignment_quote_marker(&word);
+        self.abandon_on_arithmetic_expansion_error()?;
         let nocasematch = crate::builtins::shopt::option_enabled(&self.env_vars, "nocasematch");
         let mut fall_through = false;
         let mut matched_any = false;
@@ -883,6 +899,9 @@ impl Executor {
             let matched = fall_through
                 || clause.pattern_nodes.iter().any(|pattern| {
                     let stripped = self.expand_case_pattern(pattern);
+                    if self.arithmetic_fatal_error.get() || self.arithmetic_nounset_error.get() {
+                        return false;
+                    }
                     if case_pattern_has_extglob(&stripped) {
                         if nocasematch {
                             crate::executor::conditional::extglob_case_pattern_matches_nocase(
@@ -899,6 +918,7 @@ impl Executor {
                         case_pattern_matches(&stripped, &word)
                     }
                 });
+            self.abandon_on_arithmetic_expansion_error()?;
             if matched {
                 matched_any = true;
                 if clause.body.is_empty() {

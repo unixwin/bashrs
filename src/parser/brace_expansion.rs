@@ -213,7 +213,7 @@ fn brace_expansion(chars: &[char], start: usize) -> Option<(BraceExpansion, usiz
                 operators.push("..".to_string());
                 index += 1;
             }
-            '\\' => index += 1,
+            '\\' => index += 1, // Leave escaped char in place; only real braces start groups
             ch if ch.is_ascii_whitespace() => return None,
             _ => {}
         }

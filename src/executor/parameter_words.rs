@@ -54,7 +54,7 @@ impl Executor {
                     .parameter_operator_value(var_name)
                     .is_some_and(|value| !value.is_empty())
                 {
-                    return decode_double_quotes_in_quoted_parameter_word(
+                    return expand_quoted_parameter_operator_word(
                         &self.expand_embedded_parameters(alternate),
                     );
                 }
@@ -133,7 +133,7 @@ impl Executor {
         if let Some((var_name, alternate)) = name.split_once('+') {
             if is_parameter_error_name(var_name) {
                 if self.parameter_operator_value(var_name).is_some() {
-                    return decode_double_quotes_in_quoted_parameter_word(
+                    return expand_quoted_parameter_operator_word(
                         &self.expand_embedded_parameters(alternate),
                     );
                 }
@@ -165,15 +165,54 @@ impl Executor {
         self.expand_word(word)
     }
 
-    pub(in crate::executor) fn expand_quoted_parameter_word_mut(&mut self, word: &str) -> String {
+    // GNU param_expand: the word of ${var-word}/${var:=word}/${var+word}/...
+    // undergoes tilde expansion only in an unquoted expansion context and only
+    // when the word itself starts bare (an explicitly quoted `~` stays
+    // literal). Tilde applies at the word start, not after colons.
+    fn tilde_expand_operator_word(&self, word: &str, context: SubstitutionQuoteContext) -> String {
+        if !matches!(context, SubstitutionQuoteContext::Unquoted) {
+            return word.to_string();
+        }
+        if word.starts_with('"') || word.starts_with('\'') || word.starts_with('\\') {
+            return word.to_string();
+        }
+        tilde_expand::expand_assignment_tilde_value(word, &self.home_value(), false)
+    }
+
+    pub(in crate::executor) fn expand_quoted_parameter_word_mut(
+        &mut self,
+        word: &str,
+        context: SubstitutionQuoteContext,
+    ) -> String {
+        // In POSIX mode, a double-quoted `${...}` may close at a `}` inside
+        // the apparent word when a single quote is literal (Interp 221).
+        // Expand that braced head separately, then continue with the suffix.
+        if matches!(context, SubstitutionQuoteContext::DoubleQuoted)
+            && self.posix_mode_enabled()
+        {
+            if let Some(rest) = word.strip_prefix("${") {
+                if let Some(close) = matching_parameter_brace_in_context(rest, true, true) {
+                    if close + 1 < rest.len() {
+                        let braced_end = 2 + close + 1;
+                        let head = self.expand_quoted_parameter_word_mut(&word[..braced_end], context);
+                        let tail = self.expand_embedded_parameters_mut_with_context(
+                            &word[braced_end..],
+                            context,
+                        );
+                        return format!("{head}{tail}");
+                    }
+                }
+            }
+        }
+
         let Some(name) = word
             .strip_prefix("${")
             .and_then(|word| word.strip_suffix('}'))
         else {
-            return self.expand_embedded_parameters_mut(word);
+            return self.expand_embedded_parameters_mut_with_context(word, context);
         };
         if !braced_parameter_spans_whole_word(word) {
-            return self.expand_embedded_parameters_mut(word);
+            return self.expand_embedded_parameters_mut_with_context(word, context);
         }
 
         if let Some((var_name, default)) = name.split_once(":-") {
@@ -183,8 +222,9 @@ impl Executor {
                     .filter(|value| !value.is_empty())
                     .map(|value| shell_safe_value(&value))
                     .unwrap_or_else(|| {
+                        let default = self.tilde_expand_operator_word(default, context);
                         expand_quoted_parameter_operator_word(
-                            &self.expand_embedded_parameters_mut(default),
+                            &self.expand_embedded_parameters_mut_with_context(&default, context),
                         )
                     });
             }
@@ -196,8 +236,9 @@ impl Executor {
                     .parameter_operator_value(var_name)
                     .is_some_and(|value| !value.is_empty())
                 {
-                    return decode_double_quotes_in_quoted_parameter_word(
-                        &self.expand_embedded_parameters_mut(alternate),
+                    let alternate = self.tilde_expand_operator_word(alternate, context);
+                    return expand_quoted_parameter_operator_word(
+                        &self.expand_embedded_parameters_mut_with_context(&alternate, context),
                     );
                 }
                 return String::new();
@@ -215,7 +256,8 @@ impl Executor {
                         .map(|value| shell_safe_value(&value))
                         .unwrap_or_default();
                 }
-                return self.expand_embedded_parameters_mut(error_word);
+                let error_word = self.tilde_expand_operator_word(error_word, context);
+                return self.expand_embedded_parameters_mut_with_context(&error_word, context);
             }
         }
 
@@ -224,7 +266,10 @@ impl Executor {
                 return self
                     .parameter_operator_value(var_name)
                     .map(|value| shell_safe_value(&value))
-                    .unwrap_or_else(|| self.expand_embedded_parameters_mut(error_word));
+                    .unwrap_or_else(|| {
+                        let error_word = self.tilde_expand_operator_word(error_word, context);
+                        self.expand_embedded_parameters_mut_with_context(&error_word, context)
+                    });
             }
         }
 
@@ -234,7 +279,10 @@ impl Executor {
                     .parameter_operator_value(var_name)
                     .filter(|value| !value.is_empty())
                     .map(|value| shell_safe_value(&value))
-                    .unwrap_or_else(|| self.expand_embedded_parameters_mut(word));
+                    .unwrap_or_else(|| {
+                        let word = self.tilde_expand_operator_word(word, context);
+                        self.expand_embedded_parameters_mut_with_context(&word, context)
+                    });
             }
         }
 
@@ -243,7 +291,10 @@ impl Executor {
                 return self
                     .parameter_operator_value(var_name)
                     .map(|value| shell_safe_value(&value))
-                    .unwrap_or_else(|| self.expand_embedded_parameters_mut(word));
+                    .unwrap_or_else(|| {
+                        let word = self.tilde_expand_operator_word(word, context);
+                        self.expand_embedded_parameters_mut_with_context(&word, context)
+                    });
             }
         }
 
@@ -275,8 +326,10 @@ impl Executor {
         if let Some((var_name, alternate)) = name.split_once('+') {
             if is_parameter_error_name(var_name) {
                 if self.parameter_operator_value(var_name).is_some() {
-                    let expanded = self.expand_embedded_parameters_mut(alternate);
-                    return decode_double_quotes_in_quoted_parameter_word(&expanded);
+                    let alternate = self.tilde_expand_operator_word(alternate, context);
+                    let expanded =
+                        self.expand_embedded_parameters_mut_with_context(&alternate, context);
+                    return expand_quoted_parameter_operator_word(&expanded);
                 }
                 return String::new();
             }
@@ -288,8 +341,9 @@ impl Executor {
                     .parameter_operator_value(var_name)
                     .map(|value| shell_safe_value(&value))
                     .unwrap_or_else(|| {
+                        let default = self.tilde_expand_operator_word(default, context);
                         expand_quoted_parameter_operator_word(
-                            &self.expand_embedded_parameters_mut(default),
+                            &self.expand_embedded_parameters_mut_with_context(&default, context),
                         )
                     });
             }

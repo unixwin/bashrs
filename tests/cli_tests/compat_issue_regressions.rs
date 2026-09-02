@@ -439,6 +439,10 @@ fn arithmetic_empty_array_subscript_defaults_to_zero() {
 
 #[test]
 fn arithmetic_empty_quoted_array_subscript_fails_outside_let() {
+    // GNU Bash 5.2.21 probe (2026-09-01, WSL): `(( a[""]=24 ))` reports
+    // `` `a[]': not a valid identifier `` and continues with status 0; the
+    // word-expansion form `: $(( a[""]=25 ))` reports the same diagnostic
+    // and the next command still runs (rc 0).
     let command_output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
         .arg("declare -a a; (( a[\"\"]=24 )); printf 'status=%s\\n' \"$?\"")
@@ -454,7 +458,7 @@ fn arithmetic_empty_quoted_array_subscript_fails_outside_let() {
     );
     assert_eq!(
         String::from_utf8_lossy(&command_output.stdout),
-        "status=1\n"
+        "status=0\n"
     );
 
     let expansion_output = Command::new(env!("CARGO_BIN_EXE_rubash"))
@@ -463,9 +467,11 @@ fn arithmetic_empty_quoted_array_subscript_fails_outside_let() {
         .output()
         .expect("run empty quoted arithmetic expansion subscript probe");
 
-    assert_eq!(expansion_output.status.code(), Some(1));
-    assert_eq!(String::from_utf8_lossy(&expansion_output.stdout), "");
-    assert!(!String::from_utf8_lossy(&expansion_output.stderr).is_empty());
+    assert_eq!(expansion_output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&expansion_output.stdout),
+        "after\n"
+    );
 }
 
 #[test]
@@ -1553,4 +1559,85 @@ fn backtick_command_substitution_preserves_raw_c0_variable_payload() {
         .join(" ");
     assert_eq!(normalized, "14 14 15 15 1a 1a 1f 1f");
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+// GNU Bash 5.2.21 expr.c: an expression ending right after an operator has
+// no right-hand operand.  exp0 reports "arithmetic syntax error: operand
+// expected" and evalerror prints the suffix of the expression from the
+// start of that operator token (lasttp).  `j=` used to be silent in rubash.
+#[test]
+fn arithmetic_empty_assignment_rhs_reports_operand_expected() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("echo $((j=)); echo after:$?")
+        .output()
+        .expect("run empty assignment RHS probe");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("j=: syntax error: operand expected (error token is \"= \")"),
+        "stderr: {stderr}"
+    );
+}
+
+// GNU 5.2.21: `for ((j=;;))` fails while evaluating the init part and
+// never runs the body; rubash used to skip it silently.
+#[test]
+fn arithmetic_for_empty_assignment_init_reports_error() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("for ((j=;;)); do echo body; done; echo after:$?")
+        .output()
+        .expect("run arith-for empty init probe");
+
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "after:1\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("((: j=: syntax error: operand expected (error token is \"= \")"),
+        "stderr: {stderr}"
+    );
+}
+
+// GNU 5.2.21 readtok: `7++` after a number splits into two single `+`
+// operators, so the error token is the second `+`, not `++`.
+#[test]
+fn arithmetic_trailing_increment_after_number_token_is_single_plus() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("echo $((7++))")
+        .output()
+        .expect("run trailing increment probe");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("7++: syntax error: operand expected (error token is \"+ \")"),
+        "stderr: {stderr}"
+    );
+}
+
+// GNU 5.2.21: trailing multi-char operators report the full operator as
+// the error token (`**`, `<=`, `+=`), and only real assignment operators
+// with a numeric left-hand side are "attempted assignment to non-variable".
+#[test]
+fn arithmetic_trailing_operator_tokens_match_gnu() {
+    for (expr, expected) in [
+        ("3**", "3**: syntax error: operand expected (error token is \"** \")"),
+        ("7<=", "7<=: syntax error: operand expected (error token is \"<= \")"),
+        ("7&&", "7&&: syntax error: operand expected (error token is \"&& \")"),
+        ("j==", "j==: syntax error: operand expected (error token is \"== \")"),
+        ("j+=", "j+=: syntax error: operand expected (error token is \"+= \")"),
+        ("7+=", "7+=: attempted assignment to non-variable (error token is \"+= \")"),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+            .arg("-c")
+            .arg(format!("echo $(({expr}))"))
+            .output()
+            .expect("run trailing operator probe");
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(expected),
+            "expr {expr}: expected {expected} in stderr: {stderr}"
+        );
+    }
 }

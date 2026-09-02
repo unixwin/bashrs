@@ -28,13 +28,93 @@ pub(in crate::executor) fn render_read_array_element(value: &str) -> String {
     format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-fn trim_single_scalar_field(value: &str, ifs: &str) -> String {
+fn ifs_whitespace(ch: char, ifs: &str) -> bool {
+    ch.is_whitespace() && ifs.contains(ch)
+}
+
+/// Split a line into read fields using IFS, returning the byte ranges of each
+/// field in the original line. Bash keeps trailing empty fields produced by a
+/// trailing IFS delimiter (unlike word-splitting for expansion), so every
+/// delimiter boundary becomes a field. Only a leading run of IFS *whitespace*
+/// is elided (it does not create a leading empty field).
+fn split_read_field_ranges(line: &str, ifs: &str) -> Vec<(usize, usize)> {
+    let chars: Vec<char> = line.chars().collect();
+    let n = chars.len();
     if ifs.is_empty() {
-        return value.to_string();
+        return vec![(0, n)];
     }
 
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    let mut i = 0usize;
+    let mut ended_at_delimiter = false;
+    // Skip a leading run of IFS whitespace (does not create a leading field).
+    while i < n && ifs_whitespace(chars[i], ifs) {
+        i += 1;
+    }
+    while i < n {
+        let start = i;
+        // A field runs until the next IFS character. IFS whitespace inside a
+        // field is kept literally; a non-whitespace IFS delimiter ends it.
+        while i < n && !ifs.contains(chars[i]) {
+            i += 1;
+        }
+        let end = i;
+        ranges.push((start, end));
+        if i >= n {
+            ended_at_delimiter = false;
+            break;
+        }
+        // Consume the delimiter and any following IFS whitespace. A non-whitespace
+        // IFS delimiter ends exactly one field; trailing IFS whitespace is skipped so
+        // it does not spawn an extra empty field.
+        if ifs_whitespace(chars[i], ifs) {
+            ended_at_delimiter = true;
+            while i < n && ifs_whitespace(chars[i], ifs) {
+                i += 1;
+            }
+            // An IFS whitespace run adjacent to a non-whitespace delimiter forms
+            // one delimiter sequence; do not expose the latter as an empty field.
+            if i < n && ifs.contains(chars[i]) && !ifs_whitespace(chars[i], ifs) {
+                i += 1;
+                while i < n && ifs_whitespace(chars[i], ifs) {
+                    i += 1;
+                }
+            }
+        } else {
+            ended_at_delimiter = true;
+            i += 1;
+            while i < n && ifs_whitespace(chars[i], ifs) {
+                i += 1;
+            }
+        }
+    }
+    // A final IFS delimiter creates a trailing empty field which bash drops
+    // (mirroring word-splitting's omission of a trailing empty field).
+    if ended_at_delimiter {
+        ranges.push((n, n));
+        if let Some((start, end)) = ranges.last().copied() {
+            if start == end {
+                ranges.pop();
+            }
+        }
+    }
+    ranges
+}
+fn field_value(
+    line: &str,
+    range: (usize, usize),
+    ifs: &str,
+    interpret_backslashes: bool,
+) -> String {
+    let raw: String = line[range.0..range.1].chars().collect();
+    let value = if interpret_backslashes {
+        unescape_read_backslashes(&raw)
+    } else {
+        raw
+    };
+    // Trailing IFS whitespace is trimmed from each assigned field value.
     value
-        .trim_matches(|ch: char| ch.is_whitespace() && ifs.contains(ch))
+        .trim_end_matches(|ch: char| ifs_whitespace(ch, ifs))
         .to_string()
 }
 
@@ -69,7 +149,10 @@ fn read_scalar_fields_internal(
         } else {
             line.to_string()
         };
-        return vec![trim_single_scalar_field(&value, ifs)];
+        // A single name receives the whole (leading/trailing IFS-trimmed) line.
+        return vec![value
+            .trim_matches(|ch: char| ifs_whitespace(ch, ifs))
+            .to_string()];
     }
     if ifs.is_empty() {
         let mut fields = vec![if interpret_backslashes {
@@ -83,82 +166,46 @@ fn read_scalar_fields_internal(
         return fields;
     }
 
-    let chars = line.chars().collect::<Vec<_>>();
-    let mut fields = Vec::new();
-    let mut index = 0usize;
-    while fields.len() + 1 < names_len {
-        skip_ifs_whitespace(&chars, &mut index, ifs);
-        if index >= chars.len() {
-            fields.push(String::new());
-            continue;
-        }
+    let ranges = split_read_field_ranges(line, ifs);
+    let field_count = ranges.len();
 
-        let mut current = String::new();
-        while index < chars.len() {
-            let ch = chars[index];
-            if interpret_backslashes && ch == '\\' {
-                index += 1;
-                match chars.get(index).copied() {
-                    Some('\n') => index += 1,
-                    Some('\r') if chars.get(index + 1) == Some(&'\n') => index += 2,
-                    Some(next) => {
-                        current.push(next);
-                        index += 1;
-                    }
-                    None => {}
-                }
-                continue;
-            }
-
-            if ifs.contains(ch) {
-                consume_read_delimiter(&chars, &mut index, ifs, ch);
-                break;
-            }
-
-            current.push(ch);
-            index += 1;
-        }
-        fields.push(current);
+    // Assign the first names_len-1 names to the first fields directly.
+    let mut fields: Vec<String> = Vec::with_capacity(names_len);
+    for index in 0..names_len.saturating_sub(1) {
+        let value = ranges
+            .get(index)
+            .map(|range| field_value(line, *range, ifs, interpret_backslashes))
+            .unwrap_or_default();
+        fields.push(value);
     }
 
-    skip_ifs_whitespace(&chars, &mut index, ifs);
-    let rest = chars[index..].iter().collect::<String>();
-    let rest = if interpret_backslashes {
-        unescape_read_backslashes(&rest)
+    // The last name receives the remainder. When there are at least as many
+    // fields as names, it gets the final field value. When there are *more*
+    // fields than names, bash joins the remaining fields with their delimiters
+    // by assigning the raw line tail from the start of the last named field.
+    let last_value = if field_count >= names_len {
+        let range = ranges[names_len - 1];
+        if field_count == names_len {
+            field_value(line, range, ifs, interpret_backslashes)
+        } else {
+            let tail: String = line[range.0..].chars().collect();
+            let tail = if interpret_backslashes {
+                unescape_read_backslashes(&tail)
+            } else {
+                tail
+            };
+            tail.trim_end_matches(|ch: char| ifs_whitespace(ch, ifs))
+                .to_string()
+        }
     } else {
-        rest
+        String::new()
     };
-    fields.push(trim_single_scalar_field(&rest, ifs));
+    fields.push(last_value);
+
     while fields.len() < names_len {
         fields.push(String::new());
     }
     fields
-}
-
-fn ifs_whitespace(ch: char, ifs: &str) -> bool {
-    ch.is_whitespace() && ifs.contains(ch)
-}
-
-fn skip_ifs_whitespace(chars: &[char], index: &mut usize, ifs: &str) {
-    while chars.get(*index).is_some_and(|ch| ifs_whitespace(*ch, ifs)) {
-        *index += 1;
-    }
-}
-
-fn consume_read_delimiter(chars: &[char], index: &mut usize, ifs: &str, delimiter: char) {
-    *index += 1;
-    if ifs_whitespace(delimiter, ifs) {
-        skip_ifs_whitespace(chars, index, ifs);
-        if chars
-            .get(*index)
-            .is_some_and(|ch| ifs.contains(*ch) && !ifs_whitespace(*ch, ifs))
-        {
-            *index += 1;
-            skip_ifs_whitespace(chars, index, ifs);
-        }
-    } else {
-        skip_ifs_whitespace(chars, index, ifs);
-    }
 }
 
 pub(crate) fn mark_env_name(env_vars: &mut HashMap<String, String>, key: &str, name: &str) {

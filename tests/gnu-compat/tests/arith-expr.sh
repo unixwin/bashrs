@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
-# Test: arith-expr
+# Test: arith-exp
 echo $((2 + 3))

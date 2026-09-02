@@ -17,13 +17,22 @@ Rubash is an in-progress GNU Bash-compatible shell. It reimplements Bash lexical
 
 ## Current Status
 
-The current source package version is `0.3.0`. As of 2026-08-22, the latest
-real-output Bash ledger is `13/83 PASS` and `70 DIFF`. This compares each
-test's stdout, stderr, and exit status; it must not be conflated with the
-`87/87` upstream `run-*` runner result, which compares against the older
-`.right` expectation files. See
-[`docs/compatibility-attribution-20260822.md`](docs/compatibility-attribution-20260822.md)
-for attribution and raw artifacts.
+The current source package version is `1.0.0`. Compatibility status is tracked
+in [`docs/COMPATIBILITY-STATUS.md`](docs/COMPATIBILITY-STATUS.md), the single
+authoritative source for Rubash ↔ GNU Bash standing. That document is updated
+only after real reproduction against the GNU Bash test files vendored under
+`third_party/bash/tests/`, with WSL GNU Bash 5.2.21 as the comparison
+baseline. Dated analysis snapshots elsewhere under `docs/` are historical only
+and must not be used to judge current parity. The `87/87` upstream `run-*`
+runner result compares against the older `.right` expectation files and must
+not be conflated with real-output parity.
+
+Isolated GNU Bash semantics — arrays, associative arrays, arithmetic,
+conditionals, namerefs, mapfile, POSIX command substitution, prefix brace
+forms (`foo{a,b}`), and escaped-brace/escape-comma forms — match GNU Bash in
+isolation. The remaining high-priority gaps are tracked per test file in the
+status document (`posixexp2`, `cond`, `mapfile`, `comsub-posix`, and `braces`
+sequence details).
 
 Rubash's GNU Bash syntax and runtime support have progressed far enough to run complex Bash programs. A clean external `bashdb` checkout now completes the core debugger loop under `target/debug/rubash.exe`.
 
@@ -108,11 +117,14 @@ The full compatibility suite is still expanding. For compatibility work, prefer 
 
 ## Documentation
 
+- `docs/COMPATIBILITY-STATUS.md`: authoritative Rubash ↔ GNU Bash compatibility status (single source of truth).
 - `docs/bashdb-debugging-rubash.md`: bashdb fixture, launcher/libdir explanation, smoke test, and fresh-checkout usage.
 - `docs/gnu-bash-compatibility-implementation-plan.md`: GNU Bash compatibility implementation plan.
 - `docs/issue-suite-diff-analysis.md`: upstream test diff analysis.
 - `docs/bash-compat-issues.md`: compatibility issue list.
 - `docs/bash-source-map.md`: Bash source and semantic mapping.
+- `docs/typed-expansion-migration-checkpoint.md`: typed expansion migration checkpoint.
+- `docs/source-layout.md` and `docs/semantic-ownership.tsv`: source layout and GNU semantic ownership map.
 
 ## Development Principles
 
@@ -142,4 +154,4 @@ Issues, compatibility repros, focused regression tests, and implementation patch
 
 ---
 
-*Last updated: 2026-08-22*
+*Last updated: 2026-08-29*

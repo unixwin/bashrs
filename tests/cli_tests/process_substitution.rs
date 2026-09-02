@@ -38,3 +38,16 @@ fn exec_replacing_stderr_process_substitution_flushes_previous_target() {
     assert_eq!(String::from_utf8_lossy(&output.stdout), "hello\nhello\n");
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
+
+#[test]
+fn coproc_input_move_marks_array_endpoint_closed() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("coproc C { echo hi; }; exec 4<&${C[0]}-; read -r x <&4; printf 'x=%s arr=%s\\n' \"$x\" \"${C[*]}\"")
+        .output()
+        .expect("run rubash");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "x=hi arr=-1 11\n");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}

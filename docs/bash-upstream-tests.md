@@ -165,9 +165,9 @@ Current local baseline:
 | Windows + Git Bash full upstream run | 87 | 87 | 0 | 100.00% |
 
 This table is the `.right` expectation-file runner baseline. It is intentionally
-separate from the actual-output ledger, which compares Rubash with native Bash
-per test and currently reports `13/83 PASS` and `70 DIFF` (注: 16个是平台噪音, 3个rubash优于bash, 真正bug约13个, 详见 docs/bash-83-test-root-cause-analysis.md); see
-`docs/compatibility-attribution-20260822.md`.
+separate from the actual-output comparison against native Bash. The current
+authoritative actual-output status is maintained in
+`docs/COMPATIBILITY-STATUS.md`.
 
 The runner stays non-strict for ordinary compatibility differences in CI so it
 can serve as a progress signal, but timeout failures and invalid timeout

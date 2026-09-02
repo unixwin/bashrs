@@ -1,0 +1,267 @@
+./builtins.tests: line 126: enable: notbuiltin: not a shell builtin
+./builtins.tests: line 127: enable: test: not dynamically loaded
+./source5.sub: line 14: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8): No such file or directory
+./source5.sub: line 23: /tmp/source-notthere: No such file or directory
+./source5.sub: line 30: /tmp/source-notthere: No such file or directory
+./source7.sub: line 40: /var/tmp/x29-15101: cannot execute: required file not found
+./source7.sub: line 40: /var/tmp/x29-15101: cannot execute: required file not found
+./source7.sub: line 41: /var/tmp/x29-15101: cannot execute: required file not found
+./source7.sub: line 41: /var/tmp/x29-15101: cannot execute: required file not found
+./source8.sub: line 40: improbable-filename: No such file or directory
+./source8.sub: line 41: improbable-filename: No such file or directory
+./source8.sub: line 44: .: -p: invalid option
+.: usage: . filename [arguments]
+./source8.sub: line 45: source: -p: invalid option
+source: usage: source filename [arguments]
+./source8.sub: line 49: .: -p: invalid option
+.: usage: . filename [arguments]
+./source8.sub: line 50: source: file in the current directory
+AVAR
+foo
+foo
+AVAR
+foo
+foo
+AVAR
+foo
+declare -x foo=""
+declare -x FOO="\$\$"
+declare -x FOO="\$\$"
+ok
+ok
+1
+a\n\n\nb
+a
+
+
+b
+-p
+a	b	c
+before: f = 4
+inside
+after: f = 8 bar = 4
+declare -a c
+declare -A d
+declare -a c=([0]="4")
+declare -A c=([0]="4" )
+declare -a c=([0]="1" [1]="2" [2]="3")
+declare -A c=([two]="2" [three]="3" [one]="1" )
+declare -a c=([0]="1" [1]="2" [2]="3")
+declare -a c=([0]="1" [1]="2" [2]="3")
+unset
+unset
+assoc 1 unset
+array 1 unset
+assoc 2 unset
+array 2 unset
+unset1
+unset2
+1
+1
+1
+1
+0
+0
+assoc A unset
+array a
+assoc A
+array a
+assoc B unset
+array b unset
+assoc B unset
+array b unset
+scalar 1
+scalar 2./builtins6.sub: line 41: declare: f1: not found
+./builtins6.sub: line 41: declare: f2: not found
+bash: line 1: notthere: No such file or directory
+bash: line 1: notthere: No such file or directory
+bash: line 1: .: notthere: file not found
+bash: line 1: .: notthere: file not found
+./builtins7.sub: line 19: : command not found
+./builtins7.sub: line 27: notthere: No such file or directory
+./builtins7.sub: line 28: notthere: No such file or directory
++ command -v type
++ command cotype is a shel+ command -p command -v type
++u=rwx,g=rx,o=rx
+u=rwx,g=rx,o=rx
+u=rwx,g=rx,o=rx
+u=rwx,g=rx,o=rx
+u=rwx,g=rx,o=rx
+u=rwx,g=rx,o=rx
+u=rwx,g=rx,o=rx
+u=rx,g=rx,o=rx
+u=rwx,g=rx,o=rx
+u=rwx,g=rwx,o=rwx
+u=rwx,g=rwx,o=rwx
+u=rwx,g=rx,o=rx
+u=rwx,g=rx,o=rx
+u=rwx,g=rx,o=rx
+u=rwx,g=rx,o=rx
+u=rwx,g=rx,o=rx
+u=rwx,g=rx,o=rx
+u=rwx,g=rx,o=rx
+hash: hash table empty
+0
+/nosuchdir/nosuchfile
+builtin hash -p /nosuchdir/nosuchfile cat
+builtin hash -p /nosuchdir/nosuchfile cat
+1
+127
+/nosuchdir/nosuchfile
+0
+0
+found
+builtin hash -p /nosuchfile cat
+These shell commands are defined internally.  Type `help' to see this list.
+Type `help name' to find out more about the function `name'.
+Use `info bash' to find out more about the shell in general.
+Use `man -k' or `info' to find out more about commands not in this list.
+
+A star (*) next to a name means that the command is disabled.
+
+ job_spec [&]                            history [-c] [-d offset] [n] or hist>
+ (( expression ))                        if COMMANDS; then COMMANDS; [ elif C>
+ . filename [arguments]                  jobs [-lnprs] [jobspec ...] or jobs >
+ :                                       kill [-s sigspec | -n signum | -sigs>
+ [ arg... ]                            ./builtins10.sub: line 35: warning: setlocale: LC_ALL: cannot change locale (en_US.UTF-8): No such file or directory
+./builtins10.sub: line 39: help: no help topics match `bash'.  Try `help help' or `man -k bash' or `info bash'.
+./builtins11.sub: line 20: ${ ulimit -c; }: bad substitution
+./builtins11.sub: line 27: ulimit: +1999: invalid number
+./builtins11.sub: line 37: ulimit: -g: invalid option
+ulimit: usage: ulimit [-SHabcdefiklmnpqrstuvxPRT] [limit]
+./builtins12.sub: line 21: pushd: -x: invalid number
+pushd: usage: pushd [-n] [+N | -N | dir]
+./builtins12.sub: line 24: popd: -x: invalid number
+popd: usage: popd [-n] [+N | -N]
+./builtins12.sub: line 27: popd: dir: invalid argument
+popd: usage: popd [-n] [+N | -N]
+./builtins12.sub: line 35: popd: -8: directory stack index out of range
+./builtins12.sub: line 36: popd: +8: directory stack index out of range
+./builtins.tests: line 325: exit: status: numeric argument required
+n]                            shift [n]
+ coproc [NAME] command [redirections]    shopt [-pqsu] [-o] [optname ...]
+ declare [-aAfFgiIlnrtux] [name[=value>  source filename [arguments]
+ dirs [-clpv] [+N] [-N]                  suspend [-f]
+ disown [-h] [-ar] [jobspec ... | pid >  test [expr]
+ echo [-neE] [arg ...]                   time [-p] pipeline
+ enable [-a] [-dnps] [-f filename] [na>  times
+ eval [arg ...]                          trap [-lp] [[arg] signal_spec ...]
+ exec [-cl] [-a name] [command [argume>  true
+ exit [n]                                type [-afptP] name [name ...]
+ export [-fn] [name[=value] ...] or ex>  typeset [-aAfFgiIlnrtux] name[=value>
+ false                                   ulimit [-SHabcdefiklmnpqrstuvxPRT] [>
+ fc [-e ename] [-lnr] [first] [last] o>  umask [-p] [-S] [mode]
+ fg [job_spec]                           unalias [-a] name [name ...]
+ for NAME [in WORDS ... ] ; do COMMAND>  unset [-f] [-v] [-n] [name ...]
+ for (( exp1; exp2; exp3 )); do COMMAN>  until COMMANDS; do COMMANDS-2; done
+ function name { COMMANDS ; } or name >  variables - Names and meanings of so>
+ getopts optstring name [arg ...]        wait [-fn] [-p var] [id ...]
+ hash [-lr] [-p pathname] [-dt] [name >  while COMMANDS; do COMMANDS-2; done
+ help [-dms] [pattern ...]               { COMMANDS ; }
+help: help [-dms] [pattern ...]
+shift - Shift positional parameters.
+shift: shift [n]
+    Shift positional parameters.
+    
+    Rename the positional parameters $N+1,$N+2 ... to $1,$2 ...  If N is
+    not given, it is assumed to be 1.
+    
+    Exit Status:
+    Returns success unless N is negative or greater than $#.
+builtin: builtin [shell-builtin [arg ...]]
+shift: shift [n]
+Shell commands matching keyword `read*'
+
+read: read [-ers] [-a array] [-d delim] [-i text] [-n nchars] [-N nchars] [-p prompt] [-t timeout] [-u fd] [name ...]
+readarray: readarray [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]
+readonly: readonly [-aAf] [name[=value] ...] or readonly -p
+read: read [-ers] [-a array] [-d delim] [-i text] [-n nchars] [-N nchars] [-p prompt] [-t timeout] [-u fd] [name ...]
+readarray: readarray [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]
+readonly: readonly [-aAf] [name[=value] ...] or readonly -p
+:: :
+    Null command.
+    
+    No effect; the command does nothing.
+    
+    Exit Status:
+    Always succeeds.
+NAME
+    : - Null command.
+
+SYNOPSIS
+    :
+
+DESCRIPTION
+    Null command.
+    
+    No effect; the command does nothing.
+    
+    Exit Status:
+    Always succeeds.
+
+SEE ALSO
+    bash(1)
+
+IMPLEMENTATION
+    Copyright (C) 2022 Free Software Foundation, Inc.
+
+These shell commands are defined internally.  Type `help' to see this list.
+Type `help name' to find out more about the function `name'.
+Use `info bash' to find out more about the shell in general.
+Use `man -k' or `info' to find out more about commands not in this list.
+
+A star (*) next to a name means that the command is disabled.
+
+ job_spec [&]                            history [-c] [-d offset] [n] or hist>
+ (( expression ))                        if COMMANDS; then COMMANDS; [ elif C>
+ . filename [arguments]                  jobs [-lnprs] [jobspec ...] or jobs >
+ :                                       kill [-s sigspec | -n signum | -sigs>
+ [ arg... ]                              let arg [arg ...]
+ [[ expression ]]                        local [option] name[=value] ...
+ alias [-p] [name[=value] ... ]          logout [n]
+ bg [job_spec ...]                       mapfile [-d delim] [-n count] [-O or>
+ bind [-lpsvPSVX] [-m keymap] [-f file>  popd [-n] [+N | -N]
+ break [n]                               printf [-v var] format [arguments]
+ builtin [shell-builtin [arg ...]]       pushd [-n] [+N | -N | dir]
+ caller [expr]                           pwd [-LP]
+ case WORD in [PATTERN [| PATTERN]...)>  read [-ers] [-a array] [-d delim] [->
+ cd [-L|[-P [-e]] [-@]] [dir]            readarray [-d delim] [-n count] [-O >
+ command [-pVv] command [arg ...]        readonly [-aAf] [name[=value] ...] o>
+ compgen [-abcdefgjksuv] [-o option] [>  return [n]
+ complete [-abcdefgjksuv] [-pr] [-DEI]>  select NAME [in WORDS ... ;] do COMM>
+ compopt [-o|+o option] [-DEI] [name .>  set [-abefhkmnptuvxBCEHPT] [-o optio>
+ continue [n]                            shift [n]
+ coproc [NAME] command [redirections]    shopt [-pqsu] [-o] [optname ...]
+ declare [-aAfFgiIlnrtux] [name[=value>  source filename [arguments]
+ dirs [-clpv] [+N] [-N]                  suspend [-f]
+ disown [-h] [-ar] [jobspec ... | pid >  test [expr]
+ echo [-neE] [arg ...]                   time [-p] pipeline
+ enable [-a] [-dnps] [-f filename] [na>  times
+ eval [arg ...]                          trap [-lp] [[arg] signal_spec ...]
+ exec [-cl] [-a name] [command [argume>  true
+ exit [n]                                type [-afptP] name [name ...]
+ export [-fn] [name[=value] ...] or ex>  typeset [-aAfFgiIlnrtux] name[=value>
+ false                                   ulimit [-SHabcdefiklmnpqrstuvxPRT] [>
+ fc [-e ename] [-lnr] [first] [last] o>  umask [-p] [-S] [mode]
+ fg [job_spec]                           unalias [-a] name [name ...]
+ for NAME [in WORDS ... ] ; do COMMAND>  unset [-f] [-v] [-n] [name ...]
+ for (( exp1; exp2; exp3 )); do COMMAN>  until COMMANDS; do COMMANDS-2; done
+ function name { COMMANDS ; } or name >  variables - Names and meanings of so>
+ getopts optstring name [arg ...]        wait [-fn] [-p var] [id ...]
+ hash [-lr] [-p pathname] [-dt] [name >  while COMMANDS; do COMMANDS-2; done
+ help [-dms] [pattern ...]               { COMMANDS ; }
+unlimited
+unlimited
+0
+0
+/tmp /bin
+/tmp /bin
+/bin /tmp
+/tmp
+/ /tmp
+/
+/tmp
+/tmp /
+/bin /tmp /
+/tmp /
+/

@@ -5,11 +5,18 @@ use super::token::{Token, TokenKind};
 pub(super) struct Lexer<'a> {
     pub(super) input: &'a str,
     pub(super) position: usize,
+    /// POSIX parse mode (Austin Group Interp 221): single quotes inside a
+    /// double-quoted `${...}` are literal, so `}` closes the expansion.
+    pub(super) posix: bool,
 }
 
 impl<'a> Lexer<'a> {
-    pub(super) fn new(input: &'a str) -> Self {
-        Self { input, position: 0 }
+    pub(super) fn new(input: &'a str, posix: bool) -> Self {
+        Self {
+            input,
+            position: 0,
+            posix,
+        }
     }
 
     #[inline]
@@ -301,7 +308,10 @@ impl<'a> Lexer<'a> {
                     return Some(Token::new(TokenKind::Keyword, "{", start));
                 }
                 self.skip_brace();
-                if self.peek().is_some_and(|ch| !is_word_delimiter(ch)) {
+                if self
+                    .peek()
+                    .is_some_and(|ch| !is_word_delimiter(ch) || ch == '{')
+                {
                     return Some(self.finish_word_token(start, false));
                 }
                 let v = self.slice(start);

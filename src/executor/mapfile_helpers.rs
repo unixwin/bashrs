@@ -152,6 +152,23 @@ impl Executor {
         read_fd: Option<u32>,
     ) -> Option<String> {
         let Some(fd) = read_fd else {
+            // mapfile preserves carriage returns from CRLF input files. The generic
+            // stdin helper is text-oriented, so use the raw-byte reader for a plain
+            // fd-0 file redirect before falling back to heredoc/process-substitution
+            // and inherited stdin handling.
+            if let Some(redirect) = &cmd.redirect_in {
+                if redirect.fd.unwrap_or(0) == 0 {
+                    let target = self.expand_word(&redirect.target);
+                    if !target.starts_with("<(") && !is_closed_redirect_target(&target) {
+                        let path = shell_path_to_windows(&target, &self.env_vars);
+                        if let Ok(input) =
+                            crate::executor::substitution_metadata::read_shell_input_file(path)
+                        {
+                            return Some(input);
+                        }
+                    }
+                }
+            }
             if let Some(input) = self.stdin_string_for_command_mut(cmd) {
                 return Some(input);
             }

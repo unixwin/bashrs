@@ -24,6 +24,7 @@ pub(crate) enum ArithmeticErrorCategory {
 
 impl Executor {
     pub(crate) fn eval_arithmetic_command_value(&mut self, expression: &str) -> Option<i128> {
+        self.arithmetic_last_error_category.set(None);
         let expression = if self.has_associative_parameter_subscript(expression) {
             normalize_arithmetic_quotes(expression)
         } else {
@@ -31,10 +32,11 @@ impl Executor {
         };
         if crate::builtins::set::shell_option_enabled(&self.env_vars, "nounset") {
             if let Some(name) = arithmetic_unbound_variable(&expression, &self.env_vars) {
-                self.env_vars
-                    .insert("__RUBASH_ARITH_NOUNSET_ERROR".to_string(), "1".to_string());
+                self.arithmetic_nounset_error.set(true);
                 if !self.arithmetic_expansion_error.replace(true) {
                     eprintln!("{}{}: unbound variable", self.diagnostic_prefix(), name);
+                    use std::io::Write;
+                    let _ = std::io::stderr().flush();
                 }
                 return None;
             }
@@ -50,11 +52,12 @@ impl Executor {
         }
         // Save a snapshot of variable values before evaluation to detect changes.
         let pre_eval_vars: HashMap<String, String> = self.env_vars.clone();
-        let value = eval_mutable_arith_value_with_random(
+        let (value, category) = eval_mutable_arith_value_with_random(
             &expression,
             &mut self.env_vars,
             Some(&self.random_state),
         );
+        self.arithmetic_last_error_category.set(category);
         self.report_arithmetic_readonly_error();
 
         // Sync any variable changes from env_vars to shell_state.variables
@@ -79,14 +82,16 @@ impl Executor {
     /// before evaluation (`$(( "1" + 1 ))` is `2`), while the command
     /// context (`for (( ... ))` headers) keeps them and rejects them.
     pub(crate) fn eval_arithmetic_expansion_value(&mut self, expression: &str) -> Option<i128> {
+        self.arithmetic_last_error_category.set(None);
         let expression =
             normalize_arithmetic_quotes(&self.expand_arithmetic_special_parameters(expression));
         if crate::builtins::set::shell_option_enabled(&self.env_vars, "nounset") {
             if let Some(name) = arithmetic_unbound_variable(&expression, &self.env_vars) {
-                self.env_vars
-                    .insert("__RUBASH_ARITH_NOUNSET_ERROR".to_string(), "1".to_string());
+                self.arithmetic_nounset_error.set(true);
                 if !self.arithmetic_expansion_error.replace(true) {
                     eprintln!("{}{}: unbound variable", self.diagnostic_prefix(), name);
+                    use std::io::Write;
+                    let _ = std::io::stderr().flush();
                 }
                 return None;
             }
@@ -96,11 +101,12 @@ impl Executor {
         }
         // Save a snapshot to detect variable changes from arithmetic side effects
         let pre_eval_vars: HashMap<String, String> = self.env_vars.clone();
-        let value = eval_mutable_arith_value_with_random(
+        let (value, category) = eval_mutable_arith_value_with_random(
             &expression,
             &mut self.env_vars,
             Some(&self.random_state),
         );
+        self.arithmetic_last_error_category.set(category);
         self.report_arithmetic_readonly_error();
 
         // Sync any variable changes from env_vars to shell_state.variables
@@ -125,7 +131,29 @@ impl Executor {
         };
         if !self.arithmetic_expansion_error.replace(true) {
             eprintln!("{}{}: readonly variable", self.diagnostic_prefix(), name);
+            use std::io::Write;
+            let _ = std::io::stderr().flush();
         }
+    }
+
+    /// A fatal arithmetic evaluation error (expr.c evalerror) raised while
+    /// expanding parts of a compound command — case patterns, loop headers —
+    /// abandons the whole compound command with status 1 (127 under `set -u`
+    /// unbound). Compound executors call this after expansion steps because
+    /// the simple-command flag check in command_execute.rs does not apply to
+    /// them.
+    pub(crate) fn abandon_on_arithmetic_expansion_error(
+        &mut self,
+    ) -> Result<(), crate::executor::ExecuteError> {
+        if !self.arithmetic_fatal_error.get() && !self.arithmetic_nounset_error.get() {
+            return Ok(());
+        }
+        let nounset = self.arithmetic_nounset_error.replace(false);
+        let status = if nounset { 127 } else { 1 };
+        self.arithmetic_fatal_error.set(false);
+        self.arithmetic_expansion_error.set(false);
+        self.exit_code = status;
+        Err(crate::executor::ExecuteError::ExpansionFailure(status))
     }
 
     fn has_associative_parameter_subscript(&self, expression: &str) -> bool {
@@ -161,7 +189,18 @@ impl Executor {
         let expression = expression
             .replace("$#", &self.positional_params.len().to_string())
             .replace("$-", "0");
-        self.expand_embedded_parameters(&expression)
+        // GNU subst.c: the text between (( and )) is treated as if in double
+        // quotes — single quotes are literal data for expr.c (`(( '1' ))` is
+        // an operand error, not the number 1), so they must survive the
+        // embedded-parameter walker's quote removal. \x17 is the walker's
+        // literal-single-quote marker. Backslash-escaped double quotes
+        // (`\"`) must also survive as literal `"` — the walker strips bare
+        // `"` via toggle mode, so `\"` → `\` + removed quote. \x18 is the
+        // walker's literal-double-quote marker.
+        let protected = expression
+            .replace("\\\"", "\x18")
+            .replace('\'', "\x17");
+        self.expand_embedded_parameters(&protected)
     }
 }
 
@@ -231,6 +270,19 @@ pub(crate) fn eval_conditional_arith_value(
 ) -> Option<i128> {
     let mut env_vars = env_vars.clone();
     eval_mutable_arith_value(value, &mut env_vars)
+}
+
+/// Like `eval_conditional_arith_value`, but also reports the error category
+/// from the actual evaluation, so callers can classify fatality without
+/// re-evaluating the expression in a fresh environment (GNU expr.c raises
+/// evalerror from the real evaluation; state-dependent errors such as
+/// `x+=2` with `x` declared only disappear under a fresh environment).
+pub(crate) fn eval_conditional_arith_value_categorized(
+    value: &str,
+    env_vars: &HashMap<String, String>,
+) -> (Option<i128>, Option<ArithmeticErrorCategory>) {
+    let mut env_vars = env_vars.clone();
+    eval_mutable_arith_result(value, &mut env_vars, None)
 }
 
 pub(super) fn arithmetic_unbound_variable(
@@ -370,6 +422,13 @@ pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<
         ));
     }
 
+    // An operator missing its right-hand operand (`j=`, `7++`, `3**`,
+    // `j+=`, `7<=`, ...).  GNU expr.c reports these from the recursive
+    // descent with the error token taken from lasttp.
+    if let Some(message) = trailing_operator_error(expression) {
+        return Some(message);
+    }
+
     // Bash rejects numeric constants as assignment or increment lvalues.
     // The evaluator reports this as a failed expression; preserve the useful
     // diagnostic instead of silently returning status 1.
@@ -395,7 +454,7 @@ pub(in crate::executor) fn arithmetic_error_message(expression: &str) -> Option<
             "syntax error: operand expected"
         };
         return Some(format!(
-            "{expression}: {message} (error token is \"{}\")",
+            "{expression}: {message} (error token is \"{} \")",
             trimmed.trim_start_matches(|ch: char| ch.is_ascii_digit())
         ));
     }
@@ -620,30 +679,30 @@ pub(super) fn arithmetic_division_by_zero_token(expression: &str) -> Option<&'st
                 .parse::<i128>()
                 .is_ok_and(|value| value == 0)
         {
-            return Some("0 ");
+            return Some("0");
         }
     }
     None
 }
 
 fn eval_mutable_arith_value(value: &str, env_vars: &mut HashMap<String, String>) -> Option<i128> {
-    eval_mutable_arith_value_with_random(value, env_vars, None)
+    eval_mutable_arith_value_with_random(value, env_vars, None).0
 }
 
 pub(super) fn eval_mutable_arith_value_with_random(
     value: &str,
     env_vars: &mut HashMap<String, String>,
     random_state: Option<&Cell<u32>>,
-) -> Option<i128> {
+) -> (Option<i128>, Option<ArithmeticErrorCategory>) {
     // GNU Bash's subexpr() treats an empty arithmetic expression as zero.
     // This matters for expansion and variable contexts, where an empty
     // quoted operand is valid rather than a parser failure. Lexer quote
     // markers must be normalized before lvalue parsing as well as expansion.
     let normalized = normalize_arithmetic_quotes(value);
     if normalized.trim().is_empty() {
-        return Some(0);
+        return (Some(0), None);
     }
-    eval_mutable_arith_result(value, env_vars, random_state).0
+    eval_mutable_arith_result(value, env_vars, random_state)
 }
 
 fn eval_mutable_arith_result(
@@ -816,4 +875,166 @@ fn empty_ternary_branch_token(expression: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// An operator at the end of the expression whose right-hand operand is
+/// missing (`j=`, `7+=`, `7++`, `3**`, `7<=`, `j==`, `7&&`, `7,` ...).
+///
+/// GNU expr.c reaches `exp0` with no token left and reports
+/// `arithmetic syntax error: operand expected`; `evalerror` prints the
+/// suffix of the expression from the start of that operator token
+/// (lasttp).  Assignment operators (`=`, `op=`) are reported by
+/// `expassign` instead: a non-variable left-hand side
+/// (`if (lasttok != STR)`) is `attempted assignment to non-variable`,
+/// while a variable left-hand side passes the lvalue check and then fails
+/// with `operand expected` once the missing operand is read.
+fn trailing_operator_error(expression: &str) -> Option<String> {
+    // Bare `++` / `--` keep their dedicated diagnostic.
+    let trimmed = expression.trim();
+    if trimmed == "++" || trimmed == "--" {
+        return None;
+    }
+
+    #[derive(Clone, Copy, PartialEq)]
+    enum ArithTokenKind {
+        None,
+        Num,
+        Str,
+        IncDec,
+        Op,
+        Inert,
+    }
+
+    let bytes = expression.as_bytes();
+    let mut index = 0usize;
+    let mut prev_kind = ArithTokenKind::None;
+    let mut last_kind = ArithTokenKind::None;
+    let mut last_start = 0usize;
+    let mut last_end = 0usize;
+    let mut last_op = String::new();
+
+    while index < bytes.len() {
+        let c = bytes[index];
+        if c.is_ascii_whitespace() {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        let kind;
+        let mut op = String::new();
+        if c.is_ascii_digit() {
+            index += 1;
+            while index < bytes.len()
+                && (bytes[index].is_ascii_alphanumeric()
+                    || matches!(bytes[index], b'#' | b'@' | b'_'))
+            {
+                index += 1;
+            }
+            kind = ArithTokenKind::Num;
+        } else if c.is_ascii_alphabetic() || c == b'_' {
+            index += 1;
+            while index < bytes.len()
+                && (bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_')
+            {
+                index += 1;
+            }
+            if index < bytes.len() && bytes[index] == b'[' {
+                // Array subscripts defer to the evaluator diagnostics.
+                return None;
+            }
+            kind = ArithTokenKind::Str;
+        } else if matches!(c, b'\'' | b'"' | b'$' | b'.' | b'`') {
+            // Quoted, expanded, or float text has its own diagnostics.
+            return None;
+        } else {
+            let rest = &expression[index..];
+            let three = rest.get(..3).unwrap_or("");
+            let two = rest.get(..2).unwrap_or("");
+            if matches!(three, "<<=" | ">>=") {
+                op = three.to_string();
+                kind = ArithTokenKind::Op;
+                index += 3;
+            } else if matches!(
+                two,
+                "**" | "==" | "!=" | "<=" | ">=" | "<<" | ">>" | "&&" | "||" | "++" | "--" | "+="
+                    | "-=" | "*=" | "/=" | "%=" | "&=" | "^=" | "|="
+            ) {
+                if two == "++" || two == "--" {
+                    // expr.c readtok: `id++` / `id--` (post) only follows a
+                    // variable token; after a number the pair splits into
+                    // two single operators (expr.c ungets the second `+`);
+                    // otherwise pre-increment only when an identifier
+                    // follows.
+                    if prev_kind == ArithTokenKind::Str {
+                        kind = ArithTokenKind::IncDec;
+                        index += 2;
+                    } else if prev_kind == ArithTokenKind::Num {
+                        op = if two == "++" { "+" } else { "-" }.to_string();
+                        kind = ArithTokenKind::Op;
+                        index += 1;
+                    } else {
+                        let after = rest[2..].trim_start();
+                        if after
+                            .chars()
+                            .next()
+                            .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_')
+                        {
+                            kind = ArithTokenKind::IncDec;
+                            index += 2;
+                        } else {
+                            op = if two == "++" { "+" } else { "-" }.to_string();
+                            kind = ArithTokenKind::Op;
+                            index += 1;
+                        }
+                    }
+                } else {
+                    op = two.to_string();
+                    kind = ArithTokenKind::Op;
+                    index += 2;
+                }
+            } else if matches!(
+                c,
+                b'=' | b'<' | b'>' | b'+' | b'-' | b'*' | b'/' | b'%' | b'&' | b'|' | b'^' | b','
+            ) {
+                op = (c as char).to_string();
+                kind = ArithTokenKind::Op;
+                index += 1;
+            } else {
+                // `!`, `~`, parens, `?`, `:`, ... are not right-hand-operand
+                // consumers; their diagnostics live elsewhere.
+                kind = ArithTokenKind::Inert;
+                index += 1;
+            }
+        }
+        prev_kind = last_kind;
+        last_kind = kind;
+        last_start = start;
+        last_end = index;
+        last_op = op;
+    }
+
+    if last_kind != ArithTokenKind::Op || last_op.is_empty() {
+        return None;
+    }
+    if !expression[last_end..].trim().is_empty() {
+        return None;
+    }
+    let assignment = matches!(
+        last_op.as_str(),
+        "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "^=" | "|=" | "<<=" | ">>="
+    );
+    let message = if assignment && prev_kind != ArithTokenKind::Str {
+        "attempted assignment to non-variable"
+    } else {
+        "syntax error: operand expected"
+    };
+    let token = &expression[last_start..];
+    // GNU expr.c includes trailing source whitespace in the error token to
+    // separate it from the closing parenthesis (e.g. "+ " not "+"), but only
+    // when the source text actually contains that whitespace.
+    let trimmed_token = token.trim_end();
+    let trailing = if token.len() > trimmed_token.len() { " " } else { "" };
+    Some(format!(
+        "{expression}: {message} (error token is \"{trimmed_token}{trailing}\")"
+    ))
 }

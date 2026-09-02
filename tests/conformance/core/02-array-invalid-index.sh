@@ -3,7 +3,7 @@
 # Root cause: array errors terminate early in rubash
 set -euo pipefail
 
-declare -a arr
+declare -a ar
 arr[hello]=1
 echo "after error rc=$?"
 echo "script continued"

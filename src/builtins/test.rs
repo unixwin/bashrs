@@ -19,6 +19,19 @@ use std::io::{self, IsTerminal, Write};
 const EXECUTION_SUCCESS: i32 = 0;
 const EXECUTION_FAILURE: i32 = 1;
 const EX_BADUSAGE: i32 = 2;
+
+/// Build the shell diagnostic prefix (`<script>: line N: `) from the
+/// executor environment, falling back to `rubash: ` when no script context
+/// is active. This mirrors GNU Bash's command-error reporting.
+fn diagnostic_prefix(env_vars: &HashMap<String, String>) -> String {
+    if let (Some(script), Some(line)) = (
+        env_vars.get("__RUBASH_SCRIPT_NAME"),
+        env_vars.get("__RUBASH_CURRENT_LINE"),
+    ) {
+        return format!("{script}: line {line}: ");
+    }
+    "rubash: ".to_string()
+}
 const NAMEREF_VARS: &str = "__RUBASH_NAMEREF_VARS";
 
 /// Execute `test` or `[` with arguments after the command name.
@@ -54,7 +67,7 @@ where
                 args.pop();
             }
             _ => {
-                writeln!(stderr, "rubash: [: missing `]'")?;
+                writeln!(stderr, "{}[: missing `]'", diagnostic_prefix(env_vars))?;
                 return Ok(EX_BADUSAGE);
             }
         }
@@ -68,7 +81,13 @@ where
         Ok(true) => Ok(EXECUTION_SUCCESS),
         Ok(false) => Ok(EXECUTION_FAILURE),
         Err(message) => {
-            writeln!(stderr, "rubash: test: {}", message)?;
+            writeln!(
+                stderr,
+                "{}{}: {}",
+                diagnostic_prefix(env_vars),
+                if bracket { "[" } else { "test" },
+                message
+            )?;
             Ok(EX_BADUSAGE)
         }
     }

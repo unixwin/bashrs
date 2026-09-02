@@ -2,6 +2,12 @@ use rubash::lexer::tokenize;
 use rubash::parser::{parse, CoprocBodyKind, LoopKind, QuoteKind};
 
 #[test]
+fn test_coproc_records_script_line() {
+    let ast = parse(&tokenize("#!/usr/bin/env bash\n\ncoproc worker true\n"));
+    assert_eq!(ast.commands[0].line, Some(3));
+}
+
+#[test]
 fn test_named_coproc_parses_split_brace_group_body() {
     let input = "coproc MYC { echo hi; }";
     let tokens = tokenize(input);

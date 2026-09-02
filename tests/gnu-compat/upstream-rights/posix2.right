@@ -1,0 +1,3 @@
+./posix2.tests: eval: line 199: All tests passed
+ unexpected token `)'
+./posix2.tests: eval: line 199: `case esac in esac) ;; *) echo "case esac test 4";; esac'

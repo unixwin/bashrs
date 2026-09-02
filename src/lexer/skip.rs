@@ -241,9 +241,9 @@ impl<'a> Lexer<'a> {
         let context = BraceContext {
             outer_double_quote,
             // parse.y::parse_matched_pair keeps POSIX mode separate from the
-            // surrounding quote state. The lexer API currently scans in Bash
-            // default mode; do not infer POSIX mode from double quotes.
-            posix: false,
+            // surrounding quote state. The line tokenizer tracks runtime
+            // `set -o posix` switches, mirroring GNU's lazy per-command parse.
+            posix: self.posix,
             replacement_context: false,
             initial_state: DolbraceState::Param,
         };

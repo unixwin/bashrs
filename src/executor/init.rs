@@ -49,12 +49,16 @@ impl Executor {
         let imported_functions = import_exported_functions_from_env(&env_vars);
         env_vars.remove("__RUBASH_CURRENT_FUNCTION");
         env_vars.remove("__RUBASH_IN_SOURCE");
-        env_vars.remove("__RUBASH_SCRIPT_NAME");
+        if env_vars.get("__RUBASH_COPROC_CHILD").map(String::as_str) != Some("1") {
+            env_vars.remove("__RUBASH_SCRIPT_NAME");
+        }
         env_vars.remove("__RUBASH_SHELL_NAME");
         env_vars.remove(crate::executor::path::COMPATIBLE_SHELL_PATH_ENV);
         env::remove_var("__RUBASH_CURRENT_FUNCTION");
         env::remove_var("__RUBASH_IN_SOURCE");
-        env::remove_var("__RUBASH_SCRIPT_NAME");
+        if env_vars.get("__RUBASH_COPROC_CHILD").map(String::as_str) != Some("1") {
+            env::remove_var("__RUBASH_SCRIPT_NAME");
+        }
         env::remove_var("__RUBASH_SHELL_NAME");
         env::remove_var(crate::executor::path::COMPATIBLE_SHELL_PATH_ENV);
         env_vars.remove("BASH_ARGV0");
@@ -74,6 +78,16 @@ impl Executor {
         env_vars
             .entry("SHELL".to_string())
             .or_insert_with(shell_path_value);
+        // GNU test scripts use ${THIS_SH} to invoke the shell under test
+        // (e.g. `${THIS_SH} -c '...'`). WSL interop does not forward env
+        // vars from a Linux parent to a Windows child, so `env THIS_SH=...
+        // rubash.exe` loses the variable. Fall back to our own executable
+        // path when the caller did not supply THIS_SH.
+        env_vars.entry("THIS_SH".to_string()).or_insert_with(|| {
+            std::env::current_exe()
+                .map(|path| path.to_string_lossy().replace('\\', "/").to_string())
+                .unwrap_or_else(|_| "rubash".to_string())
+        });
         env_vars.remove("OLDPWD");
         initialize_shell_level(&mut env_vars);
         mark_initial_exported_vars(&mut env_vars);
@@ -199,6 +213,8 @@ impl Executor {
             arithmetic_expansion_error: Cell::new(false),
             arithmetic_nonfatal_error: Cell::new(false),
             arithmetic_fatal_error: Cell::new(false),
+            arithmetic_nounset_error: Cell::new(false),
+            arithmetic_last_error_category: Cell::new(None),
             inside_compound_condition: Cell::new(false),
             last_command_substitution_status: Cell::new(None),
             last_command_substitution_parse_error: Cell::new(false),
@@ -210,6 +226,8 @@ impl Executor {
             external_file_builtins_enabled: true,
             process_env_snapshot,
             history_provider: None,
+            last_notified_job_ids: HashSet::new(),
+            completion_specs: HashMap::new(),
         }
     }
 }

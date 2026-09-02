@@ -387,13 +387,6 @@ impl FdTable {
             .collect()
     }
 
-    pub(crate) fn materialized_text_input(&self, fd: u32) -> Option<String> {
-        match self.materialize_for_child().remove(&fd)?.read? {
-            MaterializedRead::Bytes(input) => Some(bytes_to_shell_text(&input)),
-            _ => None,
-        }
-    }
-
     fn entry_mut(&mut self, fd: u32, dynamic: bool) -> &mut FdEntry {
         self.entries.entry(fd).or_insert_with(|| FdEntry {
             read: None,

@@ -165,7 +165,8 @@ impl Executor {
         }
         let closed_by_paren = source.contains('\x1c');
         let source = source.replace('\x1c', "");
-        let tokens = crate::lexer::tokenize(&source);
+        let tokens =
+            crate::lexer::tokenize_with_initial_posix(&source, self.posix_mode_enabled());
         let ast = crate::parser::parse(&tokens);
         let first = ast.commands.first()?;
         let (first, piped_next) = if let Some(pipeline_command) = &first.pipeline_command {
@@ -229,7 +230,8 @@ impl Executor {
 
         let closed_by_paren = source.contains('\x1c');
         let source = source.replace('\x1c', "");
-        let tokens = crate::lexer::tokenize(&source);
+        let tokens =
+            crate::lexer::tokenize_with_initial_posix(&source, self.posix_mode_enabled());
         let ast = crate::parser::parse(&tokens);
         let first = ast.commands.first()?;
         let (first, piped_next) = if let Some(pipeline_command) = &first.pipeline_command {

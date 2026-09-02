@@ -2,8 +2,9 @@
 
 > Date: 2026-08-12
 
-> Status refresh: 2026-08-22. The latest implementation and attribution
-> checkpoint is recorded in `docs/compatibility-attribution-20260822.md`.
+> Status refresh: 2026-08-29. The authoritative compatibility status is
+> maintained in `docs/COMPATIBILITY-STATUS.md`; the 2026-08-22 attribution
+> checkpoint has been retired.
 > Do not interpret the historical `.right` runner total as real-output parity.
 > Scope: issue #20-#26 compatibility suites, local reruns, and implementation ownership.
 

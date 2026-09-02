@@ -230,6 +230,9 @@ impl Executor {
             .get("BASH_ARGV0")
             .or_else(|| self.env_vars.get("__RUBASH_TOP_LEVEL_NAME"))
             .or_else(|| self.env_vars.get("__RUBASH_SCRIPT_NAME"))
+            // Embedded hosts provide their public shell identity here. Keep
+            // this after script names so `niu foo.sh` still reports foo.sh.
+            .or_else(|| self.env_vars.get("__RUBASH_SHELL_NAME"))
             .cloned()
             .unwrap_or_else(|| "rubash".to_string())
     }

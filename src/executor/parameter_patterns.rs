@@ -121,11 +121,8 @@ impl Executor {
         }
 
         if is_shell_name(var_name) {
-            return Some(
-                self.parameter_pattern_scalar_value(var_name)
-                    .map(|value| remove_parameter_pattern(&value, &pattern, operation))
-                    .unwrap_or_default(),
-            );
+            let value = self.parameter_pattern_scalar_value(var_name).unwrap_or_default();
+            return Some(remove_parameter_pattern(&value, &pattern, operation));
         }
 
         None

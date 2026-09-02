@@ -1,0 +1,4 @@
+./alias.tests: linquux
+hi
+oo: command not found
+./alias.tests: line 44: unalias: foo: not found

@@ -15,6 +15,14 @@ pub trait HistoryProvider: Debug {
     fn append(&mut self, command: String) -> io::Result<()>;
     /// Replace all commands while preserving the host storage implementation.
     fn replace(&mut self, entries: Vec<String>) -> io::Result<()>;
+    /// Write all current history entries to the given file (truncate if exists).
+    fn write_history(&mut self, path: &str) -> io::Result<()>;
+    /// Read the given file and replace history with its contents.
+    fn read_history(&mut self, path: &str) -> io::Result<()>;
+    /// Append all current history entries to the given file.
+    fn append_history(&mut self, path: &str) -> io::Result<()>;
+    /// Read lines from the given file that are not already in history.
+    fn read_new_history(&mut self, path: &str) -> io::Result<()>;
 }
 
 /// Shared provider handle suitable for injecting into an Executor.

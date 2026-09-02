@@ -1,0 +1,75 @@
+./quotearray.tests: line 31: ((: 'assoc[x\],b\[\$(ecdeclare -A assoc=(["\$key"]="1" ["x],b[\$(echo uname >&2)"]="1" )
+declare -A assoc=(["\$key"]="1" ["x],b[\$(echo uname >&2)"]="2" )
+declare -A assoc=(["\$key"]="1" ["x],b[\$(echo uname >&2)"]="2" )
+declare -A assoc=(["\$key"]="1" ["x],b[\$(echo uname >&2)"]="2" )
+decl./quotearray.tests: line 140: x],b[$(echo uname >&2): syntax error: invalid arithmetic operator (error token is "],b[$(echo uname >&2)")
+./quotearray.tests: line 144: x],b[$(echo uname >&2): syntax error: invalid arithmetic operator (error token is "],b[$(echo uname >&2)")
+./quotearray.tests: line 147: x],b[$(echo uname >&2): syntax error: invalid arithmetic operator (error token is "],b[$(echo uname >&2)")
+./quotearray.tests: line 150: x],b[$(echo uname >&2): syntax error: invalid arithmetic operator (error token is "],b[$(echo uname >&2)")
+./quotearray.tests: line 153: x],b[$(echo uname >&2): syntax error: invalid arithmetic operator (error token is "],b[$(echo uname >&2)")
+./quotearray1.sub: line 68: 0\],b\[1: syntax error: invalid arithmetic operator (error token is "\],b\[1")
+./quotearray1.sub: line 113: test: aa[$(echo: binary operator expected
+./quotearray2.sub: line 54: read: `A[]]': not a valid identifier
+./quotearray2.sub: line 62: printf: `A[]]': not a valid identifier
+./quotearray2.sub: line 70: declare: `A[]]=X': not a valid identifier
+./quotearray2.sub: line 78: declare: `A[]]=X': not a valid identifier
+./quotearray2.sub: line 89: let: assoc[x],b[$(echo: bad array subscript (error token is "b[$(echo")
+./quotearray3.sub: line 98: declare: array: not found
+./quotearray4.sub: line 41: declare: assoc: not found
+./quotearray4.sub: line 115: array[@]: bad array subscript
+./quotearray5.sub: line 27: unset: `a[$(echo': not a valid identifier
+./quotearray5.sub: line 27: unset: `foo)]': not a valid identifier
+ssoc=(["!"]="bang" )
+declare -a array=([0]="1" [1]="2" [2]="3")
+declare -a array=()
+declare -A map=(["foo\$(uname >/dev/tty)bar"]="1" )
+1
+declare -A map=()
+$(DOESNOTEXIST)
+declare -A blah=()
+declare -A assoc=(["*"]="star" ["!"]="bang" ["@"]="at" )
+declare -A assoc=(["*"]="star" ["!"]="bang" )
+declare -A assoc=(["!"]="bang" )
+declare -A assoc=(["*"]="star" ["!"]="bang" ["@"]="at" )
+declare -A assoc=(["*"]="star" ["!"]="bang" )
+declare -A assoc=(["!"]="bang" )
+declare -A assoc=(["*"]="star" ["!"]="bang" )
+declare -A assoc=(["!"]="bang" )
+star bang at
+star bang at
+0
+0
+0
+1
+1
+declare -A assoc=(["*"]="star" ["!"]="bang" ["@"]="       key" )
+===
+1
+1
+declare -a array=([0]="1" [1]="2" [2]="3")
+1 2 3
+1 2 3
+0
+0
+declare -a array=([0]="1" [1]="2" [2]="3")
+declare -A a=()
+declare -A a=()
+declare -A a=()
+-----
+declare -A a=(["\$(echo foo)"]="1" )
+declare -A a=()
+declare -A a=()
+declare -A a=()
+-----
+declare -A a=()
+declare -A a=()
+declare -A a=()
+----------
+declare -A a=([.]="v1" )
+declare -A a=([.]="v1" )
+-----
+declare -A a=([.]="v1" )
+declare -A a=([.]="v1" )
+-----
+declare -A a=([.]="v1" )
+declare -A a=([.]="v1" )

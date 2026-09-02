@@ -39,6 +39,9 @@ pub(crate) fn remove_shell_quotes(raw: &str) -> String {
                 chars.next();
                 remove_double_quoted_into(&mut out, &mut chars, false);
             }
+            '$' if chars.peek() == Some(&'{') => {
+                copy_braced_parameter_unquoted(&mut out, &mut chars);
+            }
             '\'' => {
                 for quoted in chars.by_ref() {
                     if quoted == '\'' {
@@ -102,6 +105,9 @@ pub(super) fn remove_shell_quotes_outside_backticks(raw: &str) -> String {
             '$' if chars.peek() == Some(&'"') => {
                 chars.next();
                 remove_double_quoted_into(&mut out, &mut chars, true);
+            }
+            '$' if chars.peek() == Some(&'{') => {
+                copy_braced_parameter_unquoted(&mut out, &mut chars);
             }
             '\'' => {
                 for quoted in chars.by_ref() {
@@ -358,6 +364,55 @@ pub(super) fn copy_braced_parameter_after_dollar(
     let context = BraceContext {
         outer_double_quote: true,
         // The surrounding double quote is not POSIX mode.
+        posix: false,
+        replacement_context: false,
+        initial_state: DolbraceState::Param,
+    };
+    if let Some(scan) = scan_braced_parameter(&wrapped, context) {
+        let consumed = wrapped[..scan.end].chars().count().saturating_sub(1);
+        for _ in 0..consumed {
+            if let Some(ch) = chars.next() {
+                out.push(ch);
+            }
+        }
+        return;
+    }
+    out.push(chars.next().unwrap());
+    let mut depth = 1usize;
+    while let Some(ch) = chars.next() {
+        out.push(ch);
+        if ch == '$' && chars.peek() == Some(&'{') {
+            chars.next();
+            out.push('{');
+            depth += 1;
+            continue;
+        }
+        if ch == '}' {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+                break;
+            }
+        }
+    }
+}
+
+// Unquoted `${...}` units keep their body verbatim (GNU quote removal never
+// strips quotes inside a parameter expansion; the expansion stage owns the
+// quote state). Whole-word `${...}` tokens already bypass quote removal via
+// the lexer's Variable path; this gives embedded occurrences the same shape.
+fn copy_braced_parameter_unquoted(
+    out: &mut String,
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) {
+    out.push('$');
+    if chars.peek() != Some(&'{') {
+        return;
+    }
+    let remaining: String = chars.clone().collect();
+    let mut wrapped = String::from("$");
+    wrapped.push_str(&remaining);
+    let context = BraceContext {
+        outer_double_quote: false,
         posix: false,
         replacement_context: false,
         initial_state: DolbraceState::Param,

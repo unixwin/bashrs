@@ -103,7 +103,12 @@ where
     }
 
     if let Err(error) = env::set_current_dir(&target.path) {
-        writeln!(stderr, "rubash: cd: {}: {}", target.path.display(), error)?;
+        writeln!(
+            stderr,
+            "rubash: cd: {}: {}",
+            target.path.display(),
+            crate::posix_errors::message(&error)
+        )?;
         return Ok(EXECUTION_FAILURE);
     }
 

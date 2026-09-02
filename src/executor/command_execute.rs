@@ -41,14 +41,25 @@ impl Executor {
                 .get("__RUBASH_PARSE_ERROR__")
                 .map(String::as_str)
                 .unwrap_or("unexpected token");
-            let message = bash_style_unexpected_token_message(message);
-            eprintln!("{}syntax error near {message}", self.diagnostic_prefix(),);
-            if let Some(source) = cmd.assignments.get("__RUBASH_PARSE_SOURCE__") {
-                eprintln!(
-                    "{}`{}'",
-                    self.diagnostic_prefix(),
-                    parse_error_source_display(source)
-                );
+            if message.starts_with("syntax error:") {
+                eprintln!("{}{}", self.diagnostic_prefix(), message);
+                if let Some(source) = cmd.assignments.get("__RUBASH_PARSE_SOURCE__") {
+                    eprintln!(
+                        "{}`{}'",
+                        self.diagnostic_prefix(),
+                        parse_error_source_display(source)
+                    );
+                }
+            } else {
+                let message = bash_style_unexpected_token_message(message);
+                eprintln!("{}syntax error near {message}", self.diagnostic_prefix(),);
+                if let Some(source) = cmd.assignments.get("__RUBASH_PARSE_SOURCE__") {
+                    eprintln!(
+                        "{}`{}'",
+                        self.diagnostic_prefix(),
+                        parse_error_source_display(source)
+                    );
+                }
             }
             self.exit_code = 2;
             return Err(ExecuteError::ExitCode(2));
@@ -191,16 +202,17 @@ impl Executor {
         // A fatal word-expansion arithmetic failure in a bare command
         // (e.g. bare `$((1/0))` with no other words) abandons the rest
         // of the current command list (GNU Bash 5.2.37 evidence).
-        // When the expansion is an argument to another command (e.g.
-        // `echo $((1/0))`), the error is nonfatal and execution
-        // continues. Nonfatal errors always report and continue.
+        // GNU probe (2026-09-01, WSL bash 5.2.21): `echo hi $((1/0)); echo
+        // after` never prints "after" and `set -u; printf "%s\n"
+        // "$((missing + 1))" extra; echo after` exits 127 — a fatal
+        // evaluation error aborts the command list regardless of how many
+        // other words the command has.
         if self.arithmetic_expansion_error.get() {
             self.arithmetic_expansion_error.set(false);
             let was_fatal = self.arithmetic_fatal_error.replace(false);
-            let nounset = self.env_vars.remove("__RUBASH_ARITH_NOUNSET_ERROR").is_some();
+            let nounset = self.arithmetic_nounset_error.replace(false);
             let status = if nounset { 127 } else { 1 };
-            let has_other_words = cmd.words.iter().any(|w| !w.is_empty());
-            if (was_fatal || nounset) && !has_other_words {
+            if was_fatal || nounset {
                 self.exit_code = status;
                 return Err(ExecuteError::ExpansionFailure(status));
             }

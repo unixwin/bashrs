@@ -9,7 +9,7 @@ Before making compatibility changes, read:
 
 Key rules:
 
-- **CRITICAL: Always use GNU bash (D:/Git/bin/bash.exe) for comparisons, NOT winuxsh shim.** The winuxsh shim is at PATH bash and is an older version with different behavior. Run comparisons as: `D:/Git/bin/bash.exe third_party/bash/tests/X.tests` NOT: `bash third_party/bash/tests/X.tests`
+- **CRITICAL: Always use WSL GNU Bash (`wsl bash`, 5.2.21) for semantic comparisons — NOT the winuxsh shim, and NOT Git Bash.** The winuxsh shim at PATH `bash` is an older version with different behavior. Git Bash (`D:/Git/bin/bash.exe`) is below rubash in some areas (notably quoting/escaping/braces) and produces wrong baselines there. Compare with a script FILE passed to both shells (see Bash Test Suite below).
 - Fix by root-cause subsystem, not by individual expected-output lines.
 - Keep raw suite artifacts under `target/issue-suites/results/`; keep durable
   interpretation in `docs/`.
@@ -21,6 +21,41 @@ Key rules:
   semantic owners: Bash builtin vs readline editing.
 - Check for stuck `rubash.exe` / `bash.exe` / suite runner processes before
   finishing a testing turn.
+
+## GNU Source and LLDB Debugging
+
+Compatibility changes must begin from the corresponding GNU Bash C source and
+upstream test body. Record the GNU source function/line range, the Rust semantic
+owner, and the observable probe before editing. For parameter expansion use
+`third_party/bash/subst.c` and `parse.y`; for redirection/fd behavior use
+`redir.c`; for execution state use `execute_cmd.c` and `variables.c`.
+
+Use LLDB for Rust runtime control-flow and state inspection when a focused
+mismatch is not explained by source reading alone. This repository uses the
+MSVC Rust toolchain, so `rust-lldb` is not applicable; invoke the native LLVM
+LLDB binary directly (currently `lldb.exe`) against `target/debug/rubash.exe`.
+Prefer a script-file target and a noninteractive command file, for example:
+
+```text
+settings set target.inline-breakpoint-strategy always
+breakpoint set --name 'rubash::executor::...'
+run target/probe.sh
+thread backtrace all
+frame variable
+quit
+```
+
+Use symbol lookup (`image lookup -n`, `breakpoint list`) before relying on
+source line breakpoints, because optimized/incremental Windows builds may move
+or omit lines. Capture LLDB stdout/stderr under
+`target/issue-suites/results/`; remove temporary instrumentation before
+finishing. LLDB evidence complements, but does not replace, the required WSL
+GNU Bash 5.2.21 script-file comparison. Do not claim a fix from an LLDB-only
+run.
+
+Do not repeatedly rebuild entire suites while locating a root cause. First use
+LLDB on the smallest reproducer, then run the focused Rust regression, then run
+`run-83.sh check NAME` with bounded timeouts.
 
 ## External bashdb
 
@@ -51,3 +86,95 @@ For setup details, launcher/libdir terminology, and fresh-checkout usage, see
 `docs/bashdb-debugging-rubash.md`. Treat full bashdb command coverage as a
 development target: each failing bashdb command should normally drive a Rubash
 root-cause compatibility fix, not a bashdb patch.
+
+## Bash Test Suite
+
+Compatibility status is tracked in `docs/COMPATIBILITY-STATUS.md` — the single
+authoritative source; update it only after real reproduction.
+
+- **Upstream test files**: `third_party/bash/tests/<name>.tests`, run per-file
+  with bounded timeouts; keep raw artifacts under
+  `target/issue-suites/results/`.
+- **Comparison baseline**: WSL GNU Bash 5.2.21. Run the same case file through
+  both shells, e.g. `target/debug/rubash.exe case.sh` vs
+  `MSYS_NO_PATHCONV=1 wsl bash /mnt/d/repo/rubash/case.sh`.
+- **Never use `wsl bash -c "$c"` for cases with doubled backslashes or
+  multi-level quoting**: the wsl.exe command-line passthrough collapses
+  `\\` to `\`, corrupting the baseline.
+- **`scripts/run-83-tests.sh` is retired**: currently broken (`set -u`
+  arithmetic + path errors); its historical `17/83` ledger must not be used
+  for judgment.
+
+### THIS_SH in GNU Test Scripts
+
+GNU test scripts (e.g. `arith-for.tests`) use `${THIS_SH}` to invoke the
+shell under test recursively (`` `${THIS_SH} -c '...'` ``). Rubash now
+auto-detects its own executable path via `std::env::current_exe()` and
+sets `THIS_SH` in its internal env during `Executor::new()`. This means
+`${THIS_SH}` works out-of-the-file without any parent environment
+inheritance.
+
+**WSL interop caveat**: The `env` command (including winuxsh's builtin)
+does NOT forward env vars from a Linux parent to a Windows child process.
+Never use `env THIS_SH=... rubash.exe`. If you must set `THIS_SH`
+externally (e.g. in a shell script), use `export`:
+```sh
+export THIS_SH=/path/to/rubash.exe && rubash.exe script.tests
+```
+Or rely on rubash's auto-detection (preferred).
+
+### STDERR Output Ordering
+
+GNU bash flushes stderr immediately per write; rubash inherits the default
+Windows line-buffered stderr. When a test mixes stderr diagnostics with
+stdout output (e.g. arithmetic errors interleaved with loop output), the
+ordering may differ between rubash and GNU. This is a known limitation
+tracked in arith-for and other suites; fix it by flushing stderr after
+diagnostic writes in `eprintln!` paths if ordering matters for a specific
+test.
+
+## Multi-Agent / Handoff Discipline
+
+When work is parallelized across agents (AgentTeams or subagents) or handed off
+between sessions, the shared working tree is the only durable memory. These
+rules prevent the failure modes observed during the 83-test GNU-compat push:
+untracked half-finished edits that break the whole build, CRLF that silently
+kills WSL-side test runs, and inflated PASS claims from wrong baselines.
+
+- CRLF is a build/test breaker, not cosmetics. The repo has core.autocrlf=true;
+  without explicit attributes Git re-CRLFs every .sh/.rs on checkout. WSL bash
+  then chokes on spurious CR (dollar-single-quote CR: command not found).
+  .gitattributes pins *.sh eol=lf and *.rs eol=lf for this reason. If a test
+  harness suddenly reports that error, do NOT patch the script; run
+  git add --renormalize . and re-run. The attribute is the only durable fix.
+
+- One verification baseline only: WSL GNU Bash 5.2.21 via the run-83.sh check
+  subcommand (MSYS_NO_PATHCONV=1 wsl bash tests/gnu-compat/run-83.sh check NAME).
+  Do NOT certify a fix by diffing third_party/bash/tests/*.tests against recho/
+  zecho output, by comparing raw stdout, or by any other harness. A PASS claim
+  is only valid if run-83.sh check prints PASS NAME.
+
+- src/lexer/continuation.rs is captain-exclusive. It carries the family C/E
+  quote-leak fix (has_unclosed_quotes skipping dollar-brace, dollar-paren,
+  backtick, and dollar-single-quote as self-contained units). Members must NOT
+  edit it; if a task needs a lexer change there, send the proposed diff to the
+  captain and let them apply it. This avoids clobbering the committed fix.
+
+- Shared-tree hygiene: every edit must cargo build clean before you leave it in
+  the tree. Never leave a half-finished function (e.g. a free fn outside its
+  impl, or a stray eprintln DEBUG) because it blocks the whole crew's build.
+  Do not git stash/pop other agents work to get around a build break; report
+  the break instead.
+
+- Commit discipline: the captain groups and commits per-author, per-family
+  changes after WSL-baseline verification. Agents do NOT self-commit; they
+  report a list of files, the owning task, and the verification result, then
+  wait. Do not stack unverified edits across many files.
+
+- Honest handoff: report real diff line counts from run-83.sh check, not
+  aspirational ones. If a task is a deep subsystem (e.g. the typed-carrier
+  Vec<u8> word carrier for NUL/C0 bytes, or background-job thread
+  internalization) and cannot be finished in one pass, say so and stop; do not
+  ship a partial change that flips a couple of lines while claiming the family
+  is done.
+

@@ -103,11 +103,7 @@ impl Executor {
                 // aborts the current command list in Bash. Do not install a
                 // partial assignment or let the AST walker skip only the next
                 // command as if this were an ordinary word expansion.
-                let failure_status = if self
-                    .env_vars
-                    .remove("__RUBASH_ARITH_NOUNSET_ERROR")
-                    .is_some()
-                {
+                let failure_status = if self.arithmetic_nounset_error.replace(false) {
                     127
                 } else {
                     1
@@ -129,8 +125,8 @@ impl Executor {
             if let Some(substitution_status) = substitution_status {
                 status = substitution_status;
             }
-            self.pending_scalar_assignment = expanded_value.starts_with('\x1d')
-                && value.contains(['$', '`']);
+            self.pending_scalar_assignment =
+                expanded_value.starts_with('\x1d') && value.contains(['$', '`']);
             if !self.apply_shell_assignment(name, expanded_value) {
                 status = 1;
                 let (base_name, _) = assignment_name_and_append(name);
@@ -177,7 +173,12 @@ impl Executor {
                         target
                     )?;
                 } else {
-                    writeln!(&mut stderr, "{}{}", self.diagnostic_prefix(), error)?;
+                    writeln!(
+                        &mut stderr,
+                        "{}{}",
+                        self.diagnostic_prefix(),
+                        crate::posix_errors::message(&error)
+                    )?;
                 }
                 self.write_default_stderr(&stderr)?;
                 status = 1;
@@ -393,7 +394,12 @@ impl Executor {
                 return vec![value.to_string()];
             }
             self.arithmetic_expansion_error.set(true);
-            if crate::executor::arithmetic::arithmetic_expansion_is_fatal(expression) {
+            // GNU expr.c raises evalerror from the actual evaluation;
+            // classify from the recorded real-environment category.
+            let actual_fatal = self.arithmetic_last_error_category.take().is_some();
+            if actual_fatal
+                || crate::executor::arithmetic::arithmetic_expansion_is_fatal(expression)
+            {
                 self.arithmetic_fatal_error.set(true);
             } else {
                 self.arithmetic_nonfatal_error.set(true);
@@ -446,8 +452,13 @@ impl Executor {
         }
         // A fully single-quoted raw word has already had its outer quotes
         // removed by the lexer. Any double quotes left in its value are
-        // literal data, including inside parameter alternate words.
+        // literal data, including inside parameter alternate words. The
+        // leading \x1b quoted-tilde marker (word.rs) has already served its
+        // purpose here: tilde expansion never runs on this literal path and
+        // the caller read it for suppress_glob, so it must not leak into
+        // builtin arguments (dstack2/tilde `printf %q '~'`).
         if raw_word_is_fully_single_quoted(raw) {
+            let word = word.strip_prefix('\x1b').unwrap_or(word);
             return vec![word.replace('\x1f', "$")];
         }
         if !word.starts_with('\x1d') {
@@ -485,7 +496,12 @@ impl Executor {
             }
             return values;
         }
-        if self.is_brace_expand_enabled()
+        // GNU bash runs brace expansion once, on the original word, before
+        // any other expansion, and never re-expands expansion results. raw
+        // is None only for already-expanded fragments (the brace-result loop
+        // below), so their literal braces must not expand again here.
+        if raw.is_some()
+            && self.is_brace_expand_enabled()
             && !word.contains("${")
             && (!raw_word_is_quoted(raw)
                 || raw.is_some_and(|raw| {
@@ -494,7 +510,11 @@ impl Executor {
         {
             let braced = expand_braces_with_optional_raw(word, raw);
             if braced.len() > 1 || (braced.len() == 1 && braced[0] != word) {
-                return braced;
+                let mut values = Vec::new();
+                for expanded in braced {
+                    values.extend(self.expand_command_word(cmd, index, &expanded, None));
+                }
+                return values;
             }
         }
         if raw_word_is_quoted(raw) {
@@ -506,17 +526,31 @@ impl Executor {
                 return vec![expanded];
             }
         }
+        // scan_substitution_spans only sees $()/backtick spans, so a plain
+        // double-quoted "${...}" word reports Unquoted. Restore the lexer's
+        //  quote marker for the whole-word braced form so the operator
+        // expander can tell "${v:-~}" (no tilde) from ${v:-~} (tilde).
+        let word = if raw.is_some_and(|raw| raw.starts_with('"') && raw.ends_with('"'))
+            && !word.starts_with('')
+            && word.starts_with("${")
+            && word.ends_with('}')
+        {
+            format!("{word}")
+        } else {
+            word.to_string()
+        };
+        let word = word.as_str();
         let context = raw
             .map(scan_substitution_spans)
             .filter(|spans| spans.len() == 1)
             .and_then(|spans| spans.first().map(|span| span.context))
             .unwrap_or(SubstitutionQuoteContext::Unquoted);
         let expanded = self.expand_word_mut_with_context(word, context);
-        let expanded = if word_contains_brace_group(word) && !word.starts_with('\x1d') {
-            crate::lexer::remove_shell_quotes(&expanded)
-        } else {
-            expanded
-        };
+        // GNU does not apply quote removal to parameter-expansion results:
+        // quotes in an expanded value are literal data, not syntax. Calling
+        // remove_shell_quotes here dropped a trailing quote such as the x'
+        // produced by a braced pattern substitution (foo%*'a'* with foo=x'a'y)
+        // under set -o posix. Only the original lexer tokens get quote removal.
         if cmd
             .array_element_assignments
             .iter()
@@ -601,6 +635,21 @@ impl Executor {
     }
 
     fn expand_alternate_word_fragment(&mut self, fragment: &str) -> Vec<String> {
+        // In POSIX mode, quotes inside a double-quoted parameter expansion
+        // word are literal for quote-state purposes. Preserve that context
+        // when expanding an alternate fragment instead of reparsing it as an
+        // independent command (which incorrectly suppresses $name in '...').
+        if self.posix_mode_enabled()
+            && fragment.starts_with('\"')
+            && fragment.ends_with('\"')
+            && fragment.len() >= 2
+        {
+            let inner = &fragment[1..fragment.len() - 1];
+            return vec![self.expand_embedded_parameters_mut_with_context(
+                inner,
+                SubstitutionQuoteContext::DoubleQuoted,
+            )];
+        }
         let source = format!("__rubash_parameter_alternate__ {fragment}");
         let tokens = crate::lexer::tokenize(&source);
         let ast = crate::parser::parse(&tokens);
@@ -798,19 +847,21 @@ pub(in crate::executor) fn expand_braces_with_optional_raw(
         if raw != word && !raw.contains("${") {
             let braced = crate::expand::braces::expand_braces(raw);
             if braced.len() > 1 || word_contains_brace_group(raw) {
-                return braced
-                    .into_iter()
-                    .map(|word| crate::lexer::remove_shell_quotes(&word))
-                    .collect();
+                // The raw-based expansion kept backslash escapes that the
+                // lexer would otherwise strip. Strip them so escaped chars
+                // render literally, matching GNU bash, while real brace
+                // expansion still yields multiple words.
+                let mut stripped: Vec<String> = Vec::new();
+                for item in braced {
+                    stripped.push(crate::lexer::remove_shell_quotes(&item));
+                }
+                return stripped;
             }
             // When raw has escaped braces that prevent expansion,
             // but word has lost the escapes and would expand, preserve the
             // raw result to avoid incorrect brace expansion.
             if crate::expand::braces::expand_braces(word).len() > 1 {
-                return braced
-                    .into_iter()
-                    .map(|word| crate::lexer::remove_shell_quotes(&word))
-                    .collect();
+                return vec![word.to_string()];
             }
         }
     }
@@ -818,16 +869,10 @@ pub(in crate::executor) fn expand_braces_with_optional_raw(
     let braced = crate::expand::braces::expand_braces(word);
     if braced.len() > 1 {
         braced
-            .into_iter()
-            .map(|word| crate::lexer::remove_shell_quotes(&word))
-            .collect()
     } else if word_contains_brace_group(word) {
         // A brace group can be syntactically present without producing
         // multiple words; quote removal still applies to its escaped text.
         braced
-            .into_iter()
-            .map(|word| crate::lexer::remove_shell_quotes(&word))
-            .collect()
     } else {
         braced
     }

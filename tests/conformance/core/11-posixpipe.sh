@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test: POSIX pipe behavior
+# Test: POSIX pipe behavio
 # Root cause: POSIX pipe behavior differs
 set -euo pipefail
 

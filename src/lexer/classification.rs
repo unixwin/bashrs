@@ -70,21 +70,55 @@ pub(super) fn assignment_value_is_quoted(raw: &str) -> bool {
         return false;
     };
 
+    // Quotes inside a `${...}` body belong to the expansion itself (GNU keeps
+    // them for the expansion stage), not to the assignment's quoting state.
     let mut in_backtick = false;
     let mut escaped = false;
-    for ch in value.chars() {
+    let mut expansion_depth = 0usize;
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
         if escaped {
             escaped = false;
             continue;
         }
 
-        if ch == '\\' {
+        if ch == '\\' && !in_single {
             escaped = true;
             continue;
         }
 
-        if ch == '`' {
+        if ch == '`' && !in_single {
             in_backtick = !in_backtick;
+            continue;
+        }
+
+        if expansion_depth > 0 {
+            match ch {
+                '\'' if !in_double => in_single = !in_single,
+                '"' if !in_single => in_double = !in_double,
+                '$' if !in_single && !in_double && chars.peek() == Some(&'{') => {
+                    chars.next();
+                    expansion_depth += 1;
+                }
+                '}' if !in_single && !in_double => {
+                    expansion_depth -= 1;
+                    if expansion_depth == 0 {
+                        in_single = false;
+                        in_double = false;
+                    }
+                }
+                _ => {}
+            }
+            continue;
+        }
+
+        if ch == '$' && chars.peek() == Some(&'{') {
+            chars.next();
+            expansion_depth = 1;
+            in_single = false;
+            in_double = false;
             continue;
         }
 
@@ -96,9 +130,19 @@ pub(super) fn assignment_value_is_quoted(raw: &str) -> bool {
     false
 }
 
-pub(super) fn mark_quoted_assignment_value(value: &str) -> String {
+pub(super) fn mark_quoted_assignment_value(raw: &str, value: &str) -> String {
     let Some((name, rhs)) = value.split_once('=') else {
         return value.to_string();
+    };
+    let raw_rhs = raw.split_once('=').map(|(_, rhs)| rhs).unwrap_or_default();
+    let rhs = if raw_rhs.starts_with('\"')
+        && raw_rhs.ends_with('\"')
+        && !raw_rhs.contains("$(")
+        && !raw_rhs.contains('`')
+    {
+        rhs.replace('\'', "\x16")
+    } else {
+        rhs.to_string()
     };
 
     format!("{name}=\x1c{rhs}")

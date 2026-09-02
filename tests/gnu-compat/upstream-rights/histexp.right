@@ -1,0 +1,92 @@
+./histexp.tests: li    1  for i in one two three; do echo $i; doneset -H
+echo line 2 for history
+echo a b c d e
+echo line 2 for history
+echo line 8 for history
+/bin/sh -c 'echo this is $0'
+echo sh
+echo /bin
+echo e
+echo b c d e
+echo b c d
+echo d e
+echo d e
+echo b c d
+echo file
+echo .c
+echo 'file'
+echo $file
+echo .c
+echo '$file'
+echo 'a' 'b' 'c' 'd' 'e'
+echo 'a b c d e'
+echo bar.c foo.o foo.html foo.h
+echo bar.c bar.o bar.html bar.h
+echo xbar.c xbar.o xbar.html xbar.h
+echo xbar.c xbar.o xbar.html xbar.h
+echo xwhix.c xwhix.o xwhix.html xwhix.h
+echo xwhix.c xwhix.o xwhix.html xwhix.h
+echo 'xwhix'
+echo 'xwhix.h'
+echo 'xwhix.h'
+echo 'xwhix.h'
+echo '!!' \!\!
+echo shopt a
+echo a b c d 2> /dev/null
+echo two ; echo four  
+echo four ; echo two
+echo $((1+2)
+./histexp.tests: line 151: unexpected EOF while looking for matching `)'
+.html foo.h
+bar.c foo.o foo.html foo.h
+bar.c bar.o bar.html bar.h
+xbar.c xbar.o xbar.html xbar.h
+xbar.c xbar.o xbar.html xbar.h
+xwhix.c xwhix.o xwhix.html xwhix.h
+xwhix
+xwhix.h
+xwhix.h
+xwhix.h
+    7  set -H
+    8  echo line 2 for history
+    9  echo a b c d e
+   10  echo line 2 for history
+   11  echo line 8 for history
+   12  /bin/sh -c 'echo this is $0'
+   13  echo sh
+   14  echo /bin
+   15  echo e
+   16  echo a b c d e
+   17  echo b c d e
+   18  echo b c d
+   19  echo d e
+   20  echo b c d
+   21  echo file.c
+   22  echo file
+   23  echo .c
+   24  echo 'file'
+   25  echo $file.c
+   26  echo $file
+   27  echo .c
+   28  echo '$file'
+   29  echo a b c d e
+   30  echo 'a' 'b' 'c' 'd' 'e'
+   31  echo 'a b c d e'
+   32  echo foo.c foo.o foo.html foo.h
+   33  echo bar.c foo.o foo.html foo.h
+   34  echo bar.c bar.o bar.html bar.h
+   35  echo xbar.c xbar.o xbar.html xbar.h
+   36  echo xwhix.c xwhix.o xwhix.html xwhix.h
+   37  echo 'xwhix'
+   38  echo 'xwhix.h'
+!!
+!!
+!! !!
+ok 1
+ok 2
+ok 3
+shopt a
+a b c d
+one two three four
+one two three four
+3

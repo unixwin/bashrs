@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test: rsh builtin behavior
+# Test: rsh builtin behavio
 # Root cause: rsh builtin differs from bash
 set -euo pipefail
 

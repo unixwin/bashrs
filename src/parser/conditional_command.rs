@@ -72,6 +72,21 @@ fn conditional_expression_is_invalid(args: &[&str]) -> bool {
         return true;
     }
 
+    // Validate each side of a logical operator independently. This catches
+    // malformed terms hidden on one side of an otherwise valid expression.
+    for operator in ["||", "&&"] {
+        if let Some(index) = top_level_conditional_operator(expression, operator) {
+            return index == 0
+                || index + 1 == expression.len()
+                || conditional_expression_is_invalid(&expression[..index])
+                || conditional_expression_is_invalid(&expression[index + 1..]);
+        }
+    }
+
+    if expression.first() == Some(&"(") && expression.last() == Some(&")") {
+        return conditional_expression_is_invalid(&expression[1..expression.len() - 1]);
+    }
+
     if expression.len() == 2
         && is_conditional_unary_operator(expression[0])
         && matches!(expression[1], "&" | "<" | ">" | "]")
@@ -85,11 +100,19 @@ fn conditional_expression_is_invalid(args: &[&str]) -> bool {
     expression.iter().any(|arg| matches!(*arg, "&" | "]"))
         || expression.iter().filter(|arg| **arg == "(").count()
             != expression.iter().filter(|arg| **arg == ")").count()
-        || expression.len() > 3
+        // A balanced outer group `( ... )` is a valid grouped conditional;
+        // exclude it from the generic over-long-expression check below.
+        || (expression.len() > 3
+            && !(expression.first() == Some(&"(") && expression.last() == Some(&")"))
             && !is_conditional_unary_operator(expression[0])
-            && !is_conditional_binary_operator(expression.get(1).copied().unwrap_or_default())
-            && !expression.contains(&"||")
-            && !expression.contains(&"&&")
+            && !(is_conditional_binary_operator(expression.get(1).copied().unwrap_or_default())
+                && conditional_rhs_fragments_can_join(
+                    &expression[2..]
+                        .iter()
+                        .map(|arg| ((*arg).to_string(), (*arg).to_string()))
+                        .collect::<Vec<_>>(),
+                ))
+            )
 }
 
 fn collect_conditional_args(
@@ -110,15 +133,22 @@ fn collect_conditional_args(
             } else {
                 word.clone()
             };
-            args.push((word, raw));
+            args.push((strip_conditional_quote_markers(&word), raw));
             index = next_i;
             continue;
         }
 
-        args.push((tokens[index].value.clone(), tokens[index].raw.clone()));
+        args.push((
+            strip_conditional_quote_markers(&tokens[index].value),
+            tokens[index].raw.clone(),
+        ));
         index += 1;
     }
     args
+}
+
+fn strip_conditional_quote_markers(value: &str) -> String {
+    value.replace('\x11', "")
 }
 
 fn matching_conditional_end(tokens: &[Token], start: usize) -> Option<usize> {
@@ -221,6 +251,19 @@ fn conditional_rhs_fragments_can_join(rhs: &[(String, String)]) -> bool {
         && rhs
             .iter()
             .any(|(arg, _)| matches!(arg.as_str(), "(" | ")" | "|") || arg.contains('('))
+}
+
+fn top_level_conditional_operator(args: &[&str], operator: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    for (index, arg) in args.iter().enumerate() {
+        match *arg {
+            "(" => depth += 1,
+            ")" => depth = depth.saturating_sub(1),
+            _ if depth == 0 && *arg == operator => return Some(index),
+            _ => {}
+        }
+    }
+    None
 }
 
 fn conditional_logical_expression(

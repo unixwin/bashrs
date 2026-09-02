@@ -133,9 +133,29 @@ impl Executor {
             // parameter expansion. Keep those two quoted backslashes until
             // `${var@P}` reaches prompt_expansion; ordinary shell escapes
             // still undergo the normal assignment quote-removal pass.
-            preserve_prompt_escapes(&expanded_value).replace('\x11', "")
+            {
+                let mut restored = preserve_prompt_escapes(&expanded_value).replace('\x11', "");
+                if value.contains('\x16') {
+                    restored = restored
+                        .replace('\x16', "'")
+                        .replace('\x17', "'")
+                        .replace("\\'", "'");
+                }
+                restored
+            }
         } else {
-            unescape_remaining_shell_escapes(&expanded_value)
+            // GNU strips quote syntax that parameter expansion introduced into
+            // an unquoted assignment RHS (`v=${IFS+'}'z}` stores `}z`). Quotes
+            // inside protected substitution payloads are data, so leave those
+            // values alone.
+            let stripped = if expanded_value.contains(['\'', '"'])
+                && !contains_command_substitution_payload(&expanded_value)
+            {
+                crate::lexer::remove_shell_quotes(&expanded_value)
+            } else {
+                expanded_value.clone()
+            };
+            unescape_remaining_shell_escapes(&stripped)
         };
         let mut expanded = decode_command_substitution_payload(&expanded);
         if expanded.contains("<(") || expanded.contains(">(") {
@@ -204,8 +224,16 @@ impl Executor {
             .filter(|expression| !expression.contains("${"))
         {
             let Some(value) = self.eval_arithmetic_command_value(expression) else {
-                if crate::executor::arithmetic::arithmetic_error_message(expression)
-                    .is_some_and(|message| message.contains("attempted assignment to non-variable"))
+                // GNU expr.c raises evalerror from the actual evaluation, so
+                // the recorded real-environment category decides fatality.
+                // A fresh-environment re-evaluation would lose state-dependent
+                // errors like `x+=2` on a declared integer, and a `set -u`
+                // unbound variable must stay fatal even though a fresh
+                // environment would happily evaluate it as 0.
+                let actual_fatal = self.arithmetic_last_error_category.take().is_some()
+                    || self.arithmetic_nounset_error.get();
+                if !actual_fatal
+                    && !crate::executor::arithmetic::arithmetic_expansion_is_fatal(expression)
                 {
                     self.arithmetic_nonfatal_error.set(true);
                 }

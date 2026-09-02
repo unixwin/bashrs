@@ -5,6 +5,6 @@ reorder() {
   (( x[1] < x && (x=x[1], x[1]=$x) ))
   echo "${x[@]}"
 }
-reorder
+reorde
 x=(456 123)
-reorder
+reorde

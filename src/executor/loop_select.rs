@@ -62,6 +62,14 @@ impl Executor {
             ran_body = true;
             self.env_vars
                 .insert(for_command.variable.clone(), value.clone());
+            // Keep the typed scalar in sync: function assignments can create a
+            // typed entry for the loop variable, which otherwise masks the
+            // current iteration value during later word expansion.
+            if let Some(variable) = self.shell_state.variables.get_mut(&for_command.variable) {
+                if let crate::shell::ShellValue::Scalar(current) = &mut variable.value {
+                    *current = value.clone();
+                }
+            }
             set_process_env(&for_command.variable, value);
 
             let body = Ast {

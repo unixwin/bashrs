@@ -17,10 +17,17 @@ Rubash 是一个正在开发中的 GNU Bash 兼容 Shell，使用 Rust 从零实
 
 ## 当前进度
 
-当前源码包版本为 `0.3.0`。截至 2026-08-22，最近一轮真实 Bash 输出账本为
-`13/83 PASS`、`70 DIFF`；这是逐测试 stdout/stderr/退出码对比，不应与上游
-`run-*` 使用旧 `.right` 文件得到的 `87/87` runner 结果混用。差异归因和原始
-artifact 见 [`docs/compatibility-attribution-20260822.md`](docs/compatibility-attribution-20260822.md)。
+当前源码包版本为 `1.0.0`。兼容性状态以
+[`docs/COMPATIBILITY-STATUS.md`](docs/COMPATIBILITY-STATUS.md) 为唯一权威
+来源，只有对 `third_party/bash/tests/` 下 GNU 官方测试文件真实复现后才更新，
+比对基线为 WSL GNU Bash 5.2.21；`docs/` 下其余带日期的分析快照仅作历史归档，
+不得用于判定当前 parity。上游 `run-*` 使用旧 `.right` 文件得到的 `87/87`
+runner 结果，不应与真实输出 parity 混用。
+
+隔离场景下的 GNU Bash 语义——数组、关联数组、算术、条件、nameref、mapfile、
+POSIX 命令替换、前缀花括号（`foo{a,b}`）、转义花括号/转义逗号——已与 GNU
+Bash 一致。剩余高优先级缺口按测试文件在该状态文档中跟踪（`posixexp2`、
+`cond`、`mapfile`、`comsub-posix`、`braces` 序列细节）。
 
 Rubash 的 GNU Bash 语法和运行时支持已经推进到可以运行较复杂 Bash 程序的阶段：clean 外部 `bashdb` 的核心调试闭环已经能在 `target/debug/rubash.exe` 下工作。
 
@@ -64,7 +71,7 @@ target/debug/rubash --version
 cargo install rubash
 ```
 
-Windows-native 安装由 Winuxsh/WinuxCmd 安装器和 WPM 负责，`cargo install` 只适合 Rust 开发环境。安装器应在选定的 WinuxCmd 根目录创建 `usr/bin/`、`bin/` 和 `usr/local/bin/`，并将 `rubash.exe` 与 `bash.exe` shim 放入 `usr/bin/`；`bash.exe` 仅转发到同一安装中的 `winuxsh.exe`，不应放入 `.wpm/` 私有状态目录。WPM 负责包载荷和目标目录同步，Winuxsh 负责将真实 bin 目录加入 `PATH`。完整布局见 [`docs/windows-native-install-layout.md`](docs/windows-native-install-layout.md) 和 [`docs/windows-logical-root.md`](docs/windows-logical-root.md)。
+Windows-native 安装由 Winuxsh/WinuxCmd 安装器和 WPM 负责，`cargo install` 只适合 Rust 开发环境。安装器应在选定的 WinuxCmd 根目录创建 `usr/bin/`、`bin/` 和 `usr/local/bin/`，并将 `rubash.exe` 与 `bash.exe` shim 放入 `usr/bin/`；`bash.exe` 仅转发到同一安装中的 `winuxsh.exe`，不应放入 `.wpm/` 私有状态目录。WPM 负责包载荷和目标目录同步，Winuxsh 负责将真实 bin 目录加入 `PATH`。
 
 当前源码 checkout 为 `D:/repo/rubash`；历史记录中的 `J:/caponAVIS2019` 仅用于追溯，不是安装器、WPM 或运行时应依赖的路径。
 
@@ -118,11 +125,14 @@ for UAC elevation. Hosts may disable a builtin through
 
 ## 文档
 
+- `docs/COMPATIBILITY-STATUS.md`: Rubash ↔ GNU Bash 兼容性权威状态（唯一事实来源）。
 - `docs/bashdb-debugging-rubash.md`: bashdb fixture、launcher/libdir 说明、smoke test 和 fresh checkout 用法。
 - `docs/gnu-bash-compatibility-implementation-plan.md`: GNU Bash 兼容性实现路线。
 - `docs/issue-suite-diff-analysis.md`: 上游测试差异分析。
 - `docs/bash-compat-issues.md`: 兼容性问题清单。
 - `docs/bash-source-map.md`: Bash 源码/语义映射。
+- `docs/typed-expansion-migration-checkpoint.md`: typed expansion 迁移检查点。
+- `docs/source-layout.md` 与 `docs/semantic-ownership.tsv`: 源码布局与 GNU 语义归属映射。
 
 ## 开发原则
 
@@ -152,4 +162,4 @@ Rubash 使用 GPL-3.0-or-later 许可证。详见 `LICENSE`。
 
 ---
 
-*最后更新: 2026-08-22*
+*最后更新: 2026-08-29*

@@ -7,7 +7,22 @@ impl Executor {
         mode: TypeDescribeMode,
         force_path: bool,
         skip_functions: bool,
+        functions_only: bool,
     ) -> bool {
+        if functions_only {
+            if let Some(body) = self.functions.get(name) {
+                match mode {
+                    TypeDescribeMode::Verbose => {
+                        self.print_function_description(name, &body.commands)
+                    }
+                    TypeDescribeMode::Reusable => println!("{name}"),
+                    TypeDescribeMode::TypeOnly => println!("function"),
+                    TypeDescribeMode::PathOnly => {}
+                }
+                return true;
+            }
+            return false;
+        }
         if !force_path {
             if self.alias_expansion_enabled() {
                 if let Some(alias) = self.aliases.get(name) {
@@ -87,11 +102,26 @@ impl Executor {
         mode: TypeDescribeMode,
         force_path: bool,
         skip_functions: bool,
+        functions_only: bool,
         stdout: &mut W,
     ) -> Result<bool, ExecuteError>
     where
         W: Write,
     {
+        if functions_only {
+            if let Some(body) = self.functions.get(name) {
+                match mode {
+                    TypeDescribeMode::Verbose => {
+                        self.write_function_description(name, &body.commands, stdout)?
+                    }
+                    TypeDescribeMode::Reusable => writeln!(stdout, "{name}")?,
+                    TypeDescribeMode::TypeOnly => writeln!(stdout, "function")?,
+                    TypeDescribeMode::PathOnly => {}
+                }
+                return Ok(true);
+            }
+            return Ok(false);
+        }
         if !force_path {
             if self.alias_expansion_enabled() {
                 if let Some(alias) = self.aliases.get(name) {
@@ -177,7 +207,7 @@ impl Executor {
         skip_functions: bool,
     ) -> Result<bool, ExecuteError> {
         let mut stdout = std::io::stdout().lock();
-        self.describe_name_all_with_io(name, mode, force_path, skip_functions, &mut stdout)
+        self.describe_name_all_with_io(name, mode, force_path, skip_functions, false, &mut stdout)
     }
 
     pub(in crate::executor) fn describe_name_all_with_io<W>(
@@ -186,11 +216,26 @@ impl Executor {
         mode: TypeDescribeMode,
         force_path: bool,
         skip_functions: bool,
+        functions_only: bool,
         stdout: &mut W,
     ) -> Result<bool, ExecuteError>
     where
         W: Write,
     {
+        if functions_only {
+            if let Some(body) = self.functions.get(name) {
+                match mode {
+                    TypeDescribeMode::Verbose => {
+                        self.write_function_description(name, &body.commands, stdout)?
+                    }
+                    TypeDescribeMode::Reusable => writeln!(stdout, "{name}")?,
+                    TypeDescribeMode::TypeOnly => writeln!(stdout, "function")?,
+                    TypeDescribeMode::PathOnly => {}
+                }
+                return Ok(true);
+            }
+            return Ok(false);
+        }
         let mut found = false;
 
         if !force_path && mode != TypeDescribeMode::PathOnly {

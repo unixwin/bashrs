@@ -617,9 +617,61 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
             || (tokens.get(i + 1).is_some_and(|next| next.value == "(")
                 && tokens.get(i + 2).is_some_and(|next| next.value == "("));
         if arithmetic_for_marker {
+            let open = i + if tokens.get(i + 1).is_some_and(|t| t.value == "((") {
+                2
+            } else {
+                3
+            };
+            let mut semicolons = 0u32;
+            let mut depth = 0i32;
+            let mut close = open;
+            for j in open..tokens.len() {
+                let t = &tokens[j];
+                if t.value == "((" || (t.value == "(" && tokens.get(j + 1).is_some_and(|n| n.value == "(")) {
+                    depth += 1;
+                } else if t.value == "))" || (t.value == ")" && tokens.get(j + 1).is_some_and(|n| n.value == ")")) {
+                    if depth == 0 {
+                        close = j;
+                        break;
+                    }
+                    depth -= 1;
+                } else if depth == 0 && t.kind == TokenKind::Semicolon {
+                    semicolons += 1;
+                }
+            }
+            let expr_raw: String = {
+                let slice = &tokens[open..close];
+                if slice.is_empty() {
+                    String::new()
+                } else {
+                    let mut parts = Vec::with_capacity(slice.len());
+                    for (idx, t) in slice.iter().enumerate() {
+                        if idx == 0 {
+                            parts.push(t.raw.clone());
+                        } else {
+                            let prev = &slice[idx - 1];
+                            let prev_end = prev.column + prev.raw.len();
+                            if t.column > prev_end {
+                                parts.push(" ".to_string());
+                            }
+                            parts.push(t.raw.clone());
+                        }
+                    }
+                    parts.concat()
+                }
+            };
+            let error_msg = if semicolons < 2 {
+                "syntax error: arithmetic expression required".to_string()
+            } else {
+                "syntax error: `;' unexpected".to_string()
+            };
             state.current_cmd.assignments.insert(
                 "__RUBASH_PARSE_ERROR__".to_string(),
-                "unexpected token in arithmetic-for header".to_string(),
+                error_msg,
+            );
+            state.current_cmd.assignments.insert(
+                "__RUBASH_PARSE_SOURCE__".to_string(),
+                format!("(( {} ))", expr_raw.trim()),
             );
             state
                 .ast

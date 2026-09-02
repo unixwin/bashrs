@@ -630,7 +630,12 @@ impl Executor {
         error: io::Error,
     ) -> Result<(), ExecuteError> {
         let mut stderr = Vec::new();
-        writeln!(&mut stderr, "rubash: {}: {}", cmd.words[0], error)?;
+        writeln!(
+            &mut stderr,
+            "rubash: {}: {}",
+            cmd.words[0],
+            crate::posix_errors::message(&error)
+        )?;
         self.finish_external_error(cmd, &stderr, 126)
     }
 }

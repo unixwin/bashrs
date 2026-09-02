@@ -137,6 +137,14 @@ impl Executor {
             && value.ends_with(')')
             && is_marked_var(&self.env_vars, ASSOC_VARS, base_name)
         {
+            for bare in assoc_bare_elements(&value) {
+                eprintln!(
+                    "{}{}: {}: must use subscript when assigning associative array",
+                    self.diagnostic_prefix(),
+                    base_name,
+                    bare
+                );
+            }
             append_assoc_value("()", &value)
         } else if compound_assignment
             && value.starts_with('(')
@@ -191,7 +199,10 @@ impl Executor {
                     *current = value.clone();
                 }
             } else {
-                let _ = self.shell_state.variables.set_scalar(base_name, value.clone());
+                let _ = self
+                    .shell_state
+                    .variables
+                    .set_scalar(base_name, value.clone());
             }
         }
         self.env_vars.insert(base_name.to_string(), value.clone());

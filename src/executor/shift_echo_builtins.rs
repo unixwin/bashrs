@@ -56,7 +56,9 @@ impl Executor {
                     self.exit_code = 1;
                     return Ok(());
                 }
-                self.positional_params.drain(0..amount);
+                let mut positional = self.positional_params.clone();
+                positional.drain(0..amount);
+                self.set_positional_params(positional);
                 self.exit_code = 0;
             }
         }

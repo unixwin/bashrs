@@ -221,6 +221,30 @@ fn test_mapfile_reads_redirected_default_parameter_path() {
 }
 
 #[test]
+fn test_mapfile_file_redirect_preserves_carriage_return_bytes() {
+    let input_path = target_test_path("rubash-mapfile-crlf-input.txt");
+    let output_path = target_test_path("rubash-mapfile-crlf-output.txt");
+    let shell_input_path = shell_test_path(&input_path);
+    let shell_output_path = shell_test_path(&output_path);
+    fs::write(&input_path, b"alpha\r\nbeta\r\n").unwrap();
+    let _ = fs::remove_file(&output_path);
+    let input = format!(
+        "mapfile -t arr < {shell_input_path}; printf '%s' \"${{arr[0]}}\" > {shell_output_path}"
+    );
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+
+    let result = executor.execute_ast(&ast);
+
+    assert!(result.is_ok());
+    assert_eq!(executor.last_exit_code(), 0);
+    assert_eq!(fs::read(&output_path).unwrap(), b"alpha\r");
+    let _ = fs::remove_file(input_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_mapfile_without_input_sets_empty_array_at_eof() {
     let output_path = "target/rubash-mapfile-eof-output.txt";
     let _ = fs::remove_file(output_path);

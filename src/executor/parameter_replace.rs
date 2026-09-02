@@ -302,6 +302,11 @@ mod tests {
     fn glob_replacement_matches_empty_value() {
         assert_eq!(replace_parameter_pattern("", "*", "w", false), "w");
     }
+
+    #[test]
+    fn shortest_suffix_glob_preserves_quoted_value_apostrophe() {
+        assert_eq!(remove_matching_suffix("x'a'y", "*a*", MatchLength::Shortest), "x'");
+    }
 }
 
 fn replace_with_amp(value: &str, pattern: &str, replacement: &str, global: bool) -> String {

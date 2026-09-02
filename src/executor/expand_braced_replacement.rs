@@ -74,7 +74,15 @@ impl Executor {
         if is_shell_name(var_name) {
             return Some(
                 self.dynamic_parameter_value(var_name)
-                    .or_else(|| self.env_vars.get(var_name).cloned())
+                    .or_else(|| {
+                        // GNU find_variable (variables.c) follows the nameref
+                        // chain via find_variable_nameref before pattern
+                        // substitution; resolve the nameref target name here so
+                        // substitution operates on the target value, not the
+                        // nameref name itself.
+                        let resolved = self.resolved_variable_name(var_name)?;
+                        self.env_vars.get(&resolved).cloned()
+                    })
                     .map(|value| replace_parameter_pattern(&value, &pattern, &replacement, global))
                     .unwrap_or_default(),
             );

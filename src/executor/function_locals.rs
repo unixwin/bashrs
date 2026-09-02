@@ -34,6 +34,17 @@ impl Executor {
             let attrs = capture_var_attrs(&self.env_vars, &name);
             self.local_attr_scopes[attr_scope_index].insert(name.clone(), attrs);
             typed_scope.insert(name.clone(), self.shell_state.variables.get(&name).cloned());
+            // getopts' intra-word scan position is frame state in GNU Bash:
+            // declaring OPTIND local resets the scan for this frame, and the
+            // caller's position comes back when the frame's locals restore
+            // (getopts8.sub: x,y,a,b,c,z, not an x,y,c cycle).
+            if name == "OPTIND" && !scope.contains_key("__RUBASH_GETOPTS_OFFSET") {
+                scope.insert(
+                    "__RUBASH_GETOPTS_OFFSET".to_string(),
+                    self.env_vars.get("__RUBASH_GETOPTS_OFFSET").cloned(),
+                );
+                self.env_vars.remove("__RUBASH_GETOPTS_OFFSET");
+            }
         }
     }
 
@@ -63,6 +74,17 @@ impl Executor {
             let attrs = capture_var_attrs(&self.env_vars, &name);
             self.local_attr_scopes[attr_scope_index].insert(name.clone(), attrs);
             typed_scope.insert(name.clone(), self.shell_state.variables.get(&name).cloned());
+            // getopts' intra-word scan position is frame state in GNU Bash:
+            // declaring OPTIND local resets the scan for this frame, and the
+            // caller's position comes back when the frame's locals restore
+            // (getopts8.sub: x,y,a,b,c,z, not an x,y,c cycle).
+            if name == "OPTIND" && !scope.contains_key("__RUBASH_GETOPTS_OFFSET") {
+                scope.insert(
+                    "__RUBASH_GETOPTS_OFFSET".to_string(),
+                    self.env_vars.get("__RUBASH_GETOPTS_OFFSET").cloned(),
+                );
+                self.env_vars.remove("__RUBASH_GETOPTS_OFFSET");
+            }
         }
     }
 
@@ -139,7 +161,12 @@ impl Executor {
             match value {
                 Some(value) => {
                     self.env_vars.insert(name.clone(), value.clone());
-                    set_process_env(&name, value);
+                    // Internal pseudo-variables (e.g. the getopts scan
+                    // offset saved alongside a local OPTIND) must not
+                    // leak into the child process environment.
+                    if !name.starts_with("__RUBASH_") {
+                        set_process_env(&name, value);
+                    }
                 }
                 None => {
                     self.env_vars.remove(&name);

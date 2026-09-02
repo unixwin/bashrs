@@ -79,7 +79,7 @@ run_test() {
     
     ((total++))
     
-    # Check for SKIP marker
+    # Check for SKIP marke
     if head -5 "$test_file" | grep -q "# SKIP"; then
         echo -e "${YELLOW}SKIP${NC}  $test_name"
         ((skip++))

@@ -110,7 +110,14 @@ impl Executor {
                 None => output.push('\\'),
             }
         }
-        output
+        // Command substitutions preserve control bytes as owner-tagged
+        // private-use code points while they pass through shell variables.
+        // Prompt expansion is the byte-oriented output boundary, so restore
+        // those markers before reedline or another terminal renderer sees the
+        // prompt text.
+        let decoded =
+            crate::executor::substitution_metadata::decode_raw_byte_markers(output.as_bytes());
+        String::from_utf8(decoded).unwrap_or(output)
     }
 
     pub(in crate::executor) fn expand_prompt_parameters(&self, word: &str) -> String {
@@ -334,7 +341,13 @@ impl Executor {
     pub(in crate::executor) fn xtrace_command_text(&mut self, cmd: &CommandNode) -> String {
         let mut parts: Vec<String> = Vec::new();
         for (name, value) in &cmd.assignments {
-            parts.push(format!("{name}={}", self.expand_assignment_value(value)));
+            // `COMPOUND_ASSIGNMENT_MARKER` is an internal carrier for compound
+            // array assignments and must never leak into user-visible xtrace.
+            let expanded = self.expand_assignment_value(value);
+            let expanded = expanded
+                .strip_prefix(crate::executor::types::COMPOUND_ASSIGNMENT_MARKER)
+                .unwrap_or(&expanded);
+            parts.push(format!("{name}={expanded}"));
         }
         parts.extend(cmd.words.iter().cloned());
         parts.join(" ")

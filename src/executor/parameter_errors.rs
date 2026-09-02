@@ -114,6 +114,23 @@ impl Executor {
         Some(self.indirect_target_values(target_expr).into_iter().next())
     }
 
+    fn is_valid_length_parameter_name(name: &str) -> bool {
+        if name.is_empty() {
+            return true;
+        }
+        if matches!(name, "@" | "*" | "?" | "$" | "-" | "0") {
+            return true;
+        }
+        if name.parse::<usize>().is_ok() {
+            return true;
+        }
+        if name.ends_with("[@]") || name.ends_with("[*]") {
+            let base = &name[..name.len() - 3];
+            return !base.is_empty() && is_shell_name(base);
+        }
+        name != ":"
+    }
+
     pub(in crate::executor) fn parameter_expansion_error(
         &self,
         cmd: &CommandNode,
@@ -179,6 +196,15 @@ impl Executor {
             // a single nested subscript such as `${A[${i}]}` remains valid.
             if inner.contains("[${${") {
                 return Some((format!("${{{inner}}}"), "bad substitution".to_string(), 1));
+            }
+            // `${#X}` is the length form. X must be a valid parameter name
+            // (special, shell name, numeric positional, or `arr[@]` index form).
+            // Other suffixes such as `${#:}`, `${#/}`, `${#1xyz}` are bad
+            // substitution in GNU Bash.
+            if let Some(length_name) = inner.strip_prefix('#') {
+                if !Self::is_valid_length_parameter_name(length_name) {
+                    return Some((format!("${{{inner}}}"), "bad substitution".to_string(), 1));
+                }
             }
             // `${ command; }` is not Bash command substitution. Rubash also
             // supports the distinct `${| command; }` current-shell form, so

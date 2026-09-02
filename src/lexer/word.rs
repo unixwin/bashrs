@@ -22,6 +22,12 @@ impl<'a> Lexer<'a> {
             // TODO(parse.y/subst.c): Preserve quotes inside `$()` while
             // assignment-word quote removal is still token-local.
             raw.to_string()
+        } else if raw.starts_with("$((") {
+            // GNU keeps the text of a `$((...))` expansion verbatim at the
+            // word level; the arithmetic stage applies its own double-quote
+            // rules there (`\"` is a literal quote, `(( "1" ))` loses the
+            // quotes in the evaluator, not by word-level quote removal).
+            raw.to_string()
         } else if is_assignment(&raw) && raw.contains('`') {
             // TODO(parse.y/subst.c): Assignment-word quote removal must not
             // consume quotes inside command substitutions. Preserve the
@@ -47,7 +53,7 @@ impl<'a> Lexer<'a> {
             // with WORD_DESC quote flags. It lets assignment tilde expansion
             // distinguish `a=~/x` from `a="~/x"` without leaking syntax to
             // builtins.
-            mark_quoted_assignment_value(&value)
+            mark_quoted_assignment_value(raw, &value)
         } else if kind == TokenKind::Word
             && is_assignment(&value)
             && assignment_value_is_quoted(raw)
@@ -55,7 +61,7 @@ impl<'a> Lexer<'a> {
             // A fully quoted assignment-looking argument, such as
             // `"SHELL=~/bash"`, remains a normal word but its RHS quote state
             // still suppresses the assignment-word tilde pass.
-            mark_quoted_assignment_value(&value)
+            mark_quoted_assignment_value(raw, &value)
         } else if raw.starts_with('"') && raw.ends_with('"') && raw.contains("${") {
             // TODO(parse.y/subst.c): Preserve full quote state on WORD_DESC
             // instead of a sentinel. This narrow marker lets expansion
@@ -84,6 +90,7 @@ impl<'a> Lexer<'a> {
         while let Some(c) = self.peek() {
             let in_array_value = array_assignment && array_value_paren_depth > 0;
             if " \t\n|&;<>(){}".contains(c)
+                && c != '}'
                 && !(array_assignment && array_subscript_depth > 0 && c.is_ascii_whitespace())
                 && !(in_array_value && c.is_ascii_whitespace())
                 && !(in_array_value && matches!(c, '(' | ')'))

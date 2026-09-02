@@ -19,6 +19,20 @@ fn test_read_empty_ifs_does_not_split() {
 }
 
 #[test]
+fn test_read_mixed_ifs_whitespace_before_delimiter() {
+    let output_path = "target/rubash-read-mixed-ifs-output.txt";
+    let _ = fs::remove_file(output_path);
+    let input = format!("printf ':a :' | ( IFS=': '; read first rest; printf '<%s><%s>\\n' \"$first\" \"$rest\" ) > {output_path}");
+    let tokens = tokenize(&input);
+    let ast = parse(&tokens);
+    let mut executor = Executor::new();
+    let result = executor.execute_ast(&ast);
+    assert!(result.is_ok());
+    assert_eq!(fs::read_to_string(output_path).unwrap(), "<><a>\\n");
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn test_read_process_substitution_from_function_output() {
     let output_path = "target/rubash-read-process-subst-function-output.txt";
     let _ = fs::remove_file(output_path);

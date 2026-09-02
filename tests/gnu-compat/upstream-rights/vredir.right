@@ -1,0 +1,68 @@
+./vredir.tests: line 19: v: readonly variable
+./vredir.tests: line 19: v: cannot assign fd tbar is a function
+bar () 
+{ 
+    exec {v}>> $TMPFILE;
+    echo $v
+}
+10
+line 1
+line 2
+line 3
+bar is a function
+bar ./vredir3.sub: line 4: v: ambiguous redirect
+./vredir4.sub: line 51: ${output}: Bad file descriptor
+./vredir6.sub: redirection error: cannot duplicate fd: Invalid argument
+./vredir6.sub: line 13: /dev/null: Invalid argument
+./vredir8.sub: line 33: $fd: Bad file descriptor
+./vredir8.sub: line 38: $fd: Bad file descriptor
+a function
+iclosev () 
+{ 
+    exec {v}>&-
+}
+/bin/bash
+/bin/csh
+/bin/ksh
+/bin/sh
+/bin/tcsh
+/bin/zsh
+after
+10 11
+a
+a
+swizzle is a function
+swizzle () 
+{ 
+    fd0=0;
+    fd1=1;
+    exec {stdin}<&$fd0;
+    exec {stdout}>&$fd1
+}
+10 11
+10 11
+12 10
+a
+a
+swizzle is a function
+swizzle () 
+{ 
+    exec {fd0}<&0;
+    exec {fd1}>&1;
+    exec {stdin}<&$fd0-;
+    exec {stdout}>&$fd1-
+}
+ok 1
+unset
+12 10
+a
+a
+swizzle is a function
+swizzle () 
+{ 
+    exec {fd[0]}<&0;
+    exec {fd[1]}>&1;
+    exec {stdin}<&${fd[0]}-;
+    exec {stdout}>&${fd[1]}-
+}
+redir 2

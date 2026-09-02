@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rubash Conformance Test Runner
+# Rubash Conformance Test Runne
 # rubash is the authoritative reference for Windows shell semantics
 set -euo pipefail
 
@@ -23,7 +23,7 @@ run_test() {
     local test_file="$1"
     local test_name="$(basename "$test_file" .sh)"
     
-    # Check for SKIP marker
+    # Check for SKIP marke
     if grep -q '# SKIP' "$test_file" 2>/dev/null; then
         echo -e "${YELLOW}SKIP${NC} $test_name"
         ((skip++)) || true

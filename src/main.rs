@@ -3,7 +3,7 @@
 //! Run with: cargo run
 
 use rubash::executor::{ExecuteError, Executor};
-use rubash::lexer::{has_unclosed_input_syntax, tokenize, TokenKind};
+use rubash::lexer::{has_unclosed_input_syntax, tokenize, tokenize_with_initial_posix, TokenKind};
 use rubash::parser::parse;
 use std::env;
 use std::fs;
@@ -249,7 +249,11 @@ fn run_command_string_with_init(
     if let Some(init_file) = init_file {
         let _ = run_init_file(executor, init_file);
     }
-    let status = run_source(executor, command, false);
+    let line_offset = executor
+        .get_env("__RUBASH_LINE_OFFSET")
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0);
+    let status = run_source_with_line_offset(executor, command, false, line_offset);
     finish_shell(executor, status, false)
 }
 
@@ -263,7 +267,7 @@ fn run_script_file_with_init(
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(e) => {
-            eprintln!("rubash: {}: {}", script, e);
+            eprintln!("rubash: {}: {}", script, rubash::posix_errors::message(&e));
             return 1;
         }
     };
@@ -304,7 +308,11 @@ fn run_init_file(executor: &mut Executor, init_file: &str) -> i32 {
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(e) => {
-            eprintln!("rubash: {}: {}", init_file, e);
+            eprintln!(
+                "rubash: {}: {}",
+                init_file,
+                rubash::posix_errors::message(&e)
+            );
             return 1;
         }
     };
@@ -756,7 +764,8 @@ fn run_source_with_line_offset(
         return 2;
     }
 
-    let mut tokens = tokenize(input);
+    let parse_posix = executor.get_env("__RUBASH_POSIX_MODE").as_deref() == Some("1");
+    let mut tokens = tokenize_with_initial_posix(input, parse_posix);
     if line_offset != 0 {
         for token in &mut tokens {
             token.position += line_offset;
@@ -768,7 +777,6 @@ fn run_source_with_line_offset(
     match executor.execute_ast(&ast) {
         Ok(()) => executor.last_exit_code(),
         Err(ExecuteError::ExitCode(code)) => code,
-        Err(ExecuteError::ExpansionFailure(code)) => code,
         Err(ExecuteError::ExpansionFailure(code)) => code,
         Err(e) => {
             if interactive {

@@ -104,6 +104,27 @@ where
         return Ok(EXECUTION_SUCCESS);
     }
 
+    // `unset name[subscript]`: bash only removes an element from an actual
+    // array/associative variable. A subscript on an undeclared name is a
+    // silent no-op (GNU exit 0); on a declared scalar it errors
+    // "unset: <name>: not an array variable". Real array/assoc element
+    // removal is handled upstream in the executor; this covers the
+    // scalar/undeclared cases and the builtin-only diagnostic path.
+    if let Some((base, _subscript)) = parse_unset_subscript(name) {
+        let declared = env_vars.contains_key(base);
+        let is_array = is_marked_variable(env_vars, ARRAY_VARS, base)
+            || is_marked_variable(env_vars, ASSOC_VARS, base);
+        if !declared || is_array {
+            return Ok(EXECUTION_SUCCESS);
+        }
+        writeln!(
+            stderr,
+            "{}unset: {base}: not an array variable",
+            diagnostic_prefix(env_vars)
+        )?;
+        return Ok(EXECUTION_FAILURE);
+    }
+
     if !valid_identifier(name) {
         writeln!(stderr, "rubash: unset: `{}`: not a valid identifier", name)?;
         return Ok(EXECUTION_FAILURE);
@@ -183,6 +204,19 @@ fn valid_identifier(name: &str) -> bool {
 
     (first == '_' || first.is_ascii_alphabetic())
         && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+/// Split `name[subscript]` into `(base, subscript)`, returning `None` when
+/// the name is not a subscripted form or the base is not a valid identifier
+/// (so genuinely invalid names still fall through to the `valid_identifier`
+/// rejection above).
+fn parse_unset_subscript(name: &str) -> Option<(&str, &str)> {
+    let (base, rest) = name.split_once('[')?;
+    let subscript = rest.strip_suffix(']')?;
+    if !valid_identifier(base) {
+        return None;
+    }
+    Some((base, subscript))
 }
 
 fn is_unsettable_bash_variable(name: &str) -> bool {

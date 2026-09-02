@@ -1,5 +1,5 @@
 unset a
 printf '%s\n' ${a:=a\ b}
 echo "$a"
-foo=bar
+foo=ba
 echo "${foo:-"a}"

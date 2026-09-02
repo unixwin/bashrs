@@ -54,6 +54,8 @@ impl Executor {
         {
             eprintln!("{}{}: {message}", self.diagnostic_prefix(), label);
         }
+        use std::io::Write;
+        let _ = std::io::stderr().flush();
     }
 
     pub(in crate::executor) fn report_arithmetic_error(&self, expression: &str) {
@@ -76,11 +78,7 @@ impl Executor {
             Some(_) => 0,
             None => {
                 self.report_arithmetic_error(expression);
-                if self
-                    .env_vars
-                    .remove("__RUBASH_ARITH_NOUNSET_ERROR")
-                    .is_some()
-                {
+                if self.arithmetic_nounset_error.replace(false) {
                     127
                 } else {
                     1

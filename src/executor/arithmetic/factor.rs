@@ -74,7 +74,8 @@ impl ConditionalArithParser<'_> {
                     text,
                     self.env_vars,
                     self.random_state,
-                );
+                )
+                .0;
             }
         }
         None

@@ -1,0 +1,2 @@
+grep: /mnt/d/repo/rubash/target/upstream-tests/examples/loadables/Makefile: No such file or directory
+glob-bracket: shared objects not supported, cannot continue

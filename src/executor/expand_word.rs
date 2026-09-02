@@ -213,23 +213,34 @@ impl Executor {
                     if !self.arithmetic_expansion_error.replace(true) {
                         eprintln!("{}{}: unbound variable", self.diagnostic_prefix(), name);
                     }
+                    // GNU expr.c expr_streval: an unbound variable under `set
+                    // -u` raises FORCE_EOF and exits the shell (127 in -c
+                    // mode), regardless of the other words in the command.
+                    self.arithmetic_nounset_error.set(true);
                     return Some(String::new());
                 }
             }
-            if let Some(value) = eval_conditional_arith_value(&expression, &self.env_vars) {
+            let (value, actual_category) =
+                eval_conditional_arith_value_categorized(&expression, &self.env_vars);
+            if let Some(value) = value {
                 return Some(value.to_string());
             }
+            self.arithmetic_last_error_category.set(actual_category);
             // Bash reports arithmetic expansion errors (floating point,
             // negative exponent, division by zero, ...) on stderr instead of
-            // silently producing nothing. Assignment-to-non-variable is a
-            // command failure, but the surrounding script continues without -e.
+            // silently producing nothing, and abandons the enclosing command
+            // list (status 1; GNU probe d2: `echo $((1/0)); echo after` never
+            // prints "after").
             let message = crate::executor::arithmetic::arithmetic_error_message(&expression)
                 .unwrap_or_else(|| {
                     format!(
                         "{expression}: syntax error in expression (error token is \"{expression}\")"
                     )
                 });
-            if !crate::executor::arithmetic::arithmetic_expansion_is_fatal(&expression) {
+            let actual_fatal = self.arithmetic_last_error_category.take().is_some();
+            if !actual_fatal
+                && !crate::executor::arithmetic::arithmetic_expansion_is_fatal(&expression)
+            {
                 self.arithmetic_nonfatal_error.set(true);
             } else {
                 self.arithmetic_fatal_error.set(true);
