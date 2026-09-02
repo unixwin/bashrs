@@ -11,6 +11,24 @@ impl Executor {
         word: &str,
         context: SubstitutionQuoteContext,
     ) -> String {
+        self.expand_embedded_parameters_mut_inner(word, context, false)
+    }
+
+    // Here-string content has already had quote removal applied by the parser
+    // (single quotes stripped). Bare quotes left behind are literal data, not
+    // delimiters; only parameter/command/arithmetic substitution applies. This
+    // mirrors GNU subst.c here-string handling, where the word is expanded
+    // without re-parsing quotes.
+    pub(in crate::executor) fn expand_here_string_mut(&mut self, word: &str) -> String {
+        self.expand_embedded_parameters_mut_inner(word, SubstitutionQuoteContext::Unquoted, true)
+    }
+
+    fn expand_embedded_parameters_mut_inner(
+        &mut self,
+        word: &str,
+        context: SubstitutionQuoteContext,
+        heredoc: bool,
+    ) -> String {
         self.apply_parameter_assignment_expansions_in_word(word);
         let saved_parameter_state = word_contains_current_shell_command_substitution(word)
             .then(|| (self.env_vars.clone(), self.pipestatus.clone()));
@@ -18,6 +36,7 @@ impl Executor {
             word,
             saved_parameter_state.as_ref(),
             context,
+            heredoc,
         );
         let expanded = if word.contains("$(") || word.contains('`') {
             if matches!(context, SubstitutionQuoteContext::HereDocument) {
@@ -42,6 +61,7 @@ impl Executor {
         word: &str,
         saved_parameter_state: Option<&(std::collections::HashMap<String, String>, Vec<i32>)>,
         context: SubstitutionQuoteContext,
+        heredoc: bool,
     ) -> String {
         let mut output = String::new();
         let mut chars = word.chars().peekable();
@@ -84,12 +104,16 @@ impl Executor {
             // only in unquoted expansions; a double-quoted expansion keeps
             // them in its result (`"${IFS+'}'z}"` -> `'}'z`). Heredoc text
             // treats quotes as data.
-            if matches!(context, SubstitutionQuoteContext::Unquoted) && ch == '"' {
+            if !heredoc
+                && matches!(context, SubstitutionQuoteContext::Unquoted)
+                && ch == '"'
+            {
                 in_double = !in_double;
                 continue;
             }
 
-            if matches!(context, SubstitutionQuoteContext::Unquoted)
+            if !heredoc
+                && matches!(context, SubstitutionQuoteContext::Unquoted)
                 && ch == '\''
                 && !in_double
             {

@@ -35,9 +35,9 @@ impl Executor {
         }
 
         if let Some(here_string) = cmd.here_string.clone() {
-            return Some(
-                self.expand_word_mut_with_context(&here_string, SubstitutionQuoteContext::Unquoted),
-            );
+            // Here-string content already had quote removal applied by the
+            // parser; expand only substitutions with quotes-as-data semantics.
+            return Some(self.expand_here_string_mut(&here_string));
         }
 
         if let Some(heredoc) = cmd.heredoc.clone() {

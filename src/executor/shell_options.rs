@@ -483,6 +483,16 @@ impl Executor {
         if let Some(body) = cmd.heredoc.clone() {
             return Some(self.expand_heredoc_body_mut(&body));
         }
+        // Here-string content already had quote removal applied by the parser
+        // (single quotes stripped); a literal " that lived inside them is now
+        // bare data. Expand only substitutions with quotes-as-data semantics so
+        // that literal survives (cat <<< 'double"quote' => double"quote).
+        if let Some(word) = cmd.here_string.clone() {
+            let decoded = decode_ansi_c_quoted_word(&word);
+            let mut input = decoded.unwrap_or_else(|| self.expand_here_string_mut(&word));
+            input.push('\n');
+            return Some(input);
+        }
         self.stdin_string_for_command(cmd)
     }
 
@@ -525,7 +535,8 @@ impl Executor {
         }
 
         let word = cmd.here_string.as_ref()?;
-        let mut input = decode_ansi_c_quoted_word(word).unwrap_or_else(|| self.expand_word(word));
+        let mut input = decode_ansi_c_quoted_word(word)
+            .unwrap_or_else(|| self.expand_embedded_parameters_for_heredoc(word));
         input.push('\n');
         Some(input)
     }
