@@ -1,3 +1,4 @@
-./posix2.tests: eval: line 199: All tests passed
- unexpected token `)'
+Testing for POSIX.2 conformance
+./posix2.tests: eval: line 199: syntax error near unexpected token `)'
 ./posix2.tests: eval: line 199: `case esac in esac) ;; *) echo "case esac test 4";; esac'
+All tests passed
