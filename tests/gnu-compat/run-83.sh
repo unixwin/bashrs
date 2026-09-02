@@ -35,6 +35,22 @@ TIMEOUT_SECS="${RUN83_TIMEOUT:-15}"
 OUT="$RESULTS/$MODE"
 mkdir -p "$OUT"
 
+# Serialize whole invocations: every run rebuilds the shared CLEAN_TESTS copy
+# (rm -rf + copy of ~700 files), so concurrent check/gen runs tear each other
+# mid-run ("./X.tests: No such file or directory", truncated rubash.out).
+# mkdir is atomic on the Windows filesystem WSL sees; spin-wait up to 10 min.
+LOCK_DIR="$RESULTS/.invoke-lock"
+lock_acquired=""
+for _ in $(seq 1 300); do
+  if mkdir "$LOCK_DIR" 2>/dev/null; then lock_acquired=1; break; fi
+  sleep 2
+done
+if [ -z "$lock_acquired" ]; then
+  echo "run-83.sh: lock timeout waiting for $LOCK_DIR" >&2
+  exit 3
+fi
+trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
+
 prepare_clean_copy() {
   rm -rf "$CLEAN_TESTS"
   mkdir -p "$CLEAN_TESTS"
