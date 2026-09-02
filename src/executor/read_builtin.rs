@@ -1885,7 +1885,8 @@ impl Executor {
             }
 
             let line = match self.read_input_for_command(cmd, read_fd, delimiter, char_limit, exact_char_limit) {
-                Some(line) => Some(line),
+                Some(l) if l.is_empty() && initial_text.is_some() => None,
+                Some(l) => Some(l),
                 None => None,
             };
             let final_line = match (&line, &initial_text) {
