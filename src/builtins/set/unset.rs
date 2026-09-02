@@ -126,7 +126,22 @@ where
     }
 
     if !valid_identifier(name) {
-        writeln!(stderr, "rubash: unset: `{}`: not a valid identifier", name)?;
+        // GNU builtins/set.def:899-920: when neither -f nor -v was given, a
+        // name that is not a valid identifier is treated as a potential
+        // function name and unset silently (no diagnostic, success). Only
+        // `unset -v NAME` reports sh_invalidid ("`NAME': not a valid
+        // identifier") through the builtin_error prologue.
+        if !options.variables {
+            return Ok(EXECUTION_SUCCESS);
+        }
+        // Single write: GNU emits the prologue + message as one stderr
+        // record; splitting the write lets a concurrent stdout flush (e.g.
+        // under WSL-interop combined capture) tear the prefix off the line.
+        let diagnostic = format!(
+            "{}unset: `{name}': not a valid identifier\n",
+            diagnostic_prefix(env_vars)
+        );
+        stderr.write_all(diagnostic.as_bytes())?;
         return Ok(EXECUTION_FAILURE);
     }
 

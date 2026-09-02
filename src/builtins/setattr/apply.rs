@@ -23,7 +23,12 @@ where
 {
     let (name, append, value) = split_assignment(arg);
     if !valid_identifier(name) {
-        writeln!(stderr, "rubash: export: `{}`: not a valid identifier", arg)?;
+        let diagnostic = format!(
+            "{}export: `{}': not a valid identifier\n",
+            diagnostic_prefix(),
+            arg
+        );
+        stderr.write_all(diagnostic.as_bytes())?;
         return Ok(EXECUTION_FAILURE);
     }
     let resolved_name = nameref_target_name(env_vars, name).unwrap_or_else(|| name.to_string());
@@ -87,22 +92,22 @@ where
         if name.ends_with(']') {
             if let Some((base, _)) = name.split_once('[') {
                 if valid_identifier(base) {
-                    writeln!(
-                        stderr,
-                        "{}readonly: `{}`: not a valid identifier",
+                    let diagnostic = format!(
+                        "{}readonly: `{}': not a valid identifier\n",
                         diagnostic_prefix(),
                         arg
-                    )?;
+                    );
+                    stderr.write_all(diagnostic.as_bytes())?;
                     return Ok(EXECUTION_FAILURE);
                 }
             }
         }
-        writeln!(
-            stderr,
-            "{}readonly: `{}`: not a valid identifier",
+        let diagnostic = format!(
+            "{}readonly: `{}': not a valid identifier\n",
             diagnostic_prefix(),
             arg
-        )?;
+        );
+        stderr.write_all(diagnostic.as_bytes())?;
         return Ok(EXECUTION_FAILURE);
     }
     let resolved_name = nameref_target_name(env_vars, name).unwrap_or_else(|| name.to_string());

@@ -261,11 +261,18 @@ mod tests {
 
     #[test]
     fn rejects_invalid_identifier_for_variable_unset() {
+        // GNU builtins/set.def:899-920: `unset -v 1BAD` reports sh_invalidid
+        // ("`1BAD': not a valid identifier") and fails; without -v the invalid
+        // name is treated as a potential function name and unset silently.
         let mut env_vars = HashMap::new();
-        let (status, stderr) = run(&["1BAD"], &mut env_vars);
+        let (status, stderr) = run(&["-v", "1BAD"], &mut env_vars);
 
         assert_eq!(status, EXECUTION_FAILURE);
-        assert!(stderr.contains("not a valid identifier"));
+        assert!(stderr.contains("`1BAD': not a valid identifier"));
+
+        let (silent_status, silent_stderr) = run(&["1BAD"], &mut env_vars);
+        assert_eq!(silent_status, EXECUTION_SUCCESS);
+        assert!(silent_stderr.is_empty());
     }
 
     #[test]

@@ -260,12 +260,12 @@ where
     let mut attr_status = EXECUTION_SUCCESS;
     for name in &names {
         if !valid_declare_name(name) {
-            writeln!(
-                stderr,
-                "{}declare: `{}`: not a valid identifier",
+            let diagnostic = format!(
+                "{}declare: `{}': not a valid identifier\n",
                 diagnostic_prefix(),
                 name
-            )?;
+            );
+            stderr.write_all(diagnostic.as_bytes())?;
             attr_status = EXECUTION_FAILURE;
             continue;
         }
