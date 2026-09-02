@@ -1,7 +1,11 @@
-./case.tests: line 42: xx: reretest
+fallthrough
+to here
+and here
+retest
 and match
 no more clauses
 1.0
+./case.tests: line 42: xx: readonly variable
 1.1
 matches 1
 no

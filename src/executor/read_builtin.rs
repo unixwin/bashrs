@@ -868,6 +868,124 @@ impl Executor {
                     };
                     index += 1;
                 }
+                "-id" => {
+                    initial_text = cmd.words.get(index + 1).cloned();
+                    index += 2;
+                }
+                word if word.starts_with("-id") && word.len() > 3 => {
+                    initial_text = Some(word[3..].to_string());
+                    index += 1;
+                }
+                "-di" => {
+                    initial_text = cmd.words.get(index + 1).cloned();
+                    index += 2;
+                }
+                word if word.starts_with("-di") && word.len() > 3 => {
+                    initial_text = Some(word[3..].to_string());
+                    index += 1;
+                }
+                "-ei" => {
+                    initial_text = cmd.words.get(index + 1).cloned();
+                    index += 2;
+                }
+                word if word.starts_with("-ei") && word.len() > 3 => {
+                    initial_text = Some(word[3..].to_string());
+                    index += 1;
+                }
+                "-ie" => {
+                    initial_text = cmd.words.get(index + 1).cloned();
+                    index += 2;
+                }
+                word if word.starts_with("-ie") && word.len() > 3 => {
+                    initial_text = Some(word[3..].to_string());
+                    index += 1;
+                }
+                "-si" => {
+                    initial_text = cmd.words.get(index + 1).cloned();
+                    index += 2;
+                }
+                word if word.starts_with("-si") && word.len() > 3 => {
+                    initial_text = Some(word[3..].to_string());
+                    index += 1;
+                }
+                "-is" => {
+                    initial_text = cmd.words.get(index + 1).cloned();
+                    index += 2;
+                }
+                word if word.starts_with("-is") && word.len() > 3 => {
+                    initial_text = Some(word[3..].to_string());
+                    index += 1;
+                }
+                "-ni" => {
+                    char_limit = match read_char_limit_argument(cmd.words.get(index + 1)) {
+                        Ok(limit) => limit,
+                        Err(word) => {
+                            let _ = writeln!(
+                                &mut stderr,
+                                "{}read: {}: invalid character count specification",
+                                self.diagnostic_prefix(),
+                                word
+                            );
+                            return self.finish_read_error(cmd, &stderr, 1);
+                        }
+                    };
+                    initial_text = cmd.words.get(index + 2).cloned();
+                    index += 3;
+                }
+                word if word.starts_with("-ni") && word.len() > 3 => {
+                    if let Ok(limit) = word[3..].parse::<usize>() {
+                        char_limit = Some(limit);
+                    }
+                    index += 1;
+                }
+                "-in" => {
+                    initial_text = cmd.words.get(index + 1).cloned();
+                    char_limit = match read_char_limit_argument(cmd.words.get(index + 2)) {
+                        Ok(limit) => limit,
+                        Err(word) => {
+                            let _ = writeln!(
+                                &mut stderr,
+                                "{}read: {}: invalid character count specification",
+                                self.diagnostic_prefix(),
+                                word
+                            );
+                            return self.finish_read_error(cmd, &stderr, 1);
+                        }
+                    };
+                    index += 3;
+                }
+                word if word.starts_with("-in") && word.len() > 3 => {
+                    initial_text = Some(word[3..].to_string());
+                    index += 1;
+                }
+                "-edi" => {
+                    delimiter = cmd
+                        .words
+                        .get(index + 1)
+                        .and_then(|word| word.chars().next())
+                        .unwrap_or('\0');
+                    initial_text = cmd.words.get(index + 2).cloned();
+                    index += 3;
+                }
+                word if word.starts_with("-edi") && word.len() > 4 => {
+                    delimiter = word[3..].chars().next().unwrap_or('\0');
+                    initial_text = Some(word[4..].to_string());
+                    index += 1;
+                }
+                "-dei" => {
+                    delimiter = cmd
+                        .words
+                        .get(index + 1)
+                        .and_then(|word| word.chars().next())
+                        .unwrap_or('\0');
+                    initial_text = cmd.words.get(index + 2).cloned();
+                    index += 3;
+                }
+                word if word.starts_with("-dei") && word.len() > 4 => {
+                    delimiter = word[3..].chars().next().unwrap_or('\0');
+                    initial_text = Some(word[4..].to_string());
+                    index += 1;
+                }
                 "-ed" => {
                     delimiter = cmd
                         .words
@@ -1599,10 +1717,35 @@ impl Executor {
                     index += 1;
                 }
                 word if word.starts_with('-')
-                    && matches!(word.as_bytes().get(1).copied(), Some(b'i' | b't' | b'u'))
+                    && matches!(word.as_bytes().get(1).copied(), Some(b'i' | b'n' | b'N' | b't' | b'u'))
                     && word.len() > 2 =>
                 {
-                    if let Some(value) = word.strip_prefix("-u") {
+                    if let Some(value) = word.strip_prefix("-i") {
+                        initial_text = Some(value.to_string());
+                    } else if let Some(value) = word.strip_prefix("-N") {
+                        if let Ok(limit) = value.parse::<usize>() {
+                            char_limit = Some(limit);
+                            exact_char_limit = true;
+                        } else {
+                            let _ = writeln!(
+                                &mut stderr,
+                                "{}read: {value}: invalid character count specification",
+                                self.diagnostic_prefix()
+                            );
+                            return self.finish_read_error(cmd, &stderr, 1);
+                        }
+                    } else if let Some(value) = word.strip_prefix("-n") {
+                        if let Ok(limit) = value.parse::<usize>() {
+                            char_limit = Some(limit);
+                        } else {
+                            let _ = writeln!(
+                                &mut stderr,
+                                "{}read: {value}: invalid character count specification",
+                                self.diagnostic_prefix()
+                            );
+                            return self.finish_read_error(cmd, &stderr, 1);
+                        }
+                    } else if let Some(value) = word.strip_prefix("-u") {
                         read_fd = match parse_read_fd(value) {
                             Ok(fd) => Some(fd),
                             Err(()) => {
