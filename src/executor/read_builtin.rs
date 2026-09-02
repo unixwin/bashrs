@@ -1884,26 +1884,28 @@ impl Executor {
                 return 0;
             }
 
-            let Some(line) =
-                self.read_input_for_command(cmd, read_fd, delimiter, char_limit, exact_char_limit)
-            else {
-                let _ = self
-                    .shell_state
-                    .variables
-                    .replace_indexed_array(&name, std::iter::empty::<String>());
-                self.env_vars.insert(name.clone(), read_array_storage(&[]));
-                mark_env_name(&mut self.env_vars, "__RUBASH_ARRAY_VARS", &name);
-                return if invalid_name {
-                    self.finish_read_error(cmd, &stderr, 1)
-                } else {
-                    1
-                };
+            let line = match self.read_input_for_command(cmd, read_fd, delimiter, char_limit, exact_char_limit) {
+                Some(line) => Some(line),
+                None => None,
+            };
+            let final_line = match (&line, &initial_text) {
+                (Some(line), _) => line.clone(),
+                (None, Some(text)) => text.clone(),
+                (None, None) => {
+                    let _ = self
+                        .shell_state
+                        .variables
+                        .replace_indexed_array(&name, std::iter::empty::<String>());
+                    self.env_vars.insert(name.clone(), read_array_storage(&[]));
+                    mark_env_name(&mut self.env_vars, "__RUBASH_ARRAY_VARS", &name);
+                    return 1;
+                }
             };
             let values = if raw {
-                split_read_array_words(&line, self.env_vars.get("IFS").map(String::as_str))
+                split_read_array_words(&final_line, self.env_vars.get("IFS").map(String::as_str))
             } else {
                 split_read_array_words_with_backslashes(
-                    &line,
+                    &final_line,
                     self.env_vars.get("IFS").map(String::as_str),
                 )
             };
@@ -1969,7 +1971,11 @@ impl Executor {
                     "{}read: read error: 0: Bad file descriptor",
                     self.diagnostic_prefix()
                 );
-                self.finish_read_error(cmd, &stderr, 1)
+                if initial_text.is_none() {
+                    self.finish_read_error(cmd, &stderr, 1)
+                } else {
+                    0
+                }
             } else if read_fd.is_some() || command_redirects_stdin(cmd) {
                 self.assign_read_scalar_names(&scalar_names, initial_text.as_deref().unwrap_or(""), raw);
                 if initial_text.is_none() { 1 } else { 0 }
