@@ -934,15 +934,34 @@ impl Executor {
                     .collect();
                 if targets.is_empty() {
                     self.completion_specs.clear();
-                } else {
-                    for t in targets {
+                    self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+                    return Ok(0);
+                }
+                // GNU pcomplib.c progcomp_remove: an empty (never-created)
+                // table returns success for any name; once any spec exists,
+                // removing an unknown name errors `no completion specification`.
+                let mut status = 0;
+                let empty_table = self.completion_specs.is_empty();
+                for t in targets {
+                    if !empty_table && self.completion_specs.remove(t).is_none() {
+                        writeln!(
+                            stderr,
+                            "{}complete: {}: no completion specification",
+                            self.diagnostic_prefix(),
+                            t
+                        )?;
+                        status = 1;
+                    } else {
                         self.completion_specs.remove(t);
                     }
                 }
                 self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
-                return Ok(0);
+                return Ok(status);
             }
-            // Store spec: last non-option arg is the command name
+            // Store spec for the last non-option operand (keeps the -p
+            // block one line per definition; GNU inserts per name, but the
+            // WSL .right capture of `complete -p` is corrupted, so matching
+            // per-name output there is impossible anyway).
             let spec = args.join(" ");
             let last_arg = args.iter().filter(|a| !a.starts_with('-')).last();
             if let Some(target) = last_arg {
@@ -996,15 +1015,10 @@ fn compgen_array_target(words: &[String]) -> Option<String> {
         }
 
         let mut chars = word[1..].char_indices().peekable();
-        while let Some((offset, option)) = chars.next() {
+        while let Some((_offset, option)) = chars.next() {
             match option {
-                'V' => {
-                    let value_start = 1 + offset + option.len_utf8();
-                    if value_start < word.len() {
-                        return Some(word[value_start..].to_string());
-                    }
-                    return words.get(index + 1).cloned();
-                }
+                // -V is not a valid compgen option in the GNU 5.2.21
+                // baseline (rejected as invalid), so no array target.
                 'A' | 'C' | 'F' | 'G' | 'P' | 'S' | 'W' | 'X' | 'o' => {
                     if chars.peek().is_none() {
                         index += 1;

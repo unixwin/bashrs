@@ -23,8 +23,56 @@ impl Executor {
             &mut stdout,
             &mut stderr,
         )?;
+        if status == 0 {
+            self.sync_setattr_typed_assignments(cmd.words[1..].iter().map(String::as_str));
+        }
         self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
         Ok(status)
+    }
+
+    /// export/readonly mutate only the legacy env_vars map, but parameter
+    /// expansion reads the typed shell_state.variables owner first, so a
+    /// scalar that already exists there (e.g. HOME seeded at startup) keeps a
+    /// stale value after an export NAME=value assignment. Mirror the assigned
+    /// values into the typed owner for plain scalar names; arrays/assocs/
+    /// namerefs are synced by their own paths.
+    pub(in crate::executor) fn sync_setattr_typed_assignments<'a>(
+        &mut self,
+        args: impl Iterator<Item = &'a str>,
+    ) {
+        for arg in args {
+            if arg == "--" {
+                continue;
+            }
+            if (arg.starts_with('-') || arg.starts_with('+')) && arg != "-" && arg != "+" {
+                continue;
+            }
+            if !arg.contains('=') {
+                continue;
+            }
+            let (raw_name, _) = arg.split_once('=').unwrap_or((arg, ""));
+            let name = raw_name.strip_suffix('+').unwrap_or(raw_name);
+            let (base, _) = assignment_name_and_append(name);
+            if is_marked_var(&self.env_vars, ARRAY_VARS, base)
+                || is_marked_var(&self.env_vars, ASSOC_VARS, base)
+                || is_marked_var(&self.env_vars, NAMEREF_VARS, base)
+            {
+                continue;
+            }
+            match self.env_vars.get(base) {
+                Some(value) => match self.shell_state.variables.get_mut(base) {
+                    Some(variable) => {
+                        variable.value = crate::shell::ShellValue::Scalar(value.clone());
+                    }
+                    None => {
+                        let _ = self.shell_state.variables.set_scalar(base, value.clone());
+                    }
+                },
+                None => {
+                    self.shell_state.variables.remove(base);
+                }
+            }
+        }
     }
 
     pub(in crate::executor) fn mark_posix_function_export_touches(&mut self, args: &[String]) {

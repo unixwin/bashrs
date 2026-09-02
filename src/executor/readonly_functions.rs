@@ -22,6 +22,9 @@ impl Executor {
             &mut stdout,
             &mut stderr,
         )?;
+        if status == 0 {
+            self.sync_setattr_typed_assignments(cmd.words[1..].iter().map(String::as_str));
+        }
         self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
         Ok(status)
     }

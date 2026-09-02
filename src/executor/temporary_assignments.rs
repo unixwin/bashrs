@@ -4,23 +4,30 @@ impl Executor {
     pub(in crate::executor) fn apply_temporary_assignments(
         &mut self,
         assignments: &HashMap<String, String>,
-    ) -> Vec<(String, Option<String>)> {
+    ) -> Vec<(String, Option<String>, Option<crate::shell::Variable>)> {
         // TODO(execute_cmd.c/variables.c): Bash applies assignment words with
         // different persistence rules for special builtins, functions, POSIX
         // mode, and external command environments. For upstream builtins tests,
         // make prefix assignments visible while the command runs, then restore
-        // the previous shell variable values.
+        // the previous shell variable values (both the legacy env_vars value
+        // and the typed shell_state.variables owner, so parameter expansion
+        // does not keep seeing a leaked temporary value).
         let mut previous = Vec::new();
         if !assignments.is_empty() {
             previous.push((
                 EXPORTED_VARS.to_string(),
                 self.env_vars.get(EXPORTED_VARS).cloned(),
+                self.shell_state.variables.get(EXPORTED_VARS).cloned(),
             ));
         }
         for (name, value) in assignments {
             let expanded_value = self.expand_assignment_value(value);
             let (base_name, _) = assignment_name_and_append(name);
-            previous.push((base_name.to_string(), self.env_vars.get(base_name).cloned()));
+            previous.push((
+                base_name.to_string(),
+                self.env_vars.get(base_name).cloned(),
+                self.shell_state.variables.get(base_name).cloned(),
+            ));
             self.apply_shell_assignment(name, expanded_value);
             self.mark_exported(base_name);
         }
@@ -206,6 +213,9 @@ impl Executor {
             }
         }
         self.env_vars.insert(base_name.to_string(), value.clone());
+        if crate::builtins::set::shell_option_enabled(&self.env_vars, "allexport") {
+            self.mark_exported(base_name);
+        }
         sync_shell_assignment_process_env(&self.env_vars, base_name, value);
         true
     }

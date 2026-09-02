@@ -277,15 +277,29 @@ fn execute_complete<E>(
 where
     E: Write,
 {
-    Ok(parse_options(
+    let parsed = parse_options(
         CompletionBuiltin::Complete,
         args,
         "abcdefgjksuvprDEI",
         "oAGWFCXPS",
         diagnostic_prefix,
         stderr,
-    )?
-    .status)
+    )?;
+    if parsed.status != EXECUTION_SUCCESS {
+        return Ok(parsed.status);
+    }
+    // GNU complete.def complete_builtin: valid spec options with no name
+    // operands and no -D/-E/-I default target print usage and fail
+    // (probe: `complete -b` -> usage, EX_USAGE; the test's `complete -b`
+    // at complete.tests line 153). -p/-r/-D are handled at the executor
+    // level and never reach this check.
+    let has_spec_options = args.iter().any(|a| a.starts_with('-') && a != "-" && a != "--");
+    let has_default_flag = args.iter().any(|a| a == "-D" || a == "-E" || a == "-I");
+    if has_spec_options && !has_default_flag && parsed.operands.is_empty() {
+        write_usage(CompletionBuiltin::Complete, stderr)?;
+        return Ok(EX_USAGE);
+    }
+    Ok(parsed.status)
 }
 
 fn execute_compgen<E>(
@@ -305,7 +319,7 @@ where
         CompletionBuiltin::Compgen,
         args,
         "abcdefgjksuv",
-        "oAGWFCXPSV",
+        "oAGWFCXPS",
         diagnostic_prefix,
         stderr,
     )?;
@@ -313,17 +327,9 @@ where
         return Ok(parsed.status);
     }
 
-    // Validate -V varname is a valid identifier (GNU Bash behavior)
-    if let Some(ref varname) = parsed.varname {
-        if !is_valid_identifier(varname) {
-            writeln!(
-                stderr,
-                "{diagnostic_prefix}compgen: {varname}: not a valid identifier"
-            )?;
-            write_usage(CompletionBuiltin::Compgen, stderr)?;
-            return Ok(EX_USAGE);
-        }
-    }
+    // GNU 5.2.21 has no -V option for compgen (it is rejected as an
+    // invalid option, matching complete); the -V feature added in the
+    // bash-5.3 source is not part of the WSL 5.2.21 baseline.
 
     if let Some(wordlist) = parsed.wordlist.as_deref() {
         return write_compgen_matches(wordlist.split_whitespace(), &parsed, stdout);
@@ -501,7 +507,9 @@ where
                     stderr,
                     "{diagnostic_prefix}compgen: {action}: invalid action name"
                 )?;
-                write_usage(CompletionBuiltin::Compgen, stderr)?;
+                // GNU 5.2.21: invalid action/option *name* errors print
+                // the message but NOT the usage line (unlike invalid -x
+                // options, which do print usage).
                 return Ok(EX_USAGE);
             }
         };
@@ -811,6 +819,18 @@ where
                     };
                     value.clone()
                 };
+                if option == 'o' && !is_valid_completion_option_name(&value) {
+                    writeln!(
+                        stderr,
+                        "{diagnostic_prefix}{name}: {value}: invalid option name"
+                    )?;
+                    // GNU 5.2.21: complete prints usage after an invalid
+                    // -o name; compgen does not.
+                    if builtin == CompletionBuiltin::Complete {
+                        write_usage(builtin, stderr)?;
+                    }
+                    return Ok(ParsedCompletionOptions::status(EX_USAGE));
+                }
                 parsed.set_option_arg(option, value);
                 if inline_arg {
                     break;
@@ -841,7 +861,6 @@ struct ParsedCompletionOptions {
     filter_pattern: Option<String>,
     prefix: Option<String>,
     suffix: Option<String>,
-    varname: Option<String>,
     operands: Vec<String>,
 }
 
@@ -861,7 +880,6 @@ impl ParsedCompletionOptions {
             'X' => self.filter_pattern = Some(value),
             'P' => self.prefix = Some(value),
             'S' => self.suffix = Some(value),
-            'V' => self.varname = Some(value),
             _ => {}
         }
     }
@@ -951,16 +969,17 @@ where
                             write_usage(CompletionBuiltin::Compopt, stderr)?;
                             return Ok(EX_USAGE);
                         };
-                        // Validate option name (GNU Bash behavior)
+                        // Validate option name (GNU complete.def compopts[])
                         if !matches!(
                             option_name.as_str(),
-                            "bashdefault" | "default" | "filenames" | "nospace" | "plusdir"
+                            "bashdefault" | "default" | "dirnames" | "filenames"
+                                | "fullquote" | "noquote" | "nosort" | "nospace"
+                                | "plusdirs"
                         ) {
                             writeln!(
                                 stderr,
                                 "{diagnostic_prefix}compopt: {option_name}: invalid option name"
                             )?;
-                            write_usage(CompletionBuiltin::Compopt, stderr)?;
                             return Ok(EX_USAGE);
                         }
                     }
@@ -992,7 +1011,7 @@ impl CompletionBuiltin {
     }
 }
 
-fn write_usage<E>(builtin: CompletionBuiltin, stderr: &mut E) -> io::Result<()>
+pub(crate) fn write_usage<E>(builtin: CompletionBuiltin, stderr: &mut E) -> io::Result<()>
 where
     E: Write,
 {
@@ -1001,7 +1020,7 @@ where
             "complete: usage: complete [-abcdefgjksuv] [-pr] [-DEI] [-o option] [-A action] [-G globpat] [-W wordlist] [-F function] [-C command] [-X filterpat] [-P prefix] [-S suffix] [name ...]"
         }
         CompletionBuiltin::Compgen => {
-            "compgen: usage: compgen [-V varname] [-abcdefgjksuv] [-o option] [-A action] [-G globpat] [-W wordlist] [-F function] [-C command] [-X filterpat] [-P prefix] [-S suffix] [word]"
+            "compgen: usage: compgen [-abcdefgjksuv] [-o option] [-A action] [-G globpat] [-W wordlist] [-F function] [-C command] [-X filterpat] [-P prefix] [-S suffix] [word]"
         }
         CompletionBuiltin::Compopt => {
             "compopt: usage: compopt [-o|+o option] [-DEI] [name ...]"
@@ -1010,15 +1029,12 @@ where
     writeln!(stderr, "{usage}")
 }
 
-/// Check if a name is a valid shell identifier.
-fn is_valid_identifier(name: &str) -> bool {
-    if name.is_empty() {
-        return false;
-    }
-    let mut chars = name.chars();
-    let first = chars.next().unwrap();
-    if !first.is_ascii_alphabetic() && first != '_' {
-        return false;
-    }
-    chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+/// GNU complete.def compopts[] (bash 5.2): valid `-o` completion option names.
+fn is_valid_completion_option_name(name: &str) -> bool {
+    matches!(
+        name,
+        "bashdefault" | "default" | "dirnames" | "filenames" | "fullquote"
+            | "noquote" | "nosort" | "nospace" | "plusdirs"
+    )
 }
+

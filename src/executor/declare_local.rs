@@ -185,6 +185,18 @@ impl Executor {
                 &mut self.shell_state.variables,
             );
             self.apply_posix_function_declare_unset_export(posix_function_export_unsets);
+            if crate::builtins::set::shell_option_enabled(&self.env_vars, "allexport") {
+                // set -a (allexport): a typeset/declare assignment exports the
+                // variable (variables.c do_export / set -a semantics), even
+                // when the declare invocation itself carries no -x flag.
+                for arg in &args {
+                    if arg.contains('=') && !(arg.starts_with('-') || arg.starts_with('+')) {
+                        let (raw_name, _) = arg.split_once('=').unwrap_or((arg, ""));
+                        let (base, _) = assignment_name_and_append(raw_name);
+                        self.mark_exported(base);
+                    }
+                }
+            }
         }
         self.finish_global_declare_for_local_names(global_local_values);
         result
@@ -234,6 +246,36 @@ impl Executor {
             let mut args = self.expand_declare_assignment_args(&cmd.words[1..]);
             if declare_args_request_integer(&args) {
                 args = self.evaluate_declare_integer_assignment_args(&args);
+            }
+            // GNU local / local -p with no name arguments prints ONLY the
+            // variables declared local to the current function frame (sorted,
+            // declare -- form) -- never the whole variable table. Rewrite
+            // the args so the shared declare printer renders just those names.
+            if local_names(&args).is_empty() {
+                let local_names: Vec<String> = self
+                    .local_var_scopes
+                    .last()
+                    .map(|scope| {
+                        scope
+                            .keys()
+                            .filter(|name| !name.starts_with("__RUBASH_"))
+                            .cloned()
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let local_names = {
+                    let mut names = local_names;
+                    names.sort();
+                    names
+                };
+                if local_names.is_empty() {
+                    // No locals declared in this frame: GNU prints nothing.
+                    self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+                    return Ok(0);
+                }
+                args.clear();
+                args.push("-p".to_string());
+                args.extend(local_names);
             }
             if !declare_args_request_print(&args) {
                 let prefix_assignment_names = cmd

@@ -1,4 +1,4 @@
-use crate::executor::path::shell_path_to_windows;
+use crate::executor::path::{shell_path_entries, shell_path_to_windows};
 use crate::executor::Executor;
 use std::path::PathBuf;
 
@@ -91,12 +91,20 @@ fn should_search_source_path(executor: &Executor, filename: &str) -> bool {
 }
 
 fn source_path_search(path: &str, filename: &str, executor: &Executor) -> Option<PathBuf> {
-    // Empty components mean the current directory.
-    for entry in path.split(':') {
+    // The PATH separator is platform-specific: Windows uses ';' with
+    // drive-letter colons, POSIX uses ':'.  split_shell_path understands
+    // both, so it must be used here instead of a raw `path.split(':')`.
+    // A raw POSIX split of a Windows PATH produced garbage `\\...` UNC-ish
+    // candidates whose is_file() triggered slow UNC name resolution (~2s per
+    // entry, ~17s for a full PATH), stalling `.`/source lookups for a missing
+    // file (builtins.tests TIMEOUT).
+    //
+    // Empty components mean the current directory (GNU findcmd.c behavior).
+    for entry in shell_path_entries(path) {
         let candidate = if entry.is_empty() || entry == "." {
             PathBuf::from(filename)
         } else {
-            let mut base = shell_path_to_windows(entry, executor.env_vars());
+            let mut base = shell_path_to_windows(&entry, executor.env_vars());
             base.push(filename);
             base
         };

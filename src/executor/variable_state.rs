@@ -159,10 +159,10 @@ impl Executor {
 
     pub(in crate::executor) fn restore_function_temporary_assignments(
         &mut self,
-        previous: Vec<(String, Option<String>)>,
+        previous: Vec<(String, Option<String>, Option<crate::shell::Variable>)>,
         applied: HashMap<String, Option<String>>,
     ) {
-        for (name, value) in previous.into_iter().rev() {
+        for (name, value, typed_value) in previous.into_iter().rev() {
             if name != EXPORTED_VARS {
                 if is_marked_var(&self.env_vars, POSIX_FUNCTION_EXPORT_TOUCHED, &name) {
                     continue;
@@ -180,23 +180,39 @@ impl Executor {
                 set_process_env(&name, value);
             } else {
                 self.env_vars.remove(&name);
-                env::remove_var(name);
+                env::remove_var(&name);
             }
+            self.restore_typed_temporary_value(&name, typed_value);
         }
     }
 
     pub(in crate::executor) fn restore_temporary_assignments(
         &mut self,
-        previous: Vec<(String, Option<String>)>,
+        previous: Vec<(String, Option<String>, Option<crate::shell::Variable>)>,
     ) {
-        for (name, value) in previous.into_iter().rev() {
+        for (name, value, typed_value) in previous.into_iter().rev() {
             if let Some(value) = value {
                 self.env_vars.insert(name.clone(), value.clone());
                 set_process_env(&name, value);
             } else {
                 self.env_vars.remove(&name);
-                env::remove_var(name);
+                env::remove_var(&name);
             }
+            self.restore_typed_temporary_value(&name, typed_value);
+        }
+    }
+
+    fn restore_typed_temporary_value(
+        &mut self,
+        name: &str,
+        typed_value: Option<crate::shell::Variable>,
+    ) {
+        // Temporary assignment words must not outlive the command, even in the
+        // typed owner that parameter expansion reads first. Remove then set so
+        // a readonly flag gained mid-command cannot block the restore.
+        self.shell_state.variables.remove(name);
+        if let Some(variable) = typed_value {
+            let _ = self.shell_state.variables.set(name.to_string(), variable);
         }
     }
 }
