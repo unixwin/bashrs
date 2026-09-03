@@ -61,6 +61,34 @@ where
         unset_nameref,
         unset_readonly,
     } = options;
+    // GNU declare.def:764-806: attribute-only arguments (no \`name=value\`)
+    // whose NAME is an existing nameref follow the chain -- the attributes and
+    // the created empty variable land on the referenced variable, never on the
+    // nameref itself (nameref21.sub: \`declare -A ref\` marks var). Only when
+    // the command is not itself toggling the nameref attribute: declare.def
+    // 695-701 keeps -n/+n operating on the refvar.
+    let attr_names_owned: Vec<String> = if !nameref && !unset_nameref {
+        let namerefs = marked_vars(variables, NAMEREF_VARS);
+        names
+            .iter()
+            .map(|name| {
+                if name.contains('=') {
+                    return (*name).to_string();
+                }
+                let base = name.strip_suffix('+').unwrap_or(name);
+                if namerefs.contains(base) {
+                    if let Some((_, target)) = super::declare_nameref_chain(variables, base) {
+                        return target;
+                    }
+                }
+                (*name).to_string()
+            })
+            .collect()
+    } else {
+        names.iter().map(|name| (*name).to_string()).collect()
+    };
+    let names: Vec<&str> = attr_names_owned.iter().map(String::as_str).collect();
+    let names = &names[..];
     if unset_export
         || unset_array
         || unset_assoc
@@ -134,6 +162,11 @@ where
             let name = name.split_once('=').map(|(name, _)| name).unwrap_or(name);
             let name = name.strip_suffix('+').unwrap_or(name);
             mark_typed(variables, INTEGER_VARS, name);
+            // GNU declare.def:667-671 applies att_integer without touching the
+            // stored value; for a nameref the stored value is a variable NAME,
+            // so evaluating it would destroy the reference
+            // (nameref23.sub:48 `declare -ni b` must keep b's cell "a[0]").
+            if !marked_vars(variables, NAMEREF_VARS).contains(name) {
             if let Some(value) = variables.get(name).cloned() {
                 let value = if value.starts_with('\x1d') {
                     let mut entries = indexed_array_entries(&value);
@@ -155,6 +188,7 @@ where
                 };
                 variables.insert(name.to_string(), value.clone());
                 env::set_var(name, value);
+            }
             }
         }
     }

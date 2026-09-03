@@ -9,7 +9,7 @@ use super::storage::{
 };
 use super::{
     ARRAY_VARS, ASSOC_VARS, COMPOUND_ASSIGNMENT_MARKER, DECLARED_UNSET_VARS, EXECUTION_FAILURE,
-    EXECUTION_SUCCESS, READONLY_VARS,
+    EXECUTION_SUCCESS, INTEGER_VARS, READONLY_VARS,
 };
 use crate::executor::arithmetic::eval_conditional_arith_value;
 
@@ -36,7 +36,11 @@ where
             }
             continue;
         };
-        if let Some((base, index_expression)) = declare_indexed_element(var_name) {
+        let (raw_target, append_elem) = var_name
+            .strip_suffix('+')
+            .map(|base| (base, true))
+            .unwrap_or((var_name, false));
+        if let Some((base, index_expression)) = declare_indexed_element(raw_target) {
             if assoc || marked_vars(variables, ASSOC_VARS).contains(base) {
                 if readonly.contains(base) {
                     writeln!(
@@ -71,7 +75,26 @@ where
                 if let Some(index) = index {
                     let current = variables.get(base).cloned().unwrap_or_default();
                     let mut entries = indexed_array_entries(&current);
-                    entries.insert(index, value.to_string());
+                    // GNU bind_array_element: appends through a nameref land
+                    // on the referenced element, arithmetically when the
+                    // referenced array carries the integer attribute
+                    // (nameref23.sub: declare -ai a; a[0]=4; declare -n
+                    // b='a[0]'; declare b+=1 bumps a[0] to 5).
+                    let element = if append_elem {
+                        let current_element = entries.get(&index).cloned().unwrap_or_default();
+                        if integer || marked_vars(variables, INTEGER_VARS).contains(base) {
+                            let left = eval_conditional_arith_value(&current_element, variables)
+                                .unwrap_or(0);
+                            let right =
+                                eval_conditional_arith_value(value, variables).unwrap_or(0);
+                            (left + right).to_string()
+                        } else {
+                            format!("{current_element}{value}")
+                        }
+                    } else {
+                        value.to_string()
+                    };
+                    entries.insert(index, element);
                     variables.insert(base.to_string(), format_indexed_array_storage(entries));
                     mark_typed(variables, ARRAY_VARS, base);
                     continue;

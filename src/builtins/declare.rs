@@ -385,10 +385,18 @@ where
         };
         let append = lhs.strip_suffix('+').is_some();
         let lhs = lhs.strip_suffix('+').unwrap_or(lhs);
+        // GNU 5.2.21 (declare.def:651 invisible-husk creation + ksh93 onref
+        // deferral): `declare -in name=value` -- integer and nameref together
+        // WITH an assignment -- leaves nothing observable: no value, no
+        // attributes, no message (probe: `declare -p a b` afterwards reports
+        // "b: not found" and a later `b+=1` builds a plain b).
+        if nameref && integer && !value.is_empty() {
+            continue;
+        }
         if nameref {
-            // declare.def:554/841: a nameref cannot be an array variable,
-            // neither as a declared name (x[3]) nor by converting an array.
-            if valid_array_reference(lhs) || arrays.contains(lhs) || assocs.contains(lhs) {
+            // declare.def:554: a nameref cannot be declared as an array
+            // reference name (x[3]).
+            if valid_array_reference(lhs) {
                 writeln!(
                     stderr,
                     "{}{command_name}: {}: reference variable cannot be an array",
@@ -421,7 +429,11 @@ where
             }
             // declare.def:574-579: the value must be a valid identifier o
             // array reference when it will be used as a nameref target.
-            if !value.is_empty() && !append && !valid_nameref_value(value) {
+            if !value.is_empty()
+                && !append
+                && !value.starts_with(COMPOUND_ASSIGNMENT_MARKER)
+                && !valid_nameref_value(value)
+            {
                 writeln!(
                     stderr,
                     "{}{command_name}: `{value}': invalid variable name for name reference",
@@ -436,13 +448,36 @@ where
             if !append
                 && value.is_empty()
                 && !namerefs.contains(lhs)
-                && variables.get(lhs).is_some_and(|current| !valid_nameref_value(current))
+                && variables.get(lhs).is_some_and(|current| {
+                    // A compound/array-storage cell is not a nameref value at
+                    // all -- GNU reaches the array-rejection diagnostic for
+                    // those (nameref22.sub:50), not the invalid-value error.
+                    !current.starts_with('\x1d')
+                        && !current.starts_with('(')
+                        && !current.starts_with(COMPOUND_ASSIGNMENT_MARKER)
+                        && !valid_nameref_value(current)
+                })
             {
                 let current = variables.get(lhs).cloned().unwrap_or_default();
                 writeln!(
                     stderr,
                     "{}{command_name}: `{current}': invalid variable name for name reference",
                     diagnostic_prefix(variables)
+                )?;
+                attr_status = EXECUTION_FAILURE;
+                continue;
+            }
+            // declare.def:841: applying -n to an existing array variable is
+            // rejected, but only after the value checks above -- GNU reports
+            // the invalid-value error first (nameref22.sub:69 reports
+            // `(one two three)': invalid variable name, then :70 reports the
+            // array rejection for the same variable).
+            if arrays.contains(lhs) || assocs.contains(lhs) {
+                writeln!(
+                    stderr,
+                    "{}{command_name}: {}: reference variable cannot be an array",
+                    diagnostic_prefix(variables),
+                    lhs
                 )?;
                 attr_status = EXECUTION_FAILURE;
                 continue;
@@ -466,6 +501,18 @@ where
             valid_assign_names.push(name);
             continue;
         };
+        if (array || assoc) && namerefs.contains(var_name) {
+            // declare.def:841: a nameref cannot be (re)declared as an array
+            // variable, even with an assignment.
+            writeln!(
+                stderr,
+                "{}{command_name}: {}: reference variable cannot be an array",
+                diagnostic_prefix(variables),
+                var_name
+            )?;
+            attr_status = EXECUTION_FAILURE;
+            continue;
+        }
         if assoc && arrays.contains(var_name) && !assocs.contains(var_name) {
             writeln!(
                 stderr,
@@ -573,7 +620,13 @@ where
         unset_nameref,
         unset_readonly,
     };
-    attr_status = apply_declare_attrs(command_name, &names, variables, options, attr_status, stderr)?;
+    // GNU declare.def: -p is display-only; `declare -np b` must not create
+    // or mark b (nameref23.sub:41 -- GNU prints "b: not found" for a failed
+    // `declare -n b="1"` followed by `declare -np b`, while an attr pass
+    // would leave a nameref mark behind).
+    if !print {
+        attr_status = apply_declare_attrs(command_name, &names, variables, options, attr_status, stderr)?;
+    }
 
     let plain = names.is_empty() && !had_name_args && !print && !saw_option;
     if names.is_empty() && !had_name_args {
