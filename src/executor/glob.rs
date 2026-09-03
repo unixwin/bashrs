@@ -102,14 +102,15 @@ pub(crate) fn pathname_expand_word(
         Some((d, p)) => (d.to_string(), p),
         None => (".".to_string(), word.as_ref()),
     };
-    let include_dotfiles = dotglob || pattern.starts_with('.');
+    let include_dotfiles =
+        dotglob || pattern.starts_with('.') || globignore_assigned(env_vars);
     let entries = match shell_directory_entries(&dir_path, env_vars) {
         Ok(entries) => entries,
         Err(_) => return unmatched_expansion(word, nullglob, failglob),
     };
     let mut names = synthetic_dot_names(pattern, globskipdots);
     names.extend(entries.into_iter().map(|entry| entry.name));
-    let mut matches: Vec<String> = names
+    let matches: Vec<String> = names
         .into_iter()
         .filter_map(|name| {
             if !include_dotfiles && name.starts_with('.') {
@@ -127,6 +128,7 @@ pub(crate) fn pathname_expand_word(
             }
         })
         .collect();
+    let mut matches = apply_globignore(matches, env_vars);
     if matches.is_empty() {
         return unmatched_expansion(word, nullglob, failglob);
     }
@@ -151,6 +153,7 @@ fn pathname_expand_segments(
         vec![String::new()]
     };
     let mut saw_pattern = false;
+    let globignore_assigned = globignore_assigned(env_vars);
 
     for (index, part) in parts.iter().enumerate() {
         if part.is_empty() {
@@ -173,7 +176,9 @@ fn pathname_expand_segments(
                     Err(_) => continue,
                 };
                 let pattern = unescape_glob_pattern_literals(part);
-                let include_dotfiles = dotglob || pattern.starts_with('.');
+                let include_dotfiles = dotglob
+                    || pattern.starts_with('.')
+                    || globignore_assigned;
                 let mut names = synthetic_dot_names(&pattern, globskipdots);
                 names.extend(entries.into_iter().map(|entry| entry.name));
                 for name in names {
@@ -204,6 +209,7 @@ fn pathname_expand_segments(
         }
     }
 
+    let mut prefixes = apply_globignore(prefixes, env_vars);
     if prefixes.is_empty() {
         return unmatched_expansion(word, nullglob, failglob);
     }
@@ -314,6 +320,7 @@ fn globstar_expand(
         env_vars,
     );
 
+    let mut matches = apply_globignore(matches, env_vars);
     if matches.is_empty() {
         return unmatched_expansion(word, nullglob, failglob);
     }
@@ -347,7 +354,9 @@ fn collect_globstar_matches(
     };
     let mut names = synthetic_dot_names(suffix, globskipdots);
     names.extend(entries.iter().map(|entry| entry.name.clone()));
-    let include_dotfiles = dotglob || suffix.starts_with('.');
+    let include_dotfiles = dotglob
+        || suffix.starts_with('.')
+        || globignore_patterns(env_vars).is_some();
     for name in names {
         if name.starts_with('.') && !include_dotfiles {
             continue;
@@ -390,6 +399,58 @@ fn collect_globstar_matches(
             }
         }
     }
+}
+
+/// Returns the GLOBIGNORE pattern list when the variable is set to a
+/// non-null value. A null GLOBIGNORE still enables the dotfile side effect
+/// (see globignore_assigned) but contributes no filter patterns.
+fn globignore_patterns(
+    env_vars: &std::collections::HashMap<String, String>,
+) -> Option<Vec<String>> {
+    let value = env_vars.get("GLOBIGNORE")?;
+    if value.is_empty() {
+        return None;
+    }
+    Some(
+        value
+            .split(':')
+            .filter(|pattern| !pattern.is_empty())
+            .map(str::to_string)
+            .collect(),
+    )
+}
+
+/// True when GLOBIGNORE has been assigned at all (set, even to the null
+/// string). WSL GNU 5.2.21 probe: after `GLOBIGNORE=` dotfiles still match
+/// (the assignment enables the dotglob side effect) while only unsetting
+/// restores the default; pattern filtering itself requires a non-null
+/// value.
+fn globignore_assigned(env_vars: &std::collections::HashMap<String, String>) -> bool {
+    env_vars.contains_key("GLOBIGNORE")
+}
+
+/// Filters a collected pathname-expansion match list by GLOBIGNORE (bash
+/// glob.c ignorable()): when GLOBIGNORE is set non-null, a match whose
+/// basename matches any ignore pattern is removed, and `.` / `..` are
+/// always removed. Assigning GLOBIGNORE also enables dotfile matching (the
+/// dotglob side effect), which the callers handle at collection time.
+fn apply_globignore(
+    matches: Vec<String>,
+    env_vars: &std::collections::HashMap<String, String>,
+) -> Vec<String> {
+    let Some(patterns) = globignore_patterns(env_vars) else {
+        return matches;
+    };
+    matches
+        .into_iter()
+        .filter(|name| {
+            let base = name.rsplit('/').next().unwrap_or(name);
+            base != "." && base != ".."
+                && !patterns
+                    .iter()
+                    .any(|pattern| super::case_pattern_matches(pattern, base))
+        })
+        .collect()
 }
 
 fn synthetic_dot_names(pattern: &str, globskipdots: bool) -> Vec<String> {
