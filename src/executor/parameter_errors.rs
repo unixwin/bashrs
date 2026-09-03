@@ -140,6 +140,19 @@ impl Executor {
         is_shell_name(name) || Self::is_length_operator_expression(name)
     }
 
+    /// Valid indirect target values: shell names, all-digit positionals,
+    /// and the special parameters. Anything else triggers GNU's "invalid
+    /// variable name" when indirected through (probe: x=123bad).
+    fn is_valid_indirect_target(value: &str) -> bool {
+        if value.is_empty() {
+            return false;
+        }
+        if is_shell_name(value) || value.chars().all(|c| c.is_ascii_digit()) {
+            return true;
+        }
+        matches!(value, "@" | "*" | "#" | "?" | "$" | "-" | "!")
+    }
+
     /// Validates the body of a `${!...}` expansion: a simple parameter
     /// reference (name, numeric positional, or special), optionally with a
     /// trailing array subscript (`${!arr[@]}` keys form) or a `${!prefix@}`
@@ -287,6 +300,34 @@ impl Executor {
             if let Some(indirect) = inner.strip_prefix('!') {
                 if !Self::is_valid_indirect_expression(indirect) {
                     return Some((format!("${{{inner}}}"), "bad substitution".to_string(), 1));
+                }
+                // Value-dependent GNU diagnostics for the plain indirect
+                // form ${!name} (subst.c parameter_brace_expand_indir): an
+                // unset name reports "invalid indirect expansion" and aborts
+                // the command; a set name whose value is not a valid
+                // indirect target reports "invalid variable name". A set
+                // name whose value is a valid identifier expands normally -
+                // even when the target itself is unset (GNU probe:
+                // x=validname with validname unset expands empty).
+                if !indirect.is_empty() && is_shell_name(indirect) {
+                    match self.env_vars.get(indirect) {
+                        None => {
+                            return Some((
+                                indirect.to_string(),
+                                "invalid indirect expansion".to_string(),
+                                1,
+                            ));
+                        }
+                        Some(value) => {
+                            if !Self::is_valid_indirect_target(value) {
+                                return Some((
+                                    value.clone(),
+                                    "invalid variable name".to_string(),
+                                    1,
+                                ));
+                            }
+                        }
+                    }
                 }
             }
             // `${ command; }` is not Bash command substitution. Rubash also
