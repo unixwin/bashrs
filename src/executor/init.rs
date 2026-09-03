@@ -88,15 +88,20 @@ impl Executor {
             .entry("SHELL".to_string())
             .or_insert_with(shell_path_value);
         // GNU test scripts use ${THIS_SH} to invoke the shell under test
-        // (e.g. `${THIS_SH} -c '...'`). WSL interop does not forward env
-        // vars from a Linux parent to a Windows child, so `env THIS_SH=...
-        // rubash.exe` loses the variable. Fall back to our own executable
-        // path when the caller did not supply THIS_SH.
-        env_vars.entry("THIS_SH".to_string()).or_insert_with(|| {
+        // (e.g. `${THIS_SH} -c '...'`). Rubash is always the shell under
+        // test, so the auto-detected executable path must OVERRIDE any
+        // inherited value: the winuxsh wrapper exports THIS_SH pointing at
+        // its own shim in the Windows environment, and WSL interop feeds
+        // that Windows value to every rubash.exe spawned from the test
+        // harness - keeping it would silently run test children under the
+        // old shim instead of rubash (found via func.tests: func5 children
+        // executed niu.exe semantics and truncated the family output).
+        env_vars.insert(
+            "THIS_SH".to_string(),
             std::env::current_exe()
                 .map(|path| path.to_string_lossy().replace('\\', "/").to_string())
-                .unwrap_or_else(|_| "rubash".to_string())
-        });
+                .unwrap_or_else(|_| "rubash".to_string()),
+        );
         env_vars.remove("OLDPWD");
         initialize_shell_level(&mut env_vars);
         mark_initial_exported_vars(&mut env_vars);
