@@ -1,7 +1,4 @@
-outside:
-outside:
-assignment: 1
-ntf '%s\n' aa bb cc dd; }: bad substitution
+./comsub2.tests: line 19: ${ printf '%s\n' aa bb cc dd; }: bad substitution
 ./comsub2.tests: line 20: AA${ printf '%s\n' aa bb cc dd; }BB: bad substitution
 ./comsub2.tests: line 22: ${ printf '%s\n' aa bb cc dd; return; echo ee ff; }: bad substitution
 ./comsub2.tests: line 24: ${ printf '%s\n' aa bb cc dd
@@ -10,8 +7,11 @@ ntf '%s\n' aa bb cc dd; }: bad substitution
 	printf '%s\n' aa bb cc dd
 }EEEEE: bad substitution
 ./comsub2.tests: line 29: ${ printf '%s\n' aa bb cc dd; x=42 ; return 12; echo ee ff; }: bad substitution
+outside:
 ./comsub2.tests: line 32: ${ local x; printf '%s\n' aa bb cc dd; x=42 ; return 12; echo ee ff; }: bad substitution
+outside:
 ./comsub2.tests: line 34: ${ local x; printf '%s\n' aa bb cc dd; x=42 ; return 12; echo ee ff; }: bad substitution
+assignment: 1
 ./comsub2.tests: line 39: ${ :;}: bad substitution
 ./comsub2.tests: line 45: syntax error near unexpected token `}'
 ./comsub2.tests: line 45: `xx=${ func() { echo func-inside; }; }'
