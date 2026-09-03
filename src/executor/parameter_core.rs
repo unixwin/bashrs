@@ -347,22 +347,69 @@ impl Executor {
 /// skipping `:` inside nested `${...}` groups: `${v:${w:-4}}` must split on
 /// the colon after `v`, not on the `:` inside `${w:-4}`.
 fn split_top_level_colon(input: &str) -> (&str, &str, bool) {
-    let mut depth = 0usize;
+    // GNU subst.c skip_to_delim (subst.c:2198-2300) finds the offset/length
+    // separator colon with full shell-syntax awareness. In arithmetic context
+    // (SD_ARITHEXP, used by parameter_brace_substring) it additionally:
+    //   - counts each top-level `?` so the *following* `:` is treated as the
+    //     ternary's own separator, not the slice separator (subst.c:2254-2264);
+    //   - skips a whole `(...)` group via extract_delimited_string
+    //     (subst.c:2282-2296), so colons inside parens are literal data.
+    // Without this, `${v:j?1:0:j}` split as offset `j?1` / length `0:j`
+    // instead of GNU's offset `j?1:0` / length `j`.
+    let mut brace_depth = 0usize;
+    let mut paren_depth = 0usize;
+    let mut skipcol = 0usize;
+    let mut escaped = false;
     let bytes = input.as_bytes();
     let mut index = 0;
     while index < bytes.len() {
-        if bytes[index] == b'$' && bytes.get(index + 1) == Some(&b'{') {
-            depth += 1;
-            index += 2;
-            continue;
-        }
-        if bytes[index] == b'}' && depth > 0 {
-            depth -= 1;
+        if escaped {
+            escaped = false;
             index += 1;
             continue;
         }
-        if bytes[index] == b':' && depth == 0 {
-            return (&input[..index], &input[index + 1..], true);
+        let ch = bytes[index];
+        if ch == b'\\' {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+        if ch == b'$' && bytes.get(index + 1) == Some(&b'{') {
+            brace_depth += 1;
+            index += 2;
+            continue;
+        }
+        if ch == b'}' && brace_depth > 0 {
+            brace_depth -= 1;
+            index += 1;
+            continue;
+        }
+        if brace_depth == 0 {
+            if ch == b'(' {
+                paren_depth += 1;
+                index += 1;
+                continue;
+            }
+            if ch == b')' && paren_depth > 0 {
+                paren_depth -= 1;
+                index += 1;
+                continue;
+            }
+            if paren_depth == 0 {
+                if ch == b'?' {
+                    skipcol += 1;
+                    index += 1;
+                    continue;
+                }
+                if ch == b':' {
+                    if skipcol > 0 {
+                        skipcol -= 1;
+                        index += 1;
+                        continue;
+                    }
+                    return (&input[..index], &input[index + 1..], true);
+                }
+            }
         }
         index += 1;
     }

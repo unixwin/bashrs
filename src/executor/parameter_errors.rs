@@ -1,6 +1,25 @@
 use super::*;
 use crate::executor::parameter_core::word_contains_current_shell_command_substitution;
 
+/// Recognize `=` / `:=` whose parameter name is a bare special parameter
+/// (`!`, `@`, `*`). GNU subst.c parameter_brace_expand treats these like
+/// positional parameters for the assignment operators (subst.c:10404 reports
+/// "$%s: cannot assign in this way" for them); plain variable names and
+/// numeric positionals are handled by parse_parameter_assignment_operator.
+fn parse_special_assignment_operator(inner: &str) -> Option<(&str, bool)> {
+    if let Some((name, _)) = inner.split_once(":=") {
+        if matches!(name, "!" | "@" | "*") {
+            return Some((name, true));
+        }
+    }
+    if let Some((name, _)) = inner.split_once('=') {
+        if matches!(name, "!" | "@" | "*") {
+            return Some((name, false));
+        }
+    }
+    None
+}
+
 impl Executor {
     pub(in crate::executor) fn parameter_assignment_error(
         &self,
@@ -49,6 +68,20 @@ impl Executor {
                         return Some((target, "readonly variable"));
                     }
                 }
+            } else if let Some((name, require_non_empty)) = parse_special_assignment_operator(inner)
+            {
+                // GNU subst.c:10404-10410: `=` / `:=` on a special parameter
+                // (`!`, `@`, `*`) with the parameter unset (or null for `:=`)
+                // reports "$X: cannot assign in this way" and returns
+                // &expand_wdesc_error (non-fatal DISCARD, subst.c:4296).
+                // #, $, ?, -, 0 are always set, so only !/@/* reach the error
+                // path. parse_parameter_assignment_operator rejects these
+                // names, and without this branch `${!=x}` fell into the
+                // indirect-expansion scanner and misreported "bad
+                // substitution" while `${@=x}` expanded silently empty.
+                if self.special_assignment_required(name, require_non_empty) {
+                    return Some((format!("${name}"), "cannot assign in this way"));
+                }
             }
             rest = &after_start[end + 1..];
         }
@@ -63,6 +96,26 @@ impl Executor {
         match self.parameter_operator_value(name) {
             Some(value) => require_non_empty && value.is_empty(),
             None => true,
+        }
+    }
+
+    /// GNU fatality condition for `=` / `:=` on a special parameter
+    /// (subst.c:10404 path): the error fires only when the parameter is
+    /// UNSET (`=`) or unset-or-null (`:=`). `!` is unset until the first
+    /// background job; `@` / `*` are unset with zero positional parameters.
+    fn special_assignment_required(&self, name: &str, require_non_empty: bool) -> bool {
+        let is_set = match name {
+            "!" => self.last_background_pid.is_some(),
+            "@" | "*" => !self.positional_params.is_empty(),
+            _ => true,
+        };
+        if require_non_empty {
+            !is_set
+                || self
+                    .parameter_error_value(name)
+                    .is_none_or(|value| value.is_empty())
+        } else {
+            !is_set
         }
     }
 
@@ -101,7 +154,21 @@ impl Executor {
         if let Some(target_name) = self.nameref_target_name(indirect_name) {
             return Some(Some(target_name));
         }
-
+        // GNU param_expand (subst.c:10058-10068) resolves an indirect
+        // POSITIONAL reference to the parameter NAME held by that positional,
+        // then applies the operator to *that* parameter's set-state and
+        // value. With $1=a and a="" (set but null), ${!1-$z} must yield ""
+        // (`-` does not substitute for a set parameter) while ${!1:-$z}
+        // substitutes $z; with $9 unset the operator sees an unset
+        // parameter either way. The previous code fell through to
+        // parameter_error_value, which returned $1's raw value ("a") as the
+        // operator result.
+        if let Ok(index) = indirect_name.parse::<usize>() {
+            return match self.positional_params.get(index.saturating_sub(1)) {
+                Some(target_name) => Some(self.parameter_operator_value(target_name)),
+                None => Some(None),
+            };
+        }
         let target_expr = self.env_vars.get(indirect_name)?;
         if target_expr.ends_with("[@]") || target_expr.ends_with("[*]") {
             let values = self.indirect_target_values(target_expr);
@@ -186,6 +253,19 @@ impl Executor {
             .unwrap_or(base.len());
         if name_end > 0 {
             let head = &base[..name_end];
+            // GNU param_expand also applies operators to an indirect
+            // POSITIONAL reference: ${!9:-$z} / ${!1-$z} look up $9 / $1 and
+            // then apply the default operator to the indirect result
+            // (probe: ${!9:-$z} with $9 unset expands to $z's value). The
+            // previous is_shell_name-only check rejected these as bad
+            // substitution.
+            if head.bytes().all(|b| b.is_ascii_digit()) {
+                let rest = &base[name_end..];
+                return matches!(
+                    rest.chars().next(),
+                    Some(':' | '-' | '+' | '=' | '?' | '#' | '%' | '/' | '^' | ',' | '@')
+                );
+            }
             if is_shell_name(head) {
                 let rest = &base[name_end..];
                 return matches!(

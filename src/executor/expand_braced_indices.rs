@@ -53,7 +53,17 @@ impl Executor {
         if let Some((var_name, offset, length)) = self.parse_parameter_substring(name) {
             return Some(self.expand_braced_substring_parameter(var_name, offset, length));
         }
-        self.array_element_parameter_value(name)
+        // GNU valid_array_reference only treats NAME[...] as an array
+        // subscript when NAME is a valid identifier. A pattern-replacement
+        // word like `z//[^;]` extracts array name "z//" here; without the
+        // identifier check the `;` key failed arithmetic evaluation and
+        // printed a spurious "z//: bad array subscript" (new-exp8.sub).
+        if let Some((array_name, _)) = parse_array_subscript(name) {
+            if is_shell_name(array_name) {
+                return self.array_element_parameter_value(name);
+            }
+        }
+        None
     }
 
     fn expand_braced_length_parameter(&self, var_name: &str) -> String {
@@ -160,10 +170,13 @@ impl Executor {
             return parameter_substring(&value, offset, length);
         }
         if is_shell_name(var_name) {
+            // GNU variables.c get_string_value returns element [0] when a
+            // bare array name is expanded without a subscript, so the slice
+            // must operate on element 0 rather than the raw typed array
+            // storage (probe: av=(abcd efgh); ${av:1:2} -> "bc").
             return self
-                .env_vars
-                .get(var_name)
-                .map(|value| parameter_substring(value, offset, length))
+                .parameter_pattern_scalar_value(var_name)
+                .map(|value| parameter_substring(&value, offset, length))
                 .unwrap_or_default();
         }
         String::new()

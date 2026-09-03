@@ -326,7 +326,13 @@ impl Executor {
                 &self.expand_embedded_parameters_preserving_escaped_single_quotes(replacement),
             );
             return self.array_modified_word_values(var_name, quoted_array_word, |value| {
-                replace_parameter_pattern(value, &pattern, &replacement, global)
+                replace_parameter_pattern(
+                    value,
+                    &pattern,
+                    &replacement,
+                    global,
+                    self.nocasematch_enabled(),
+                )
             });
         }
 

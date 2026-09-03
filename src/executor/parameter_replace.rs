@@ -5,6 +5,7 @@ pub(in crate::executor) fn replace_parameter_pattern(
     pattern: &str,
     replacement: &str,
     global: bool,
+    nocase: bool,
 ) -> String {
     if pattern.is_empty() {
         return value.to_string();
@@ -12,7 +13,7 @@ pub(in crate::executor) fn replace_parameter_pattern(
 
     // Bash's glob `*` also matches an empty parameter value. Handle this
     // before the replacement loop so an empty match cannot loop forever.
-    if value.is_empty() && case_pattern_matches(pattern, "") {
+    if value.is_empty() && parameter_pattern_match(pattern, "", nocase) {
         return replacement.to_string();
     }
 
@@ -20,7 +21,7 @@ pub(in crate::executor) fn replace_parameter_pattern(
         if let Some(class) = parse_negated_bracket_filter(pattern) {
             return value
                 .chars()
-                .filter(|ch| bracket_filter_matches(&class, *ch))
+                .filter(|ch| bracket_filter_matches(&class, *ch, nocase))
                 .collect();
         }
     }
@@ -38,7 +39,7 @@ pub(in crate::executor) fn replace_parameter_pattern(
         // decode_parameter_pattern_quotes; plain string replacement must
         // match the real `\` character in the value.
         let literal = normalize_parameter_pattern_backslashes(pattern);
-        return replace_with_amp(value, &literal, replacement, global);
+        return replace_with_amp(value, &literal, replacement, global, nocase);
     }
 
     // A quoted backslash in a replacement pattern is a literal character,
@@ -55,7 +56,8 @@ pub(in crate::executor) fn replace_parameter_pattern(
     let mut cursor = 0;
 
     while cursor <= value.len() {
-        let Some((start, end)) = find_parameter_pattern_match(value, pattern, cursor, &indices)
+        let Some((start, end)) =
+            find_parameter_pattern_match(value, pattern, cursor, &indices, nocase)
         else {
             output.push_str(&value[cursor..]);
             return output;
@@ -72,6 +74,17 @@ pub(in crate::executor) fn replace_parameter_pattern(
     }
 
     output
+}
+
+/// Case sensitivity wrapper for pattern-substitution matching. GNU applies
+/// FNMATCH_IGNCASE in match_upattern (subst.c:5382) whenever nocasematch is
+/// set, making ${var/pat/rep} case-insensitive (bash 4.3+; new-exp8.sub).
+fn parameter_pattern_match(pattern: &str, word: &str, nocase: bool) -> bool {
+    if nocase {
+        case_pattern_matches_nocase(pattern, word)
+    } else {
+        case_pattern_matches(pattern, word)
+    }
 }
 
 fn normalize_parameter_pattern_backslashes(pattern: &str) -> String {
@@ -145,21 +158,124 @@ pub(in crate::executor) fn find_parameter_pattern_match(
     pattern: &str,
     cursor: usize,
     indices: &[usize],
+    nocase: bool,
 ) -> Option<(usize, usize)> {
     let start_index = indices.iter().position(|index| *index >= cursor)?;
 
-    for start in &indices[start_index..] {
-        for end in indices[start_index..].iter().rev() {
-            if end <= start {
-                continue;
+    // GNU strmatch scans per position with the pattern itself, so a
+    // bracket-class pattern over a long value stays linear. The descending
+    // longest-first end scan here tries O(n) *failing* candidate ends per
+    // start position, which is O(n^3) on new-exp8.sub's ~13k-char value
+    // (deletion with pat3=[[:alnum:]_] costs ~1e9 char comparisons in the
+    // debug build -> multi-minute hang where GNU finishes instantly).
+    // Restrict the candidate ends with two pattern-shape facts, both of
+    // which preserve exact leftmost-longest match semantics:
+    //   1. A pattern without a star can match at most BOUND characters
+    //      (one per ? / bracket / escaped / literal atom), so ends beyond
+    //      start + BOUND characters are pruned (indices[k] is the byte
+    //      offset of the k-th char, so char distance is an index delta).
+    //   2. With a star, the match must still END with the literal text
+    //      after the last star (when that tail is wildcard-free), so only
+    //      byte offsets directly following an occurrence of the tail can
+    //      be match ends. A tail that never occurs in the value means no
+    //      match can exist anywhere.
+    let bound = pattern_match_length_bound(pattern);
+    let tail_ends = pattern_literal_tail_ends(pattern, value);
+
+    for (start_pos, start) in indices[start_index..].iter().enumerate() {
+        let ends = &indices[start_index + start_pos + 1..];
+        let mut best: Option<usize> = None;
+        for (end_rel, end) in ends.iter().enumerate() {
+            if let Some(bound) = bound {
+                if end_rel + 1 > bound {
+                    break;
+                }
             }
-            if case_pattern_matches(pattern, &value[*start..*end]) {
-                return Some((*start, *end));
+            if let Some(allowed) = &tail_ends {
+                if !allowed.contains(end) {
+                    continue;
+                }
             }
+            if parameter_pattern_match(pattern, &value[*start..*end], nocase) {
+                best = Some(*end);
+            }
+        }
+        if let Some(end) = best {
+            return Some((*start, end));
         }
     }
 
     None
+}
+
+/// Maximum number of characters a pattern without a star can match, or
+/// `None` when the pattern contains a star (unbounded).
+fn pattern_match_length_bound(pattern: &str) -> Option<usize> {
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut bound = 0usize;
+    let mut index = 0;
+    while index < chars.len() {
+        match chars[index] {
+            '*' => return None,
+            '?' => {
+                bound += 1;
+                index += 1;
+            }
+            '[' => {
+                let mut close = index + 1;
+                if close < chars.len() && (chars[close] == '!' || chars[close] == '^') {
+                    close += 1;
+                }
+                if close < chars.len() && chars[close] == ']' {
+                    close += 1;
+                }
+                while close < chars.len() && chars[close] != ']' {
+                    close += 1;
+                }
+                bound += 1;
+                index = if close < chars.len() { close + 1 } else { index + 1 };
+            }
+            '\\' => {
+                bound += 1;
+                index += 2;
+            }
+            _ => {
+                bound += 1;
+                index += 1;
+            }
+        }
+    }
+    Some(bound)
+}
+
+/// Byte offsets `end` where the value up to `end` ends with the pattern's
+/// literal tail (the wildcard-free text after the last star), or `None`
+/// when the pattern has no usable literal tail. An empty set means the
+/// tail never occurs in the value, so no match exists at all.
+fn pattern_literal_tail_ends(
+    pattern: &str,
+    value: &str,
+) -> Option<std::collections::HashSet<usize>> {
+    let tail = pattern.rsplit_once('*')?.1;
+    if tail.is_empty()
+        || tail
+            .chars()
+            .any(|ch| matches!(ch, '?' | '*' | '[' | ']' | '\\'))
+    {
+        return None;
+    }
+    let tail = normalize_parameter_pattern_backslashes(tail);
+    if tail.is_empty() {
+        return None;
+    }
+    let mut ends = std::collections::HashSet::new();
+    let mut search = 0usize;
+    while let Some(found) = value[search..].find(&tail) {
+        let end = search + found + tail.len();
+        ends.insert(end);
+        search += found + 1;
+    }
+    Some(ends)
 }
 
 #[derive(Clone, Copy)]
@@ -192,9 +308,15 @@ fn parse_negated_bracket_filter(pattern: &str) -> Option<Vec<BracketFilterItem>>
     Some(items)
 }
 
-fn bracket_filter_matches(items: &[BracketFilterItem], ch: char) -> bool {
+fn bracket_filter_matches(items: &[BracketFilterItem], ch: char, nocase: bool) -> bool {
     items.iter().any(|item| match *item {
-        BracketFilterItem::Char(value) => value == ch,
+        BracketFilterItem::Char(value) => {
+            if nocase {
+                value.to_lowercase().eq(ch.to_lowercase())
+            } else {
+                value == ch
+            }
+        }
         BracketFilterItem::Range(start, end) => start <= ch && ch <= end,
     })
 }
@@ -300,7 +422,7 @@ mod tests {
 
     #[test]
     fn glob_replacement_matches_empty_value() {
-        assert_eq!(replace_parameter_pattern("", "*", "w", false), "w");
+        assert_eq!(replace_parameter_pattern("", "*", "w", false, false), "w");
     }
 
     #[test]
@@ -309,11 +431,17 @@ mod tests {
     }
 }
 
-fn replace_with_amp(value: &str, pattern: &str, replacement: &str, global: bool) -> String {
+fn replace_with_amp(
+    value: &str,
+    pattern: &str,
+    replacement: &str,
+    global: bool,
+    nocase: bool,
+) -> String {
     let mut output = String::new();
     let mut last = 0;
     let mut replaced = false;
-    for (index, matched) in value.match_indices(pattern) {
+    for (index, matched) in LiteralMatches::new(value, pattern, nocase) {
         if replaced && !global {
             break;
         }
@@ -324,4 +452,63 @@ fn replace_with_amp(value: &str, pattern: &str, replacement: &str, global: bool)
     }
     output.push_str(&value[last..]);
     output
+}
+
+/// Literal occurrences of `needle` in `value` as (byte offset, matched
+/// text), case-folded when nocase is set (GNU match_upattern uses
+/// FNMATCH_IGNCASE for the no-wildcard fast path too, subst.c:5382). The
+/// matched text is sliced from the original value so `&` replacement
+/// expands to the actual case-preserved match.
+struct LiteralMatches<'a> {
+    value: &'a str,
+    chars: Vec<(usize, char)>,
+    needle_chars: Vec<char>,
+    nocase: bool,
+    pos: usize,
+}
+
+impl<'a> LiteralMatches<'a> {
+    fn new(value: &'a str, needle: &'a str, nocase: bool) -> Self {
+        Self {
+            value,
+            chars: value.char_indices().collect(),
+            needle_chars: needle.chars().collect(),
+            nocase,
+            pos: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for LiteralMatches<'a> {
+    type Item = (usize, &'a str);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let n = self.needle_chars.len();
+        if n == 0 {
+            return None;
+        }
+        while self.pos + n <= self.chars.len() {
+            let hit = (0..n).all(|k| {
+                let (_, vc) = self.chars[self.pos + k];
+                let nc = self.needle_chars[k];
+                if self.nocase {
+                    vc.to_lowercase().eq(nc.to_lowercase())
+                } else {
+                    vc == nc
+                }
+            });
+            if hit {
+                let (byte_index, _) = self.chars[self.pos];
+                let matched_len: usize = self.chars[self.pos..self.pos + n]
+                    .iter()
+                    .map(|(_, ch)| ch.len_utf8())
+                    .sum();
+                let matched = &self.value[byte_index..byte_index + matched_len];
+                self.pos += n;
+                return Some((byte_index, matched));
+            }
+            self.pos += 1;
+        }
+        None
+    }
 }

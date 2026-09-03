@@ -160,7 +160,15 @@ impl Executor {
         if let Some((name, message)) = self.parameter_assignment_error(cmd) {
             eprintln!("{}{}: {}", self.diagnostic_prefix(), name, message);
             self.exit_code = 1;
-            return Err(ExecuteError::ExitCode(1));
+            // GNU Bash 5.2 subst.c:10404-10410: `${special=word}` on a
+            // special/positional param reports "$N: cannot assign in this
+            // way" and returns &expand_wdesc_error (NON-fatal); err_readonly
+            // for `${ro=word}` likewise leaves the shell alive. Both reach
+            // call_expand_word_internal (subst.c:4288-4296) as
+            // expand_word_error -> exp_jump_to_top_level(DISCARD): abandon the
+            // current command list, keep running the script. ExitCode(1) here
+            // bubbled to the top and terminated the whole script.
+            return Err(ExecuteError::ExpansionFailure(1));
         }
         self.report_whitespace_led_bad_substitution(cmd)?;
         if let Some((name, message, status)) = self.parameter_expansion_error(cmd) {
@@ -288,7 +296,11 @@ impl Executor {
         if let Some((name, message)) = self.parameter_assignment_error(cmd) {
             eprintln!("{}{}: {}", self.diagnostic_prefix(), name, message);
             self.exit_code = 1;
-            return Err(ExecuteError::ExitCode(1));
+            // Same GNU DISCARD class as execute_empty_words_command above:
+            // subst.c:10404-10410 expand_wdesc_error (non-fatal) for
+            // `${special=word}` / `${ro=word}` readonly; the script keeps
+            // running after the diagnostic.
+            return Err(ExecuteError::ExpansionFailure(1));
         }
         self.report_whitespace_led_bad_substitution(cmd)?;
         if let Some((name, message, status)) = self.parameter_expansion_error(cmd) {

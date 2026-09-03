@@ -343,7 +343,13 @@ impl Executor {
                 &self.expand_embedded_parameters_preserving_escaped_single_quotes(replacement),
             );
             return self.positional_modified_values(var_name, quoted, |value| {
-                replace_parameter_pattern(value, &pattern, &replacement, global)
+                replace_parameter_pattern(
+                    value,
+                    &pattern,
+                    &replacement,
+                    global,
+                    self.nocasematch_enabled(),
+                )
             });
         }
 

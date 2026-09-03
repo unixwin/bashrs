@@ -6,6 +6,10 @@ impl Executor {
         name: &str,
     ) -> Option<String> {
         let (var_name, pattern, replacement, global) = parse_parameter_replacement(name)?;
+        // GNU subst.c match_upattern applies FNMATCH_IGNCASE when nocasematch
+        // is set, so pattern substitution honors the shopt (bash 4.3+).
+        let nocase =
+            crate::builtins::shopt::option_enabled(&self.env_vars, "nocasematch");
         let pattern = self.expand_parameter_pattern_word(
             &pattern
                 .replace(r"\/", "/")
@@ -24,7 +28,9 @@ impl Executor {
             return Some(
                 self.positional_params
                     .iter()
-                    .map(|value| replace_parameter_pattern(value, &pattern, &replacement, global))
+                    .map(|value| {
+                        replace_parameter_pattern(value, &pattern, &replacement, global, nocase)
+                    })
                     .collect::<Vec<_>>()
                     .join(" "),
             );
@@ -39,6 +45,7 @@ impl Executor {
                             &pattern,
                             &replacement,
                             global,
+                            nocase,
                         )
                     })
                     .unwrap_or_default(),
@@ -50,6 +57,7 @@ impl Executor {
                 &pattern,
                 &replacement,
                 global,
+                nocase,
             ));
         }
         if let Some(array_name) = var_name
@@ -63,7 +71,13 @@ impl Executor {
                         let values = array_values(value)
                             .into_iter()
                             .map(|value| {
-                                replace_parameter_pattern(&value, &pattern, &replacement, global)
+                                replace_parameter_pattern(
+                                    &value,
+                                    &pattern,
+                                    &replacement,
+                                    global,
+                                    nocase,
+                                )
                             })
                             .collect::<Vec<_>>();
                         self.join_expanded_array_values(values, var_name)
@@ -72,18 +86,16 @@ impl Executor {
             );
         }
         if is_shell_name(var_name) {
+            // GNU variables.c get_string_value: a bare array name expands to
+            // element [0], so pattern substitution must operate on that
+            // element (${av/??/xx} -> "xxcd"), not the raw typed storage
+            // (previously leaked `xx[0]="abcd"` fragments). This also keeps
+            // the nameref chain resolution the old inline code performed.
             return Some(
-                self.dynamic_parameter_value(var_name)
-                    .or_else(|| {
-                        // GNU find_variable (variables.c) follows the nameref
-                        // chain via find_variable_nameref before pattern
-                        // substitution; resolve the nameref target name here so
-                        // substitution operates on the target value, not the
-                        // nameref name itself.
-                        let resolved = self.resolved_variable_name(var_name)?;
-                        self.env_vars.get(&resolved).cloned()
+                self.parameter_pattern_scalar_value(var_name)
+                    .map(|value| {
+                        replace_parameter_pattern(&value, &pattern, &replacement, global, nocase)
                     })
-                    .map(|value| replace_parameter_pattern(&value, &pattern, &replacement, global))
                     .unwrap_or_default(),
             );
         }
@@ -104,6 +116,7 @@ impl Executor {
                 pattern,
                 replacement,
                 global,
+                self.nocasematch_enabled(),
             ));
         }
 
@@ -115,7 +128,9 @@ impl Executor {
 
         let values = values
             .into_iter()
-            .map(|value| replace_parameter_pattern(&value, pattern, replacement, global))
+            .map(|value| {
+                replace_parameter_pattern(&value, pattern, replacement, global, self.nocasematch_enabled())
+            })
             .collect::<Vec<_>>();
         Some(self.join_expanded_array_values(values, target_expr))
     }

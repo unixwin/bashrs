@@ -115,8 +115,16 @@ impl Executor {
             }
         }
 
-        if let Some(value) = self.array_element_parameter_value(name) {
-            return shell_safe_value(&value);
+        if let Some((array_name, _)) = parse_array_subscript(name) {
+            // GNU valid_array_reference only treats NAME[...] as a subscript
+            // when NAME is a valid identifier; pattern words like `z//[^;]`
+            // or `z/#[^;][^;]` must not produce a spurious bad-array-
+            // subscript diagnostic here (new-exp8.sub).
+            if is_shell_name(array_name) {
+                if let Some(value) = self.array_element_parameter_value(name) {
+                    return shell_safe_value(&value);
+                }
+            }
         }
 
         if let Some(array_name) = name
@@ -308,8 +316,16 @@ impl Executor {
             }
         }
 
-        if let Some(value) = self.array_element_parameter_value(name) {
-            return shell_safe_value(&value);
+        if let Some((array_name, _)) = parse_array_subscript(name) {
+            // GNU valid_array_reference only treats NAME[...] as a subscript
+            // when NAME is a valid identifier; pattern words like `z//[^;]`
+            // or `z/#[^;][^;]` must not produce a spurious bad-array-
+            // subscript diagnostic here (new-exp8.sub).
+            if is_shell_name(array_name) {
+                if let Some(value) = self.array_element_parameter_value(name) {
+                    return shell_safe_value(&value);
+                }
+            }
         }
 
         if let Some(array_name) = name
