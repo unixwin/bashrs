@@ -22,6 +22,18 @@
 - 但跑**完整 GNU 测试文件**时，仍有若干“早期终止/大行数缺口/解析错误”的实质缺口。
 - 真实剩下的高优先级缺口（2026-08-29 后续会话后）：
   `cond`、`posixexp2`、`comsub-posix`、`mapfile`、`braces`。
+- 2026-09-02 会话收官（账本 41）：globstar 75→241/587（语义重构 `106a7136`：
+  空 `**` 匹配一切、`**/` 仅目录加尾斜杠、递归永不穿符号链接、去 `./` 前缀；
+  配对探针五构造逐字节一致）；连带修出 mkdir flag 当路径名的预存 bug（
+  `606108c1`，曾被 globstar 树暴露）与每目录 DFS 排序归一（`cb92206a`，门禁
+  中性）。globstar 残余 346 行根因 = check 侧 ls 为 Windows PATH 的 MSYS ls
+  而 gen 侧为 WSL GNU ls（双侧二进制不对称，recho/zecho 同类 harness 缺陷），
+  下一步 = run-83.sh 双侧统一 ls helper。B 兵团 fd-model 收官 `e3a9b63e`
+  （exec stdio 处理 flag 被 continue 绕过的关键 bug、歧义重定向措辞、零字段
+  管道段=空命令、procsub 物化；redir 175/165、procsub 33/24；其基线陈旧
+  论断经 fresh gen 复现 165/24 后否决）。B 残余：exec fd 中毒块（需外部
+  stdout 回放调查）、脚本自 stdin 续跑（rubash 整体缓冲）、declare -f
+  序列化丢重定向文本、let 后缀自减。
 
 ## 二、真实复现结果（按严重度）
 
@@ -250,6 +262,31 @@ run-83.sh 已改为两侧 `< /dev/null`。剩余 `ifs-posix` 是性能（6856 �
   需全上下文 debug 专项）。
 - 全量 cli_tests 44 失败中含大量 examples/scripts/引号类预存失败（HEAD A/B 抽证
   nested_parameter、compat 8 项均在 HEAD 同样失败）。
+
+## 十一、2026-09-03 全量门禁与并行轨道
+
+全量 check（upstream-rights 82 家族，RUN83_TIMEOUT=180）：**PASS 13 / DIFF 67 /
+TIMEOUT 0 / SKIP 2**（2026-09-02 基线 PASS 7 / DIFF 69 / TIMEOUT 4 / SKIP 3；
+原始产物 `target/full-gate.log`）。新 PASS 13 家族：comsub2, dbg-support2,
+dstack2, dynvar, extglob2, extglob3, getopts, herestr, ifs, invert, mapfile,
+nquote2, tilde。TIMEOUT 4→0（stdin `</dev/null` 修复；ifs-posix 给 180s 可完成）。
+
+剩余最大真缺口（排除 intl/history 平台项）：ifs-posix 1503（状态污染，LLDB 专项），
+globstar 512（**分类修正：非平台项**——tests 自建目录树；根因 `./` 前缀风格 /
+`ln -s` 符号链接 / 递归语义），new-exp 368，procsub 366（`/dev/fd/N` 抽象），
+dbg-support 323，redir 249（fd 生命周期，与 procsub 同属 fd 模型族），more-exp 197，
+heredoc 135，quote/quotearray 166，posixexp 93（sed 解析簇 + UTF-8 载体）。
+
+关键塌缩：builtins 458 行缺口 → 494/524（差 30）；exp → 差 13；posixexp2 →
+40/40 行数相等；vredir → 差 5；comsub 基线纠正为 79/85（旧 98 行基线系毒化期产物；
+gen 期 run-83.sh:90 强制 `THIS_SH=bash`）。
+
+并行轨道 A–E 已分配（文件领地互不相交；明细见
+`docs/83-TEST-FULL-ANALYSIS.md` 第九节）：A globstar（glob.rs）/ B fd 模型族
+（execution_misc/redir）/ C 族H 深层展开（parameter_words/read_split）/
+D iquote-quote lane（quotes/embedded_parameters，captain）/ E ifs-posix LLDB。
+平台/环境伪影负面清单（env 形态 118v18、stdio 交错、/tmp 映射）见
+`docs/bash-compat-issues.md` 第七节，勿当语义缺陷修。
 - heredoc：上述 comsub-heredoc 的 tokenize_with_heredocs 行累加协调。
 - procsub /dev/fd/N fd 抽象（fd/device model 首项）。
 

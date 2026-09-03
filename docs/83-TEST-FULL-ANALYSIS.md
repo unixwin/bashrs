@@ -186,3 +186,66 @@ cprint, glob-bracket, globstar, histexp, history, intl, invocation, mapfile
 3. **builtins 是最大的单个差异**（458行），需要优先调查
 4. **dbg-support 317行差异是系统性问题**，可能需要大重构
 5. **平台差异的 8 个测试不要浪费时间修**
+
+## 九、2026-09-03 全量门禁复测与根因再分配
+
+全量 check(upstream-rights 82 个有基线家族,RUN83_TIMEOUT=180):
+**PASS 13 / DIFF 67 / TIMEOUT 0 / SKIP 2**(对照本文档基线 PASS 7 / DIFF 69 /
+TIMEOUT 4 / SKIP 3)。原始产物 `target/full-gate.log`。
+
+新增 PASS(13): comsub2, dbg-support2, dstack2, dynvar, extglob2, extglob3,
+getopts, herestr, ifs, invert, mapfile, nquote2, tilde。
+
+### 关键缺口塌缩(文档值 → 2026-09-03 现值)
+
+- builtins 458 行缺口 → **494/524(差 30)**——文档最大单点已被后续会话吃掉大半
+- exp 29 行 → 520/533(差 13);vredir → 118/123(差 5);varenv → 381/402(差 21)
+- posixexp2 13/40 → **40/40 行数相等**(剩内容差)
+- comsub 基线纠正:79/85(旧 98 行基线系毒化期产物;gen 期 run-83.sh:90
+  强制 `THIS_SH=bash`,GNU 侧子脚本不受 Windows 环境污染)
+- func 51 行 → 230/193(THIS_SH 毒化修复后 func5 完整跑通,残差 5 类见账本)
+- glob panic(read_split.rs:109 多字节)已修,P0 阻塞解除
+
+### 分类修正:globstar 不是平台差异
+
+本文档第二节将 globstar(560 行)归为平台差异("依赖 bash 源码构建树 lib/ 目录")
+系误判:globstar.tests **自建 GDIR 目录树**(mkdir lib builtins 等,第 26-39 行),
+不依赖任何外部构建树。真根因三点:(a) rubash `**` 递归展开产生 `./` 前缀风格
+(GNU 输出相对路径);(b) `ln -s a c` 符号链接目录的展开;(c) 递归深度/去重语义。
+可修,预期收割 ~512 行。
+
+### 新增归档的平台/环境伪影(勿当语义缺陷修)
+
+- **env 形态**:rubash 导出 118 变量 vs WSL GNU 18(wsl.exe 只把 WSLENV 指定
+  变量送入 Linux 侧;interop 启动 Windows 二进制携带宿主完整环境,`env -i`
+  无效)。影响任何使 declare -p 退化为无参的用例(nameref ~117 行)与 varenv。
+- **stdio 交错**:分段 stderr 写(每格式片一次 syscall)经 WSL-interop 双管道
+  中继与 stdout 交错(SA4 DBG xcw 教训——插桩必须单次原子写或避免)。
+- **/tmp 映射**:rubash /tmp → Windows temp,与 WSL /tmp 不同;共享探针文件
+  一律走 /mnt/d 挂载路径。
+
+### 现行并行轨道(文件领地不相交)
+
+| 轨道 | 内容 | 预期收割 | 文件领地 |
+|---|---|---|---|
+| A | globstar 专项(三根因) | ~512 | src/executor/glob.rs 独占 |
+| B | fd 模型族(redir fd 生命周期 + procsub /dev/fd/N 抽象) | ~615 | execution_misc/redir 路径 |
+| C | 族H 深层展开(new-exp + more-exp IFS 拆分/嵌套) | ~565 | parameter_words/read_split |
+| D | iquote/quote lane(\x17 赋值往返 → dquote 内引号标记 → eval RHS 解码) | ~230 | quotes/embedded_parameters(captain 自修) |
+| E | ifs-posix LLDB 专项(状态污染,孤立全过全量才崩) | ~1503 | 独占慢跑 |
+
+### 2026-09-03 轨道进展
+
+- **D lane 第一批落地(792aab1c)**:赋值存储的转义引号数据标记提升
+  (`x=a\'b` 现存 `a'b`,declare -p `$'a\'b'` 序列化与 GNU 一致)+ walker
+  GNU 词扫描分支(词外 `\'` 产数据引号,词内 `\"` 为 Escape、`\'` 双字保真)。
+  探针成对验证;8 家族爆炸半径 A/B 全部与全量基线逐项相等,零回归。
+- **诚实残余(已插桩定位)**:未加引号词中的 `\"` 在 **tokenizer 层**即被吃
+  (`echo a\"b` 得 `ab`,GNU `a"b`;`x=a\"b` 存 `ab`)。修复需专用逃逸双引号
+  标记——`\x18` 已过载(walker 解作双引号,conditional/pattern 解作反斜杠),
+  与 iquote lane 的标记重设计合并做。
+- **busybox ash 第二门禁上线(682 文件,vendor + runner)**:TOTAL=335
+  PASS=211 DIFF=117 TIMEOUT=7 SKIP=0(基线 20260903T084103Z;全部超时为
+  rubash 侧信号/循环投递;历史 P0 heredoc_huge 未复现,561ms 完成,内容哈希
+  一致)。最大真实簇 = 双引号内嵌单引号打穿 quote 扫描器(估 25-35 项),
+  与 D lane 同根因。复跑:`wsl bash scripts/run-busybox-ash-difftest.sh`。
