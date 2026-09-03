@@ -17,7 +17,22 @@ pub(in crate::builtins::declare) fn parse_assoc_words(value: &str) -> Vec<(Strin
         })
         .collect()
 }
-pub(in crate::builtins::declare) fn append_assoc_value(current: &str, value: &str) -> String {
+pub(in crate::builtins::declare) fn append_assoc_value(
+    current: &str,
+    value: &str,
+    integer: bool,
+) -> String {
+    // GNU arrayfunc.c assign_compound_array_list / bind_assoc_variable: when
+    // the array carries the integer attribute, every element value is
+    // evaluated as an arithmetic expression before it is stored
+    // (assoc.tests: declare -Ai chaff=([one]=3+7) stores 10).
+    let eval_element = |raw: &str| -> String {
+        if integer {
+            super::eval_arith_value(raw).to_string()
+        } else {
+            raw.to_string()
+        }
+    };
     let mut entries = parse_assoc_words(current);
     let tokens = parse_array_tokens(value);
     let explicit_subscripts = tokens
@@ -34,7 +49,7 @@ pub(in crate::builtins::declare) fn append_assoc_value(current: &str, value: &st
                 .get(1)
                 .map(|value| unquote_storage_value(value))
                 .unwrap_or_default();
-            entries.push((key, value));
+            entries.push((key, eval_element(&value)));
         }
         return format_assoc_storage(entries);
     }
@@ -50,15 +65,16 @@ pub(in crate::builtins::declare) fn append_assoc_value(current: &str, value: &st
                     .find(|(entry_key, _)| entry_key == &key)
                 {
                     entry_value.push_str(&rhs);
+                    *entry_value = eval_element(entry_value);
                 } else {
-                    entries.push((key, rhs));
+                    entries.push((key, eval_element(&rhs)));
                 }
                 continue;
             }
-            entries.push((key, rhs));
+            entries.push((key, eval_element(&rhs)));
             continue;
         }
-        entries.push(("0".to_string(), unquote_storage_value(&token)));
+        entries.push(("0".to_string(), eval_element(&unquote_storage_value(&token))));
     }
 
     format_assoc_storage(entries)
@@ -153,7 +169,7 @@ mod tests {
     #[test]
     fn alternating_bracket_words_are_literal_keys() {
         assert_eq!(
-            append_assoc_value("()", "([x] one [y] two)"),
+            append_assoc_value("()", "([x] one [y] two)", false),
             "([\"[x]\"]=one [\"[y]\"]=two)"
         );
     }

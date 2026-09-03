@@ -19,8 +19,11 @@ use crate::shell::VariableStore;
 use assign::assign_declare_names;
 use attrs::{apply_declare_attrs, DeclareOptions};
 use diagnostic::diagnostic_prefix;
-use marks::marked_vars;
-use names::{declare_base_name, nameref_self_reference, valid_declare_name};
+use marks::{marked_vars, unmark_typed};
+use names::{
+    check_selfref, declare_base_name, valid_array_reference, valid_declare_name,
+    valid_nameref_value,
+};
 use storage::{indexed_array_entries, parse_assoc_words};
 
 const EXECUTION_SUCCESS: i32 = 0;
@@ -144,6 +147,97 @@ pub fn execute(args: &[String], variables: &mut HashMap<String, String>) -> io::
     execute_with_io(args, variables, &mut stdout, &mut stderr)
 }
 
+
+
+/// Minimal flag scan used by the executor to decide whether a declare/typeset
+/// invocation follows nameref chains (declare.def:704-806 applies when the
+/// command has neither -n nor +n among its options).
+pub(crate) fn declare_nameref_flags(args: &[String]) -> (bool, bool) {
+    let mut nameref = false;
+    let mut unset_nameref = false;
+    let mut parse_options = true;
+    for arg in args {
+        if parse_options && arg == "--" {
+            parse_options = false;
+            continue;
+        }
+        if parse_options
+            && (arg.starts_with('-') || arg.starts_with('+'))
+            && arg != "-"
+            && arg != "+"
+        {
+            let set_attr = arg.starts_with('-');
+            for option in arg[1..].chars() {
+                match option {
+                    'n' if set_attr => nameref = true,
+                    'n' => unset_nameref = true,
+                    _ => {}
+                }
+            }
+            continue;
+        }
+        break;
+    }
+    (nameref, unset_nameref)
+}
+
+/// Resolve the nameref assignment targets for an upcoming declare invocation:
+/// for every `name=value` argument whose base is a marked nameref, returns
+/// `(base, final_target)` from declare_nameref_chain so the executor can
+/// mirror the new target value into the typed owner (variables.c:2051
+/// find_variable_last_nameref traversal).
+pub(crate) fn nameref_assignment_targets(
+    args: &[String],
+    variables: &HashMap<String, String>,
+) -> Vec<(String, String)> {
+    let mut targets = Vec::new();
+    for arg in args {
+        let Some((raw_lhs, _)) = arg.split_once('=') else {
+            continue;
+        };
+        let lhs = raw_lhs.strip_suffix('+').unwrap_or(raw_lhs);
+        let Some(base) = declare_base_name(lhs) else {
+            continue;
+        };
+        if let Some((_, target)) = declare_nameref_chain(variables, base) {
+            targets.push((base.to_string(), target));
+        }
+    }
+    targets
+}
+
+/// GNU variables.c:2051 find_variable_last_nameref: walk the nameref chain
+/// while each cell is itself a nameref value (identifier or array reference)
+/// and return `(last_nameref_name, final_target_name)`. Returns None when
+/// NAME is not a nameref or the chain does not resolve to a variable-like
+/// cell (GNU then keeps operating on the nameref itself).
+fn declare_nameref_chain(
+    variables: &HashMap<String, String>,
+    name: &str,
+) -> Option<(String, String)> {
+    if !marked_vars(variables, NAMEREF_VARS).contains(name) {
+        return None;
+    }
+    let namerefs = marked_vars(variables, NAMEREF_VARS);
+    let mut last = name.to_string();
+    let mut current = name.to_string();
+    for _ in 0..16 {
+        if !namerefs.contains(current.as_str()) {
+            break;
+        }
+        let cell = variables.get(&current)?.clone();
+        if !names::valid_nameref_value(&cell) {
+            return None;
+        }
+        last = current;
+        current = cell;
+    }
+    if last == current {
+        return None;
+    }
+    Some((last, current))
+}
+
 pub(crate) fn execute_with_io<W, E>(
     args: &[String],
     variables: &mut HashMap<String, String>,
@@ -163,6 +257,26 @@ pub(crate) fn execute_with_io_named<W, E>(
     variables: &mut HashMap<String, String>,
     stdout: &mut W,
     stderr: &mut E,
+) -> io::Result<i32>
+where
+    W: Write,
+    E: Write,
+{
+    execute_with_io_named_in_context(command_name, args, variables, stdout, stderr, false)
+}
+
+/// GNU builtins/declare.def decides between the global-scope self-reference
+/// error and the function-scope circular-reference warning with
+/// `variable_context` (declare.def:565). Rubash threads the executor's
+/// function depth through here so `typeset -n` inside a function warns and
+/// continues instead of erroring.
+pub(crate) fn execute_with_io_named_in_context<W, E>(
+    command_name: &str,
+    args: &[String],
+    variables: &mut HashMap<String, String>,
+    stdout: &mut W,
+    stderr: &mut E,
+    in_function: bool,
 ) -> io::Result<i32>
 where
     W: Write,
@@ -258,10 +372,85 @@ where
     let had_name_args = !names.is_empty();
     let mut assign_names = Vec::new();
     let mut attr_status = EXECUTION_SUCCESS;
+    let arrays = marked_vars(variables, ARRAY_VARS);
+    let assocs = marked_vars(variables, ASSOC_VARS);
+    let namerefs = marked_vars(variables, NAMEREF_VARS);
     for name in &names {
+        // GNU builtins/declare.def:549-580 runs the nameref-specific lexical
+        // checks on the LHS and RHS before the generic identifier check, and
+        // reports with the invoked builtin name (declare or typeset).
+        let (lhs, value) = match name.split_once('=') {
+            Some((lhs, value)) => (lhs, value),
+            None => (*name, ""),
+        };
+        let append = lhs.strip_suffix('+').is_some();
+        let lhs = lhs.strip_suffix('+').unwrap_or(lhs);
+        if nameref {
+            // declare.def:554/841: a nameref cannot be an array variable,
+            // neither as a declared name (x[3]) nor by converting an array.
+            if valid_array_reference(lhs) || arrays.contains(lhs) || assocs.contains(lhs) {
+                writeln!(
+                    stderr,
+                    "{}{command_name}: {}: reference variable cannot be an array",
+                    diagnostic_prefix(),
+                    lhs
+                )?;
+                attr_status = EXECUTION_FAILURE;
+                continue;
+            }
+            // declare.def:562-573: disallow self references at global scope,
+            // warn at function scope and continue creating the nameref.
+            if check_selfref(lhs, value) {
+                if in_function {
+                    writeln!(
+                        stderr,
+                        "{}{command_name}: warning: {}: circular name reference",
+                        diagnostic_prefix(),
+                        lhs
+                    )?;
+                } else {
+                    writeln!(
+                        stderr,
+                        "{}{command_name}: {}: nameref variable self references not allowed",
+                        diagnostic_prefix(),
+                        lhs
+                    )?;
+                    attr_status = EXECUTION_FAILURE;
+                    continue;
+                }
+            }
+            // declare.def:574-579: the value must be a valid identifier o
+            // array reference when it will be used as a nameref target.
+            if !value.is_empty() && !append && !valid_nameref_value(value) {
+                writeln!(
+                    stderr,
+                    "{}{command_name}: `{value}': invalid variable name for name reference",
+                    diagnostic_prefix()
+                )?;
+                attr_status = EXECUTION_FAILURE;
+                continue;
+            }
+            // declare.def:854-862: converting an existing non-nameref variable
+            // to a nameref without an assignment fails when its current value
+            // is not a valid nameref value.
+            if !append
+                && value.is_empty()
+                && !namerefs.contains(lhs)
+                && variables.get(lhs).is_some_and(|current| !valid_nameref_value(current))
+            {
+                let current = variables.get(lhs).cloned().unwrap_or_default();
+                writeln!(
+                    stderr,
+                    "{}{command_name}: `{current}': invalid variable name for name reference",
+                    diagnostic_prefix()
+                )?;
+                attr_status = EXECUTION_FAILURE;
+                continue;
+            }
+        }
         if !valid_declare_name(name) {
             let diagnostic = format!(
-                "{}declare: `{}': not a valid identifier\n",
+                "{}{command_name}: `{}': not a valid identifier\n",
                 diagnostic_prefix(),
                 name
             );
@@ -269,21 +458,8 @@ where
             attr_status = EXECUTION_FAILURE;
             continue;
         }
-        if nameref && nameref_self_reference(name) {
-            let name = name.split_once('=').map(|(name, _)| name).unwrap_or(name);
-            writeln!(
-                stderr,
-                "{}declare: {}: nameref variable self references not allowed",
-                diagnostic_prefix(),
-                name
-            )?;
-            attr_status = EXECUTION_FAILURE;
-            continue;
-        }
         assign_names.push(*name);
     }
-    let arrays = marked_vars(variables, ARRAY_VARS);
-    let assocs = marked_vars(variables, ASSOC_VARS);
     let mut valid_assign_names = Vec::new();
     for name in assign_names {
         let Some(var_name) = declare_base_name(name) else {
@@ -293,7 +469,7 @@ where
         if assoc && arrays.contains(var_name) && !assocs.contains(var_name) {
             writeln!(
                 stderr,
-                "{}declare: {}: cannot convert indexed to associative array",
+                "{}{command_name}: {}: cannot convert indexed to associative array",
                 diagnostic_prefix(),
                 var_name
             )?;
@@ -303,7 +479,7 @@ where
         if array && assocs.contains(var_name) && !arrays.contains(var_name) {
             writeln!(
                 stderr,
-                "{}declare: {}: cannot convert associative to indexed array",
+                "{}{command_name}: {}: cannot convert associative to indexed array",
                 diagnostic_prefix(),
                 var_name
             )?;
@@ -314,8 +490,60 @@ where
         valid_assign_names.push(name);
     }
     let assign_names = valid_assign_names;
+    // GNU builtins/declare.def:704-738 (turning off the nameref attribute with
+    // an assignment: assign through the chain, then remove the attribute while
+    // leaving the nameref's value in place) and declare.def:764-806 (without
+    // -n/+n the attributes and assignment apply to the variable the nameref
+    // chain references, via find_variable_last_nameref). `declare -p` never
+    // follows the chain (nameref18.sub prints the nameref itself).
+    let mut effective_assign_names: Vec<String> = Vec::new();
+    if !print {
+        for name in &assign_names {
+            let (raw_lhs, value) = match name.split_once('=') {
+                Some((lhs, value)) => (lhs, Some(value)),
+                None => (*name, None),
+            };
+            let append = raw_lhs.strip_suffix('+').is_some();
+            let lhs = raw_lhs.strip_suffix('+').unwrap_or(raw_lhs);
+            let chain = declare_nameref_chain(variables, lhs);
+            if let Some((last_nameref, target)) = chain {
+                if unset_nameref {
+                    if let Some(value) = value {
+                        effective_assign_names.push(if append {
+                            format!("{target}+={value}")
+                        } else {
+                            format!("{target}={value}")
+                        });
+                    } else {
+                        effective_assign_names.push((*name).to_string());
+                    }
+                    // declare.def:985-986: only the last nameref in the chain
+                    // loses the attribute; its cell value is kept as the new
+                    // plain variable value.
+                    unmark_typed(variables, NAMEREF_VARS, &last_nameref);
+                    continue;
+                }
+                if !nameref {
+                    match value {
+                        Some(value) => effective_assign_names.push(if append {
+                            format!("{target}+={value}")
+                        } else {
+                            format!("{target}={value}")
+                        }),
+                        None => effective_assign_names.push(target),
+                    }
+                    continue;
+                }
+            }
+            effective_assign_names.push((*name).to_string());
+        }
+    } else {
+        effective_assign_names.extend(assign_names.iter().map(|name| (*name).to_string()));
+    }
+    let attr_names: Vec<&str> = effective_assign_names.iter().map(String::as_str).collect();
     if assign_declare_names(
-        &assign_names,
+        command_name,
+        &attr_names,
         variables,
         array,
         assoc,
@@ -326,7 +554,7 @@ where
     {
         attr_status = EXECUTION_FAILURE;
     }
-    let names = assign_names;
+    let names = attr_names;
     let options = DeclareOptions {
         export,
         array,
@@ -345,7 +573,7 @@ where
         unset_nameref,
         unset_readonly,
     };
-    attr_status = apply_declare_attrs(&names, variables, options, attr_status, stderr)?;
+    attr_status = apply_declare_attrs(command_name, &names, variables, options, attr_status, stderr)?;
 
     let plain = names.is_empty() && !had_name_args && !print && !saw_option;
     if names.is_empty() && !had_name_args {
@@ -357,6 +585,7 @@ where
     }
 
     print::print_declare_names(
+        command_name,
         &names,
         variables,
         options,

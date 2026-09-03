@@ -33,6 +33,7 @@ pub(super) struct DeclareOptions {
 }
 
 pub(super) fn apply_declare_attrs<W>(
+    command_name: &str,
     names: &[&str],
     variables: &mut HashMap<String, String>,
     options: DeclareOptions,
@@ -77,7 +78,7 @@ where
             if unset_readonly && marked_vars(variables, READONLY_VARS).contains(name) {
                 writeln!(
                     stderr,
-                    "{}declare: {}: readonly variable",
+                    "{}{command_name}: {}: readonly variable",
                     diagnostic_prefix(),
                     name
                 )?;
@@ -86,7 +87,7 @@ where
             if (unset_array && arrays.contains(name)) || (unset_assoc && assocs.contains(name)) {
                 writeln!(
                     stderr,
-                    "{}declare: {}: cannot destroy array variables in this way",
+                    "{}{command_name}: {}: cannot destroy array variables in this way",
                     diagnostic_prefix(),
                     name
                 )?;

@@ -13,6 +13,7 @@ use super::{
 };
 
 pub(super) fn print_declare_names<W, E>(
+    command_name: &str,
     names: &[&str],
     variables: &HashMap<String, String>,
     options: DeclareOptions,
@@ -89,7 +90,7 @@ where
         } else {
             writeln!(
                 stderr,
-                "{}declare: {}: not found",
+                "{}{command_name}: {}: not found",
                 diagnostic_prefix(),
                 name
             )?;

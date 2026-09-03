@@ -179,6 +179,15 @@ impl Executor {
             } else {
                 value.to_string()
             };
+            // GNU arrayfunc.c bind_array_variable (att_integer branch): when the
+            // array carries the integer attribute, the value is evaluated as an
+            // arithmetic expression before being stored (assoc.tests:
+            // declare -Ai chaff; chaff[one]=3+7 stores 10, not 3+7).
+            let value = if is_marked_var(&self.env_vars, INTEGER_VARS, name) {
+                eval_arith_value(&value).to_string()
+            } else {
+                value
+            };
             if let Some((_, entry_value)) = entries
                 .iter_mut()
                 .rev()

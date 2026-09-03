@@ -147,16 +147,30 @@ impl Executor {
         let global_local_values = self.begin_global_declare_for_local_names(&args);
         let posix_function_export_unsets = self.posix_function_declare_unset_export_names(&args);
         let command_name = cmd.words.first().map(String::as_str).unwrap_or("declare");
+        // GNU builtins/declare.def:704-806: a declare/typeset assignment whose
+        // name is a nameref (and which does not itself carry -n) writes the
+        // referenced variable, not the nameref. Capture the resolved targets
+        // before the builtin runs so the typed owner can mirror them below.
+        let (nameref_flag, _unset_nameref_flag) =
+            crate::builtins::declare::declare_nameref_flags(&args);
+        let nameref_assign_targets = if nameref_flag {
+            // -n keeps the assignment on the nameref cell itself; only +n and
+            // plain declarations follow the chain to the referenced variable.
+            Vec::new()
+        } else {
+            crate::builtins::declare::nameref_assignment_targets(&args, &self.env_vars)
+        };
 
         let result = (|| -> Result<i32, ExecuteError> {
             let mut stdout = Vec::new();
             let mut stderr = Vec::new();
-            let status = crate::builtins::declare::execute_with_io_named(
+            let status = crate::builtins::declare::execute_with_io_named_in_context(
                 command_name,
                 &args,
                 &mut self.env_vars,
                 &mut stdout,
                 &mut stderr,
+                self.function_depth > 0,
             )?;
             let stderr = if self.stdout_capture.is_some()
                 && declare_args_request_print(&args)
@@ -174,6 +188,22 @@ impl Executor {
             Ok(status)
         })();
         if result.as_ref().is_ok_and(|status| *status == 0) {
+            // Mirror the through-the-nameref assignments into the typed owner:
+            // parameter expansion reads shell_state.variables first, so a
+            // stale typed target would shadow the new value written to
+            // env_vars (probe: typeset +n foo=other then echo $bar).
+            for (_, target) in &nameref_assign_targets {
+                if let Some(value) = self.env_vars.get(target).cloned() {
+                    match self.shell_state.variables.get_mut(target) {
+                        Some(variable) => {
+                            variable.value = crate::shell::ShellValue::Scalar(value);
+                        }
+                        None => {
+                            let _ = self.shell_state.variables.set_scalar(target, value);
+                        }
+                    }
+                }
+            }
             crate::builtins::declare::sync_typed_assignments(
                 &args,
                 &self.env_vars,

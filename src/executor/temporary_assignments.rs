@@ -28,6 +28,21 @@ impl Executor {
                 self.env_vars.get(base_name).cloned(),
                 self.shell_state.variables.get(base_name).cloned(),
             ));
+            // GNU variables.c bind_variable (ASS_NAMEREF path): a temporary
+            // assignment to a nameref writes the referenced variable, so the
+            // restore must also capture the target's previous value or the
+            // referenced variable keeps the temporary value after the command.
+            let resolved_target: Option<String> = match self.nameref_resolution(base_name) {
+                NamerefResolution::Target(ref target) if *target != *base_name => Some(target.clone()),
+                _ => None,
+            };
+            if let Some(target) = resolved_target {
+                previous.push((
+                    target.clone(),
+                    self.env_vars.get(&target).cloned(),
+                    self.shell_state.variables.get(&target).cloned(),
+                ));
+            }
             self.apply_shell_assignment(name, expanded_value);
             self.mark_exported(base_name);
         }
@@ -46,11 +61,17 @@ impl Executor {
         let target_name = match self.nameref_resolution(base_name) {
             NamerefResolution::Target(target) => target,
             NamerefResolution::Circular => {
-                eprintln!(
-                    "{}warning: {}: circular name reference",
+                // GNU writes each diagnostic with one write(2). eprintln!
+                // fragments the message into one syscall per format piece and
+                // those pieces race with stdout under the WSL interop relay,
+                // splitting the message across unrelated lines; emit one
+                // pre-formatted buffer instead.
+                let line = format!(
+                    "{}warning: {}: circular name reference\n",
                     self.diagnostic_prefix(),
                     base_name
                 );
+                let _ = std::io::stderr().write_all(line.as_bytes());
                 self.exit_code = 1;
                 return false;
             }
@@ -58,11 +79,12 @@ impl Executor {
         };
         let base_name = target_name.as_str();
         if is_marked_var(&self.env_vars, "__RUBASH_READONLY_VARS", base_name) {
-            eprintln!(
-                "{}{}: readonly variable",
+            let line = format!(
+                "{}{}: readonly variable\n",
                 self.diagnostic_prefix(),
                 base_name
             );
+            let _ = std::io::stderr().write_all(line.as_bytes());
             self.exit_code = 1;
             return false;
         }
@@ -118,7 +140,11 @@ impl Executor {
             let current = self.env_vars.get(base_name).cloned().unwrap_or_default();
             if is_marked_var(&self.env_vars, ASSOC_VARS, base_name) {
                 if value.starts_with('(') && value.ends_with(')') {
-                    append_assoc_value(&current, &value)
+                    append_assoc_value(
+                        &current,
+                        &value,
+                        is_marked_var(&self.env_vars, INTEGER_VARS, base_name),
+                    )
                 } else {
                     append_assoc_scalar_value(&current, &value)
                 }
@@ -152,7 +178,11 @@ impl Executor {
                     bare
                 );
             }
-            append_assoc_value("()", &value)
+            append_assoc_value(
+                "()",
+                &value,
+                is_marked_var(&self.env_vars, INTEGER_VARS, base_name),
+            )
         } else if compound_assignment
             && value.starts_with('(')
             && value.ends_with(')')
@@ -161,7 +191,7 @@ impl Executor {
             && integer_compound_assignment_is_scalar(&value)
         {
             // Bash keeps `typeset -i x; x=(1+2)` scalar.  A compound
-            // assignment becomes an array only when it contains indexed or
+            // assignment becomes an array only when it contains indexed o
             // multiple elements; the single arithmetic expression is still
             // assigned through the integer attribute.
             self.eval_integer_assignment_value(&value[1..value.len() - 1])

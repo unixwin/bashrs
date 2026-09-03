@@ -38,7 +38,18 @@ pub(in crate::executor) fn single_unquoted_parameter_name(value: &str) -> Option
     is_shell_name(name).then_some(name)
 }
 
-pub(in crate::executor) fn append_assoc_value(current: &str, value: &str) -> String {
+pub(in crate::executor) fn append_assoc_value(current: &str, value: &str, integer: bool) -> String {
+    // GNU arrayfunc.c assign_compound_array_list / bind_assoc_variable: when
+    // the array carries the integer attribute, every element value is
+    // evaluated as an arithmetic expression before it is stored
+    // (assoc.tests: declare -i chaff; chaff=( [zero]=1+4 [one]=3+7 )).
+    let eval_element = |raw: &str| -> String {
+        if integer {
+            super::arithmetic::eval_arith_value(raw).to_string()
+        } else {
+            raw.to_string()
+        }
+    };
     let mut entries = assoc_entries(current);
     let tokens = array_assignment_tokens(value);
     let explicit_subscripts = tokens
@@ -55,7 +66,7 @@ pub(in crate::executor) fn append_assoc_value(current: &str, value: &str) -> Str
                 .get(1)
                 .map(|value| unquote_storage_value(value))
                 .unwrap_or_default();
-            entries.push((key, value));
+            entries.push((key, eval_element(&value)));
         }
         return format_assoc_storage(entries);
     }
@@ -71,12 +82,13 @@ pub(in crate::executor) fn append_assoc_value(current: &str, value: &str) -> Str
                     .find(|(entry_key, _)| entry_key == &key)
                 {
                     *entry_value = append_scalar_value(entry_value, &rhs);
+                    *entry_value = eval_element(entry_value);
                 } else {
-                    entries.push((key, rhs));
+                    entries.push((key, eval_element(&rhs)));
                 }
                 continue;
             }
-            entries.push((key, rhs));
+            entries.push((key, eval_element(&rhs)));
             continue;
         }
         // Bare element (no `[key]=` form): GNU rejects it with

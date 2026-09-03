@@ -1,9 +1,39 @@
-pub(super) fn nameref_self_reference(arg: &str) -> bool {
-    let Some((name, value)) = arg.split_once('=') else {
+/// GNU general.c:317 valid_array_reference: a nameref value (or declared
+/// nameref name) may be `name[subscript]` with a valid identifier base and a
+/// non-empty subscript. The full GNU version also validates quoted subscripts
+/// and `[@]`/`[*]` forms; declare-time checks only need the reject side, so a
+/// conservative shape test is enough here.
+pub(super) fn valid_array_reference(arg: &str) -> bool {
+    let Some(open) = arg.find('[') else {
         return false;
     };
-    let name = name.strip_suffix('+').unwrap_or(name);
-    name == value
+    if !arg.ends_with(']') {
+        return false;
+    }
+    let base = &arg[..open];
+    let subscript = &arg[open + 1..arg.len() - 1];
+    !subscript.is_empty() && valid_identifier(base)
+}
+
+/// GNU general.c:310 valid_nameref_value: a nameref value must be a valid
+/// identifier or (flags != 2) a valid array reference.
+pub(super) fn valid_nameref_value(value: &str) -> bool {
+    !value.is_empty() && (valid_identifier(value) || valid_array_reference(value))
+}
+
+/// GNU general.c:327 check_selfref: the value references the nameref variable
+/// itself, either directly (`declare -n x=x`) or through an array element of
+/// the same array (`declare -n x=x[1]`).
+pub(super) fn check_selfref(name: &str, value: &str) -> bool {
+    if name == value {
+        return true;
+    }
+    if valid_array_reference(value) {
+        if let Some(open) = value.find('[') {
+            return &value[..open] == name;
+        }
+    }
+    false
 }
 
 pub(super) fn declare_base_name(arg: &str) -> Option<&str> {

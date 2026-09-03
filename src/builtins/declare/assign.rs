@@ -14,6 +14,7 @@ use super::{
 use crate::executor::arithmetic::eval_conditional_arith_value;
 
 pub(super) fn assign_declare_names<W>(
+    command_name: &str,
     names: &[&str],
     variables: &mut HashMap<String, String>,
     array: bool,
@@ -40,7 +41,7 @@ where
                 if readonly.contains(base) {
                     writeln!(
                         stderr,
-                        "{}declare: {}: readonly variable",
+                        "{}{command_name}: {}: readonly variable",
                         diagnostic_prefix(),
                         base
                     )?;
@@ -51,7 +52,10 @@ where
                         .cloned()
                         .unwrap_or_else(|| "()".to_string());
                     let element = format!("([{index_expression}]={value})");
-                    variables.insert(base.to_string(), append_assoc_value(&current, &element));
+                    variables.insert(
+                        base.to_string(),
+                        append_assoc_value(&current, &element, integer),
+                    );
                     mark_typed(variables, ASSOC_VARS, base);
                     unmark_typed(variables, DECLARED_UNSET_VARS, base);
                 }
@@ -84,7 +88,7 @@ where
         if readonly.contains(var_name) {
             writeln!(
                 stderr,
-                "{}declare: {}: readonly variable",
+                "{}{command_name}: {}: readonly variable",
                 diagnostic_prefix(),
                 var_name
             )?;
@@ -120,7 +124,7 @@ where
                         continue;
                     }
                 }
-                append_assoc_value(&current, value)
+                append_assoc_value(&current, value, integer)
             } else if array
                 || marked_vars(variables, ARRAY_VARS).contains(var_name)
                 || current.starts_with('\x1d')
@@ -134,16 +138,15 @@ where
                 current.push_str(value);
                 current
             }
-        } else if integer {
-            if value.starts_with('(') && value.ends_with(')') {
-                append_array_value("()", value, true)
-            } else {
-                eval_arith_value(value).to_string()
-            }
         } else if (assoc || marked_vars(variables, ASSOC_VARS).contains(var_name))
             && value.starts_with('(')
             && value.ends_with(')')
         {
+            // GNU arrayfunc.c: assoc-ness decides the compound form first; the
+            // integer attribute then only evaluates the element values, so
+            // `declare -Ai chaff=([one]=3+7)` stores an associative 10 rather
+            // than routing the compound through the indexed path.
+            //
             // GNU Bash (array.c/arrayassign.c): every element of an associative
             // array compound assignment must use the [key]=value form. A bare
             // word (no subscript) is rejected with the must-use-subscript error.
@@ -158,7 +161,13 @@ where
                 status = EXECUTION_FAILURE;
                 continue;
             }
-            append_assoc_value("()", value)
+            append_assoc_value("()", value, integer)
+        } else if integer {
+            if value.starts_with('(') && value.ends_with(')') {
+                append_array_value("()", value, true)
+            } else {
+                eval_arith_value(value).to_string()
+            }
         } else if value.starts_with('(') && value.ends_with(')') {
             append_array_value("()", value, false)
         } else {
