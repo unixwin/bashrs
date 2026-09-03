@@ -56,11 +56,35 @@ impl Executor {
     }
 
     fn external_mkdir(&mut self, cmd: &CommandNode) -> Result<bool, ExecuteError> {
-        for path in &cmd.words[1..] {
-            fs::create_dir_all(shell_path_to_windows(
-                &self.expand_word(path),
-                &self.env_vars,
-            ))?;
+        // GNU mkdir (coreutils) parses options before operands: -p (parents,
+        // already implied by create_dir_all), -m MODE which consumes a value,
+        // -v verbose; `--` ends option parsing so a following `-p` is an
+        // operand. Without this the flag itself became a literal directory
+        // entry (`mkdir -p d` created `./-p`).
+        let mut mode_value_pending = false;
+        let mut no_more_flags = false;
+        for word in &cmd.words[1..] {
+            let expanded = self.expand_word(word);
+            if !no_more_flags && !mode_value_pending && expanded == "--" {
+                no_more_flags = true;
+                continue;
+            }
+            if !no_more_flags
+                && !mode_value_pending
+                && expanded.starts_with('-')
+                && expanded != "-"
+            {
+                if expanded == "-m" {
+                    mode_value_pending = true;
+                }
+                continue;
+            }
+            if mode_value_pending {
+                mode_value_pending = false;
+                continue;
+            }
+            fs::create_dir_all(shell_path_to_windows(&expanded, &self.env_vars))?
+                ;
         }
         self.exit_code = 0;
         Ok(true)
