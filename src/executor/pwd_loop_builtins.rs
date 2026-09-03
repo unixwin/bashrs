@@ -46,12 +46,17 @@ impl Executor {
     ) -> Result<(), ExecuteError> {
         let mut stderr = Vec::new();
         if self.loop_depth == 0 {
-            writeln!(
-                &mut stderr,
-                "{}{}: only meaningful in a `for', `while', or `until' loop",
-                self.diagnostic_prefix(),
-                kind.name()
-            )?;
+            // GNU break.def check_loop_level (BREAK_COMPLAINS): the
+            // out-of-loop diagnostic is suppressed in posix mode; the status
+            // stays zero either way (func5.sub posix testfunc `break`).
+            if !self.posix_mode_enabled() {
+                writeln!(
+                    &mut stderr,
+                    "{}{}: only meaningful in a `for', `while', or `until' loop",
+                    self.diagnostic_prefix(),
+                    kind.name()
+                )?;
+            }
             self.write_buffered_builtin_output(cmd, &[], &stderr)?;
             // Bash emits the diagnostic but leaves the command status at zero
             // when an out-of-loop break/continue is followed by another

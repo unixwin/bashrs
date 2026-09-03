@@ -7,6 +7,65 @@ fn materialize_expanded_command_word(word: &str) -> String {
     ))
 }
 
+/// GNU subst.c::param_expand reaches `bad_substitution:` for a whitespace-led
+/// `${ command; }` word and reports the FULL word text under expansion
+/// (subst.c:10278 `report_error (_("%s: bad substitution"), string)`), not
+/// just the braced span. parameter_errors.rs reports the span only, so
+/// whole-word occurrences (`AA${ cmd; }BB`, `--${ }--`) pre-empt it here with
+/// the exact GNU text; the expansion failure abandons the current command
+/// with status 1 while the script continues. `${| ... }` stays a Rubash
+/// current-shell extension and never takes this path.
+fn whitespace_led_bad_substitution_word(word: &str) -> Option<String> {
+    let word = word
+        .strip_prefix('\x1b')
+        .or_else(|| word.strip_prefix('\x1d'))
+        .unwrap_or(word);
+    if word.contains("${|") {
+        return None;
+    }
+    let mut rest = word;
+    while let Some(start) = rest.find("${") {
+        let after_start = &rest[start + 2..];
+        let Some(end) = matching_parameter_brace(after_start) else {
+            return None;
+        };
+        if after_start.chars().next().is_some_and(char::is_whitespace) {
+            return Some(word.to_string());
+        }
+        rest = &after_start[end + 1..];
+    }
+    None
+}
+
+impl Executor {
+    /// Shared whole-word bad-substitution pre-check; see
+    /// whitespace_led_bad_substitution_word for the GNU source mapping.
+    pub(in crate::executor) fn report_whitespace_led_bad_substitution(
+        &mut self,
+        cmd: &CommandNode,
+    ) -> Result<(), ExecuteError> {
+        for word in cmd.words.iter().chain(cmd.assignments.values()) {
+            let Some(bad_word) = whitespace_led_bad_substitution_word(word) else {
+                continue;
+            };
+            // One write per diagnostic, mirroring GNU bash's report_error
+            // (error.c): the message must not be split across write calls or
+            // a redirected stderr can interleave other output inside it.
+            let mut stderr = Vec::new();
+            writeln!(
+                &mut stderr,
+                "{}{}: bad substitution",
+                self.diagnostic_prefix(),
+                bad_word
+            )?;
+            self.write_default_stderr(&stderr)?;
+            self.exit_code = 1;
+            return Err(ExecuteError::ExpansionFailure(1));
+        }
+        Ok(())
+    }
+}
+
 impl Executor {
     pub(in crate::executor) fn report_command_heredoc_errors(
         &mut self,
@@ -83,6 +142,7 @@ impl Executor {
             self.exit_code = 1;
             return Err(ExecuteError::ExitCode(1));
         }
+        self.report_whitespace_led_bad_substitution(cmd)?;
         if let Some((name, message, status)) = self.parameter_expansion_error(cmd) {
             eprintln!("{}{}: {}", self.diagnostic_prefix(), name, message);
             self.exit_code = status;
@@ -210,6 +270,7 @@ impl Executor {
             self.exit_code = 1;
             return Err(ExecuteError::ExitCode(1));
         }
+        self.report_whitespace_led_bad_substitution(cmd)?;
         if let Some((name, message, status)) = self.parameter_expansion_error(cmd) {
             eprintln!("{}{}: {}", self.diagnostic_prefix(), name, message);
             self.exit_code = status;
@@ -524,7 +585,9 @@ impl Executor {
         // below), so their literal braces must not expand again here.
         if raw.is_some()
             && self.is_brace_expand_enabled()
-            && !word.contains("${")
+            // GNU runs brace expansion before parameter expansion, so a
+            // dollar-brace in the word does not suppress it: the dollar-brace
+            // body is skipped by the brace scanner (foo{bar,${var.} splits).
             && (!raw_word_is_quoted(raw)
                 || raw.is_some_and(|raw| {
                     !raw.contains('\'') && !raw.contains('\"') && word_contains_brace_group(raw)
@@ -735,6 +798,19 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Option<Result<(), ExecuteError>> {
+        // GNU execute_cmd.c:4657-4676 (execute_simple_command): Posix.2 says
+        // special builtins are found before functions. In posix mode a special
+        // builtin precludes function lookup entirely (find_function is never
+        // called); in default mode functions shadow all builtins (func5.sub
+        // testfunc: posix 'break' runs the builtin, default runs the function).
+        if self.posix_mode_enabled()
+            && cmd
+                .words
+                .first()
+                .is_some_and(|word| is_posix_special_builtin(word))
+        {
+            return None;
+        }
         let function_name = cmd
             .words
             .first()
@@ -888,9 +964,15 @@ pub(in crate::executor) fn expand_braces_with_optional_raw(
     word: &str,
     raw: Option<&str>,
 ) -> Vec<String> {
+    if word.contains("{a}") || raw.is_some_and(|r| r.contains("{a}")) {
+        eprintln!("DBGX word={:?} raw={:?}", word, raw);
+    }
     if let Some(raw) = raw {
-        if raw != word && !raw.contains("${") {
+        if raw != word {
             let braced = crate::expand::braces::expand_braces(raw);
+            if word.contains("{a}") {
+                eprintln!("DBGX rawbranch={:?}", braced);
+            }
             if braced.len() > 1 || word_contains_brace_group(raw) {
                 // The raw-based expansion kept backslash escapes that the
                 // lexer would otherwise strip. Strip them so escaped chars
@@ -912,12 +994,24 @@ pub(in crate::executor) fn expand_braces_with_optional_raw(
     }
 
     let braced = crate::expand::braces::expand_braces(word);
+    // GNU bash runs brace expansion on the raw word (backslash escapes
+    // intact) and applies quote removal to each result word afterwards
+    // (subst.c brace expansion runs before the quote-removal pass on the
+    // expanded word list). BraceExpand tokens skip lexer-level quote
+    // removal, so strip the escapes here: {a,b\,c} must yield b,c and
+    // \{a,b} must yield {a,b} once no expansion is possible.
     if braced.len() > 1 {
         braced
+            .into_iter()
+            .map(|item| crate::lexer::remove_shell_quotes(&item))
+            .collect()
     } else if word_contains_brace_group(word) {
         // A brace group can be syntactically present without producing
         // multiple words; quote removal still applies to its escaped text.
         braced
+            .into_iter()
+            .map(|item| crate::lexer::remove_shell_quotes(&item))
+            .collect()
     } else {
         braced
     }

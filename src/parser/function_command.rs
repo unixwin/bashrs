@@ -12,15 +12,42 @@ pub(super) fn parse_function_command(
     // `name() { ...; }` and `function name { ...; }` forms onto a function
     // command node.
     let keyword_form = is_keyword(tokens, start, "function");
-    let (name_index, mut i) = if keyword_form {
-        (start + 1, start + 2)
+    // GNU parse.y: function_def: WORD '(' ')' ... -- the name can be any
+    // word, and a `<(...)' process-substitution-like token is read as one
+    // WORD (so `<(:) () { ...; }' is a function definition whose name is
+    // `<(:)', later rejected by valid_function_word). rubash's lexer emits
+    // `<` (RedirectIn) plus the parenthesized group separately, so reassemble
+    // the `<(...)' name here when the closing `)' is followed by `()'.
+    let lt_group = if keyword_form {
+        None
     } else {
-        (start, start + 1)
+        lt_group_function_name(tokens, start)
     };
-    let name_token = tokens.get(name_index)?;
-    let name = name_token.value.clone();
-    let name_raw = name_token.raw.clone();
-    if !(is_function_name(&name) || (keyword_form && is_function_keyword_name(&name))) {
+    // `!!' lexes as two Keyword `!' tokens in rubash (GNU reads it as one
+    // WORD), so `!! () { ...; }' needs the same reassembly as `<(...)'.
+    let bang_group = if keyword_form {
+        None
+    } else {
+        bang_group_function_name(tokens, start)
+    };
+    let special_group = lt_group.or(bang_group);
+    let special_group_taken = special_group.is_some();
+    let (name, name_raw, mut i) = if let Some((name, name_raw, next_i)) = special_group {
+        (name, name_raw, next_i)
+    } else {
+        let (name_index, i) = if keyword_form {
+            (start + 1, start + 2)
+        } else {
+            (start, start + 1)
+        };
+        let name_token = tokens.get(name_index)?;
+        (name_token.value.clone(), name_token.raw.clone(), i)
+    };
+    if !special_group_taken
+        && !(is_function_name(&name)
+            || is_quoted_function_name(&name, &name_raw)
+            || (keyword_form && is_function_keyword_name(&name)))
+    {
         return None;
     }
     let compact_parentheses = tokens.get(i).is_some_and(|token| token.value == "()");
@@ -81,6 +108,9 @@ pub(super) fn parse_function_command(
             FunctionBodyKind::BraceGroup,
             Some(i),
             Some(i),
+            tokens
+                .get(i)
+                .map(|token| token.position + token.raw.matches('\n').count()),
         ));
         return Some(finish_function_command(command, tokens, i + 1));
     }
@@ -102,6 +132,7 @@ pub(super) fn parse_function_command(
             FunctionBodyKind::CompoundCommand,
             Some(i),
             body_end.checked_sub(1),
+            tokens.get(body_end.saturating_sub(1)).map(|token| token.position),
         ));
         return Some(finish_function_command(command, tokens, body_end));
     }
@@ -125,6 +156,7 @@ pub(super) fn parse_function_command(
             FunctionBodyKind::Subshell,
             Some(i),
             Some(close_i),
+            tokens.get(close_i).map(|token| token.position),
         ));
         return Some(finish_function_command(command, tokens, close_i + 1));
     }
@@ -147,6 +179,7 @@ pub(super) fn parse_function_command(
             FunctionBodyKind::CommandSequence,
             Some(i),
             body_end.checked_sub(1),
+            tokens.get(body_end.saturating_sub(1)).map(|token| token.position),
         ));
         return Some(finish_function_command(command, tokens, body_end));
     }
@@ -189,6 +222,7 @@ pub(super) fn parse_function_command(
         FunctionBodyKind::BraceGroup,
         Some(body_start),
         i.checked_sub(1),
+        tokens.get(i).map(|token| token.position),
     ));
     Some(finish_function_command(command, tokens, i + 1))
 }
@@ -220,6 +254,7 @@ fn function_command(
     body_kind: FunctionBodyKind,
     body_start: Option<usize>,
     body_end: Option<usize>,
+    body_end_line: Option<usize>,
 ) -> Box<FunctionCommand> {
     let (
         body_open_delimiter,
@@ -263,6 +298,7 @@ fn function_command(
         body_close_delimiter_metadata,
         body_start,
         body_end,
+        body_end_line,
     })
 }
 
@@ -386,4 +422,71 @@ pub(super) fn parse_parenthesized_function_body(
         last.subshell_end = true;
     }
     Some((body, i))
+}
+
+/// Reassemble a `!!' function name from the two Keyword `!' tokens that
+/// rubash's lexer emits (GNU reads `!!' as a single WORD, so the function_def
+/// grammar accepts `!! () { ...; }'; the executor rejects the name under
+/// POSIX mode via err_invalidid). Returns (name, raw, next_token_index).
+fn bang_group_function_name(tokens: &[Token], start: usize) -> Option<(String, String, usize)> {
+    if !tokens.get(start).is_some_and(|token| {
+        token.kind == TokenKind::Keyword && token.value == "!"
+    }) || !tokens.get(start + 1).is_some_and(|token| {
+        token.kind == TokenKind::Keyword && token.value == "!"
+    }) {
+        return None;
+    }
+    let compact = tokens
+        .get(start + 2)
+        .is_some_and(|token| token.value == "()");
+    let separated = tokens.get(start + 2).is_some_and(|token| token.value == "(")
+        && tokens.get(start + 3).is_some_and(|token| token.value == ")");
+    if !compact && !separated {
+        return None;
+    }
+    Some(("!!".to_string(), "!!".to_string(), start + 2))
+}
+
+/// Reassemble a `<(...)' function name from the lexer's split tokens.
+/// GNU's lexer reads `<(:)' as one WORD while scanning a word, so the
+/// function_def grammar accepts `<(:) () { ...; }' as a definition whose
+/// name is `<(:)' (later rejected by valid_function_word). rubash's lexer
+/// emits `<` (RedirectIn) followed by a `( ... )` group, so when the group's
+/// closing `)' is directly followed by `()', treat the whole `<(...)' as the
+/// function name. Returns (name, raw, next_token_index).
+fn lt_group_function_name(tokens: &[Token], start: usize) -> Option<(String, String, usize)> {
+    if tokens.get(start)?.kind != TokenKind::RedirectIn
+        || tokens.get(start)?.value != "<"
+        || !tokens.get(start + 1).is_some_and(|token| token.value == "(")
+    {
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut index = start + 1;
+    while index < tokens.len() {
+        let value = tokens[index].value.as_str();
+        if value == "(" {
+            depth += 1;
+        } else if value == ")" {
+            if depth == 1 {
+                if tokens.get(index + 1).is_some_and(|token| token.value == "(")
+                    && tokens.get(index + 2).is_some_and(|token| token.value == ")")
+                {
+                    let name = tokens[start..=index]
+                        .iter()
+                        .map(|token| token.value.as_str())
+                        .collect::<String>();
+                    let name_raw = tokens[start..=index]
+                        .iter()
+                        .map(|token| token.raw.as_str())
+                        .collect::<String>();
+                    return Some((name, name_raw, index + 1));
+                }
+                return None;
+            }
+            depth -= 1;
+        }
+        index += 1;
+    }
+    None
 }

@@ -9,6 +9,60 @@ impl Executor {
         // TODO(parse.y/execute_cmd.c): Bash stores a COMMAND tree plus source
         // metadata and function attributes. Keep the parsed body in a small
         // function table until the command representation is complete.
+        // GNU execute_cmd.c::execute_intern_function -> general.c::
+        // valid_function_word: a function name that contains `$', was quoted
+        // or escaped, or is a `<(...)'/`>(...)' process-substitution-like
+        // word is rejected with err_invalidid (non-fatal, rc=1, in default
+        // mode). Under POSIX mode, special-builtin names are rejected as
+        // "is a special builtin" and non-identifiers with err_invalidid;
+        // both are fatal (EX_BADUSAGE=2, aborting the current subshell or
+        // script via jump_to_top_level(ERREXIT)).
+        let name_raw = function.name_metadata.raw.clone();
+        let name_quoted = name_raw != function.name
+            && (name_raw.contains('\'')
+                || name_raw.contains('"')
+                || name_raw.contains('\\'));
+        let procsubst_like = name_raw.starts_with("<(") || name_raw.starts_with(">(");
+        let invalid_identifier = function.name.contains('$') || name_quoted || procsubst_like;
+        let posix_mode = self.posix_mode_enabled();
+        let name_error_line = function.body_end_line.or(cmd.line);
+        let name_error_prefix = |executor: &Self| {
+            name_error_line.map_or_else(
+                || executor.diagnostic_prefix(),
+                |line| executor.diagnostic_prefix_for_line(line),
+            )
+        };
+        if invalid_identifier {
+            eprintln!(
+                "{}`{}': not a valid identifier",
+                name_error_prefix(self),
+                name_raw
+            );
+            if posix_mode {
+                self.exit_code = 2;
+                return Err(ExecuteError::FatalFunctionError(2));
+            }
+            self.exit_code = 1;
+            return Ok(());
+        }
+        if posix_mode && is_posix_special_builtin(&function.name) {
+            eprintln!(
+                "{}`{}': is a special builtin",
+                name_error_prefix(self),
+                function.name
+            );
+            self.exit_code = 2;
+            return Err(ExecuteError::FatalFunctionError(2));
+        }
+        if posix_mode && !valid_function_identifier(&function.name) {
+            eprintln!(
+                "{}`{}': not a valid identifier",
+                name_error_prefix(self),
+                function.name
+            );
+            self.exit_code = 2;
+            return Err(ExecuteError::FatalFunctionError(2));
+        }
         if marked_env_names(&self.env_vars, READONLY_FUNCTIONS)
             .iter()
             .any(|name| name == &function.name)
@@ -77,26 +131,19 @@ impl Executor {
         let Some(body) = self.functions.get(name).cloned() else {
             return Ok(());
         };
-        // GNU Bash (execute_cmd.c): enforce a maximum function call nesting
-        // depth. The limit is taken from $FUNCNEST when set (0 disables the
-        // limit), otherwise 100 in default mode and 20 under POSIX mode. The
-        // chosen limit is reported in the diagnostic.
-        let default_limit = if self.posix_mode_enabled() {
-            20usize
-        } else {
-            100usize
-        };
-        // $FUNCNEST of 0 (or unset) uses the default; any other positive
-        // value sets the limit. A parsed value of exactly 0 means "no limit"
-        // and disables the check entirely.
+        // GNU Bash execute_cmd.c:5200 (execute_function) plus
+        // variables.c:5944 (sv_funcnest): the nesting limit comes only from a
+        // numeric $FUNCNEST > 0. An unset FUNCNEST (funcnest_max = 0), a zero
+        // value, or a non-numeric value imposes no limit at all; there is no
+        // built-in default cap (func4.sub recurses to completion when unset).
+        // The chosen limit is reported in the diagnostic.
         let funcnest: Option<usize> = self
             .env_vars
             .get("FUNCNEST")
             .and_then(|value| value.trim().parse::<usize>().ok());
         let nesting_limit: Option<usize> = match funcnest {
-            Some(0) => None,
-            Some(limit) => Some(limit),
-            None => Some(default_limit),
+            Some(limit) if limit > 0 => Some(limit),
+            _ => None,
         };
         if let Some(nesting_limit) = nesting_limit {
             if self.function_depth >= nesting_limit {
