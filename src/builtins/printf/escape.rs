@@ -1,4 +1,4 @@
-use crate::executor::substitution_metadata::RAW_BYTE_MARKER_BASE;
+use crate::executor::substitution_metadata::encode_raw_byte_marker;
 
 pub(super) fn expand_format_escape<I>(chars: &mut std::iter::Peekable<I>) -> String
 where
@@ -35,30 +35,20 @@ fn format_escape_codepoint(value: Option<u32>, fallback: &str) -> String {
 
 fn format_escape_byte(value: Option<u32>, fallback: &str) -> String {
     value
-        .map(|byte| encode_raw_byte(byte as u8).to_string())
+        .map(|byte| encode_raw_byte(byte as u8))
         .unwrap_or_else(|| fallback.to_string())
 }
 
-fn encode_raw_byte(byte: u8) -> char {
+fn encode_raw_byte(byte: u8) -> String {
     if byte.is_ascii() {
-        char::from(byte)
+        char::from(byte).to_string()
     } else {
-        char::from_u32(RAW_BYTE_MARKER_BASE + byte as u32).expect("raw byte marker is valid")
+        encode_raw_byte_marker(byte)
     }
 }
 
 pub(super) fn raw_bytes(value: &str) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    for ch in value.chars() {
-        let codepoint = ch as u32;
-        if (RAW_BYTE_MARKER_BASE..=RAW_BYTE_MARKER_BASE + u8::MAX as u32).contains(&codepoint) {
-            bytes.push((codepoint - RAW_BYTE_MARKER_BASE) as u8);
-        } else {
-            let mut encoded = [0; 4];
-            bytes.extend_from_slice(ch.encode_utf8(&mut encoded).as_bytes());
-        }
-    }
-    bytes
+    crate::executor::substitution_metadata::shell_text_to_raw_bytes(value)
 }
 
 pub(super) fn expand_percent_b(value: &str) -> (String, bool) {
@@ -168,7 +158,7 @@ fn push_escape_codepoint(output: &mut String, value: Option<u32>, fallback: &str
 
 fn push_escape_byte(output: &mut String, value: Option<u32>, fallback: &str) {
     match value {
-        Some(byte) => output.push(encode_raw_byte(byte as u8)),
+        Some(byte) => output.push_str(&encode_raw_byte(byte as u8)),
         None => output.push_str(fallback),
     }
 }

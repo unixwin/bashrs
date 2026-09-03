@@ -380,7 +380,13 @@ pub(in crate::executor) fn current_shell_command_substitution_span(word: &str) -
         }
         let after_open = start + 2;
         let first = word.get(after_open..)?.chars().next()?;
-        if first != '|' && !first.is_whitespace() {
+        // GNU Bash 5.2 param_expand (subst.c case LBRACE) only special-cases
+        // FUNSUB_CHAR, i.e. `${|`; a whitespace-led `${ command; }` is an
+        // ordinary (invalid) parameter expansion that falls through to
+        // `bad substitution`. Only the `${|` Rubash current-shell extension
+        // may take this span, so the frozen parameter_errors pre-check keeps
+        // rejecting the whitespace-led form exactly as GNU does.
+        if first != '|' {
             search_start = after_open;
             continue;
         }
@@ -436,11 +442,27 @@ mod current_shell_detector_tests {
 
     #[test]
     fn detects_current_shell_braced_command_body() {
-        let word = "${ value=new; echo alpha; echo; }";
+        // Only the `${|` funsub marker selects the current-shell form.
+        // GNU Bash 5.2 param_expand (subst.c case LBRACE) treats every other
+        // `${...}` as a parameter expansion, and a whitespace-led body is a
+        // `bad substitution` there, so it must not take this span.
+        let word = "${| value=new; echo alpha; echo; }";
         assert_eq!(current_shell_command_substitution_span(word), Some(word));
         assert!(word_contains_current_shell_command_substitution(word));
         assert!(word_contains_current_shell_command_substitution(
             "prefix${| echo reply }suffix"
+        ));
+    }
+
+    #[test]
+    fn whitespace_led_braced_body_is_not_current_shell() {
+        // GNU comsub2.tests: every `${ printf ...; }` line is rejected with
+        // `bad substitution` by WSL bash 5.2.21.
+        assert!(!word_contains_current_shell_command_substitution(
+            "${ printf '%s\\n' aa bb cc dd; }"
+        ));
+        assert!(!word_contains_current_shell_command_substitution(
+            "AA${ printf 'x'; }BB"
         ));
     }
 

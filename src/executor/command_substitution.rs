@@ -6,6 +6,31 @@ impl Executor {
     /// quoted in the source and starts with `~`, prefix the quote-protection
     /// marker so tilde expansion is skipped (Bash: `$(printf '%s' "~/repo")`
     /// prints `~/repo`, not the home directory).
+    /// GNU bash runs brace expansion on each command word before any other
+    /// expansion (subst.c expand_words -> brace expansion on the raw word).
+    /// The single-command substitution shortcuts expand the raw words
+    /// directly, so splice brace-expansion results in place, preserving the
+    /// parent word's quote flag for the remaining per-word passes.
+    fn brace_expanded_substitution_args(
+        &self,
+        words: &[String],
+        word_parts: &[(String, bool)],
+    ) -> Vec<String> {
+        let mut expanded_args = Vec::new();
+        for (index, word) in words[1..].iter().enumerate() {
+            let quote = word_parts.get(index + 1).map(|(_, q)| *q);
+            let braced = crate::expand::braces::expand_braces(word);
+            if braced.len() > 1 {
+                for item in braced {
+                    expanded_args.push(self.expand_protected_tilde(&item, quote));
+                }
+            } else {
+                expanded_args.push(self.expand_protected_tilde(word, quote));
+            }
+        }
+        expanded_args
+    }
+
     fn expand_protected_tilde(&self, word: &str, was_quoted: Option<bool>) -> String {
         let expanded = if was_quoted == Some(true) && word.starts_with('~') {
             self.expand_word(&format!("\x1b{word}"))
@@ -174,26 +199,22 @@ impl Executor {
         }
 
         if words.first().map(String::as_str) == Some("echo") {
-            let expanded_args = words[1..]
-                .iter()
-                .enumerate()
-                .map(|(index, word)| {
-                    self.expand_protected_tilde(word, word_parts.get(index + 1).map(|(_, q)| *q))
-                })
-                .collect::<Vec<_>>();
+            let expanded_args = self.brace_expanded_substitution_args(&words, &word_parts);
             return echo_command_substitution_output(&expanded_args);
         }
 
         if words.first().map(String::as_str) == Some("recho") {
-            let expanded_args = words[1..]
-                .iter()
-                .enumerate()
-                .map(|(index, word)| {
-                    self.expand_protected_tilde(word, word_parts.get(index + 1).map(|(_, q)| *q))
-                })
-                .collect::<Vec<_>>();
+            let expanded_args = self.brace_expanded_substitution_args(&words, &word_parts);
             return self
                 .recho_output(&expanded_args)
+                .trim_end_matches('\n')
+                .to_string();
+        }
+
+        if words.first().map(String::as_str) == Some("zecho") {
+            let expanded_args = self.brace_expanded_substitution_args(&words, &word_parts);
+            return self
+                .zecho_output(&expanded_args)
                 .trim_end_matches('\n')
                 .to_string();
         }

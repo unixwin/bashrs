@@ -3,6 +3,11 @@
 //! This is the first owner-scoped boundary corresponding to GNU Bash
 //! subst.c::read_comsub. Payload bytes remain data; lexical context is kept
 //! separately instead of being encoded in global C0 sentinels.
+//!
+//! Raw bytes travel as U+E000 sentinel + payload-char marker pairs; a literal
+//! U+E000 in payload text is escaped by doubling the sentinel, so private-use
+//! text (prompt glyphs such as U+E0A0) can never collide with the marker
+//! space and survives every encode/decode round trip byte-exact.
 
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -12,7 +17,35 @@ pub(in crate::executor) enum SubstitutionQuoteContext {
     HereDocument,
 }
 
-pub(crate) const RAW_BYTE_MARKER_BASE: u32 = 0xe000;
+/// Sentinel introducing a raw-byte marker pair.
+pub(crate) const RAW_BYTE_MARKER_ESCAPE: u32 = 0xe000;
+/// First marker payload char, encoding raw byte 0x00.
+pub(crate) const RAW_BYTE_MARKER_FIRST: u32 = 0xe001;
+/// Last marker payload char, encoding raw byte 0xff.
+pub(crate) const RAW_BYTE_MARKER_LAST: u32 = 0xe100;
+
+/// Build the two-char raw-byte marker (sentinel + payload char) for a byte.
+pub(crate) fn encode_raw_byte_marker(byte: u8) -> String {
+    let mut output = String::new();
+    push_raw_byte_marker(&mut output, byte);
+    output
+}
+
+fn push_raw_byte_marker(output: &mut String, byte: u8) {
+    output.push(char::from_u32(RAW_BYTE_MARKER_ESCAPE).expect("sentinel is valid"));
+    output.push(char::from_u32(RAW_BYTE_MARKER_FIRST + byte as u32).expect("marker char is valid"));
+}
+
+/// Push shell text, escaping literal U+E000 sentinels by doubling them so
+/// decoders can tell payload sentinels apart from marker introducers.
+fn push_escaped_text(output: &mut String, text: &str) {
+    for ch in text.chars() {
+        if ch as u32 == RAW_BYTE_MARKER_ESCAPE {
+            output.push(ch);
+        }
+        output.push(ch);
+    }
+}
 
 pub(in crate::executor) struct SubstitutionOutput {
     pub(in crate::executor) bytes: Vec<u8>,
@@ -153,16 +186,33 @@ pub(crate) fn read_shell_input_file(path: impl AsRef<std::path::Path>) -> std::i
 ///
 /// This is the exact-once consumer boundary for byte sinks such as
 /// child-process stdin writers and final pipeline output materialization.
-/// Characters outside the RAW_BYTE_MARKER range keep their UTF-8 encoding.
+/// Only sentinel-introduced marker pairs decode to bytes; every other code
+/// point, including private-use glyphs, keeps its UTF-8 encoding.
 pub(crate) fn shell_text_to_raw_bytes(text: &str) -> Vec<u8> {
     let mut output = Vec::new();
-    for ch in text.chars() {
-        let codepoint = ch as u32;
-        if (RAW_BYTE_MARKER_BASE..=RAW_BYTE_MARKER_BASE + u8::MAX as u32).contains(&codepoint) {
-            output.push((codepoint - RAW_BYTE_MARKER_BASE) as u8);
-        } else {
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch as u32 != RAW_BYTE_MARKER_ESCAPE {
             let mut encoded = [0; 4];
             output.extend_from_slice(ch.encode_utf8(&mut encoded).as_bytes());
+            continue;
+        }
+        match chars.peek().copied() {
+            Some(next) if next as u32 == RAW_BYTE_MARKER_ESCAPE => {
+                chars.next();
+                let mut encoded = [0; 4];
+                output.extend_from_slice(ch.encode_utf8(&mut encoded).as_bytes());
+            }
+            Some(next)
+                if (RAW_BYTE_MARKER_FIRST..=RAW_BYTE_MARKER_LAST).contains(&(next as u32)) =>
+            {
+                chars.next();
+                output.push((next as u32 - RAW_BYTE_MARKER_FIRST) as u8);
+            }
+            _ => {
+                let mut encoded = [0; 4];
+                output.extend_from_slice(ch.encode_utf8(&mut encoded).as_bytes());
+            }
         }
     }
     output
@@ -170,31 +220,63 @@ pub(crate) fn shell_text_to_raw_bytes(text: &str) -> Vec<u8> {
 
 /// Decode marker characters embedded in an otherwise byte-oriented output.
 ///
-/// Echo can receive shell text from a `read` record, but it also emits raw
-/// bytes for `-e` octal and hexadecimal escapes. Decode the reserved UTF-8
+/// Echo can receive shell text from a read record, but it also emits raw
+/// bytes for -e octal and hexadecimal escapes. Decode the reserved UTF-8
 /// encoding in-place so those already-raw bytes remain untouched.
 pub(crate) fn decode_raw_byte_markers(bytes: &[u8]) -> Vec<u8> {
     let mut output = Vec::with_capacity(bytes.len());
-    let mut index = 0;
+    let mut index = 0usize;
     while index < bytes.len() {
-        if index + 2 < bytes.len()
-            && bytes[index] == 0xee
-            && (bytes[index + 1] == 0x80
-                || bytes[index + 1] == 0x81
-                || bytes[index + 1] == 0x82
-                || bytes[index + 1] == 0x83)
-            && (bytes[index + 2] & 0xc0) == 0x80
-        {
-            let codepoint =
-                0xe000 + ((bytes[index + 1] as u32 - 0x80) << 6) + (bytes[index + 2] as u32 - 0x80);
-            output.push((codepoint - RAW_BYTE_MARKER_BASE) as u8);
-            index += 3;
-        } else {
+        let Some((ch, char_len)) = next_char(bytes, index) else {
             output.push(bytes[index]);
             index += 1;
+            continue;
+        };
+        if ch as u32 != RAW_BYTE_MARKER_ESCAPE {
+            output.extend_from_slice(&bytes[index..index + char_len]);
+            index += char_len;
+            continue;
+        }
+        match next_char(bytes, index + char_len) {
+            Some((next_ch, next_len)) if next_ch as u32 == RAW_BYTE_MARKER_ESCAPE => {
+                output.extend_from_slice(&bytes[index..index + char_len]);
+                index += char_len + next_len;
+            }
+            Some((next_ch, next_len))
+                if (RAW_BYTE_MARKER_FIRST..=RAW_BYTE_MARKER_LAST).contains(&(next_ch as u32)) =>
+            {
+                output.push((next_ch as u32 - RAW_BYTE_MARKER_FIRST) as u8);
+                index += char_len + next_len;
+            }
+            _ => {
+                output.extend_from_slice(&bytes[index..index + char_len]);
+                index += char_len;
+            }
         }
     }
     output
+}
+
+fn next_char(bytes: &[u8], index: usize) -> Option<(char, usize)> {
+    if index >= bytes.len() {
+        return None;
+    }
+    let len = utf8_sequence_len(bytes[index])?;
+    if index + len > bytes.len() {
+        return None;
+    }
+    let chunk = std::str::from_utf8(&bytes[index..index + len]).ok()?;
+    Some((chunk.chars().next()?, len))
+}
+
+fn utf8_sequence_len(lead: u8) -> Option<usize> {
+    match lead {
+        0x00..=0x7f => Some(1),
+        0xc2..=0xdf => Some(2),
+        0xe0..=0xef => Some(3),
+        0xf0..=0xf4 => Some(4),
+        _ => None,
+    }
 }
 pub(crate) fn bytes_to_assignment_shell_text(bytes: &[u8]) -> String {
     let text = bytes_to_shell_text(bytes);
@@ -202,7 +284,7 @@ pub(crate) fn bytes_to_assignment_shell_text(bytes: &[u8]) -> String {
     for ch in text.chars() {
         let codepoint = ch as u32;
         if (0x14..=0x1f).contains(&codepoint) {
-            output.push(char::from_u32(RAW_BYTE_MARKER_BASE + codepoint).unwrap());
+            push_raw_byte_marker(&mut output, codepoint as u8);
         } else {
             output.push(ch);
         }
@@ -216,14 +298,16 @@ pub(crate) fn bytes_to_shell_text(bytes: &[u8]) -> String {
     while !remaining.is_empty() {
         match std::str::from_utf8(remaining) {
             Ok(text) => {
-                output.push_str(text);
+                push_escaped_text(&mut output, text);
                 break;
             }
             Err(error) => {
                 let valid = error.valid_up_to();
-                output.push_str(std::str::from_utf8(&remaining[..valid]).unwrap_or_default());
-                output
-                    .push(char::from_u32(RAW_BYTE_MARKER_BASE + remaining[valid] as u32).unwrap());
+                push_escaped_text(
+                    &mut output,
+                    std::str::from_utf8(&remaining[..valid]).unwrap_or_default(),
+                );
+                push_raw_byte_marker(&mut output, remaining[valid]);
                 remaining = &remaining[valid + 1..];
             }
         }
@@ -525,7 +609,14 @@ mod tests {
                 .chars()
                 .map(|ch| ch as u32)
                 .collect::<Vec<_>>(),
-            vec![0x1d, 0x1f, 0x1a, 0x15, RAW_BYTE_MARKER_BASE + 0xff],
+            vec![
+                0x1d,
+                0x1f,
+                0x1a,
+                0x15,
+                RAW_BYTE_MARKER_ESCAPE,
+                RAW_BYTE_MARKER_FIRST + 0xff,
+            ],
         );
     }
 
@@ -625,7 +716,12 @@ mod tests {
         let fields = split_expanded_fragments(&fragments, None, SubstitutionSplitPolicy::NoSplit);
         assert_eq!(
             fields[0].chars().map(|ch| ch as u32).collect::<Vec<_>>(),
-            vec![b'a' as u32, RAW_BYTE_MARKER_BASE + 0xff, b'b' as u32],
+            vec![
+                b'a' as u32,
+                RAW_BYTE_MARKER_ESCAPE,
+                RAW_BYTE_MARKER_FIRST + 0xff,
+                b'b' as u32,
+            ],
         );
     }
 
@@ -653,7 +749,8 @@ mod tests {
             vec![
                 b'a' as u32,
                 b'b' as u32,
-                RAW_BYTE_MARKER_BASE + 0xff,
+                RAW_BYTE_MARKER_ESCAPE,
+                RAW_BYTE_MARKER_FIRST + 0xff,
                 b'\n' as u32,
             ]
         );
@@ -666,7 +763,8 @@ mod tests {
             mixed.chars().map(|ch| ch as u32).collect::<Vec<_>>(),
             vec![
                 0x4f60,
-                RAW_BYTE_MARKER_BASE + 0xff,
+                RAW_BYTE_MARKER_ESCAPE,
+                RAW_BYTE_MARKER_FIRST + 0xff,
                 b'o' as u32,
                 b'k' as u32
             ],
@@ -685,6 +783,50 @@ mod tests {
         assert_eq!(
             String::from_utf8(shell_text_to_raw_bytes(text)).unwrap(),
             text.to_string()
+        );
+    }
+
+    #[test]
+    fn private_use_glyphs_survive_marker_decode() {
+        // Prompt themes use private-use glyphs (U+E0A0 git branch,
+        // U+E0B0 powerline separators). They are payload text, not markers.
+        let text = "\u{e0a0}\u{e0b0} main";
+        assert_eq!(
+            String::from_utf8(decode_raw_byte_markers(text.as_bytes())).unwrap(),
+            text
+        );
+        assert_eq!(shell_text_to_raw_bytes(text), text.as_bytes().to_vec());
+    }
+
+    #[test]
+    fn prompt_assignment_markers_restore_c0_but_not_pua_glyphs() {
+        // Starship-style PS1: \[ ESC [1;35m \] U+E0A0 " main". The ESC byte
+        // is marker-encoded for scalar storage and restored at the prompt
+        // boundary; the private-use glyph passes through byte-exact.
+        let mut ps1 = b"\\[\x1b[1;35m\\]".to_vec();
+        ps1.extend_from_slice("\u{e0a0}".as_bytes());
+        ps1.extend_from_slice(b" main");
+        let stored = bytes_to_assignment_shell_text(&ps1);
+        assert_eq!(
+            decode_raw_byte_markers(stored.as_bytes()),
+            ps1,
+            "prompt boundary must restore ESC exactly and keep the glyph"
+        );
+    }
+
+    #[test]
+    fn literal_sentinel_roundtrips_through_marker_encoding() {
+        let text = "a\u{e000}b\u{e0a0}";
+        let encoded = bytes_to_shell_text(text.as_bytes());
+        assert_ne!(encoded, text, "literal sentinels must be escaped");
+        assert_eq!(
+            String::from_utf8(shell_text_to_raw_bytes(&encoded)).unwrap(),
+            text
+        );
+        let invalid = vec![b'a', 0xe0, b'b'];
+        assert_eq!(
+            shell_text_to_raw_bytes(&bytes_to_shell_text(&invalid)),
+            invalid
         );
     }
 }

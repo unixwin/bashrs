@@ -256,9 +256,7 @@ mod tests {
 
     #[test]
     fn decodes_read_markers_without_changing_echo_raw_escapes() {
-        let marker =
-            char::from_u32(crate::executor::substitution_metadata::RAW_BYTE_MARKER_BASE + 0xff)
-                .unwrap();
+        let marker = crate::executor::substitution_metadata::encode_raw_byte_marker(0xff);
         let argument = format!("a{marker}b");
         let mut output = Vec::new();
         write_echo_decoded([argument.as_str()], &mut output).unwrap();

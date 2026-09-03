@@ -233,6 +233,18 @@ pub(in crate::executor) fn is_posix_special_builtin(name: &str) -> bool {
     )
 }
 
+/// GNU general.c::valid_identifier: `[A-Za-z_][A-Za-z0-9_]*`. Used to enforce
+/// the POSIX function-name restriction in execute_intern_function (names that
+/// are not valid identifiers are rejected under POSIX mode).
+pub(in crate::executor) fn valid_function_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::executor) enum LoopControlError {
     TooManyArguments,

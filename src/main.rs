@@ -778,6 +778,7 @@ fn run_source_with_line_offset(
         Ok(()) => executor.last_exit_code(),
         Err(ExecuteError::ExitCode(code)) => code,
         Err(ExecuteError::ExpansionFailure(code)) => code,
+        Err(ExecuteError::FatalFunctionError(code)) => code,
         Err(e) => {
             if interactive {
                 eprintln!("Error: {}", e);

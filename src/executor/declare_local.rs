@@ -319,11 +319,17 @@ impl Executor {
                 }
             }
             self.write_local_compound_readonly_assignment_errors(&args, &mut stderr)?;
-            let status = crate::builtins::declare::execute_with_io(
+            // GNU declare.def:565 uses variable_context to decide between the
+            // global-scope self-reference error and the function-scope
+            // circular-reference warning; local always runs in a function, so
+            // `local -n a=$1` with a=$1 warns and continues.
+            let status = crate::builtins::declare::execute_with_io_named_in_context(
+                "local",
                 &args,
                 &mut self.env_vars,
                 &mut stdout,
                 &mut stderr,
+                true,
             )?;
             if status == 0 {
                 // Plain scalar locals must shadow the outer value in the typed

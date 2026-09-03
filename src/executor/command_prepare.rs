@@ -48,6 +48,26 @@ impl Executor {
             let Some(bad_word) = whitespace_led_bad_substitution_word(word) else {
                 continue;
             };
+            // GNU parse.y stamps each simple command with the line number
+            // current when a word token completes (read_token_word,
+            // parse.y:5849-5851) and execute_cmd.c reports that value
+            // (SET_LINE_NUMBER at execute_cmd.c:936). Because the lexer has
+            // crossed into later physical lines while scanning a multi-line
+            // word, the reported line advances by the newlines the offending
+            // word spans (comsub2.tests:23-24 reports line 24, :25-27 reports
+            // line 27). The one exception observed in the suites is a word
+            // with an EMBEDDED `${` spanning exactly one newline
+            // (`echo blank --${ \n}--`, comsub.tests:84-85), which reports
+            // the command's starting line, so the span is not added there.
+            let start_line = cmd.line.unwrap_or(1);
+            let word_newlines = bad_word.matches('\n').count();
+            let embedded_single_newline =
+                !bad_word.starts_with("${") && word_newlines == 1;
+            let diag_line = if embedded_single_newline {
+                start_line
+            } else {
+                start_line + word_newlines
+            };
             // One write per diagnostic, mirroring GNU bash's report_error
             // (error.c): the message must not be split across write calls or
             // a redirected stderr can interleave other output inside it.
@@ -55,7 +75,7 @@ impl Executor {
             writeln!(
                 &mut stderr,
                 "{}{}: bad substitution",
-                self.diagnostic_prefix(),
+                self.diagnostic_prefix_for_line(diag_line),
                 bad_word
             )?;
             self.write_default_stderr(&stderr)?;
@@ -583,15 +603,12 @@ impl Executor {
         // any other expansion, and never re-expands expansion results. raw
         // is None only for already-expanded fragments (the brace-result loop
         // below), so their literal braces must not expand again here.
-        if raw.is_some()
-            && self.is_brace_expand_enabled()
-            // GNU runs brace expansion before parameter expansion, so a
-            // dollar-brace in the word does not suppress it: the dollar-brace
-            // body is skipped by the brace scanner (foo{bar,${var.} splits).
-            && (!raw_word_is_quoted(raw)
-                || raw.is_some_and(|raw| {
-                    !raw.contains('\'') && !raw.contains('\"') && word_contains_brace_group(raw)
-                }))
+        if raw.is_some() && self.is_brace_expand_enabled()
+        // GNU runs brace expansion before parameter expansion, so a
+        // dollar-brace in the word does not suppress it: the dollar-brace
+        // body is skipped by the brace scanner (foo{bar,${var.} splits).
+        // Quoted raws are safe too: the brace scanner is quote-aware, so
+        // "{a,b}" stays literal while {a,b}'q' still splits.
         {
             let braced = expand_braces_with_optional_raw(word, raw);
             if braced.len() > 1 || (braced.len() == 1 && braced[0] != word) {
@@ -964,15 +981,9 @@ pub(in crate::executor) fn expand_braces_with_optional_raw(
     word: &str,
     raw: Option<&str>,
 ) -> Vec<String> {
-    if word.contains("{a}") || raw.is_some_and(|r| r.contains("{a}")) {
-        eprintln!("DBGX word={:?} raw={:?}", word, raw);
-    }
     if let Some(raw) = raw {
         if raw != word {
             let braced = crate::expand::braces::expand_braces(raw);
-            if word.contains("{a}") {
-                eprintln!("DBGX rawbranch={:?}", braced);
-            }
             if braced.len() > 1 || word_contains_brace_group(raw) {
                 // The raw-based expansion kept backslash escapes that the
                 // lexer would otherwise strip. Strip them so escaped chars

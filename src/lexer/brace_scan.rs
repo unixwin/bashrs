@@ -14,22 +14,98 @@ pub(super) fn has_unclosed_brace_group(input: &str) -> bool {
 fn has_unclosed_parameter_expansion(input: &str) -> bool {
     let chars = input.chars().collect::<Vec<_>>();
     let mut index = 0usize;
-    while index + 1 < chars.len() {
-        if chars[index] != '$' || chars[index + 1] != '{' {
+    // GNU parse.y consumes a shell comment in the lexer (read_token hands a
+    // word-initial '#' to parse_comment) before any expansion scanning, so a
+    // dollar-brace opener inside a comment never starts a parameter
+    // expansion. Track just enough quote state to keep quoted '#' literal.
+    let mut single = false;
+    let mut double = false;
+    let mut ansi_single = false;
+    let mut escaped = false;
+    let mut comment_start = true;
+    let mut in_comment = false;
+    while index < chars.len() {
+        let ch = chars[index];
+        if in_comment {
+            if ch == '\n' {
+                in_comment = false;
+                comment_start = true;
+            }
             index += 1;
             continue;
         }
-        let body: String = chars[index + 2..].iter().collect();
-        let context = BraceContext {
-            outer_double_quote: false,
-            posix: false,
-            replacement_context: false,
-            initial_state: DolbraceState::Param,
-        };
-        let Some(scan) = scan_braced_parameter_body(&body, context) else {
-            return true;
-        };
-        index += 2 + body[..scan.end].chars().count();
+        if escaped {
+            escaped = false;
+            comment_start = false;
+            index += 1;
+            continue;
+        }
+        if ch == '\n' && !single && !double && !ansi_single {
+            comment_start = true;
+            index += 1;
+            continue;
+        }
+        if ch == '#' && !single && !double && !ansi_single && comment_start {
+            in_comment = true;
+            index += 1;
+            continue;
+        }
+        if ch.is_whitespace() && !single && !double && !ansi_single {
+            comment_start = true;
+            index += 1;
+            continue;
+        }
+        if ansi_single {
+            if ch == '\\' {
+                escaped = true;
+            } else if ch == '\'' {
+                ansi_single = false;
+            }
+            comment_start = false;
+            index += 1;
+            continue;
+        }
+        if ch == '\\' && !single {
+            escaped = true;
+            comment_start = false;
+            index += 1;
+            continue;
+        }
+        if ch == '\'' && !double {
+            single = !single;
+            comment_start = false;
+            index += 1;
+            continue;
+        }
+        if ch == '"' && !single {
+            double = !double;
+            comment_start = false;
+            index += 1;
+            continue;
+        }
+        if ch == '$' && !single && !double && chars.get(index + 1) == Some(&'\'') {
+            ansi_single = true;
+            comment_start = false;
+            index += 2;
+            continue;
+        }
+        if chars[index] == '$' && chars.get(index + 1) == Some(&'{') {
+            let body: String = chars[index + 2..].iter().collect();
+            let context = BraceContext {
+                outer_double_quote: false,
+                posix: false,
+                replacement_context: false,
+                initial_state: DolbraceState::Param,
+            };
+            let Some(scan) = scan_braced_parameter_body(&body, context) else {
+                return true;
+            };
+            index += 2 + body[..scan.end].chars().count();
+            comment_start = false;
+            continue;
+        }
+        comment_start = false;
+        index += 1;
     }
     false
 }
@@ -57,11 +133,28 @@ pub(super) fn unquoted_brace_group_depth(input: &str) -> usize {
     let mut word = String::new();
     let mut word_boundary = true;
     let mut current_word_boundary = true;
+    // A word-initial unquoted '#' comments out the rest of the line
+    // (parse.y read_token -> parse_comment), so braces inside comment text
+    // must not move the brace-group depth.
+    let mut comment_start = true;
+    let mut in_comment = false;
 
     while index < chars.len() {
         let ch = chars[index];
+        if in_comment {
+            if ch == '\n' {
+                in_comment = false;
+                comment_start = true;
+                word.clear();
+                word_boundary = true;
+                current_word_boundary = true;
+            }
+            index += 1;
+            continue;
+        }
         if escaped {
             escaped = false;
+            comment_start = false;
             index += 1;
             continue;
         }
@@ -71,36 +164,58 @@ pub(super) fn unquoted_brace_group_depth(input: &str) -> usize {
             } else if ch == '\'' {
                 ansi_single = false;
             }
+            comment_start = false;
             index += 1;
             continue;
         }
         if ch == '\\' && !single {
             escaped = true;
+            comment_start = false;
             index += 1;
             continue;
         }
         if ch == '$' && !single && !double && chars.get(index + 1) == Some(&'\'') {
             ansi_single = true;
+            comment_start = false;
             index += 2;
+            continue;
+        }
+        if ch == '#'
+            && !single
+            && !double
+            && !ansi_single
+            && comment_start
+        {
+            in_comment = true;
+            index += 1;
             continue;
         }
         if ch == '\'' && !double {
             single = !single;
+            comment_start = false;
             index += 1;
             continue;
         }
         if ch == '"' && !single {
             double = !double;
+            comment_start = false;
             index += 1;
             continue;
         }
         if single || double {
+            comment_start = false;
             index += 1;
             continue;
         }
         if ch == '$' && chars.get(index + 1) == Some(&'{') {
             index = skip_braced_parameter_in_chars(&chars, index + 2);
+            comment_start = false;
             continue;
+        }
+        if ch.is_whitespace() {
+            comment_start = true;
+        } else {
+            comment_start = false;
         }
         update_brace_group_case_depth(
             &chars,
@@ -327,4 +442,39 @@ pub(super) fn skip_braced_parameter_in_chars(chars: &[char], index: usize) -> us
         index += 1;
     }
     index
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{has_unclosed_brace_group, unquoted_brace_group_depth};
+
+    #[test]
+    fn comment_with_dollar_brace_does_not_continue_logical_line() {
+        // braces.tests regression: a comment mentioning an unbalanced
+        // parameter expansion must not swallow the rest of the script
+        // (parse.y consumes the comment before expansion scanning).
+        assert!(!has_unclosed_brace_group(
+            "# make sure the dollar brace is parsed as a word expansion"
+        ));
+        assert!(!has_unclosed_brace_group(
+            "echo hi # don't treat quoted '#' as comment start"
+        ));
+        assert!(!has_unclosed_brace_group(
+            "echo hi # comment mentions an unbalanced dollar brace here"
+        ));
+    }
+
+    #[test]
+    fn unclosed_parameter_expansion_still_continues() {
+        assert!(has_unclosed_brace_group("echo ${unclosed"));
+        assert!(has_unclosed_brace_group("echo \"${unclosed"));
+        assert!(has_unclosed_brace_group("echo ${a#b"));
+    }
+
+    #[test]
+    fn comment_braces_do_not_move_group_depth() {
+        assert_eq!(unquoted_brace_group_depth("{ # } still open"), 1);
+        assert_eq!(unquoted_brace_group_depth("{\n# }\n}"), 0);
+        assert_eq!(unquoted_brace_group_depth("{ echo hi; }"), 0);
+    }
 }

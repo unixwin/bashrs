@@ -178,9 +178,7 @@ mod unit_tests {
     #[test]
     fn prompt_expansion_decodes_raw_escape_markers() {
         let executor = Executor::new();
-        let marker =
-            char::from_u32(crate::executor::substitution_metadata::RAW_BYTE_MARKER_BASE + 0x1b)
-                .unwrap();
+        let marker = crate::executor::substitution_metadata::encode_raw_byte_marker(0x1b);
 
         assert_eq!(
             executor.expand_prompt_string(&format!("left{marker}[31mright")),

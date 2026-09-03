@@ -86,13 +86,17 @@ mod simple_execution {
 
     #[test]
     fn test_whitespace_braced_substitution_is_bad_substitution() {
+        // GNU Bash 5.2.21 (subst.c param_expand bad_substitution): a
+        // whitespace-led `${ command; }` word is a non-fatal word-expansion
+        // error - it abandons the current command with status 1 and the
+        // next line still runs.
         let tokens = tokenize("echo ${ printf x; }");
         let ast = parse(&tokens);
         let mut executor = Executor::new();
 
         let result = executor.execute_ast(&ast);
 
-        assert!(matches!(result, Err(ExecuteError::ExitCode(1))));
+        assert!(matches!(result, Err(ExecuteError::ExpansionFailure(1))));
         assert_eq!(executor.last_exit_code(), 1);
     }
 

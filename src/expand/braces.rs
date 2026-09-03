@@ -65,6 +65,35 @@ fn expand_single_brace(s: &str) -> Option<Vec<String>> {
             i += 1;
             continue;
         }
+        // GNU bash runs brace expansion on the word itself; the text of a
+        // command substitution is a separate parse unit and the outer shell
+        // must not split braces inside it (parse.y read_token_word hands the
+        // $()/backtick body to parse_comsub, never to brace_expand). Skip
+        // the whole substitution body here.
+        if bytes[i] == b'`' {
+            i = skip_backtick_body(bytes, i);
+            continue;
+        }
+        if bytes[i] == b'$' {
+            if i + 1 < bytes.len() && bytes[i + 1] == b'(' {
+                i = skip_dollar_paren_body(bytes, i);
+                continue;
+            }
+            if i + 1 < bytes.len() && bytes[i + 1] == b'\'' {
+                // $'...' ANSI-C quoting: the single quote opens a quoted
+                // unit, not a quoting state toggle for later bytes.
+                i = skip_single_quoted(bytes, i + 1);
+                continue;
+            }
+            if i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+                // Skip the whole ${...} parameter body: its closing brace is
+                // part of the expansion (subst.c extract_dollar_brace_string),
+                // never the closing brace of an enclosing brace group, and a
+                // comma inside it (foo{bar,${var}.}) does not split.
+                i = skip_dollar_brace_body(bytes, i);
+                continue;
+            }
+        }
         if bytes[i] != b'{' {
             i += 1;
             continue;
@@ -92,6 +121,8 @@ fn expand_single_brace(s: &str) -> Option<Vec<String>> {
         let mut has_comma = false;
         let mut has_double_dot = false;
         let mut j_escaped = false;
+        let mut j_single = false;
+        let mut j_double = false;
 
         while j < bytes.len() && depth > 0 {
             if j_escaped {
@@ -99,10 +130,39 @@ fn expand_single_brace(s: &str) -> Option<Vec<String>> {
                 j += 1;
                 continue;
             }
+            if bytes[j] == b'\'' && !j_double {
+                j_single = !j_single;
+                j += 1;
+                continue;
+            }
+            if bytes[j] == b'"' && !j_single {
+                j_double = !j_double;
+                j += 1;
+                continue;
+            }
+            if j_single || j_double {
+                j += 1;
+                continue;
+            }
             match bytes[j] {
                 b'\\' => {
                     j_escaped = true;
                     j += 1;
+                    continue;
+                }
+                // ${...}, $(...), and backtick bodies are self-contained
+                // expansion units (subst.c): their braces must not change the
+                // group depth and their commas do not split the group.
+                b'$' if j + 1 < bytes.len() && bytes[j + 1] == b'{' => {
+                    j = skip_dollar_brace_body(bytes, j);
+                    continue;
+                }
+                b'$' if j + 1 < bytes.len() && bytes[j + 1] == b'(' => {
+                    j = skip_dollar_paren_body(bytes, j);
+                    continue;
+                }
+                b'`' => {
+                    j = skip_backtick_body(bytes, j);
                     continue;
                 }
                 b'{' => depth += 1,
@@ -146,18 +206,33 @@ fn expand_single_brace(s: &str) -> Option<Vec<String>> {
                 }
                 return Some(out);
             }
-            // GNU removes an invalid outer sequence wrapper, but still expands
-            // nested comma groups. Nested sequence groups remain literal.
+            // GNU braces.c: an invalid {X..Y} whose endpoints contain brace
+            // groups expands the endpoint groups and cross-products the
+            // sequence text ({{a..c}..{1,10}} -> a..1 a..10 b..1 ...). When
+            // no endpoint contains a comma group the whole word stays
+            // literal and later groups are not tried
+            // ({{a..c}..{1..3}} remains literal).
             if inner.contains('{') {
-                let nested = expand_nested_commas(inner);
-                if nested.len() > 1 || nested.first().is_some_and(|item| item != inner) {
-                    return Some(
-                        nested
-                            .into_iter()
-                            .map(|item| format!("{prefix}{item}{suffix}"))
-                            .collect(),
-                    );
+                if inner_has_comma_group(inner) {
+                    if let Some((left, right)) = split_sequence_endpoints(inner) {
+                        let left_values = expand_braces(left);
+                        let right_values = expand_braces(right);
+                        if left_values.len() > 1 || right_values.len() > 1 {
+                            let mut out = Vec::new();
+                            for left_value in &left_values {
+                                for right_value in &right_values {
+                                    out.push(format!("{}..{}", left_value, right_value));
+                                }
+                            }
+                            return Some(
+                                out.into_iter()
+                                    .map(|item| format!("{prefix}{item}{suffix}"))
+                                    .collect(),
+                            );
+                        }
+                    }
                 }
+                return None;
             }
         }
 
@@ -166,6 +241,217 @@ fn expand_single_brace(s: &str) -> Option<Vec<String>> {
     None
 }
 
+/// Index just past the matching close brace of the ${ at `start` (which
+/// points at the $). Tracks brace nesting while staying inside quoted
+/// spans, mirroring subst.c extract_dollar_brace_string's search.
+fn skip_dollar_brace_body(bytes: &[u8], start: usize) -> usize {
+    let mut i = start + 2;
+    let mut depth = 1usize;
+    let mut single = false;
+    let mut double = false;
+    while i < bytes.len() {
+        let ch = bytes[i];
+        if ch == b'\\' && !single {
+            i += 2;
+            continue;
+        }
+        if ch == b'\'' && !double {
+            single = !single;
+        } else if ch == b'"' && !single {
+            double = !double;
+        } else if !single && !double {
+            if ch == b'{' {
+                depth += 1;
+            } else if ch == b'}' {
+                depth -= 1;
+                if depth == 0 {
+                    return i + 1;
+                }
+            }
+        }
+        i += 1;
+    }
+    bytes.len()
+}
+
+/// Index just past the closing backtick starting at `start`. Backslash
+/// escapes are honored (parse.y lexes \` inside a word as escaped data).
+fn skip_backtick_body(bytes: &[u8], start: usize) -> usize {
+    let mut i = start + 1;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' {
+            i += 2;
+            continue;
+        }
+        if bytes[i] == b'`' {
+            return i + 1;
+        }
+        i += 1;
+    }
+    bytes.len()
+}
+
+/// Index just past the matching close paren of the $( at `start` (which
+/// points at the $). Tracks parenthesis nesting while staying inside
+/// single- and double-quoted spans, mirroring parse.y parse_comsub's
+/// matching-paren search.
+fn skip_dollar_paren_body(bytes: &[u8], start: usize) -> usize {
+    let mut i = start + 2;
+    let mut depth = 1usize;
+    let mut single = false;
+    let mut double = false;
+    while i < bytes.len() {
+        let ch = bytes[i];
+        if ch == b'\\' && !single {
+            i += 2;
+            continue;
+        }
+        if ch == b'\'' && !double {
+            single = !single;
+        } else if ch == b'"' && !single {
+            double = !double;
+        } else if !single && !double {
+            if ch == b'(' {
+                depth += 1;
+            } else if ch == b')' {
+                depth -= 1;
+                if depth == 0 {
+                    return i + 1;
+                }
+            }
+        }
+        i += 1;
+    }
+    bytes.len()
+}
+
+/// Index just past the closing single quote starting at `start`.
+fn skip_single_quoted(bytes: &[u8], start: usize) -> usize {
+    let mut i = start + 1;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' {
+            i += 2;
+            continue;
+        }
+        if bytes[i] == b'\'' {
+            return i + 1;
+        }
+        i += 1;
+    }
+    bytes.len()
+}
+
+/// True when any brace group in `s` carries a top-level (depth-1)
+/// comma, matching braces.c's requirement that an invalid sequence
+/// fallback only fires when a comma group participates.
+fn inner_has_comma_group(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    let mut escaped = false;
+    let mut single = false;
+    let mut double = false;
+    while i < bytes.len() {
+        let ch = bytes[i];
+        if escaped {
+            escaped = false;
+            i += 1;
+            continue;
+        }
+        match ch {
+            b'\\' => {
+                escaped = true;
+                i += 1;
+                continue;
+            }
+            b'\'' if !double => single = !single,
+            b'"' if !single => double = !double,
+            b'{' if !single && !double => {
+                let mut depth = 1usize;
+                let mut j = i + 1;
+                let mut j_escaped = false;
+                let mut j_single = false;
+                let mut j_double = false;
+                while j < bytes.len() && depth > 0 {
+                    if j_escaped {
+                        j_escaped = false;
+                        j += 1;
+                        continue;
+                    }
+                    let c = bytes[j];
+                    if c == b'\\' && !j_single {
+                        j_escaped = true;
+                        j += 1;
+                        continue;
+                    }
+                    if c == b'\'' && !j_double {
+                        j_single = !j_single;
+                    } else if c == b'"' && !j_single {
+                        j_double = !j_double;
+                    } else if !j_single && !j_double {
+                        match c {
+                            b'{' => depth += 1,
+                            b'}' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            b',' if depth == 1 => return true,
+                            _ => {}
+                        }
+                    }
+                    j += 1;
+                }
+                i = j + 1;
+                continue;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    false
+}
+
+/// Split an invalid sequence body at its first top-level `..` into the
+/// left and right endpoint texts.
+fn split_sequence_endpoints(s: &str) -> Option<(&str, &str)> {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    let mut escaped = false;
+    let mut single = false;
+    let mut double = false;
+    let mut depth = 0u32;
+    while i < bytes.len() {
+        let ch = bytes[i];
+        if escaped {
+            escaped = false;
+            i += 1;
+            continue;
+        }
+        match ch {
+            b'\\' => {
+                escaped = true;
+                i += 1;
+                continue;
+            }
+            b'\'' if !double => single = !single,
+            b'"' if !single => double = !double,
+            b'{' if !single && !double => depth += 1,
+            b'}' if !single && !double => depth = depth.saturating_sub(1),
+            b'.' if depth == 0
+                && !single
+                && !double
+                && i + 1 < bytes.len()
+                && bytes[i + 1] == b'.' =>
+            {
+                return Some((&s[..i], &s[i + 2..]));
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
 fn expand_nested_commas(s: &str) -> Vec<String> {
     let bytes = s.as_bytes();
     let mut i = 0;
@@ -209,6 +495,10 @@ fn split_brace_commas(s: &str) -> Vec<&str> {
     let bytes = s.as_bytes();
     let mut i = 0;
     let mut escaped = false;
+    // GNU braces.c searches for splitting commas outside quoted spans, so a
+    // comma inside "..." or '...' (echo {"x,x"}) does not split the group.
+    let mut single = false;
+    let mut double = false;
     while i < bytes.len() {
         if escaped {
             escaped = false;
@@ -221,9 +511,11 @@ fn split_brace_commas(s: &str) -> Vec<&str> {
                 i += 1;
                 continue;
             }
-            b'{' => depth += 1,
-            b'}' => depth = depth.saturating_sub(1),
-            b',' if depth == 0 => {
+            b'\'' if !double => single = !single,
+            b'"' if !single => double = !double,
+            b'{' if !single && !double => depth += 1,
+            b'}' if !single && !double => depth = depth.saturating_sub(1),
+            b',' if depth == 0 && !single && !double => {
                 parts.push(&s[start..i]);
                 start = i + 1;
             }
@@ -273,8 +565,16 @@ fn expand_range(s: &str) -> Option<Vec<String>> {
         let step: i16 = if start <= end { step } else { -step };
         let mut result = Vec::new();
         let mut current = start as i16;
+        // GNU braces.c renders the backslash position of a character
+        // sequence as an EMPTY element (it is the quoting character):
+        // {a..Z} yields ... ] "" [ ... so the baseline shows "]  [".
         while (step > 0 && current <= end as i16) || (step < 0 && current >= end as i16) {
-            result.push((current as u8 as char).to_string());
+            let byte = current as u8;
+            if byte == b'\\' {
+                result.push(String::new());
+            } else {
+                result.push((byte as char).to_string());
+            }
             current += step;
         }
         return Some(result);
@@ -306,6 +606,17 @@ fn format_numeric_range_value(value: i64, width: Option<usize>) -> String {
     }
 }
 
+#[cfg(test)]
+mod dollar_probe_tests {
+    use super::expand_braces;
+
+    #[test]
+    fn dollar_body_splits_like_gnu() {
+        assert_eq!(expand_braces("foo{bar,${a}.}"), vec!["foobar", "foo${a}."]);
+        assert_eq!(expand_braces("${a}{x,y}"), vec!["${a}x", "${a}y"]);
+        assert_eq!(expand_braces("{a,${a},b}"), vec!["a", "${a}", "b"]);
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -400,11 +711,17 @@ mod tests {
             expand_braces("{6..{7,8,9}}"),
             vec!["6..7", "6..8", "6..9"],
         );
+        // GNU braces.c: no comma group among the endpoints -> the whole
+        // word stays literal (braces.tests {{a..c}..{1..3}}).
         assert_eq!(
             expand_braces("{{a..c}..{1..3}}"),
+            vec!["{{a..c}..{1..3}}"],
+        );
+        // A comma group among the endpoints cross-products the sequence.
+        assert_eq!(
+            expand_braces("{{a..c}..{1,10}}"),
             vec![
-                "{a..1}", "{a..2}", "{a..3}", "{b..1}", "{b..2}", "{b..3}",
-                "{c..1}", "{c..2}", "{c..3}",
+                "a..1", "a..10", "b..1", "b..10", "c..1", "c..10",
             ],
         );
     }

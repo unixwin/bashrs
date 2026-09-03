@@ -36,12 +36,17 @@ impl Executor {
         // A word wrapped in quotes (e.g. `"$(cmd) extra"`) keeps its spaces
         // together: quote removal happens after field splitting in Bash, so
         // quoted words must not be split even when they expand to whitespace.
+        // Quote state comes from the raw word only: word_quotes (the
+        // lexer quote segments) also records quotes nested inside a braced
+        // parameter expansion (e.g. ${1-"$@"}), but those are word syntax
+        // of the expansion, not outer quoting, so they must not suppress
+        // field splitting of the unquoted word's result. raw_word_is_quoted
+        // skips ${...}, $(), backticks and $'...'/$"..." bodies.
         let word_is_quoted = cmd
             .word_metadata
             .get(index)
             .map(|metadata| {
-                !metadata.word_quotes.is_empty()
-                    || crate::executor::command_prepare::raw_word_is_quoted(Some(&metadata.raw))
+                crate::executor::command_prepare::raw_word_is_quoted(Some(&metadata.raw))
             })
             .unwrap_or(false);
         let unquoted_variable = cmd
@@ -106,7 +111,10 @@ impl Executor {
             }
             return Ok(values);
         }
-        if self.is_brace_expand_enabled() && !word.contains("${") {
+        // GNU runs brace expansion before parameter expansion; the brace
+        // scanner skips dollar-brace bodies, so a dollar-brace in the word
+        // does not suppress the split (foo{bar,${var.} -> foobar foobaz.).
+        if self.is_brace_expand_enabled() {
             let braced = super::command_prepare::expand_braces_with_optional_raw(word, raw);
             if braced.len() > 1 {
                 let values = braced

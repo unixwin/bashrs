@@ -23,6 +23,25 @@ impl Executor {
         output
     }
 
+    // support/zecho.c main(): bare-bones echo used by the upstream test
+    // suite -- print the arguments separated by single spaces with one
+    // trailing newline, no option or escape processing.
+    pub(in crate::executor) fn execute_zecho_command(
+        &mut self,
+        cmd: &CommandNode,
+    ) -> Result<(), ExecuteError> {
+        let output = self.zecho_output(&cmd.words[1..]);
+        self.write_buffered_builtin_output(cmd, output.as_bytes(), &[])?;
+        self.exit_code = 0;
+        Ok(())
+    }
+
+    pub(in crate::executor) fn zecho_output(&self, args: &[String]) -> String {
+        let mut output = args.join(" ");
+        output.push('\n');
+        output
+    }
+
     pub(in crate::executor) fn execute_shift_command(
         &mut self,
         cmd: &CommandNode,

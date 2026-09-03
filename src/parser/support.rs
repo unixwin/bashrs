@@ -375,3 +375,12 @@ pub(super) fn is_function_keyword_name(name: &str) -> bool {
             .chars()
             .any(|ch| ch.is_whitespace() || matches!(ch, '(' | ')' | '{' | '}' | ';' | '&' | '|'))
 }
+
+/// GNU's function_def grammar accepts any single WORD as a candidate function
+/// name; a word whose raw text differs from its dequoted value was quoted or
+/// escaped (W_QUOTED), which the executor later rejects via err_invalidid.
+/// The parser must still parse `'a b c' () { ...; }' as a function definition
+/// so the executor can report the name error (parse.y: function_def).
+pub(super) fn is_quoted_function_name(name: &str, name_raw: &str) -> bool {
+    !name_raw.is_empty() && name_raw != name
+}

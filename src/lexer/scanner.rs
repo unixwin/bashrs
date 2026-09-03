@@ -251,7 +251,14 @@ impl<'a> Lexer<'a> {
                 Some('{') => {
                     self.advance();
                     self.skip_braced(false);
-                    if self.peek().is_some_and(|ch| !is_word_delimiter(ch)) {
+                    // A brace group adjacent to a closed parameter expansion
+                    // continues the same word (parse.y read_token_word keeps
+                    // scanning until a real metacharacter): "${a}{x,y}" is
+                    // one word whose brace group then expands.
+                    if self
+                        .peek()
+                        .is_some_and(|ch| !is_word_delimiter(ch) || ch == '{')
+                    {
                         return Some(self.finish_word_token(start, false));
                     }
                     Some(Token::new(TokenKind::Variable, self.slice(start), start))

@@ -63,22 +63,35 @@ impl Executor {
         self.report_arithmetic_error_with_label("((", expression, true);
     }
 
-    /// GNU expr.c::evalerror against a raw-captured `(( ))` expression: the
-    /// echoed expression skips leading blanks only, and the error token is
-    /// the real lasttp remainder (any trailing blank included), so no
-    /// synthesized token space is added on top.
-    pub(in crate::executor) fn report_arithmetic_error_raw(&self, raw: &str) {
-        let display = raw.trim_start_matches([' ', '\t']);
-        if let Some(token) = arithmetic_division_by_zero_token(display) {
-            eprintln!(
-                "{}((: {display}: division by 0 (error token is \"{token}\")",
-                self.diagnostic_prefix()
-            );
-        } else if let Some(message) =
-            crate::executor::arithmetic::arithmetic_error_message(display, false)
+    /// GNU expr.c::evalerror for the raw-captured `(( ))` expression: the
+    /// echoed expression skips leading blanks only, and the division-by-0
+    /// error token is the real lasttp remainder (trailing blank included),
+    /// so no synthesized token space is added. All other diagnostics keep
+    /// the established normalized-expression path byte for byte.
+    ///
+    /// Arithmetic-for loop sections report through the same raw-display
+    /// contract: the parser records each section's whitespace-carrying text
+    /// (`7++ ` keeps its trailing blank before `))`), and the error token is
+    /// the raw suffix, so the caller must not synthesize an extra space.
+    pub(in crate::executor) fn report_arithmetic_error_raw_display(&self, raw_display: &str) {
+        let display = raw_display.trim_start_matches([' ', '\t']);
+        if let Some(message) = crate::executor::arithmetic::arithmetic_error_message(display, false)
         {
             eprintln!("{}((: {message}", self.diagnostic_prefix());
+            use std::io::Write;
+            let _ = std::io::stderr().flush();
         }
+    }
+
+    pub(in crate::executor) fn report_arithmetic_division_by_zero_raw(
+        &self,
+        display: &str,
+        token: &str,
+    ) {
+        eprintln!(
+            "{}((: {display}: division by 0 (error token is \"{token}\")",
+            self.diagnostic_prefix()
+        );
         use std::io::Write;
         let _ = std::io::stderr().flush();
     }
@@ -111,8 +124,19 @@ impl Executor {
             Some(0) => 1,
             Some(_) => 0,
             None => {
-                match raw_expression {
-                    Some(raw) => self.report_arithmetic_error_raw(raw),
+                // Raw-captured `(( ))` commands report division by 0 with
+                // GNU's exact lasttp remainder; every other diagnostic
+                // keeps the established normalized-expression path.
+                let raw_division = raw_expression
+                    .map(|raw| raw.trim_start_matches([' ', '\t']))
+                    .and_then(|display| {
+                        arithmetic_division_by_zero_token(display)
+                            .map(|token| (display, token))
+                    });
+                match raw_division {
+                    Some((display, token)) => {
+                        self.report_arithmetic_division_by_zero_raw(&display, &token)
+                    }
                     None => self.report_arithmetic_error(expression),
                 }
                 if self.arithmetic_nounset_error.replace(false) {

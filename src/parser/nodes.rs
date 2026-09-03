@@ -946,6 +946,12 @@ pub struct FunctionCommand {
     pub body_close_delimiter_metadata: Option<Box<WordMetadata>>,
     pub body_start: Option<usize>,
     pub body_end: Option<usize>,
+    /// Line of the token that closes the function body (the `}` of a brace
+    /// group, or the `)` of a parenthesized body). GNU reports function-name
+    /// validation errors at this "last parsed line" (execute_cmd.c
+    /// execute_intern_function via line_number), so the executor uses it for
+    /// err_invalidid / special-builtin diagnostics.
+    pub body_end_line: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

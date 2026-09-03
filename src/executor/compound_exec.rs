@@ -240,7 +240,7 @@ impl Executor {
                 .eval_arithmetic_command_value(&arithmetic.init)
                 .is_none()
         {
-            self.report_arithmetic_error(&arithmetic.init);
+            self.report_arithmetic_error_raw_display(&arithmetic.init_metadata.expression);
             self.exit_code = 1;
             arithmetic_failed = true;
         }
@@ -255,7 +255,7 @@ impl Executor {
                     Some(0) => break,
                     Some(_) => {}
                     None => {
-                        self.report_arithmetic_error(&arithmetic.test);
+                        self.report_arithmetic_error_raw_display(&arithmetic.test_metadata.expression);
                         self.exit_code = 1;
                         arithmetic_failed = true;
                         break;
@@ -288,7 +288,7 @@ impl Executor {
                     .eval_arithmetic_command_value(&arithmetic.update)
                     .is_none()
             {
-                self.report_arithmetic_error(&arithmetic.update);
+                self.report_arithmetic_error_raw_display(&arithmetic.update_metadata.expression);
                 self.exit_code = 1;
                 arithmetic_failed = true;
                 break;
@@ -439,7 +439,9 @@ impl Executor {
         // Catch ExitCode errors at the subshell boundary.
         let status = match result {
             Ok(()) => self.exit_code,
-            Err(ExecuteError::ExitCode(code)) | Err(ExecuteError::ExpansionFailure(code)) => code,
+            Err(ExecuteError::ExitCode(code))
+            | Err(ExecuteError::ExpansionFailure(code))
+            | Err(ExecuteError::FatalFunctionError(code)) => code,
             Err(error) => {
                 self.restore_shell_env(saved_env);
                 self.pipestatus = saved_pipestatus;

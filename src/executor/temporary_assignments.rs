@@ -36,17 +36,112 @@ impl Executor {
                 NamerefResolution::Target(ref target) if *target != *base_name => Some(target.clone()),
                 _ => None,
             };
-            if let Some(target) = resolved_target {
+            if let Some(ref target) = resolved_target {
                 previous.push((
                     target.clone(),
-                    self.env_vars.get(&target).cloned(),
-                    self.shell_state.variables.get(&target).cloned(),
+                    self.env_vars.get(target).cloned(),
+                    self.shell_state.variables.get(target).cloned(),
                 ));
             }
             self.apply_shell_assignment(name, expanded_value);
-            self.mark_exported(base_name);
+            // GNU variables.c bind_variable (ASS_NAMEREF tempenv path): the
+            // temporary assignment lands on the referenced variable and it is
+            // that variable which is exported for the command, never the
+            // nameref itself (nameref14.sub: `ref=xxx typeset -p ref var`
+            // prints `declare -x var` while ref stays unexported).
+            let export_target = resolved_target
+                .clone()
+                .unwrap_or_else(|| base_name.to_string());
+            self.mark_exported(&export_target);
         }
         previous
+    }
+
+
+    /// GNU bind_variable with a nameref cell naming an array element: the
+    /// value (and its integer evaluation when either the nameref or the
+    /// referenced array carries the integer attribute) is written to that
+    /// element of the referenced array (nameref23.sub: declare -in b="a[0]";
+    /// b+=1 increments a[0]).
+    fn apply_nameref_array_element_assignment(
+        &mut self,
+        elem_base: &str,
+        subscript: &str,
+        value: &str,
+        append: bool,
+        integer: bool,
+    ) -> bool {
+        let current = self.env_vars.get(elem_base).cloned().unwrap_or_default();
+        if is_marked_var(&self.env_vars, ASSOC_VARS, elem_base) {
+            let key = self.assoc_subscript_key(subscript);
+            let mut entries = assoc_entries(&current);
+            let existing = entries
+                .iter()
+                .rev()
+                .find_map(|(entry_key, entry_value)| {
+                    (entry_key == &key).then_some(entry_value.clone())
+                })
+                .unwrap_or_default();
+            let element = if append {
+                if integer {
+                    (eval_arith_value(&existing) + eval_arith_value(value)).to_string()
+                } else {
+                    append_scalar_value(&existing, value)
+                }
+            } else if integer {
+                eval_arith_value(value).to_string()
+            } else {
+                value.to_string()
+            };
+            if let Some((_, entry_value)) = entries
+                .iter_mut()
+                .rev()
+                .find(|(entry_key, _)| entry_key == &key)
+            {
+                *entry_value = element;
+            } else {
+                entries.push((key, element));
+            }
+            let new_value = format!(
+                "({})",
+                entries
+                    .into_iter()
+                    .map(|(key, value)| {
+                        format!("[{}]={}", quote_assoc_key(&key), quote_assoc_storage_value(&value))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+            self.env_vars.insert(elem_base.to_string(), new_value);
+            self.exit_code = 0;
+            return true;
+        }
+        let Ok(index) = self
+            .eval_integer_assignment_value(subscript)
+            .to_string()
+            .parse::<usize>()
+        else {
+            self.exit_code = 1;
+            return false;
+        };
+        let mut entries = indexed_array_entries(&current);
+        let current_element = entries.get(&index).cloned().unwrap_or_default();
+        let element = if append {
+            if integer {
+                (eval_arith_value(&current_element) + eval_arith_value(value)).to_string()
+            } else {
+                append_scalar_value(&current_element, value)
+            }
+        } else if integer {
+            eval_arith_value(value).to_string()
+        } else {
+            value.to_string()
+        };
+        entries.insert(index, element);
+        self.env_vars
+            .insert(elem_base.to_string(), format_indexed_array_storage(entries));
+        self.exit_code = 0;
+        true
     }
 
     pub(in crate::executor) fn apply_shell_assignment(
@@ -78,6 +173,33 @@ impl Executor {
             NamerefResolution::NotNameref => base_name.to_string(),
         };
         let base_name = target_name.as_str();
+        // GNU arrayfunc.c/variables.c: a nameref whose cell is an array
+        // element (declare -in b="a[0]"; b+=1) binds through to that element
+        // of the referenced array instead of creating a variable literally
+        // named a[0] (nameref23.sub).
+        if let Some((elem_base, subscript)) = base_name.split_once('[') {
+            if let Some(subscript) = subscript.strip_suffix(']') {
+                if is_marked_var(&self.env_vars, ARRAY_VARS, elem_base)
+                    || is_marked_var(&self.env_vars, ASSOC_VARS, elem_base)
+                {
+                    if is_marked_var(&self.env_vars, "__RUBASH_READONLY_VARS", elem_base) {
+                        let line = format!(
+                            "{}{}: readonly variable\n",
+                            self.diagnostic_prefix(),
+                            elem_base
+                        );
+                        let _ = std::io::stderr().write_all(line.as_bytes());
+                        self.exit_code = 1;
+                        return false;
+                    }
+                    let integer = is_marked_var(&self.env_vars, INTEGER_VARS, base_name)
+                        || is_marked_var(&self.env_vars, INTEGER_VARS, elem_base);
+                    return self.apply_nameref_array_element_assignment(
+                        elem_base, subscript, &value, append, integer,
+                    );
+                }
+            }
+        }
         if is_marked_var(&self.env_vars, "__RUBASH_READONLY_VARS", base_name) {
             let line = format!(
                 "{}{}: readonly variable\n",

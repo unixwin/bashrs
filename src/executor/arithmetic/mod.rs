@@ -475,8 +475,13 @@ pub(in crate::executor) fn arithmetic_error_message(
             "syntax error: operand expected"
         };
         let token = trimmed.trim_start_matches(|ch: char| ch.is_ascii_digit());
+        // A raw-captured display keeps the section's trailing blank before
+        // `))`; GNU's lasttp remainder includes it (7=4 -> "=4 "), so carry
+        // the display's own trailing blank instead of only the synthesized
+        // token space.
+        let trailing_blank = &expression[trimmed.len()..];
         return Some(format!(
-            "{expression}: {message} (error token is \"{token}{token_space}\")"
+            "{expression}: {message} (error token is \"{token}{trailing_blank}{token_space}\")"
         ));
     }
 

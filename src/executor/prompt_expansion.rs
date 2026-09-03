@@ -117,7 +117,7 @@ impl Executor {
         // prompt text.
         let decoded =
             crate::executor::substitution_metadata::decode_raw_byte_markers(output.as_bytes());
-        String::from_utf8(decoded).unwrap_or(output)
+        String::from_utf8_lossy(&decoded).into_owned()
     }
 
     pub(in crate::executor) fn expand_prompt_parameters(&self, word: &str) -> String {

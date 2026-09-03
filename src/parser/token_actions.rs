@@ -574,6 +574,45 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                 return TokenAction::Continue;
             }
 
+            if token.value == "}" && command_is_empty(&state.current_cmd) {
+                // GNU parse.y: `}' is a reserved word, and at command position
+                // with no open brace group it is a fatal syntax error. A
+                // leftover `}' is exactly what parse_matched_pair's
+                // P_FIRSTCLOSE|P_DOLBRACE scan leaves behind when a bare `{`
+                // does not nest inside `${...}` (parse.y:3974-3980), e.g. the
+                // trailing `; }' of `xx=${ f() { x; }; }' (comsub2.tests:45).
+                // GNU parses a complete command list before executing any of
+                // it, so the syntax error suppresses the commands already
+                // parsed on this line (probe: `echo ok; }` must not print
+                // `ok`); commands on earlier lines still ran.
+                let error_line = token.position;
+                while state
+                    .ast
+                    .commands
+                    .last()
+                    .is_some_and(|command| command.line == Some(error_line))
+                {
+                    state.ast.commands.pop();
+                }
+                note_command_line(&mut state.current_cmd, token);
+                state.current_cmd.assignments.insert(
+                    "__RUBASH_PARSE_ERROR__".to_string(),
+                    format!("unexpected token `{}`", token.value),
+                );
+                if let Some(source) = parse_error_source_line(tokens, *i) {
+                    state
+                        .current_cmd
+                        .assignments
+                        .insert("__RUBASH_PARSE_SOURCE__".to_string(), source);
+                }
+                state
+                    .ast
+                    .commands
+                    .push(std::mem::take(&mut state.current_cmd));
+                *i += 1;
+                return TokenAction::Continue;
+            }
+
             if token.value == "(" && !command_is_empty(&state.current_cmd) {
                 state.current_cmd.assignments.insert(
                     "__RUBASH_PARSE_ERROR__".to_string(),

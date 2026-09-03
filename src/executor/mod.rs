@@ -289,6 +289,12 @@ pub enum ExecuteError {
     /// status, `( )` frames end just the subshell, and a top-level list
     /// ends the noninteractive run (GNU probes f3/f4, 2026-08-24).
     ExpansionFailure(i32),
+    /// A fatal function-definition error (GNU execute_cmd.c
+    /// execute_intern_function with posixly_correct: last_command_exit_value
+    /// = EX_BADUSAGE and jump_to_top_level(ERREXIT)). Under POSIX mode an
+    /// invalid function name aborts the current subshell (parent continues)
+    /// or, at script top level, ends the noninteractive run.
+    FatalFunctionError(i32),
     Break(usize),
     Continue(usize),
     Return(i32),
@@ -305,6 +311,7 @@ impl std::fmt::Display for ExecuteError {
             ExecuteError::IoError(e) => write!(f, "rubash: {}", crate::posix_errors::message(e)),
             ExecuteError::ExitCode(code) => write!(f, "exit code: {}", code),
             ExecuteError::ExpansionFailure(code) => write!(f, "exit code: {}", code),
+            ExecuteError::FatalFunctionError(code) => write!(f, "exit code: {}", code),
             ExecuteError::Break(level) => write!(f, "break {}", level),
             ExecuteError::Continue(level) => write!(f, "continue {}", level),
             ExecuteError::Return(status) => write!(f, "return {}", status),

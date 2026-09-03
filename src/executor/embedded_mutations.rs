@@ -989,6 +989,7 @@ fn is_specialized_command_substitution_word(words: &[String]) -> bool {
         Some(
             "echo"
                 | "recho"
+                | "zecho"
                 | "printf"
                 | "cat"
                 | "basename"
