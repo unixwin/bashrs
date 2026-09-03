@@ -68,7 +68,16 @@ impl Executor {
         if let Some(redirect) = &cmd.redirect_out {
             let target = self.expand_word(&redirect.target);
             if redirect.fd_var.is_some() {
-            } else if !is_closed_redirect_target(&target) && redirect_target_fd(&target).is_none() {
+            } else if is_closed_redirect_target(&target) {
+            } else if redirect_target_fd(&target).is_some() {
+            } else if redirect.fd.unwrap_or(1) == 1 && target.starts_with('&') {
+                // GNU redir.c:832-838: >&WORD with a non-numeric WORD and
+                // redirector 1 translates to r_err_and_out (>&file ==
+                // >file 2>&1) - open WORD for output instead of treating
+                // it as an unusable dup source.
+                let path = target.strip_prefix('&').unwrap_or(&target);
+                self.create_redirect_output(path, redirect.clobber)?;
+            } else {
                 self.create_redirect_output(&target, redirect.clobber)?;
             }
         }

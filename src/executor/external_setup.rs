@@ -199,6 +199,44 @@ impl Executor {
         let mut rewritten = cmd.clone();
         let mut files = ProcessSubstitutionFiles::default();
         let mut redirect_target_rewrites = Vec::new();
+        // GNU subst.c: an unquoted `name=<( )` word is an assignment whose
+        // value is the process substitution (make_dev_fd_filename,
+        // subst.c:6362+). The first parse splits that word into `name=` and
+        // a procsub token when it appears as an eval argument, which turned
+        // the materialized temp path into a command word and lost the
+        // assignment (procsub.tests:25 `eval f=<(echo test4) "; cat \$f"`).
+        // Re-merge the pair so the word materializes into the assignment
+        // value the way a direct `name=<( )` statement parses.
+        let mut merge_index = 0;
+        while merge_index + 1 < rewritten.words.len() {
+            let assignment_word = &rewritten.words[merge_index];
+            let is_bare_assignment = assignment_word.ends_with('=')
+                && !assignment_word.contains(' ')
+                && is_shell_name(&assignment_word[..assignment_word.len() - 1]);
+            let procsub_word = rewritten.words[merge_index + 1].clone();
+            let is_whole_procsub = (procsub_word.starts_with("<(") || procsub_word.starts_with(">("))
+                && procsub_word.ends_with(')');
+            if is_bare_assignment && is_whole_procsub {
+                let next_metadata = rewritten.word_metadata.get(merge_index + 1).cloned();
+                rewritten.words[merge_index].push_str(&procsub_word);
+                // Drop the absorbed procsub word and hand its metadata to
+                // the merged word so the loop below materializes the
+                // substitution inside the assignment value.
+                rewritten.words.remove(merge_index + 1);
+                if merge_index + 1 < rewritten.word_metadata.len() {
+                    rewritten.word_metadata.remove(merge_index + 1);
+                }
+                if let Some(metadata) = next_metadata {
+                    if merge_index < rewritten.word_metadata.len() {
+                        rewritten.word_metadata[merge_index] = metadata;
+                    } else {
+                        rewritten.word_metadata.push(metadata);
+                    }
+                }
+                continue;
+            }
+            merge_index += 1;
+        }
         for word_index in 0..rewritten.words.len() {
             let metadata = rewritten.word_metadata.get(word_index).cloned();
             let substitutions = metadata
@@ -649,6 +687,18 @@ impl Executor {
         self.env_vars
             .insert(FUNCTION_STDIN_OFFSET.to_string(), "0".to_string());
         let result = self.execute_ast(&ast);
+        // GNU process_substitute forks for `>(...)` as well (subst.c:6362),
+        // so $! points at that child and `wait $!` reports its status. The
+        // substitution body ran inline on this executor; register its status
+        // the same way the input form does.
+        let status = match &result {
+            Ok(()) => self.exit_code,
+            Err(ExecuteError::ExitCode(code))
+            | Err(ExecuteError::ExpansionFailure(code))
+            | Err(ExecuteError::Return(code)) => *code,
+            _ => 1,
+        };
+        self.register_process_substitution_status(status);
         match old_fd0 {
             Some(entry) => {
                 self.fd_table.entries.insert(0, entry);
@@ -700,6 +750,28 @@ impl Executor {
         output: &str,
     ) -> Result<PathBuf, ExecuteError> {
         self.write_process_substitution_temp_bytes(output.as_bytes())
+    }
+
+    /// GNU subst.c:6362 process_substitute forks an asynchronous child for
+    /// every process substitution; jobs.c adds that fork to the job list so
+    /// `$!` expands to its pid (execute_cmd.c) and `wait $!` reports the
+    /// child's exit status (procsub.tests: `cat <(exit 123); wait $!` ->
+    /// 123). Rubash evaluates `<(...)` substitutions inline while
+    /// materializing the containing command, so the already-finished status
+    /// is recorded under a synthetic pid in the dedicated high range that
+    /// cannot collide with a real OS child pid.
+    pub(in crate::executor) fn register_process_substitution_status(&mut self, status: i32) {
+        const PROCSUB_SEQ_KEY: &str = "RUBASH_INTERNAL_PROCSUB_SEQ";
+        let seq = self
+            .env_vars
+            .get(PROCSUB_SEQ_KEY)
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(0);
+        self.env_vars
+            .insert(PROCSUB_SEQ_KEY.to_string(), seq.wrapping_add(1).to_string());
+        let pid = self.shell_pid.wrapping_add(0x4000_0000).wrapping_add(seq);
+        self.job_table.completed_statuses.insert(pid, status);
+        self.last_background_pid = Some(pid);
     }
 
     pub(in crate::executor) fn write_process_substitution_temp_bytes(

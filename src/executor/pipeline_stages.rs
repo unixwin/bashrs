@@ -123,11 +123,20 @@ impl Executor {
         let Some(function_name) = self.function_name_for_command_word(&expanded_name) else {
             return Ok(None);
         };
-        let args = command.words[1..]
+        // GNU subst.c process_substitute: a <( ) word in the command's
+        // argument list materializes before the command runs
+        // (procsub.tests: count_lines <(date) | ... must pass the
+        // substitution result as \$1, not the raw <(date) text). The
+        // top-level function path does this through
+        // command_with_process_substitution_files; pipeline stages skipped
+        // it, leaving $1 as the literal <(date) string.
+        let (materialized_command, procsub_files) =
+            self.command_with_process_substitution_files(command)?;
+        let args = materialized_command.words[1..]
             .iter()
             .map(|word| self.expand_word(word))
             .collect::<Vec<_>>();
-        let mut call = command.clone();
+        let mut call = materialized_command.clone();
         call.words = std::iter::once(function_name.clone())
             .chain(args.iter().cloned())
             .collect();
@@ -164,6 +173,9 @@ impl Executor {
             Err(ExecuteError::ExitCode(code)) | Err(ExecuteError::ExpansionFailure(code)) => code,
             Err(error) => return Err(error),
         };
+        // Drain output substitutions (none expected for <( ) arguments) and
+        // delete the materialized input temp files after the call.
+        self.finish_process_substitutions(procsub_files)?;
         Ok(Some((
             crate::executor::substitution_metadata::bytes_to_shell_text(&output),
             crate::executor::substitution_metadata::bytes_to_shell_text(&stderr),

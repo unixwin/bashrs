@@ -24,6 +24,26 @@ pub fn message(err: &std::io::Error) -> String {
 /// or directory`), matching how GNU Bash reports redirect failures.
 /// The [`std::io::ErrorKind`] is preserved for kind-based consumers.
 pub fn path_error(target: &str, err: std::io::Error) -> std::io::Error {
+    // POSIX open(2) on a name no file can ever match (an unexpanded glob
+    // such as `redir1.*`) reports ENOENT. Windows maps the same name to
+    // ERROR_INVALID_NAME/EINVAL, so kind-based consumers and the
+    // strerror text below would both diverge from GNU (redir.tests:184:
+    // GNU prints "No such file or directory"). Translate EINVAL for
+    // wildcard-bearing names to the ENOENT kind and text.
+    // Windows reports ERROR_INVALID_NAME (123) for wildcard characters in
+    // a path; older toolchains surface it as InvalidInput rather than
+    // InvalidArgument, so match the raw code as well as the kind.
+    let invalid_name = if cfg!(windows) {
+        err.raw_os_error() == Some(123) || err.kind() == std::io::ErrorKind::InvalidInput
+    } else {
+        false
+    };
+    if invalid_name && target.chars().any(|ch| matches!(ch, '*' | '?' | '[')) {
+        return std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("{target}: No such file or directory"),
+        );
+    }
     std::io::Error::new(err.kind(), format!("{target}: {}", message(&err)))
 }
 

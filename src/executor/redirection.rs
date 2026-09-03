@@ -51,13 +51,46 @@ impl Executor {
                 continue;
             }
             let target = self.expand_word(&redirect.target);
+            // GNU redir.c:832-838: [N]>&WORD with a non-numeric WORD is not
+            // an error when the redirector is stdout and there is no
+            // varassign - it translates to r_err_and_out (>&file == >file
+            // 2>&1). Only other redirectors ({var}>&word, 2>&word, <&word)
+            // report AMBIGUOUS_REDIRECT (redir.c:839-843).
+            let dup_output_err_and_out = matches!(
+                redirect.kind,
+                crate::parser::RedirectKind::DuplicateOutput
+            ) && redirect.fd.unwrap_or(1) == 1
+                && redirect.fd_var.is_none();
             let invalid_fd_target = target.starts_with('&')
                 && !is_closed_redirect_target(&target)
-                && redirect_target_fd_and_move(&target).is_none();
+                && redirect_target_fd_and_move(&target).is_none()
+                && !dup_output_err_and_out;
             if invalid_fd_target
                 || redirect_target_is_ambiguous(&redirect.target_metadata.raw, &target)
             {
-                let diagnostic_target = target.strip_prefix('&').unwrap_or(&target);
+                // GNU redir.c report_ambiguous_redirect (redir.c:846-870).
+                // File redirections report the word as written ($z keeps its
+                // raw spelling even when expansion is non-empty; redir.tests
+                // line 58). Dup redirections report the expanded fd word
+                // (redir.tests line 52: fd=-1 reports "-1") and fall back to
+                // the raw word only when expansion is empty (redir4.sub
+                // lines 45-46: unset fd reports "$fd").
+                let is_dup_kind = matches!(
+                    redirect.kind,
+                    crate::parser::RedirectKind::DuplicateInput
+                        | crate::parser::RedirectKind::DuplicateOutput
+                );
+                let raw_word = redirect
+                    .target_metadata
+                    .raw
+                    .strip_prefix('&')
+                    .unwrap_or(&redirect.target_metadata.raw);
+                let expanded_word = target.strip_prefix('&').unwrap_or(&target);
+                let diagnostic_target = if is_dup_kind && !expanded_word.is_empty() {
+                    expanded_word
+                } else {
+                    raw_word
+                };
                 let mut stderr = Vec::new();
                 writeln!(
                     &mut stderr,
@@ -308,7 +341,18 @@ impl Executor {
                             state.fds.insert(2, stdout_target);
                         }
                     } else {
-                        self.write_ambiguous_redirect_diagnostic(state, &target)?;
+                        // report_ambiguous_redirect (redir.c:846-870): dup
+                        // redirections report the expanded fd word when
+                        // non-empty and the raw word when expansion is
+                        // empty (see the precheck note above).
+                        if target.strip_prefix('&').unwrap_or(&target).is_empty() {
+                            self.write_ambiguous_redirect_diagnostic(
+                                state,
+                                &redirect.target_metadata.raw,
+                            )?;
+                        } else {
+                            self.write_ambiguous_redirect_diagnostic(state, &target)?;
+                        }
                         self.exit_code = 1;
                         state.redirect_failed = true;
                         return Ok(true);

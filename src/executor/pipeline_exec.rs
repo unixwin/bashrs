@@ -1008,6 +1008,26 @@ impl Executor {
         }
         crate::executor::shell_options::restore_stdout_capture(saved_capture);
 
+        // GNU execute_simple_command (execute_cmd.c): a pipeline element
+        // whose words all expand to zero fields is a null command - its
+        // redirections (applied by the preflight above) still take effect
+        // and the status is 0 (redir.tests: `exit 3 | $EXIT >
+        // $TMPDIR/null-redir-e` reports `0 -- 3 0`, not 127). A quoted
+        // empty word ("") survives as one empty field and keeps the
+        // command-not-found path below.
+        let stage_expands_to_no_fields = !command.words.is_empty()
+            && command.words.iter().enumerate().all(|(index, word)| {
+                let raw = command
+                    .word_metadata
+                    .get(index)
+                    .map(|metadata| metadata.raw.as_str());
+                self.expand_command_word(command, index, word, raw)
+                    .is_empty()
+            });
+        if stage_expands_to_no_fields {
+            return Ok(Some((String::new(), String::new(), 0)));
+        }
+
         match name {
             "true" | ":" => Ok(Some((String::new(), String::new(), 0))),
             "false" => Ok(Some((String::new(), String::new(), 1))),

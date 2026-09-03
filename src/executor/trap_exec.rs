@@ -28,7 +28,7 @@ impl Executor {
         self.env_vars.remove(&fd_closed_key(fd));
     }
 
-    fn set_fd_output_file(&mut self, fd: u32, target: String, dynamic: bool) {
+    pub(in crate::executor) fn set_fd_output_file(&mut self, fd: u32, target: String, dynamic: bool) {
         let path = shell_path_to_windows(&target, &self.env_vars);
         self.fd_table
             .open_output(fd, FdWriteEndpoint::File(path), dynamic);
@@ -52,6 +52,9 @@ impl Executor {
                 Ok(())
             }
             crate::builtins::eval::EvalAction::Execute(source) => {
+                if std::env::var("RUBASH_DBG_EVAL").is_ok() {
+                    eprintln!("DBG eval words={:?} src={:?}", cmd.words, source);
+                }
                 self.write_buffered_builtin_output(cmd, &[], &stderr)?;
                 let source = eval_source_for_reparse(&source);
                 let tokens = crate::lexer::tokenize(&source);
@@ -399,12 +402,48 @@ impl Executor {
                 &mut stdout,
                 &mut stderr,
             )?;
+            // GNU exec.def reports option errors through builtin_error,
+            // which carries the script:line context prefix
+            // (redir.tests:53: "./redir.tests: line 53: exec: -1: invalid
+            // option"). The builtin emits the bare shell-name form; swap
+            // the prefix when running inside a script.
+            let prefix = self.diagnostic_prefix();
+            if prefix != "rubash: " {
+                let text = String::from_utf8_lossy(&stderr).into_owned();
+                if text.starts_with("rubash: ") {
+                    stderr.clear();
+                    stderr.extend_from_slice(
+                        format!("{}{}", prefix, &text["rubash: ".len()..]).as_bytes(),
+                    );
+                }
+            }
             self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
             return Ok(status);
         }
 
         if let Some(redirect) = &cmd.redirect_out {
             let target = self.expand_word(&redirect.target);
+            // GNU redir.c:832-838: `exec cmd >&WORD` with a non-numeric
+            // WORD translates to r_err_and_out - the child's stdout AND
+            // stderr go to WORD. The raw target keeps the `&` dup marker,
+            // so strip it before opening (redir4.sub: exec >&$fd).
+            if redirect.fd.is_none() && target.starts_with('&') {
+                let path = target.strip_prefix('&').unwrap_or(&target).to_string();
+                let mut file = self.create_redirect_output(&path, redirect.clobber)?;
+                // r_err_and_out: the child's stdout and stderr both go to
+                // WORD, so the builtin's own diagnostics follow the file too.
+                let child_stdout = Stdio::from(file.try_clone()?);
+                let child_stderr = Stdio::from(file.try_clone()?);
+                let mut child_diag = file.try_clone()?;
+                return Ok(crate::builtins::exec::execute_with_child_stdio(
+                    &cmd.words[1..],
+                    &self.env_vars,
+                    &mut file,
+                    &mut child_diag,
+                    child_stdout,
+                    child_stderr,
+                )?);
+            }
             let mut file = self.create_redirect_output(&target, redirect.clobber)?;
             let child_stdout = Stdio::from(file.try_clone()?);
             return Ok(crate::builtins::exec::execute_with_child_stdio(
@@ -476,177 +515,216 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<Option<i32>, ExecuteError> {
-        // Fd-prefixed redirects retain the raw process-substitution target.
+        // GNU redir.c: `exec` with only redirections applies every
+        // redirection left to right (do_redirection_internal over the whole
+        // redirect list, redir.c:767+), keeping each descriptor open
+        // persistently and undoing nothing (RX_ACTIVE without undo). The
+        // parser mirrors every stdio shortcut field into cmd.redirects, so
+        // iterating that list in source order covers `exec >file 2>&1`,
+        // `exec 1>&3 2>&4` (redir4.sub:54), `exec 4>&1 >&3 3>&-`
+        // (redir7.sub:23), `exec 4>&- 5>&-` (redir.tests:88) and
+        // single-redirect forms alike.
+        let mut handled = false;
         for redirect in &cmd.redirects {
-            let target = &redirect.target;
-            let fd = redirect.fd.unwrap_or(1);
+            let target = self.expand_word(&redirect.target);
+            // Mark the redirect as handled before dispatching: every arm
+            // below ends in a `continue`, which would otherwise bypass a
+            // bottom-of-loop flag and make `exec >&file` fall through to
+            // the legacy redirect_out shortcut with the raw `&word` target
+            // (GNU redir.c do_redirection_internal applies the whole list;
+            // exec with only redirections always ends with status 0 unless
+            // a redirection itself fails).
+            handled = true;
             match redirect.kind {
                 crate::parser::RedirectKind::Output
                 | crate::parser::RedirectKind::Append
                 | crate::parser::RedirectKind::ClobberOutput
-                    if target.starts_with(">(") && target.ends_with(')') =>
-                {
-                    self.open_persistent_output_process_substitution(fd, target)?;
-                    return Ok(Some(0));
+                | crate::parser::RedirectKind::CombinedOutput
+                | crate::parser::RedirectKind::CombinedAppend => {
+                    let fd = redirect.fd.unwrap_or(1);
+                    if is_closed_redirect_target(&target) {
+                        if let Some(name) = redirect.fd_var.as_deref() {
+                            self.close_dynamic_fd(name)?;
+                        } else {
+                            self.close_persistent_output_fd(fd)?;
+                            self.env_vars.insert(fd_closed_key(fd), "1".to_string());
+                        }
+                        continue;
+                    }
+                    if let Some((source_fd, move_source)) = redirect_target_fd_and_move(&target) {
+                        self.copy_persistent_output_fd(fd, source_fd);
+                        if move_source {
+                            self.close_persistent_output_fd(source_fd)?;
+                        }
+                        continue;
+                    }
+                    // GNU redir.c:832-838: exec >&WORD with a non-numeric
+                    // WORD and redirector 1 translates to r_err_and_out -
+                    // both stdout and stderr go to WORD
+                    // (redir4.sub: exec >&${TMPDIR}/err-and-out).
+                    if redirect.fd.unwrap_or(1) == 1
+                        && redirect.fd_var.is_none()
+                        && target.starts_with('&')
+                        && redirect_target_fd(&target).is_none()
+                    {
+                        let path = target.strip_prefix('&').unwrap_or(&target).to_string();
+                        if !is_null_device(&path) {
+                            self.create_redirect_output(&path, redirect.clobber)?;
+                        }
+                        self.set_fd_output_file(1, path.clone(), false);
+                        self.set_fd_output_file(2, path, false);
+                        continue;
+                    }
+                    if self.open_persistent_output_process_substitution(fd, &target)? {
+                        continue;
+                    }
+                    if !is_null_device(&target) {
+                        if matches!(
+                            redirect.kind,
+                            crate::parser::RedirectKind::Append
+                                | crate::parser::RedirectKind::CombinedAppend
+                        ) {
+                            OpenOptions::new()
+                                .create(true)
+                                .append(true)
+                                .open(shell_path_to_windows(&target, &self.env_vars))?;
+                        } else {
+                            self.create_redirect_output(&target, redirect.clobber)?;
+                        }
+                    }
+                    self.set_fd_output_file(fd, target.clone(), fd >= 10);
+                    if matches!(
+                        redirect.kind,
+                        crate::parser::RedirectKind::CombinedOutput
+                            | crate::parser::RedirectKind::CombinedAppend
+                    ) {
+                        // &>file / &>>file: stderr follows stdout
+                        // (redir.c r_err_and_out / r_append_err_and_out).
+                        self.set_fd_output_file(2, target, fd >= 10);
+                    }
                 }
-                _ => {}
-            }
-        }
-
-        if let Some(redirect) = &cmd.redirect_out {
-            let target = self.expand_word(&redirect.target);
-            let fd = redirect.fd.unwrap_or(1);
-            if is_closed_redirect_target(&target) {
-                if let Some(name) = redirect.fd_var.as_deref() {
-                    self.close_dynamic_fd(name)?;
-                } else {
+                crate::parser::RedirectKind::DuplicateOutput => {
+                    let fd = redirect.fd.unwrap_or(1);
+                    if is_closed_redirect_target(&target) {
+                        self.close_persistent_output_fd(fd)?;
+                        self.env_vars.insert(fd_closed_key(fd), "1".to_string());
+                        continue;
+                    }
+                    if let Some((source_fd, move_source)) = redirect_target_fd_and_move(&target) {
+                        self.copy_persistent_output_fd(fd, source_fd);
+                        if move_source {
+                            self.close_persistent_output_fd(source_fd)?;
+                        }
+                        continue;
+                    }
+                    if redirect.fd.unwrap_or(1) == 1
+                        && redirect.fd_var.is_none()
+                        && target.starts_with('&')
+                    {
+                        // GNU redir.c:832-838 r_duplicating_output_word
+                        // translation (see above).
+                        let path = target.strip_prefix('&').unwrap_or(&target).to_string();
+                        if !is_null_device(&path) {
+                            self.create_redirect_output(&path, redirect.clobber)?;
+                        }
+                        self.set_fd_output_file(1, path.clone(), false);
+                        self.set_fd_output_file(2, path, false);
+                        continue;
+                    }
+                    // Other non-numeric dup targets stay AMBIGUOUS_REDIRECT
+                    // (redir.c:839-843); reject_ambiguous_redirects already
+                    // reported them before exec ran.
+                }
+                crate::parser::RedirectKind::CloseOutput => {
+                    let fd = redirect.fd.unwrap_or(1);
                     self.close_persistent_output_fd(fd)?;
                     self.env_vars.insert(fd_closed_key(fd), "1".to_string());
                 }
-                return Ok(Some(0));
-            }
-            if let Some((source_fd, move_source)) = redirect_target_fd_and_move(&target) {
-                self.copy_persistent_output_fd(fd, source_fd);
-                if move_source {
-                    self.close_persistent_output_fd(source_fd)?;
+                crate::parser::RedirectKind::Input | crate::parser::RedirectKind::ReadWrite => {
+                    let fd = redirect.fd.unwrap_or(0);
+                    if is_closed_redirect_target(&target) {
+                        self.close_persistent_input_fd(fd);
+                        self.env_vars.insert(fd_closed_key(fd), "1".to_string());
+                        continue;
+                    }
+                    if let Some((source_fd, move_source)) = redirect_target_fd_and_move(&target) {
+                        self.copy_persistent_input_fd(fd, source_fd);
+                        if move_source {
+                            self.close_persistent_input_fd(source_fd);
+                        }
+                        continue;
+                    }
+                    if let Some(source_fd) = redirect_target_fd(&target) {
+                        self.copy_persistent_input_fd(fd, source_fd);
+                        continue;
+                    }
+
+                    if let Some(source) = target
+                        .strip_prefix("<(")
+                        .and_then(|target| target.strip_suffix(')'))
+                    {
+                        if let Some(input) = self.process_substitution_output(source) {
+                            self.fd_table.open_input(
+                                fd,
+                                FdReadEndpoint::process_substitution(&input),
+                                fd != 0,
+                            );
+                            self.set_fd_input_text(fd, input, fd != 0);
+                            continue;
+                        }
+                    }
+
+                    if matches!(
+                        target.as_str(),
+                        "/dev/stdin" | "/proc/self/fd/0" | "/dev/fd/0"
+                    ) {
+                        self.fd_table
+                            .open_input(fd, FdReadEndpoint::InheritedProcessStdin, fd != 0);
+                        continue;
+                    }
+
+                    let path = shell_path_to_windows(&target, &self.env_vars);
+                    if redirect.append {
+                        // [N]<> opens the file for reading and writing
+                        // (redir.c r_input_output, O_RDWR).
+                        let _ = OpenOptions::new()
+                            .create(true)
+                            .read(true)
+                            .write(true)
+                            .open(&path)
+                            .map_err(|e| crate::posix_errors::path_error(&target, e))?;
+                    }
+                    let input = std::fs::read(&path)
+                        .map_err(|e| crate::posix_errors::path_error(&target, e))?;
+                    self.set_fd_input_bytes(fd, input, fd != 0);
+                    // The operator token keeps any numeric redirector prefix
+                    // (`exec 6<>file` lexes as `6<>`), so match on the
+                    // suffix (redir.tests: `exec 6<>$TMPDIR/bash-c` then
+                    // `echo to c 1>&6`).
+                    if redirect.operator.ends_with("<>") {
+                        self.fd_table
+                            .open_output(fd, FdWriteEndpoint::File(path), fd >= 10);
+                    }
                 }
-                return Ok(Some(0));
-            }
-            if let Some(source_fd) = redirect_target_fd(&target) {
-                self.copy_persistent_output_fd(fd, source_fd);
-                return Ok(Some(0));
-            }
-            if self.open_persistent_output_process_substitution(fd, &target)? {
-                return Ok(Some(0));
-            }
-            self.create_redirect_output(&target, redirect.clobber)?;
-            self.set_fd_output_file(fd, target, fd >= 10);
-            return Ok(Some(0));
-        }
-
-        if let Some(redirect) = &cmd.append {
-            let target = self.expand_word(&redirect.target);
-            let fd = redirect.fd.unwrap_or(1);
-            if is_closed_redirect_target(&target) {
-                self.close_persistent_output_fd(fd)?;
-                self.env_vars.insert(fd_closed_key(fd), "1".to_string());
-                return Ok(Some(0));
-            }
-            if self.open_persistent_output_process_substitution(fd, &target)? {
-                return Ok(Some(0));
-            }
-            OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(shell_path_to_windows(&target, &self.env_vars))?;
-            self.set_fd_output_file(fd, target, fd >= 10);
-            return Ok(Some(0));
-        }
-
-        if let Some(redirect) = &cmd.redirect_err {
-            let target = self.expand_word(&redirect.target);
-            let fd = redirect.fd.unwrap_or(2);
-            if is_closed_redirect_target(&target) {
-                self.close_persistent_output_fd(fd)?;
-                self.env_vars.insert(fd_closed_key(fd), "1".to_string());
-                return Ok(Some(0));
-            }
-            if let Some(source_fd) = redirect_target_fd(&target) {
-                self.copy_persistent_output_fd(fd, source_fd);
-                return Ok(Some(0));
-            }
-            if self.open_persistent_output_process_substitution(fd, &target)? {
-                return Ok(Some(0));
-            }
-            if !is_null_device(&target) {
-                self.create_redirect_output(&target, redirect.clobber)?;
-            }
-            self.set_fd_output_file(fd, target, fd >= 10);
-            return Ok(Some(0));
-        }
-
-        if let Some(redirect) = &cmd.redirect_err_append {
-            let target = self.expand_word(&redirect.target);
-            let fd = redirect.fd.unwrap_or(2);
-            if is_closed_redirect_target(&target) {
-                self.close_persistent_output_fd(fd)?;
-                self.env_vars.insert(fd_closed_key(fd), "1".to_string());
-                return Ok(Some(0));
-            }
-            if self.open_persistent_output_process_substitution(fd, &target)? {
-                return Ok(Some(0));
-            }
-            if !is_null_device(&target) {
-                OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(shell_path_to_windows(&target, &self.env_vars))?;
-            }
-            self.set_fd_output_file(fd, target, fd >= 10);
-            return Ok(Some(0));
-        }
-
-        if let Some(redirect) = &cmd.redirect_in {
-            let fd = redirect.fd.unwrap_or(0);
-            let target = self.expand_word(&redirect.target);
-            if is_closed_redirect_target(&target) {
-                self.close_persistent_input_fd(fd);
-                self.env_vars.insert(fd_closed_key(fd), "1".to_string());
-                return Ok(Some(0));
-            }
-            if let Some((source_fd, move_source)) = redirect_target_fd_and_move(&target) {
-                self.copy_persistent_input_fd(fd, source_fd);
-                if move_source {
-                    self.close_persistent_input_fd(source_fd);
+                crate::parser::RedirectKind::CloseInput => {
+                    let fd = redirect.fd.unwrap_or(0);
+                    self.close_persistent_input_fd(fd);
+                    self.env_vars.insert(fd_closed_key(fd), "1".to_string());
                 }
-                return Ok(Some(0));
-            }
-            if let Some(source_fd) = redirect_target_fd(&target) {
-                self.copy_persistent_input_fd(fd, source_fd);
-                return Ok(Some(0));
-            }
-
-            if let Some(source) = target
-                .strip_prefix("<(")
-                .and_then(|target| target.strip_suffix(')'))
-            {
-                if let Some(input) = self.process_substitution_output(source) {
-                    self.fd_table.open_input(
-                        fd,
-                        FdReadEndpoint::process_substitution(&input),
-                        fd != 0,
-                    );
-                    self.set_fd_input_text(fd, input, fd != 0);
-                    return Ok(Some(0));
+                crate::parser::RedirectKind::DuplicateInput => {
+                    let fd = redirect.fd.unwrap_or(0);
+                    if let Some((source_fd, move_source)) = redirect_target_fd_and_move(&target) {
+                        if self.fd_table.is_open_for_read(source_fd) {
+                            self.copy_persistent_input_fd(fd, source_fd);
+                            if move_source {
+                                self.close_persistent_input_fd(source_fd);
+                            }
+                        }
+                    }
                 }
+                _ => {}
             }
-
-            if matches!(
-                target.as_str(),
-                "/dev/stdin" | "/proc/self/fd/0" | "/dev/fd/0"
-            ) {
-                self.fd_table
-                    .open_input(fd, FdReadEndpoint::InheritedProcessStdin, fd != 0);
-                return Ok(Some(0));
-            }
-
-            let path = shell_path_to_windows(&target, &self.env_vars);
-            if redirect.append {
-                let _ = OpenOptions::new()
-                    .create(true)
-                    .read(true)
-                    .write(true)
-                    .open(&path)
-                    .map_err(|e| crate::posix_errors::path_error(&target, e))?;
-            }
-            let input =
-                std::fs::read(&path).map_err(|e| crate::posix_errors::path_error(&target, e))?;
-            self.set_fd_input_bytes(fd, input, fd != 0);
-            if redirect.operator == "<>" {
-                self.fd_table
-                    .open_output(fd, FdWriteEndpoint::File(path), fd >= 10);
-            }
-            return Ok(Some(0));
+            handled = true;
         }
 
         if let Some((fd, input)) = self.exec_heredoc_fd_input(cmd) {
@@ -654,6 +732,12 @@ impl Executor {
             return Ok(Some(0));
         }
 
+        if handled {
+            // GNU applys the redirections and keeps `exec` itself as a
+            // no-op with status 0 (redir.c / builtins/exec.def: `exec`
+            // with only redirections).
+            return Ok(Some(0));
+        }
         Ok(None)
     }
 
@@ -1055,7 +1139,8 @@ impl Executor {
             }
             self.set_dynamic_fd_variable(name, fd);
             self.set_fd_input_text(fd, input, true);
-            if redirect.operator == "<>" {
+            // Same `6<>` suffix rule as the exec path above.
+            if redirect.operator.ends_with("<>") {
                 self.set_fd_output_file(fd, target, true);
             }
             return Ok(Some(0));
