@@ -705,6 +705,21 @@ impl Executor {
                         && !self.inside_compound_condition.get() =>
                 {
                     self.exit_code = code;
+                    // GNU 5.2: under `set -e` a fatal word-expansion
+                    // failure (bad substitution, failglob, arithmetic)
+                    // exits the script like any other failing command
+                    // (probe 2026-09-02: `set -e; echo ${#:}; echo after`
+                    // stops after the bad substitution; same for
+                    // `set -e; echo nope*` with failglob).
+                    if self.errexit_enabled()
+                        && self.errexit_is_active()
+                        && self.suppress_errexit == 0
+                        && self.exit_code != 0
+                        && !command.inverted
+                        && command.and_or().is_none()
+                    {
+                        return Err(ExecuteError::ExitCode(self.exit_code));
+                    }
                     let failed_line = command.line;
                     if failed_line.is_some_and(|line| line != 0) {
                         while let Some(next) = ast.commands.get(index + 1) {

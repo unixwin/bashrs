@@ -128,7 +128,60 @@ impl Executor {
             let base = &name[..name.len() - 3];
             return !base.is_empty() && is_shell_name(base);
         }
-        name != ":"
+        // GNU subst.c valid_length_expression: after `#`, a leading name
+        // character continues as a name; ANY other first character means the
+        // `#` itself is the special parameter `$#` and the remainder must be
+        // a parameter operator expression with a non-empty word. GNU probe
+        // 2026-09-02 (WSL bash 5.2.21): `${#-posparams}` and `${#?:-xyz}`
+        // are VALID (`0`), `${#:x}`/`${#:foo}` are valid, while the
+        // empty-word operator forms `${#:}`, `${#/}`, `${#%}`, `${#=}`,
+        // `${#+}` and the non-name suffixes `${#1xyz}`, `${#x@}`,
+        // `${#x:y}` are bad substitution.
+        is_shell_name(name) || Self::is_length_operator_expression(name)
+    }
+
+    /// Validates the body of a `${!...}` expansion: a simple parameter
+    /// reference (name, numeric positional, or special), optionally with a
+    /// trailing array subscript (`${!arr[@]}` keys form) or a `${!prefix@}`
+    /// variable-name listing suffix. `${!}` itself is the $! parameter.
+    fn is_valid_indirect_expression(expr: &str) -> bool {
+        if expr.is_empty() {
+            return true;
+        }
+        let base = match expr.rfind('[') {
+            Some(start) if expr.ends_with(']') => &expr[..start],
+            _ => expr,
+        };
+        if base.is_empty() {
+            return false;
+        }
+        if let Some(prefix) = base.strip_suffix(['@', '*']) {
+            return !prefix.is_empty() && is_shell_name(prefix);
+        }
+        matches!(base, "@" | "*" | "#" | "?" | "$" | "-" | "!" | "0")
+            || base.parse::<usize>().is_ok()
+            || is_shell_name(base)
+    }
+    /// Validates the remainder of a `${#...}` expansion when it does not
+    /// start with a shell name: `#` is then the `$#` parameter itself and
+    /// the text must be an operator applied to it. Operators with an empty
+    /// word (`${#+}`, `${#:}`, `${#/}`) are bad substitution in GNU.
+    fn is_length_operator_expression(name: &str) -> bool {
+        let mut chars = name.chars();
+        let Some(first) = chars.next() else {
+            return false;
+        };
+        if first == ':' {
+            let rest = &name[1..];
+            if rest.is_empty() {
+                return false;
+            }
+            return match rest.chars().next() {
+                Some('-' | '+' | '=' | '?') => rest.len() > 1,
+                _ => true,
+            };
+        }
+        matches!(first, '-' | '+' | '=' | '?' | '@' | '^' | ',' | '/' | '%' | '#') && name.len() > 1
     }
 
     pub(in crate::executor) fn parameter_expansion_error(
@@ -203,6 +256,15 @@ impl Executor {
             // substitution in GNU Bash.
             if let Some(length_name) = inner.strip_prefix('#') {
                 if !Self::is_valid_length_parameter_name(length_name) {
+                    return Some((format!("${{{inner}}}"), "bad substitution".to_string(), 1));
+                }
+            }
+            // Indirect expansions accept a simple parameter reference, an
+            // array subscript form, or the prefix@ variable-name listing
+            // form; anything else (e.g. a stray trailing '!' in ${!bad!})
+            // is a bad substitution in GNU.
+            if let Some(indirect) = inner.strip_prefix('!') {
+                if !Self::is_valid_indirect_expression(indirect) {
                     return Some((format!("${{{inner}}}"), "bad substitution".to_string(), 1));
                 }
             }

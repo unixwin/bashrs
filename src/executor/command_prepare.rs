@@ -86,6 +86,15 @@ impl Executor {
         if let Some((name, message, status)) = self.parameter_expansion_error(cmd) {
             eprintln!("{}{}: {}", self.diagnostic_prefix(), name, message);
             self.exit_code = status;
+            if status == 1 {
+                // GNU Bash 5.2: bad substitution and `substring expression
+                // < 0` are non-fatal word-expansion errors - they abandon
+                // the current command list with status 1, but the next
+                // line still runs (probe 2026-09-02: `echo ${#:}; echo
+                // after` prints `after`; cf. t25 failglob). ExitCode(1)
+                // here made them abort the whole script at top level.
+                return Err(ExecuteError::ExpansionFailure(status));
+            }
             return Err(ExecuteError::ExitCode(status));
         }
         if self.xtrace_enabled() {
@@ -204,6 +213,12 @@ impl Executor {
         if let Some((name, message, status)) = self.parameter_expansion_error(cmd) {
             eprintln!("{}{}: {}", self.diagnostic_prefix(), name, message);
             self.exit_code = status;
+            if status == 1 {
+                // GNU 5.2 non-fatal word-expansion errors (bad substitution,
+                // substring < 0): abandon this command list with status 1;
+                // the next line still runs (same semantics as t25 failglob).
+                return Err(ExecuteError::ExpansionFailure(status));
+            }
             return Err(ExecuteError::ExitCode(status));
         }
         Ok(())
@@ -624,17 +639,40 @@ impl Executor {
             return None;
         }
 
-        let (var_name, alternate, require_non_empty) =
+        // `+`/`:+` use the word when the parameter is set (non-empty for
+        // `:+`); `-`/`:-` use the word when it is unset (or empty for `:-`).
+        // `$@`/`$*` inside the word must expand to their own field boundaries
+        // (subst.c param_expand), which the String-based path cannot express,
+        // so only those fragments are routed through the re-expansion path.
+        let (var_name, alternate, use_when_set, require_non_empty, narrow) =
             if let Some((var_name, alternate)) = name.split_once(":+") {
-                (var_name, alternate, true)
+                (var_name, alternate, true, true, false)
             } else if let Some((var_name, alternate)) = name.split_once('+') {
-                (var_name, alternate, false)
+                (var_name, alternate, true, false, false)
+            } else if let Some((var_name, alternate)) = name.split_once(":-") {
+                (var_name, alternate, false, true, true)
+            } else if let Some((var_name, alternate)) = name.split_once('-') {
+                (var_name, alternate, false, false, true)
             } else {
                 return None;
             };
 
-        let value = self.parameter_operator_value(var_name)?;
-        if require_non_empty && value.is_empty() {
+        if narrow
+            && !alternate.contains("$@")
+            && !alternate.contains("$*")
+            && !alternate.contains('"')
+            && !alternate.contains('\'')
+        {
+            return None;
+        }
+
+        let value = self.parameter_operator_value(var_name);
+        let word_used = if use_when_set {
+            value.is_some() && (!require_non_empty || !value.unwrap_or_default().is_empty())
+        } else {
+            value.is_none() || (require_non_empty && value.unwrap_or_default().is_empty())
+        };
+        if !word_used {
             return None;
         }
 
@@ -946,6 +984,15 @@ pub(in crate::executor) fn raw_word_is_quoted(raw: Option<&str>) -> bool {
             '$' if chars.get(index + 1) == Some(&'\'') || chars.get(index + 1) == Some(&'"') => {
                 return true;
             }
+            '$' if chars.get(index + 1) == Some(&'{') => {
+                // Quotes inside a braced parameter expansion (e.g. the
+                // double quote in a default/alternate word) are word syntax,
+                // not outer quoting: bash only treats the whole word as quoted
+                // when the braced expansion itself is quoted. Skip the braced
+                // body so an unquoted word still word-splits its result.
+                index = skip_raw_braced_parameter(&chars, index + 2);
+                continue;
+            }
             '$' if chars.get(index + 1) == Some(&'(') => {
                 index = skip_raw_command_substitution(&chars, index + 2);
                 continue;
@@ -1014,6 +1061,44 @@ fn skip_raw_command_substitution(chars: &[char], mut index: usize) -> usize {
                 continue;
             }
             ')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return index + 1;
+                }
+            }
+            '\\' => index += 1,
+            _ => {}
+        }
+        index += 1;
+    }
+    index
+}
+
+fn skip_raw_braced_parameter(chars: &[char], mut index: usize) -> usize {
+    let mut depth = 1usize;
+    while index < chars.len() {
+        match chars[index] {
+            '\'' => index = skip_raw_quote(chars, index + 1, '\''),
+            '"' => index = skip_raw_quote(chars, index + 1, '"'),
+            '`' => index = skip_raw_backtick(chars, index + 1),
+            '$' if chars.get(index + 1) == Some(&'{') => {
+                depth += 1;
+                index += 2;
+                continue;
+            }
+            '$' if chars.get(index + 1) == Some(&'(') => {
+                index = skip_raw_command_substitution(chars, index + 2);
+                continue;
+            }
+            '$' if chars.get(index + 1) == Some(&'\'') => {
+                index = skip_raw_quote(chars, index + 2, '\'');
+                continue;
+            }
+            '$' if chars.get(index + 1) == Some(&'"') => {
+                index = skip_raw_quote(chars, index + 2, '"');
+                continue;
+            }
+            '}' => {
                 depth = depth.saturating_sub(1);
                 if depth == 0 {
                     return index + 1;
