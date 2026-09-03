@@ -14,24 +14,17 @@ pub(super) fn parse_arithmetic_for_command(
     };
 
     let mut parts: Vec<Vec<String>> = vec![Vec::new(), Vec::new(), Vec::new()];
-    // GNU expr.c echoes the section text exactly as it appears between the
-    // (( )) delimiters (leading blanks skipped at display time, trailing
-    // blanks kept), so capture the raw whitespace-carrying text per section
-    // alongside the normalized token join.
-    let mut raw_parts: Vec<String> = vec![String::new(), String::new(), String::new()];
     let mut part_index = 0usize;
     let mut paren_depth = 0usize;
     let mut closed = false;
     while i + 1 < tokens.len() {
         if paren_depth == 0 && tokens[i].value == "))" {
-            raw_parts[part_index].push_str(&tokens[i].leading_ws);
             i += 1;
             closed = true;
             break;
         }
 
         if paren_depth == 0 && is_keyword(tokens, i, ")") && is_keyword(tokens, i + 1, ")") {
-            raw_parts[part_index].push_str(&tokens[i].leading_ws);
             i += 2;
             closed = true;
             break;
@@ -43,7 +36,6 @@ pub(super) fn parse_arithmetic_for_command(
         }
 
         if paren_depth == 0 && tokens[i].kind == TokenKind::Semicolon {
-            raw_parts[part_index].push_str(&tokens[i].leading_ws);
             part_index += 1;
             if part_index > 2 {
                 return None;
@@ -53,7 +45,6 @@ pub(super) fn parse_arithmetic_for_command(
         }
 
         if paren_depth == 0 && tokens[i].value == ";;" {
-            raw_parts[part_index].push_str(&tokens[i].leading_ws);
             part_index += 2;
             if part_index > 2 {
                 return None;
@@ -68,8 +59,6 @@ pub(super) fn parse_arithmetic_for_command(
 
         if is_keyword(tokens, i, "(") {
             paren_depth += 1;
-            raw_parts[part_index].push_str(&tokens[i].leading_ws);
-            raw_parts[part_index].push_str(&tokens[i].raw);
             parts[part_index].push(tokens[i].value.clone());
             i += 1;
             continue;
@@ -77,23 +66,17 @@ pub(super) fn parse_arithmetic_for_command(
 
         if is_keyword(tokens, i, ")") && paren_depth > 0 {
             paren_depth -= 1;
-            raw_parts[part_index].push_str(&tokens[i].leading_ws);
-            raw_parts[part_index].push_str(&tokens[i].raw);
             parts[part_index].push(tokens[i].value.clone());
             i += 1;
             continue;
         }
 
         if let Some(combined) = arithmetic_combined_operator(&tokens[i], tokens.get(i + 1)) {
-            raw_parts[part_index].push_str(&tokens[i].leading_ws);
-            raw_parts[part_index].push_str(&combined);
             parts[part_index].push(combined);
             i += 2;
             continue;
         }
 
-        raw_parts[part_index].push_str(&tokens[i].leading_ws);
-        raw_parts[part_index].push_str(&tokens[i].raw);
         parts[part_index].push(tokens[i].value.clone());
         i += 1;
     }
@@ -202,13 +185,13 @@ pub(super) fn parse_arithmetic_for_command(
             open_delimiter: "((".to_string(),
             open_delimiter_metadata: delimiter_metadata("(("),
             init: init.clone(),
-            init_metadata: ArithmeticExpressionMetadata::new(raw_parts[0].clone()),
+            init_metadata: ArithmeticExpressionMetadata::new(init),
             separators: vec![";".to_string(), ";".to_string()],
             separator_metadata: vec![separator_metadata(0, ";"), separator_metadata(1, ";")],
             test: test.clone(),
-            test_metadata: ArithmeticExpressionMetadata::new(raw_parts[1].clone()),
+            test_metadata: ArithmeticExpressionMetadata::new(test),
             update: update.clone(),
-            update_metadata: ArithmeticExpressionMetadata::new(raw_parts[2].clone()),
+            update_metadata: ArithmeticExpressionMetadata::new(update),
             close_delimiter: "))".to_string(),
             close_delimiter_metadata: delimiter_metadata("))"),
         }),
