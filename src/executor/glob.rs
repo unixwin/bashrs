@@ -297,7 +297,15 @@ fn globstar_expand(
         return PathnameExpansion::NoMatch;
     }
     let prefix = parts[0];
-    let suffix = parts[1].trim_start_matches('/');
+    // GNU globstar forms (parse.y/glob.c GLOBSTAR): a bare `**` matches every
+    // file and directory at any depth (empty remainder), `**/` matches
+    // directories only with a trailing slash in the output, and `**/pattern`
+    // applies the pattern at every depth. Symlinked directories are listed as
+    // entries but never recursed into (loop avoidance).
+    let raw_suffix = parts[1];
+    let dirs_only = raw_suffix == "/";
+    let match_all = raw_suffix.is_empty();
+    let suffix = if dirs_only { "" } else { raw_suffix.trim_start_matches('/') };
 
     let logical_base_dir = if prefix.is_empty() {
         ".".to_string()
@@ -313,6 +321,8 @@ fn globstar_expand(
         &logical_base_dir,
         &physical_base_dir,
         suffix,
+        match_all,
+        dirs_only,
         &mut matches,
         nocaseglob,
         dotglob,
@@ -342,6 +352,8 @@ fn collect_globstar_matches(
     logical_dir: &str,
     physical_dir: &Path,
     suffix: &str,
+    match_all: bool,
+    dirs_only: bool,
     matches: &mut Vec<String>,
     nocaseglob: bool,
     dotglob: bool,
@@ -366,37 +378,50 @@ fn collect_globstar_matches(
             .find(|entry| entry.name == name)
             .map(|entry| entry.path.clone())
             .unwrap_or_else(|| physical_dir.join(&name));
-        let logical_path = join_path_segment(logical_dir, &name);
-        if physical_path.is_dir() {
-            let matched = if nocaseglob {
-                case_pattern_matches_nocase(suffix, &name)
-            } else {
-                super::case_pattern_matches(suffix, &name)
-            };
-            if matched {
-                matches.push(logical_path.clone());
-            }
-            if name != "." && name != ".." {
-                collect_globstar_matches(
-                    &logical_path,
-                    &physical_path,
-                    suffix,
-                    matches,
-                    nocaseglob,
-                    dotglob,
-                    globskipdots,
-                    env_vars,
-                );
-            }
+        // GNU globstar output uses plain relative paths: the cwd-relative
+        // base `.` contributes no `./` prefix to matched entries (glob.c
+        // globstar expansion - `echo **` yields `a a/aa b` not `./a ./a/aa
+        // ./b`). Keep `.` for the directory read but normalize it away in
+        // the joined logical path.
+        let join_prefix = if logical_dir == "." { "" } else { logical_dir };
+        let logical_path = join_path_segment(join_prefix, &name);
+        let is_dir = physical_path.is_dir();
+        let matched = if match_all {
+            true
+        } else if dirs_only {
+            is_dir
+        } else if nocaseglob {
+            case_pattern_matches_nocase(suffix, &name)
         } else {
-            let matched = if nocaseglob {
-                case_pattern_matches_nocase(suffix, &name)
+            super::case_pattern_matches(suffix, &name)
+        };
+        if matched {
+            let output = if dirs_only {
+                format!("{}/", logical_path)
             } else {
-                super::case_pattern_matches(suffix, &name)
+                logical_path.clone()
             };
-            if matched {
-                matches.push(logical_path);
-            }
+            matches.push(output);
+        }
+        // Recurse into real directories only: GNU never follows symlinked
+        // directories during ** recursion (loop avoidance; the symlink
+        // itself still appears as a matched entry above).
+        let is_symlink = std::fs::symlink_metadata(&physical_path)
+            .map(|meta| meta.file_type().is_symlink())
+            .unwrap_or(false);
+        if is_dir && !is_symlink && name != "." && name != ".." {
+            collect_globstar_matches(
+                &logical_path,
+                &physical_path,
+                suffix,
+                match_all,
+                dirs_only,
+                matches,
+                nocaseglob,
+                dotglob,
+                globskipdots,
+                env_vars,
+            );
         }
     }
 }
