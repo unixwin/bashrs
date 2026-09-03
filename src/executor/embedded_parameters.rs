@@ -56,6 +56,29 @@ impl Executor {
                 continue;
             }
 
+            // GNU parse.y word scanner: outside double quotes a backslash
+            // escapes the following quote, producing a quoted literal that
+            // survives as data (`echo a\'b` -> a'b, `echo a\"b` -> a"b).
+            // Inside double quotes `\"` is an escape for `"`; a backslash
+            // before a single quote stays literal (both characters), so that
+            // case falls through to the default push below. Heredoc text
+            // treats quotes as data.
+            if ch == '\\' && !heredoc {
+                match chars.peek() {
+                    Some('\'') if !in_double => {
+                        chars.next();
+                        output.push('\'');
+                        continue;
+                    }
+                    Some('"') => {
+                        chars.next();
+                        output.push('"');
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+
             // Quotes that survive to expansion belong to parameter-expansion
             // bodies (the lexer keeps `${...}` verbatim): GNU removes them
             // here, with single-quoted content staying literal. Heredoc text

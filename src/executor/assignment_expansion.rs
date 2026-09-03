@@ -147,7 +147,18 @@ impl Executor {
             // GNU strips quote syntax that parameter expansion introduced into
             // an unquoted assignment RHS (`v=${IFS+'}'z}` stores `}z`). Quotes
             // inside protected substitution payloads are data, so leave those
-            // values alone.
+            // values alone. Escaped-quote markers (\x17 from \' and \x18 from
+            // \" in the source word) are DATA quotes: parse.y records a
+            // backslash-escaped quote as a quoted literal that survives quote
+            // removal into the stored value (`x=a\'b` stores `a'b`). Hoist the
+            // markers out of the quote-removal pass so the data quotes they
+            // become are not re-stripped as syntax, then restore them.
+            const DATA_SINGLE_QUOTE: &str = "\u{E000}";
+            const DATA_DOUBLE_QUOTE: &str = "\u{E001}";
+            let hoisted_value = value
+                .replace('\x17', DATA_SINGLE_QUOTE)
+                .replace('\x18', DATA_DOUBLE_QUOTE);
+            let expanded_value = self.expand_embedded_parameters_mut(&hoisted_value);
             let stripped = if expanded_value.contains(['\'', '"'])
                 && !contains_command_substitution_payload(&expanded_value)
             {
@@ -156,6 +167,8 @@ impl Executor {
                 expanded_value.clone()
             };
             unescape_remaining_shell_escapes(&stripped)
+                .replace(DATA_SINGLE_QUOTE, "'")
+                .replace(DATA_DOUBLE_QUOTE, "\"")
         };
         let mut expanded = decode_command_substitution_payload(&expanded);
         if expanded.contains("<(") || expanded.contains(">(") {
