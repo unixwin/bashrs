@@ -461,7 +461,8 @@ impl Executor {
     }
 
     fn compile_conditional_regex(&self, pattern: &str) -> Result<regex::Regex, regex::Error> {
-        regex::RegexBuilder::new(pattern)
+        let pattern = translate_posix_bracket_classes(pattern);
+        regex::RegexBuilder::new(&pattern)
             .case_insensitive(crate::builtins::shopt::option_enabled(
                 &self.env_vars,
                 "nocasematch",
@@ -620,3 +621,133 @@ fn append_literal_glob_text(output: &mut String, text: &str) {
         output.push(ch);
     }
 }
+
+/// Translates POSIX bracket-expression collation syntax that the regex
+/// crate does not understand into equivalent bracket members before
+/// compiling a [[ ... =~ ... ]] right-hand side. POSIX recognizes three
+/// bracket prefixes: [=c=] equivalence classes, [.s.] collating symbols,
+/// and [:class:] character classes. The regex crate supports [:class:]
+/// natively, so only the first two are rewritten; in the C locale an
+/// equivalence class is the single character itself. Escapes and
+/// bracket-span rules follow POSIX ERE bracket expressions (a ] as the
+/// first member is literal, a backslash escapes the next character, an
+/// unterminated bracket is literal text).
+fn translate_posix_bracket_classes(pattern: &str) -> String {
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut out = String::with_capacity(pattern.len());
+    let mut index = 0usize;
+    while index < chars.len() {
+        if chars[index] == '\u{5c}' && index + 1 < chars.len() {
+            out.push(chars[index]);
+            out.push(chars[index + 1]);
+            index += 2;
+            continue;
+        }
+        if chars[index] == '[' {
+            if let Some((next, translated)) = translate_bracket_expression(&chars, index) {
+                out.push_str(&translated);
+                index = next;
+                continue;
+            }
+        }
+        out.push(chars[index]);
+        index += 1;
+    }
+    out
+}
+
+/// Parses one bracket expression starting at start (a [), returning the
+/// index just past its closing ] and the regex-crate text with [=c=] and
+/// [.s.] spans rewritten. Returns None when the bracket is unterminated,
+/// in which case the caller emits the [ literally.
+fn translate_bracket_expression(chars: &[char], start: usize) -> Option<(usize, String)> {
+    let mut out = String::from("[");
+    let mut index = start + 1;
+    if index < chars.len() && chars[index] == '^' {
+        out.push('^');
+        index += 1;
+    }
+    let mut first = true;
+    while index < chars.len() {
+        let c = chars[index];
+        if c == ']' && !first {
+            out.push(']');
+            return Some((index + 1, out));
+        }
+        first = false;
+        if c == '\u{5c}' && index + 1 < chars.len() {
+            out.push(c);
+            out.push(chars[index + 1]);
+            index += 2;
+            continue;
+        }
+        if c == '[' {
+            if let Some((next, text)) = translate_bracket_prefix(chars, index) {
+                out.push_str(&text);
+                index = next;
+                continue;
+            }
+        }
+        out.push(c);
+        index += 1;
+    }
+    None
+}
+
+/// Handles the three [-led bracket prefixes at index. Returns None for a
+/// plain literal [ member. [=c=] becomes the equivalent character, [.s.]
+/// the collating symbol, and [:class:] passes through verbatim (the regex
+/// crate understands POSIX classes).
+fn translate_bracket_prefix(chars: &[char], index: usize) -> Option<(usize, String)> {
+    let close = |open: char, from: usize| -> Option<usize> {
+        let mut scan = from;
+        while scan + 1 < chars.len() {
+            if chars[scan] == open && chars[scan + 1] == ']' {
+                return Some(scan + 2);
+            }
+            scan += 1;
+        }
+        None
+    };
+    match chars.get(index + 1) {
+        Some('=') => {
+            let end = close('=', index + 2)?;
+            let body: String = chars[index + 2..end - 2].iter().collect();
+            let mut text = String::new();
+            for c in body.chars() {
+                for e in escape_bracket_char(c) {
+                    text.push(e);
+                }
+            }
+            Some((end, text))
+        }
+        Some('.') => {
+            let end = close('.', index + 2)?;
+            let body: String = chars[index + 2..end - 2].iter().collect();
+            let mut text = String::new();
+            for c in body.chars() {
+                for e in escape_bracket_char(c) {
+                    text.push(e);
+                }
+            }
+            Some((end, text))
+        }
+        Some(':') => {
+            let end = close(':', index + 2)?;
+            // The body spans from the leading [ (already part of the text) so
+            // it is passed through verbatim without prepending another one.
+            let body: String = chars[index..end].iter().collect();
+            Some((end, body))
+        }
+        _ => None,
+    }
+}
+
+fn escape_bracket_char(c: char) -> Vec<char> {
+    if matches!(c, ']' | '\u{5c}' | '[' | '-' | '^') {
+        vec!['\u{5c}', c]
+    } else {
+        vec![c]
+    }
+}
+
