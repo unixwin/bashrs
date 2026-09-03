@@ -174,6 +174,16 @@ fn skip_parenthesized_unit(chars: &[char], open: usize) -> Option<usize> {
             continue;
         }
         if double {
+            // GNU skip_double_quoted (parse.y): inside double quotes a
+            // backslash escapes the following character, so `\"` does not
+            // close the quote and neither member of the pair can balance a
+            // parenthesis. Consume both characters; a backslash before a
+            // non-special char is harmless to skip since neither byte is
+            // significant to this balancer.
+            if ch == '\\' {
+                index += 2;
+                continue;
+            }
             if ch == '"' {
                 double = false;
             }
