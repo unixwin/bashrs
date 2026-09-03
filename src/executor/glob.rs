@@ -330,11 +330,13 @@ fn globstar_expand(
         env_vars,
     );
 
-    let mut matches = apply_globignore(matches, env_vars);
+    let matches = apply_globignore(matches, env_vars);
     if matches.is_empty() {
         return unmatched_expansion(word, nullglob, failglob);
     }
-    matches.sort();
+    // Depth-first per-directory order is the GNU globstar emission order;
+    // do not re-sort globally here (each directory level is sorted in
+    // collect_globstar_matches instead).
     PathnameExpansion::Matches(matches)
 }
 
@@ -366,6 +368,11 @@ fn collect_globstar_matches(
     };
     let mut names = synthetic_dot_names(suffix, globskipdots);
     names.extend(entries.iter().map(|entry| entry.name.clone()));
+    // GNU glob.c sorts each directory's entries and emits depth-first:
+    // results group by directory in traversal order rather than a global
+    // byte sort over full paths (which would interleave `builtins.o` with
+    // `builtins/...`).
+    names.sort();
     let include_dotfiles = dotglob
         || suffix.starts_with('.')
         || globignore_patterns(env_vars).is_some();
