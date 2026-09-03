@@ -158,9 +158,30 @@ impl Executor {
         if let Some(prefix) = base.strip_suffix(['@', '*']) {
             return !prefix.is_empty() && is_shell_name(prefix);
         }
-        matches!(base, "@" | "*" | "#" | "?" | "$" | "-" | "!" | "0")
+        if matches!(base, "@" | "*" | "#" | "?" | "$" | "-" | "!" | "0")
             || base.parse::<usize>().is_ok()
             || is_shell_name(base)
+        {
+            return true;
+        }
+        // GNU also accepts a valid leading name followed by an operator
+        // expression applied to the indirect value (${!x//c/x}, ${!x:-y},
+        // ${!x#pat}, ...; subst.c param_expand). A name followed by a
+        // non-operator character (${!bad!}) stays a bad substitution.
+        let name_end = base
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .unwrap_or(base.len());
+        if name_end > 0 {
+            let head = &base[..name_end];
+            if is_shell_name(head) {
+                let rest = &base[name_end..];
+                return matches!(
+                    rest.chars().next(),
+                    Some(':' | '-' | '+' | '=' | '?' | '#' | '%' | '/' | '^' | ',' | '@')
+                );
+            }
+        }
+        false
     }
     /// Validates the remainder of a `${#...}` expansion when it does not
     /// start with a shell name: `#` is then the `$#` parameter itself and
