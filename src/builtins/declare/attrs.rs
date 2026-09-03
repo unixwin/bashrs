@@ -79,7 +79,7 @@ where
                 writeln!(
                     stderr,
                     "{}{command_name}: {}: readonly variable",
-                    diagnostic_prefix(),
+                    diagnostic_prefix(variables),
                     name
                 )?;
                 attr_status = EXECUTION_FAILURE;
@@ -88,7 +88,7 @@ where
                 writeln!(
                     stderr,
                     "{}{command_name}: {}: cannot destroy array variables in this way",
-                    diagnostic_prefix(),
+                    diagnostic_prefix(variables),
                     name
                 )?;
                 attr_status = EXECUTION_FAILURE;

@@ -357,7 +357,7 @@ where
                         writeln!(
                             stderr,
                             "{}{command_name}: -{option}: invalid option",
-                            diagnostic_prefix(),
+                            diagnostic_prefix(variables),
                         )?;
                         print_declare_usage(command_name, stderr)?;
                         return Ok(EX_USAGE);
@@ -392,7 +392,7 @@ where
                 writeln!(
                     stderr,
                     "{}{command_name}: {}: reference variable cannot be an array",
-                    diagnostic_prefix(),
+                    diagnostic_prefix(variables),
                     lhs
                 )?;
                 attr_status = EXECUTION_FAILURE;
@@ -405,14 +405,14 @@ where
                     writeln!(
                         stderr,
                         "{}{command_name}: warning: {}: circular name reference",
-                        diagnostic_prefix(),
+                        diagnostic_prefix(variables),
                         lhs
                     )?;
                 } else {
                     writeln!(
                         stderr,
                         "{}{command_name}: {}: nameref variable self references not allowed",
-                        diagnostic_prefix(),
+                        diagnostic_prefix(variables),
                         lhs
                     )?;
                     attr_status = EXECUTION_FAILURE;
@@ -425,7 +425,7 @@ where
                 writeln!(
                     stderr,
                     "{}{command_name}: `{value}': invalid variable name for name reference",
-                    diagnostic_prefix()
+                    diagnostic_prefix(variables)
                 )?;
                 attr_status = EXECUTION_FAILURE;
                 continue;
@@ -442,7 +442,7 @@ where
                 writeln!(
                     stderr,
                     "{}{command_name}: `{current}': invalid variable name for name reference",
-                    diagnostic_prefix()
+                    diagnostic_prefix(variables)
                 )?;
                 attr_status = EXECUTION_FAILURE;
                 continue;
@@ -451,7 +451,7 @@ where
         if !valid_declare_name(name) {
             let diagnostic = format!(
                 "{}{command_name}: `{}': not a valid identifier\n",
-                diagnostic_prefix(),
+                diagnostic_prefix(variables),
                 name
             );
             stderr.write_all(diagnostic.as_bytes())?;
@@ -470,7 +470,7 @@ where
             writeln!(
                 stderr,
                 "{}{command_name}: {}: cannot convert indexed to associative array",
-                diagnostic_prefix(),
+                diagnostic_prefix(variables),
                 var_name
             )?;
             attr_status = EXECUTION_FAILURE;
@@ -480,7 +480,7 @@ where
             writeln!(
                 stderr,
                 "{}{command_name}: {}: cannot convert associative to indexed array",
-                diagnostic_prefix(),
+                diagnostic_prefix(variables),
                 var_name
             )?;
             variables.insert(var_name.to_string(), String::new());

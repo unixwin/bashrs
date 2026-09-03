@@ -42,7 +42,7 @@ where
                     writeln!(
                         stderr,
                         "{}{command_name}: {}: readonly variable",
-                        diagnostic_prefix(),
+                        diagnostic_prefix(variables),
                         base
                     )?;
                     status = EXECUTION_FAILURE;
@@ -89,7 +89,7 @@ where
             writeln!(
                 stderr,
                 "{}{command_name}: {}: readonly variable",
-                diagnostic_prefix(),
+                diagnostic_prefix(variables),
                 var_name
             )?;
             status = EXECUTION_FAILURE;
@@ -116,7 +116,7 @@ where
                         writeln!(
                             stderr,
                             "{}declare: {}: {}: must use subscript when assigning associative array",
-                            diagnostic_prefix(),
+                            diagnostic_prefix(variables),
                             var_name,
                             bare
                         )?;
@@ -154,7 +154,7 @@ where
                 writeln!(
                     stderr,
                     "{}declare: {}: {}: must use subscript when assigning associative array",
-                    diagnostic_prefix(),
+                    diagnostic_prefix(variables),
                     var_name,
                     bare
                 )?;

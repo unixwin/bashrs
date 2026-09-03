@@ -91,7 +91,7 @@ where
             writeln!(
                 stderr,
                 "{}{command_name}: {}: not found",
-                diagnostic_prefix(),
+                diagnostic_prefix(variables),
                 name
             )?;
             status = EXECUTION_FAILURE;
