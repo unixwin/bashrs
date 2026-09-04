@@ -321,3 +321,8 @@ D iquote-quote lane（quotes/embedded_parameters，captain）/ E ifs-posix LLDB�
 - 权威门禁：`MSYS_NO_PATHCONV=1 wsl bash tests/gnu-compat/run-83.sh check globstar`，结果 `PASS globstar`（rubash=587，right=587）。
 - heredoc 仍不能据此关闭：`check heredoc` 当前为 `DIFF (rubash=166, right=31)`，同一行 command-substitution header 的 heredoc 仍待 lexer/token collection 专项修复。
 - cprint 的独立 probe 已确认 `declare -c` 是真实缺口：GNU 将每个单词首字母大写，Rubash 当前报告 `declare: -c: invalid option`；`declare -u/-l` 已分别匹配。该缺口属于 declare 属性状态/赋值转换，不应通过修改 cprint expected output 解决。
+
+## 十四、2026-09-04 invocation/cprint 复审
+
+- `ShellInvocation::parse` 的 5 个单元测试全部通过，但 `src/main.rs::run_args` 仍是独立窄解析器；直接替换并不安全，因为 `--rcfile`、`-i`、`--pretty-print` 尚无完整 runtime plumbing。WSL GNU 脚本探针确认 Rubash 当前把这些选项误作脚本名，不能宣称 invocation surface 已完成。
+- cprint 的剩余差异不是简单换行问题。GNU `print_function_def` 递归打印 compound command 并维护缩进；Rubash `type_functions.rs` 通过扁平 command serializer 生成文本，无法用小改动恢复 pipeline/background/group/loop/if/case 的结构。保留为高风险 pretty-printer 专项。
