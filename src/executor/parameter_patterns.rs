@@ -145,6 +145,15 @@ impl Executor {
 
         let resolved = self.resolved_variable_name(name)?;
         let value = self.env_vars.get(&resolved)?;
+        // GNU subst.c resolves a bare array name to one element, not the whole
+        // array (get_var_and_type -> VT_ARRAYVAR): associative arrays read key
+        // "0" (assoc_cell), indexed arrays read element [0] (array_cell). Expanding
+        // the raw storage marker here leaks ([FOO]=BAR) where GNU prints the
+        // element value or empty when key "0" is absent.
+        if is_marked_var(&self.env_vars, ASSOC_VARS, &resolved) {
+            return Some(assoc_value_at(value, "0").unwrap_or_default());
+        }
+
         if is_marked_var(&self.env_vars, ARRAY_VARS, &resolved) {
             return Some(
                 array_value_at(value, 0)
