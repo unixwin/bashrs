@@ -475,8 +475,23 @@ pub(in crate::executor) fn arithmetic_error_message(
             "syntax error: operand expected"
         };
         let token = trimmed.trim_start_matches(|ch: char| ch.is_ascii_digit());
+        // A raw-captured display keeps the section's trailing blank before
+        // `))`; GNU's lasttp remainder includes it (7=4 -> "=4 "), so carry
+        // the display's own trailing blank instead of only the synthesized
+        // token space. GNU skips leading blanks at display time (expr.c
+        // echoes from lasttp), so slice the tail from the leading-trimmed
+        // text: trim() is not a prefix slice of the raw expression when a
+        // leading blank exists (` 7=4 ` sliced at trimmed.len() would emit
+        // a stray `4`).
+        let leading_trimmed = expression.trim_start();
+        let trailing_blank = &leading_trimmed[trimmed.len()..];
+        // The error token is the raw-text remainder after the last token
+        // (lasttp): the token plus whatever whitespace follows it in the
+        // expression itself. No synthesized blank - GNU never adds one
+        // beyond the raw remainder (probe2: ` 7=4` -> "=4", `7=4 ` ->
+        // "=4 ").
         return Some(format!(
-            "{expression}: {message} (error token is \"{token}{token_space}\")"
+            "{leading_trimmed}: {message} (error token is \"{token}{trailing_blank}\")"
         ));
     }
 

@@ -251,7 +251,10 @@ fn test_parse_arithmetic_for_command() {
     );
     assert_eq!(arithmetic.open_delimiter, "((");
     assert_eq!(arithmetic.init, "i = 0");
-    assert_eq!(arithmetic.init_metadata.expression, "i = 0");
+    // Raw-display contract (arithmetic_aliases): the parser records each
+    // section's whitespace-carrying text verbatim; leading_ws is preserved
+    // in the metadata expression and skipped only at display time.
+    assert_eq!(arithmetic.init_metadata.expression, " i = 0");
     assert_eq!(arithmetic.init_metadata.variables, ["i"]);
     assert_eq!(arithmetic.init_metadata.operators[0].text, "=");
     assert!(arithmetic.init_metadata.has_assignment);
@@ -263,12 +266,12 @@ fn test_parse_arithmetic_for_command() {
     assert_eq!(arithmetic.separator_metadata[1].value, ";");
     assert_eq!(arithmetic.separator_metadata[1].word_index, 1);
     assert_eq!(arithmetic.test, "i < 3");
-    assert_eq!(arithmetic.test_metadata.expression, "i < 3");
+    assert_eq!(arithmetic.test_metadata.expression, " i < 3");
     assert_eq!(arithmetic.test_metadata.variables, ["i"]);
     assert_eq!(arithmetic.test_metadata.operators[0].text, "<");
     assert!(arithmetic.test_metadata.has_comparison);
     assert_eq!(arithmetic.update, "i++");
-    assert_eq!(arithmetic.update_metadata.expression, "i++");
+    assert_eq!(arithmetic.update_metadata.expression, " i++ ");
     assert_eq!(arithmetic.update_metadata.variables, ["i"]);
     assert_eq!(arithmetic.update_metadata.operators[0].text, "++");
     assert!(arithmetic.update_metadata.has_update);
