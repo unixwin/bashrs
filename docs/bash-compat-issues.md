@@ -166,3 +166,13 @@ bashdb 是 Rubash 的外部压力工具，不是 Rubash 的产品依赖。当前
 - 有界命令矩阵已覆盖 `help`、`break/clear`、`display`、`eval`、`set/show`、`info files`、`info functions` 和 `info variables`。`watch` 需要当前 frame 中已有变量；clean bashdb 没有顶层 `unwatch` 命令。`restart` 使用 Windows 相对 launcher 路径时仍有独立路径解析边界。
 
 后续验收要求：每个边界命令必须同时记录 Rubash 输出、native Bash 输出、stderr、退出状态和超时情况；确认是 Rubash-owned 后才修改 Rust，确认是 bashdb-owned 则保留复现证据并在文档中明确排除。
+
+## 七、平台环境形态伪影（2026-08 实证，勿当语义缺陷修）
+
+实证（target/env-probe2.log，桥接 WSL GNU 5.2.21 对照）：`declare -p`（无参）导出行数 rubash=118 vs GNU=18；nameref 套件上下文里 GNU 只有 2 行 `declare -x`，rubash 121 行。
+
+机制：GNU bash 本来就把所有继承环境变量导出——差异不在导出语义，而在**继承来源**。wsl.exe 只把 WSLENV 指定变量送进 Linux 侧（GNU 的 env 很小），但 WSL interop 启动 Windows 二进制（rubash.exe）时给的是 wsl 宿主进程的完整 Windows 环境，且 `env -i` 清不掉（interop 不用 WSL 侧环境启动 Windows 子进程）。rubash 的 init 再把继承变量全部标记导出（mark_initial_exported_vars），与 Git Bash on Windows 行为等价。
+
+影响与结论：任何使 `declare -p` 退化为无参调用的测试（如 nameref 的 `${!ref}` 未设路径）会放大出 ~100 行环境差异；varenv 的部分超产同源。这是 harness-env 伪影类（与 stderr/stdout 交错同类），**不得**为此改 rubash 的导出语义；如需收敛只能由 harness 侧给 rubash 修剪 Windows 环境（当前无低成本方案）。相关：rubash 的 `/tmp` 映射到 Windows temp，与 WSL `/tmp` 不同，探针脚本写 `/tmp` 会在 WSL 侧 grep 不到——共享文件一律走 `/mnt/d/...` 挂载路径。
+
+另注（THIS_SH 毒化，已修 362e01e5）：winuxsh 包装器把 `THIS_SH=niu.exe` 注入 Windows 环境，interop 传给 rubash.exe 后旧 `or_insert_with` 让继承值压过自检——所有用 `${THIS_SH}` 子脚本的家族曾在旧 shim 下产出幻影输出。修复后 `current_exe()` 覆盖继承值。owned 则保留复现证据并在文档中明确排除。

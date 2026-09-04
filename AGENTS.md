@@ -178,3 +178,22 @@ kills WSL-side test runs, and inflated PASS claims from wrong baselines.
   ship a partial change that flips a couple of lines while claiming the family
   is done.
 
+## Compatibility Push Handoff (2026-09-02)
+
+- Current high-value globstar evidence: `target/multi-gnu.out`,
+  `target/multi-rub.out`, and `target/multi-diff.txt`. Preserve verified
+  adjacent-`**` collapse, trailing-slash, and single-`**` fast paths while
+  investigating multiplicity. Only `run-83.sh check globstar` can close the family.
+- Current casemod follow-up is the bare associative route (`AA1^^`,
+  `([FOO]=BAR)`). Start from GNU `subst.c` and a minimal WSL script; do not
+  infer a Rust bug from environment-sized `declare -p` output.
+- Invocation/lexer changes must be reviewed at call sites and with focused tests;
+  a clean compile alone is not semantic evidence. Keep `src/lexer/continuation.rs`
+  captain-exclusive.
+- Shared-tree agents must report exact files, ownership, before/after counts,
+  raw artifact paths, and the authoritative command used. The captain stages only
+  reviewed files, verifies `git diff --cached`, commits with `git commit -F`,
+  checks `git log`, and treats push transport failure as unresolved.
+- Remove accidental coordination artifacts and scratch files before handoff; do
+  not stage `.agent-teams/`, `hd-out.txt`, or `x` unless explicitly required.
+
