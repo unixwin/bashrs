@@ -128,6 +128,12 @@ impl Executor {
         None
     }
 
+    /// nocasematch shopt state for pattern substitution (GNU subst.c applies
+    /// FNMATCH_IGNCASE in match_upattern when nocasematch is set).
+    pub(in crate::executor) fn nocasematch_enabled(&self) -> bool {
+        crate::builtins::shopt::option_enabled(&self.env_vars, "nocasematch")
+    }
+
     pub(in crate::executor) fn parameter_pattern_scalar_value(&self, name: &str) -> Option<String> {
         if is_special_parameter_name(name) {
             return Some(self.expand_parameter_named_value(name));
