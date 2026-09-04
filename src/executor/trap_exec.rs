@@ -1446,7 +1446,7 @@ impl Executor {
         self.fd_table.allocate_dynamic()
     }
 
-    fn close_dynamic_fd(&mut self, name: &str) -> Result<(), ExecuteError> {
+    pub(in crate::executor) fn close_dynamic_fd(&mut self, name: &str) -> Result<(), ExecuteError> {
         if let Some(fd) = self.dynamic_fd_variable_value(name) {
             self.close_persistent_fd(fd)?;
         }

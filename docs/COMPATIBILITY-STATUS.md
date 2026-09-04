@@ -20,8 +20,10 @@
   (`$(...)`)、前缀花括号 (`foo{a,b}`)、转义逗号 (`\{a,b\}`) 等**均已可用**，
   与 bash 在隔离场景下一致。
 - 但跑**完整 GNU 测试文件**时，仍有若干“早期终止/大行数缺口/解析错误”的实质缺口。
-- 真实剩下的高优先级缺口（2026-08-29 后续会话后）：
-  `cond`、`posixexp2`、`comsub-posix`、`mapfile`、`braces`。
+- 真实剩下的高优先级缺口（2026-09-06 完整复核）：
+  heredoc、casemod、dstack、cprint、invocation、procsub，以及
+  `posixexp2`、`cond`、`comsub-posix`、`braces`、`ifs-posix` 等。`mapfile` 已通过，
+  不再列为未完成项目。
 - 2026-09-02 会话收官（账本 41）：globstar 75→241/587（语义重构 `106a7136`：
   空 `**` 匹配一切、`**/` 仅目录加尾斜杠、递归永不穿符号链接、去 `./` 前缀；
   配对探针五构造逐字节一致）；连带修出 mkdir flag 当路径名的预存 bug（
@@ -307,7 +309,7 @@ D iquote-quote lane（quotes/embedded_parameters，captain）/ E ifs-posix LLDB�
 - **cprint**：差异是实质性的 builtin 函数体格式化问题（function-body formatting），不是函数内 `$0` 展开问题；最新权威检查为 `DIFF cprint (rubash=44, right=72)`，保留为真实内建/格式化缺口。
 - **invocation**：`SHELLOPTS` readonly 行为已经匹配 GNU，不再列为缺口。仍需处理的真实项是长选项、`BASH_ARGV0` 与 pretty-print。
 - **mapfile**：mapfile 已通过验证；此前关于 CR 字节/CRLF 的缺口结论是陈旧 harness 伪像，应从待修与 P0 列表移除。
-- **dstack**：`/` 解析到 Winuxsh home 是真实路径解析 bug，不是可接受的 Windows 路径差异；保留为产品修复项。
+- **dstack**：已修复 cd 返回后 typed `PWD` 未同步的问题，最小 probe 中 `cd /; echo $PWD` 现在得到 `/`；完整 `dstack` 仍为 `DIFF 55/49`，剩余主要是错误输出顺序/归并和栈显示差异，不能标记为完成。
 - **procsub**：路径分隔符丢失问题已修复。当前仍存在真实的多余 fd-counter 输出；`/dev/fd/N` 与 Windows 临时路径的剩余差异需和该输出问题分开记录。
 - **平台归属**：`intl`、`history`、`histexp` 的差异均属平台/宿主所有，不应作为 Rubash 语义缺口追修。
 - **printf**：GNU 对照会产生约 2 GiB 的病态基线输出；这属于 pathological baseline，不应按普通 diff/超时门禁解释。分类与处理规则见 `tests/gnu-compat/PATHOLOGICAL-BASELINE.txt`。
@@ -320,9 +322,31 @@ D iquote-quote lane（quotes/embedded_parameters，captain）/ E ifs-posix LLDB�
 - 聚焦 probe `**/a/**` 的输出数量从 111 收敛到 GNU 的 49；`**/**`、`**/**/a`、`a/**/**`、`**/**/**` 的数量保持分别为 30、15、15、30。
 - 权威门禁：`MSYS_NO_PATHCONV=1 wsl bash tests/gnu-compat/run-83.sh check globstar`，结果 `PASS globstar`（rubash=587，right=587）。
 - heredoc 仍不能据此关闭：`check heredoc` 当前为 `DIFF (rubash=166, right=31)`，同一行 command-substitution header 的 heredoc 仍待 lexer/token collection 专项修复。
-- cprint 的独立 probe 已确认 `declare -c` 是真实缺口：GNU 将每个单词首字母大写，Rubash 当前报告 `declare: -c: invalid option`；`declare -u/-l` 已分别匹配。该缺口属于 declare 属性状态/赋值转换，不应通过修改 cprint expected output 解决。
+- cprint 的独立 probe 曾确认 `declare -c` 是真实缺口：GNU 将每个单词首字母大写。当前已在 `declare.rs`、`declare/attrs.rs`、`executor/variable_state.rs` 接通 `-c/+c`、互斥属性、赋值转换和 `declare -p`；focused probe 与 Rust 单测通过，但 `casemod` 全文件仍为 `DIFF 49/49`，剩余差异尚未闭合。该缺口属于 declare 属性状态/赋值转换，不应通过修改 cprint expected output 解决。
 
 ## 十四、2026-09-04 invocation/cprint 复审
 
 - `ShellInvocation::parse` 的 5 个单元测试全部通过，但 `src/main.rs::run_args` 仍是独立窄解析器；直接替换并不安全，因为 `--rcfile`、`-i`、`--pretty-print` 尚无完整 runtime plumbing。WSL GNU 脚本探针确认 Rubash 当前把这些选项误作脚本名，不能宣称 invocation surface 已完成。
 - cprint 的剩余差异不是简单换行问题。GNU `print_function_def` 递归打印 compound command 并维护缩进；Rubash `type_functions.rs` 通过扁平 command serializer 生成文本，无法用小改动恢复 pipeline/background/group/loop/if/case 的结构。保留为高风险 pretty-printer 专项。
+
+## 十六、2026-09-06 完整 83-test bounded check
+
+运行：`RUN83_TIMEOUT=15 MSYS_NO_PATHCONV=1 wsl bash tests/gnu-compat/run-83.sh check`。
+
+结果：`PASS=14 DIFF=63 TIMEOUT=3 SKIP=3`。PASS 项为：`comsub2`、`dbg-support2`、`dstack2`、`dynvar`、`extglob2`、`extglob3`、`getopts`、`globstar`、`herestr`、`ifs`、`invert`、`mapfile`、`nquote2`、`tilde`。
+
+TIMEOUT：`arith`、`ifs-posix`、`read`；SKIP：`jobs`、`printf`（无 `.right`）、`trap`（GNU baseline 无法完成）。其余 63 个测试为 DIFF；完整原始汇总位于 `target/issue-suites/results/check/SUMMARY.txt`，逐项差异位于同目录。该矩阵取代文档中的旧 83-test 数字。
+
+下一步优先级：先处理可复现且高影响的 `redir/vredir` 动态 fd 与 heredoc 状态收集；随后处理 `procsub` fd 生命周期、invocation runtime plumbing、cprint 递归序列化和 casemod 关联数组路径。`intl`、`history`、`complete`、信号/设备相关差异按 Windows-first 平台边界单独归类，不以 GNU/Linux 输出逐行强行对齐。
+
+串行复核 `check vredir`（避免 runner 共享 `target/upstream-tests` 的并发污染）在本轮修复前为 `DIFF vredir (rubash=118, right=123)`；修复后为 `DIFF vredir (rubash=121, right=123)`。已闭合的首个稳定根因是 `while ... done {fd}<file`：GNU `parse.y` 在 compound command 完成后把尾随重定向绑定到 loop command，Rubash 原先因 `{fd}` token 被当作普通 Keyword，拆成循环、`unexpected token '}'` 和独立 redirect 三个 AST 节点。`src/parser/redirections.rs` 现在在 compound suffix 阶段识别分离的 `{name}` + redirect operator，`src/parser/tests.rs` 增加 AST 回归；`src/executor/command_input_scope.rs` 在 compound 执行期间应用并收尾 dynamic fd，相关最小 probe 已与 GNU 逐字节一致：`got:x`、`got:y`、`fd=<10>`、`after=<>`。剩余 `vredir` 差异包括 heredoc pretty-print 空格、close-direction serialization、vredir3/vredir6/vredir8 fd 语义，仍对应 GNU `redir.c` dynamic-fd allocation/close/undo 族，不能用 `.right` 文本修补。
+
+## 十五、2026-09-06 兼容性局部审计（已被完整矩阵 supersede）
+
+本节保留局部 focused 结果作为根因记录；完整 83-test 结果以紧邻的“十六”节为准。
+
+- 已完成局部根因修复但整族仍未闭合：nested heredoc 的 command-substitution header/body 收集、`declare -c` capcase、cd/pushd/popd 后 typed `PWD` 同步。
+- `declare -c` focused probe 与 Rust 单测已对齐 GNU：首字符大写、追加赋值、`declare -p` 和 `+c` 清除；`casemod` 剩余差异不应归因于该局部修复。
+- `cd /; echo $PWD; pwd -P` 的最小 probe 已返回 `/`、`/`；dstack suite 剩余主要是错误输出归并和 directory-stack 显示差异，仍需单独处理。
+- invocation 的 `--rcfile` 不能直接复用非交互 `--init-file` 路径：GNU 脚本模式不读取 rcfile，错误接线会产生回归，已验证并撤回。
+- 其余未完成项目（`posixexp2`、`cond`、`comsub-posix`、`braces`、`ifs-posix`、`redir`、`new-exp`、`dbg-support`）仍保留为后续根因专项。

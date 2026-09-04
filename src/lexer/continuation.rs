@@ -1,4 +1,4 @@
-use super::heredoc_scan::skip_heredoc_in_chars;
+use super::heredoc_scan::skip_heredoc_in_chars_with_closure;
 
 pub(super) fn ends_with_unquoted_backslash(input: &str) -> bool {
     let mut single = false;
@@ -201,7 +201,11 @@ fn skip_parenthesized_unit(chars: &[char], open: usize) -> Option<usize> {
             && chars.get(index + 1) == Some(&'<')
             && chars.get(index + 2) != Some(&'<')
         {
-            index = skip_heredoc_in_chars(chars, index);
+            let (next, closes) = skip_heredoc_in_chars_with_closure(chars, index);
+            if closes {
+                return Some(next);
+            }
+            index = next;
             continue;
         }
         match ch {
@@ -432,7 +436,14 @@ pub(crate) fn has_unclosed_command_substitution(input: &str) -> bool {
             continue;
         }
         if depth > 0 && ch == '<' && chars.get(index + 1) == Some(&'<') {
-            index = skip_heredoc_in_chars(&chars, index);
+            let (next, closes) = skip_heredoc_in_chars_with_closure(&chars, index);
+            if closes {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return false;
+                }
+            }
+            index = next;
             continue;
         }
         if backtick
@@ -444,7 +455,7 @@ pub(crate) fn has_unclosed_command_substitution(input: &str) -> bool {
             continue;
         }
         if backtick && ch == '<' && chars.get(index + 1) == Some(&'<') {
-            index = skip_heredoc_in_chars(&chars, index);
+            index = skip_heredoc_in_chars_with_closure(&chars, index).0;
             continue;
         }
         if depth > 0 && case_depth == 0 && !ansi_single && ch == '(' {

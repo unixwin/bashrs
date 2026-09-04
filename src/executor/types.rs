@@ -14,6 +14,7 @@ pub const READONLY_FUNCTIONS: &str = "__RUBASH_READONLY_FUNCTIONS";
 pub const INTEGER_VARS: &str = "__RUBASH_INTEGER_VARS";
 pub const UPPERCASE_VARS: &str = "__RUBASH_UPPERCASE_VARS";
 pub const LOWERCASE_VARS: &str = "__RUBASH_LOWERCASE_VARS";
+pub const CAPCASE_VARS: &str = "__RUBASH_CAPCASE_VARS";
 pub const NAMEREF_VARS: &str = "__RUBASH_NAMEREF_VARS";
 pub const ARRAY_VARS: &str = "__RUBASH_ARRAY_VARS";
 pub const ASSOC_VARS: &str = "__RUBASH_ASSOC_VARS";

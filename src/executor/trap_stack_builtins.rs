@@ -126,6 +126,7 @@ impl Executor {
             &mut stderr,
         )?;
         self.write_buffered_builtin_output(cmd, &stdout, &stderr)?;
+        self.sync_cd_variables();
         Ok(status)
     }
 }

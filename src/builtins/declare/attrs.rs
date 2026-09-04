@@ -9,7 +9,7 @@ use super::storage::{
 };
 use super::{
     ARRAY_VARS, ASSOC_VARS, EXECUTION_FAILURE, EXPORTED_VARS, INTEGER_VARS, LOWERCASE_VARS,
-    NAMEREF_VARS, READONLY_VARS, UPPERCASE_VARS,
+    CAPCASE_VARS, NAMEREF_VARS, READONLY_VARS, UPPERCASE_VARS,
 };
 
 #[derive(Clone, Copy)]
@@ -20,6 +20,7 @@ pub(super) struct DeclareOptions {
     pub(super) integer: bool,
     pub(super) uppercase: bool,
     pub(super) lowercase: bool,
+    pub(super) capcase: bool,
     pub(super) nameref: bool,
     pub(super) readonly: bool,
     pub(super) unset_export: bool,
@@ -28,6 +29,7 @@ pub(super) struct DeclareOptions {
     pub(super) unset_integer: bool,
     pub(super) unset_uppercase: bool,
     pub(super) unset_lowercase: bool,
+    pub(super) unset_capcase: bool,
     pub(super) unset_nameref: bool,
     pub(super) unset_readonly: bool,
 }
@@ -50,6 +52,7 @@ where
         integer,
         uppercase,
         lowercase,
+        capcase,
         nameref,
         readonly,
         unset_export,
@@ -58,6 +61,7 @@ where
         unset_integer,
         unset_uppercase,
         unset_lowercase,
+        unset_capcase,
         unset_nameref,
         unset_readonly,
     } = options;
@@ -95,6 +99,7 @@ where
         || unset_integer
         || unset_uppercase
         || unset_lowercase
+        || unset_capcase
         || unset_nameref
         || unset_readonly
     {
@@ -139,6 +144,9 @@ where
             }
             if unset_lowercase {
                 unmark_typed(variables, LOWERCASE_VARS, name);
+            }
+            if unset_capcase {
+                unmark_typed(variables, CAPCASE_VARS, name);
             }
             if unset_nameref {
                 unmark_typed(variables, NAMEREF_VARS, name);
@@ -192,7 +200,7 @@ where
             }
         }
     }
-    if uppercase || lowercase {
+    if uppercase || lowercase || capcase {
         for name in names {
             let name = name.split_once('=').map(|(name, _)| name).unwrap_or(name);
             let name = name.strip_suffix('+').unwrap_or(name);
@@ -203,12 +211,22 @@ where
             if lowercase {
                 mark_typed(variables, LOWERCASE_VARS, name);
                 unmark_typed(variables, UPPERCASE_VARS, name);
+                unmark_typed(variables, CAPCASE_VARS, name);
+            }
+            if capcase {
+                mark_typed(variables, CAPCASE_VARS, name);
+                unmark_typed(variables, UPPERCASE_VARS, name);
+                unmark_typed(variables, LOWERCASE_VARS, name);
             }
             if let Some(value) = variables.get(name).cloned() {
                 let value = if uppercase {
                     value.to_uppercase()
-                } else {
+                } else if lowercase {
                     value.to_lowercase()
+                } else {
+                    value.chars().next().map(|first| {
+                        first.to_uppercase().collect::<String>() + &value[first.len_utf8()..]
+                    }).unwrap_or(value)
                 };
                 variables.insert(name.to_string(), value.clone());
                 env::set_var(name, value);

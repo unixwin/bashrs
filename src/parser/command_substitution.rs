@@ -125,7 +125,17 @@ fn dollar_command_substitution(
         }
         // Heredoc bodies are opaque to command-substitution delimiter matching.
         if ch == '<' && !single && !double && chars.get(index + 1) == Some(&'<') {
-            if let Some(next_index) = skip_command_substitution_heredoc(chars, index) {
+            if let Some((next_index, header_closes)) =
+                skip_command_substitution_heredoc(chars, index)
+            {
+                if header_closes {
+                    let text = chars[start..next_index].iter().collect();
+                    let source = chars[start + 2..next_index].iter().collect();
+                    return Some((
+                        command_substitution_node(text, source, false, false, false),
+                        next_index,
+                    ));
+                }
                 index = next_index;
                 continue;
             }
@@ -232,7 +242,10 @@ fn braced_command_substitution(
     None
 }
 
-fn skip_command_substitution_heredoc(chars: &[char], start: usize) -> Option<usize> {
+fn skip_command_substitution_heredoc(
+    chars: &[char],
+    start: usize,
+) -> Option<(usize, bool)> {
     let mut header_end = start + 2;
     while header_end < chars.len() && chars[header_end] != '\n' {
         header_end += 1;
@@ -255,6 +268,7 @@ fn skip_command_substitution_heredoc(chars: &[char], start: usize) -> Option<usi
         return None;
     }
 
+    let header_closes_command_substitution = header.contains(')');
     let mut line_start = header_end + 1;
     while line_start <= chars.len() {
         let mut line_end = line_start;
@@ -268,7 +282,10 @@ fn skip_command_substitution_heredoc(chars: &[char], start: usize) -> Option<usi
             line.as_str()
         };
         if candidate == delimiter {
-            return Some((line_end + (line_end < chars.len()) as usize).min(chars.len()));
+            return Some((
+                (line_end + (line_end < chars.len()) as usize).min(chars.len()),
+                header_closes_command_substitution,
+            ));
         }
         if line_end >= chars.len() {
             break;

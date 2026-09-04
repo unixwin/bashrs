@@ -155,3 +155,14 @@ fn heredoc_body_paren_does_not_close_command_substitution() {
     assert!(has_unclosed_command_substitution("echo $(cat <<eof\nhere doc with )\neof"));
     assert!(!has_unclosed_command_substitution("echo $(cat <<eof\nhere doc with )\neof\n)"));
 }
+
+#[test]
+fn nested_heredoc_in_command_substitution_is_collected_before_next_command() {
+    let tokens = tokenize("echo $(cat <<EOF)\nfoo\nbar\nEOF\necho after");
+    let substitution = tokens
+        .iter()
+        .find(|token| token.kind == TokenKind::CommandSubst)
+        .expect("nested command substitution token");
+    assert!(substitution.value.contains("foo\nbar\nEOF"));
+    assert!(tokens.iter().any(|token| token.value == "after"));
+}

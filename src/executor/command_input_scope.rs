@@ -26,9 +26,22 @@ impl Executor {
         // procsub.tests bug()) must therefore keep fd 3 open for the whole
         // compound command - condition and body alike - and restore the
         // previous descriptor state afterwards.
+        let dynamic_names = cmd
+            .redirects
+            .iter()
+            .filter_map(|redirect| redirect.fd_var.clone())
+            .collect::<Vec<_>>();
+        for redirect in &cmd.redirects {
+            if redirect.fd_var.is_some() {
+                let _ = self.execute_dynamic_fd_var_redirect(redirect, false)?;
+            }
+        }
         let saved_numbered = self.open_compound_numbered_input_redirects(cmd)?;
         let result = self.with_command_input_redirects_inner(cmd, execute);
         self.restore_compound_numbered_input_redirects(saved_numbered);
+        for name in dynamic_names {
+            self.close_dynamic_fd(&name)?;
+        }
         result
     }
 

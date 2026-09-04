@@ -16,6 +16,10 @@ impl Executor {
             value.to_uppercase()
         } else if is_marked_var(&self.env_vars, LOWERCASE_VARS, name) {
             value.to_lowercase()
+        } else if is_marked_var(&self.env_vars, CAPCASE_VARS, name) {
+            value.chars().next().map(|first| {
+                first.to_uppercase().collect::<String>() + &value[first.len_utf8()..]
+            }).unwrap_or(value)
         } else {
             value
         }

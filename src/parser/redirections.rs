@@ -10,6 +10,16 @@ pub(super) fn collect_trailing_redirections(
         let Some(token) = tokens.get(*index) else {
             break;
         };
+        if matches!(token.kind, TokenKind::Word | TokenKind::BraceExpand | TokenKind::Keyword)
+            && redirect_fd_var_prefix(tokens, *index + 1).is_some()
+            && tokens.get(*index + 1).is_some_and(|next| {
+                matches!(next.kind, TokenKind::RedirectIn | TokenKind::RedirectOut | TokenKind::Append)
+            })
+        {
+            *index += 1;
+            continue;
+        }
+
         if token.kind == TokenKind::HereDocBody {
             if fill_pending_heredoc_body(command, &token.value) {
                 *index += 1;

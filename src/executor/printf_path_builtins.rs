@@ -165,10 +165,23 @@ impl Executor {
             )?);
         }
 
-        Ok(crate::builtins::cd::execute(
+        let status = crate::builtins::cd::execute(
             &cmd.words[1..],
             &mut self.env_vars,
-        )?)
+        )?;
+        self.sync_cd_variables();
+        Ok(status)
+    }
+
+    pub(in crate::executor) fn sync_cd_variables(&mut self) {
+        for name in ["PWD", "OLDPWD"] {
+            let Some(value) = self.env_vars.get(name).cloned() else {
+                continue;
+            };
+            if let Some(variable) = self.shell_state.variables.get_mut(name) {
+                variable.value = crate::shell::ShellValue::Scalar(value);
+            }
+        }
     }
 }
 

@@ -42,6 +42,7 @@ where
     let integers = marked_vars(variables, INTEGER_VARS);
     let uppercase = marked_vars(variables, UPPERCASE_VARS);
     let lowercase = marked_vars(variables, LOWERCASE_VARS);
+    let capcase = marked_vars(variables, super::CAPCASE_VARS);
     let namerefs = marked_vars(variables, NAMEREF_VARS);
     let declared_unset = marked_vars(variables, DECLARED_UNSET_VARS);
     let names_to_print = if names.is_empty() {
@@ -77,6 +78,7 @@ where
             integer: integers.contains(&name),
             uppercase: uppercase.contains(&name),
             lowercase: lowercase.contains(&name),
+            capcase: capcase.contains(&name),
             nameref: namerefs.contains(&name),
         };
         if let Some(value) = variables.get(&name) {

@@ -13,6 +13,7 @@ pub(super) struct DeclarationAttrs {
     pub(super) integer: bool,
     pub(super) uppercase: bool,
     pub(super) lowercase: bool,
+    pub(super) capcase: bool,
     pub(super) nameref: bool,
 }
 
@@ -23,6 +24,7 @@ impl DeclarationAttrs {
             || self.integer
             || self.uppercase
             || self.lowercase
+            || self.capcase
             || self.nameref
     }
 }
@@ -140,6 +142,9 @@ fn declaration_scalar_attrs(attrs: DeclarationAttrs) -> Option<String> {
     if attrs.uppercase {
         flags.push('u');
     }
+    if attrs.capcase {
+        flags.push('c');
+    }
     (flags.len() > 1).then_some(flags)
 }
 
@@ -163,6 +168,9 @@ fn declaration_array_attrs(attrs: DeclarationAttrs) -> String {
     if attrs.uppercase {
         flags.push('u');
     }
+    if attrs.capcase {
+        flags.push('c');
+    }
     flags
 }
 
@@ -185,6 +193,9 @@ fn declaration_assoc_attrs(attrs: DeclarationAttrs) -> String {
     }
     if attrs.uppercase {
         flags.push('u');
+    }
+    if attrs.capcase {
+        flags.push('c');
     }
     flags
 }

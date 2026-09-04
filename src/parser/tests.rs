@@ -2,6 +2,17 @@ use super::*;
 use crate::lexer::{tokenize, Token};
 
 #[test]
+fn dynamic_fd_loop_redirect_attaches_to_compound_command() {
+    let ast = parse(&tokenize("while read -r -u ${fd}; do echo ok; done {fd}</tmp/x"));
+    assert_eq!(ast.commands.len(), 1);
+    let command = &ast.commands[0];
+    assert!(command.loop_command.is_some());
+    assert_eq!(command.redirects.len(), 1);
+    assert_eq!(command.redirects[0].fd_var.as_deref(), Some("fd"));
+    assert_eq!(command.redirects[0].target, "/tmp/x");
+}
+
+#[test]
 fn test_parse_simple() {
     let tokens = tokenize("ls -la");
     let ast = parse(&tokens);

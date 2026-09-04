@@ -35,6 +35,7 @@ const ASSOC_VARS: &str = "__RUBASH_ASSOC_VARS";
 const INTEGER_VARS: &str = "__RUBASH_INTEGER_VARS";
 const UPPERCASE_VARS: &str = "__RUBASH_UPPERCASE_VARS";
 const LOWERCASE_VARS: &str = "__RUBASH_LOWERCASE_VARS";
+const CAPCASE_VARS: &str = "__RUBASH_CAPCASE_VARS";
 const NAMEREF_VARS: &str = "__RUBASH_NAMEREF_VARS";
 const DECLARED_UNSET_VARS: &str = "__RUBASH_DECLARED_UNSET_VARS";
 use crate::executor::types::COMPOUND_ASSIGNMENT_MARKER;
@@ -137,6 +138,7 @@ pub(crate) fn sync_typed_attributes(
             } else {
                 None
             };
+
         }
     }
 }
@@ -289,6 +291,7 @@ where
     let mut integer = false;
     let mut uppercase = false;
     let mut lowercase = false;
+    let mut capcase = false;
     let mut nameref = false;
     let mut readonly = false;
     let mut unset_export = false;
@@ -297,6 +300,7 @@ where
     let mut unset_integer = false;
     let mut unset_uppercase = false;
     let mut unset_lowercase = false;
+    let mut unset_capcase = false;
     let mut unset_nameref = false;
     let mut unset_readonly = false;
     let mut names = Vec::new();
@@ -330,6 +334,7 @@ where
                         if set_attr {
                             uppercase = true;
                             lowercase = false;
+                            capcase = false;
                         } else {
                             unset_uppercase = true;
                         }
@@ -338,10 +343,17 @@ where
                         if set_attr {
                             lowercase = true;
                             uppercase = false;
+                            capcase = false;
                         } else {
                             unset_lowercase = true;
                         }
                     }
+                    'c' if set_attr => {
+                        capcase = true;
+                        uppercase = false;
+                        lowercase = false;
+                    }
+                    'c' => unset_capcase = true,
                     'n' if set_attr => nameref = true,
                     'n' => unset_nameref = true,
                     'r' if set_attr => readonly = true,
@@ -609,6 +621,7 @@ where
         integer,
         uppercase,
         lowercase,
+        capcase,
         nameref,
         readonly,
         unset_export,
@@ -617,6 +630,7 @@ where
         unset_integer,
         unset_uppercase,
         unset_lowercase,
+        unset_capcase,
         unset_nameref,
         unset_readonly,
     };

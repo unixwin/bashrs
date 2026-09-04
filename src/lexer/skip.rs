@@ -64,7 +64,11 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     self.advance();
                 }
-                '<' if self.peek() == Some('<') => self.skip_heredoc_in_command_substitution(),
+                '<' if self.peek() == Some('<') => {
+                    if self.skip_heredoc_in_command_substitution() {
+                        break;
+                    }
+                },
                 _ => {}
             }
         }
@@ -115,7 +119,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub(super) fn skip_heredoc_in_command_substitution(&mut self) {
+    pub(super) fn skip_heredoc_in_command_substitution(&mut self) -> bool {
         self.advance();
         let strip_tabs = if self.peek() == Some('-') {
             self.advance();
@@ -139,9 +143,13 @@ impl<'a> Lexer<'a> {
             delimiter = delimiter.trim_start_matches('\t').to_string();
         }
         if delimiter.is_empty() {
-            return;
+            return false;
         }
+        let mut header_closes_command_substitution = false;
         while self.peek().is_some_and(|ch| ch != '\n') {
+            if self.peek() == Some(')') {
+                header_closes_command_substitution = true;
+            }
             self.advance();
         }
         if self.peek() == Some('\n') {
@@ -181,6 +189,7 @@ impl<'a> Lexer<'a> {
                 self.advance();
             }
         }
+        header_closes_command_substitution
     }
 
     pub(super) fn skip_backtick(&mut self) {
