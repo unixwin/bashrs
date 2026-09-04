@@ -304,7 +304,7 @@ D iquote-quote lane（quotes/embedded_parameters，captain）/ E ifs-posix LLDB�
 本节只纠正本文件前文的分类/优先级快照，不删除或改写历史记录；以下结论来自本次已验证的 WSL GNU Bash 5.2.21 对照审计。
 
 - **globstar**：大部分残余是实际的多重性语义，尤其是 `**/**` 的折叠/匹配，不应整体归为平台噪音或排序差异。当前仅约 8 行可归因于 harness 两侧 `ls` 排序不一致；后续应把多重性差异作为真实 globstar 工作项，并单独修正 harness 排序。
-- **cprint**：差异是实质性的 builtin 函数体格式化问题（function-body formatting），不是函数内 `$0` 展开问题；保留为真实内建/格式化缺口。
+- **cprint**：差异是实质性的 builtin 函数体格式化问题（function-body formatting），不是函数内 `$0` 展开问题；最新权威检查为 `DIFF cprint (rubash=44, right=72)`，保留为真实内建/格式化缺口。
 - **invocation**：`SHELLOPTS` readonly 行为已经匹配 GNU，不再列为缺口。仍需处理的真实项是长选项、`BASH_ARGV0` 与 pretty-print。
 - **mapfile**：mapfile 已通过验证；此前关于 CR 字节/CRLF 的缺口结论是陈旧 harness 伪像，应从待修与 P0 列表移除。
 - **dstack**：`/` 解析到 Winuxsh home 是真实路径解析 bug，不是可接受的 Windows 路径差异；保留为产品修复项。
