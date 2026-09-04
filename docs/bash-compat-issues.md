@@ -175,4 +175,4 @@ bashdb 是 Rubash 的外部压力工具，不是 Rubash 的产品依赖。当前
 
 影响与结论：任何使 `declare -p` 退化为无参调用的测试（如 nameref 的 `${!ref}` 未设路径）会放大出 ~100 行环境差异；varenv 的部分超产同源。这是 harness-env 伪影类（与 stderr/stdout 交错同类），**不得**为此改 rubash 的导出语义；如需收敛只能由 harness 侧给 rubash 修剪 Windows 环境（当前无低成本方案）。相关：rubash 的 `/tmp` 映射到 Windows temp，与 WSL `/tmp` 不同，探针脚本写 `/tmp` 会在 WSL 侧 grep 不到——共享文件一律走 `/mnt/d/...` 挂载路径。
 
-另注（THIS_SH 毒化，已修 362e01e5）：winuxsh 包装器把 `THIS_SH=niu.exe` 注入 Windows 环境，interop 传给 rubash.exe 后旧 `or_insert_with` 让继承值压过自检——所有用 `${THIS_SH}` 子脚本的家族曾在旧 shim 下产出幻影输出。修复后 `current_exe()` 覆盖继承值。owned 则保留复现证据并在文档中明确排除。
+另注（THIS_SH 毒化，已修 362e01e5）：winuxsh 包装器把 `THIS_SH=niu.exe` 注入 Windows 环境，interop 传给 rubash.exe 后旧 `or_insert_with` 让继承值压过自检——所有用 `${THIS_SH}` 子脚本的家族曾在旧 shim 下产出幻影输出。修复后 `current_exe()` 覆盖继承值。
