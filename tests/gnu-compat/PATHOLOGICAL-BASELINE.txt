@@ -1,0 +1,10 @@
+# Pathological GNU Baselines
+
+## printf
+
+- **Classification:** pathological baseline, not a normal compatibility failure.
+- **Observed behavior:** the GNU Bash 5.2.21 comparison for the printf case expands to approximately 2 GiB of output and can exceed ordinary harness time and storage budgets.
+- **Interpretation:** do not treat the resulting timeout, output-size mismatch, or incomplete capture as evidence that Rubash has a conventional printf semantic diff.
+- **Gate policy:** keep the case documented and auditable, but exclude it from ordinary PASS/DIFF/timeout scoring unless a bounded, explicitly size-limited probe is used.
+- **Follow-up:** if printf behavior is revisited, compare bounded probes and record the GNU source/format distinction separately; do not generate or check in a multi-gigabyte `.right` artifact.
+- **Audit date:** 2026-09-03.

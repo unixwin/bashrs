@@ -298,3 +298,18 @@ D iquote-quote lane（quotes/embedded_parameters，captain）/ E ifs-posix LLDB�
   AGENTS.md 不 stash/回退他人半成品，仅记录；如需清理建议单独任务核实 fc 重写意图。
 - executor::tests::unit_tests::export_assignment_arg_preserves_quoted_spaces 依赖 PATH
   环境净化，本机真实 PATH 导致失败，与本次修复无关。
+
+## 十二、2026-09-03 已验证平台审计纠偏附录
+
+本节只纠正本文件前文的分类/优先级快照，不删除或改写历史记录；以下结论来自本次已验证的 WSL GNU Bash 5.2.21 对照审计。
+
+- **globstar**：大部分残余是实际的多重性语义，尤其是 `**/**` 的折叠/匹配，不应整体归为平台噪音或排序差异。当前仅约 8 行可归因于 harness 两侧 `ls` 排序不一致；后续应把多重性差异作为真实 globstar 工作项，并单独修正 harness 排序。
+- **cprint**：差异是实质性的 builtin 函数体格式化问题（function-body formatting），不是函数内 `$0` 展开问题；保留为真实内建/格式化缺口。
+- **invocation**：`SHELLOPTS` readonly 行为已经匹配 GNU，不再列为缺口。仍需处理的真实项是长选项、`BASH_ARGV0` 与 pretty-print。
+- **mapfile**：mapfile 已通过验证；此前关于 CR 字节/CRLF 的缺口结论是陈旧 harness 伪像，应从待修与 P0 列表移除。
+- **dstack**：`/` 解析到 Winuxsh home 是真实路径解析 bug，不是可接受的 Windows 路径差异；保留为产品修复项。
+- **procsub**：路径分隔符丢失问题已修复。当前仍存在真实的多余 fd-counter 输出；`/dev/fd/N` 与 Windows 临时路径的剩余差异需和该输出问题分开记录。
+- **平台归属**：`intl`、`history`、`histexp` 的差异均属平台/宿主所有，不应作为 Rubash 语义缺口追修。
+- **printf**：GNU 对照会产生约 2 GiB 的病态基线输出；这属于 pathological baseline，不应按普通 diff/超时门禁解释。分类与处理规则见 `tests/gnu-compat/PATHOLOGICAL-BASELINE.txt`。
+
+后续优先级应据此更新：globstar 多重性、cprint 格式化、dstack 根路径、procsub fd-counter、invocation 长选项/BASH_ARGV0/pretty-print 为真实工作项；mapfile、SHELLOPTS、intl/history/histexp 为已通过或平台归属项。

@@ -217,3 +217,19 @@ CreateProcess ~10ms + shell 初始化 + 函数序列化），微基准：
   - **当前 check 基线**：PASS=11 DIFF=65 TIMEOUT=5 SKIP=2（fresh gen 后）。
   - **.right 基线已全部重新生成**（fresh gen via WSL GNU 5.2.21）。
 
+## 十二、2026-09-03 已验证平台审计纠偏附录
+
+本附录是对前文历史快照的增量纠偏，不改写历史结论；按本次 WSL GNU Bash 5.2.21 审计，执行计划采用以下分类：
+
+| 项目 | 纠偏后的定性 / 计划 |
+|---|---|
+| globstar | 主要是真实的 `**/**` 多重性折叠语义；仅约 8 行属于 harness 的 `ls` 排序差异。将多重性列为真实 globstar 任务，排序作为独立 harness 修正。 |
+| cprint | 真实 builtin 函数体格式化差异，不是函数内 `$0` 展开；按内建格式化缺口推进。 |
+| invocation | `SHELLOPTS` readonly 已匹配；保留长选项、`BASH_ARGV0`、pretty-print 三项真实任务。 |
+| mapfile | 已通过；旧 CR/CRLF 结论为陈旧 harness 伪像，从待修清单移除。 |
+| dstack | 根路径 `/` 解析到 Winuxsh home 是真实路径 bug，不能归入可接受平台差异。 |
+| procsub | 斜杠丢失已修；剩余 spurious fd-counter 输出是真缺口，并与 `/dev/fd/N` 抽象差异分开跟踪。 |
+| intl / history / histexp | 平台/宿主所有；不安排 Rubash 语义修复。 |
+| printf | GNU 约 2 GiB 输出属于病态基线；按新 `PATHOLOGICAL-BASELINE.txt` 类别记录，不能作为普通 diff/超时门禁。 |
+
+**执行顺序纠正**：优先处理 globstar 多重性、cprint、dstack 根路径、procsub fd-counter，以及 invocation 的三项真实差异；同步修正 harness 的 `ls` 排序。mapfile 与 SHELLOPTS 不再重复调查，intl/history/histexp 维持平台豁免。
