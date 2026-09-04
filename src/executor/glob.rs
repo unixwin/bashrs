@@ -1,6 +1,6 @@
 //! Pathname expansion (globbing) for command words.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::executor::path::{shell_directory_entries, shell_path_to_windows};
 
@@ -293,8 +293,15 @@ fn globstar_expand(
     env_vars: &std::collections::HashMap<String, String>,
 ) -> PathnameExpansion {
     let parts: Vec<&str> = word.split("**").collect();
-    if parts.len() != 2 {
-        return PathnameExpansion::NoMatch;
+    // GNU collapses adjacent ** segments (**/** == **, a/**/** == a/**):
+    // probe-verified on WSL GNU 5.2.21 (**/** lists every path exactly once,
+    // identical to **). Rebuild the collapsed word and re-enter so those
+    // forms reuse the tested single-** path. Only words keeping two or more
+    // NON-adjacent ** segments (e.g. **/a/**) reach the multi walk below,
+    // plus multi-segment remainders (**/foo*/*) and trailing-slash pattern
+    // remainders (**/foo*/).
+    if parts.len() > 2 {
+        return expand_multi_globstar(word, nullglob, failglob, nocaseglob, dotglob, globskipdots, env_vars);
     }
     let prefix = parts[0];
     // GNU globstar forms (parse.y/glob.c GLOBSTAR): a bare `**` matches every
@@ -303,9 +310,17 @@ fn globstar_expand(
     // applies the pattern at every depth. Symlinked directories are listed as
     // entries but never recursed into (loop avoidance).
     let raw_suffix = parts[1];
-    let dirs_only = raw_suffix == "/";
+    let single_remainder = !raw_suffix.starts_with('/') || !raw_suffix[1..].contains('/');
+    if !single_remainder {
+        return expand_multi_globstar(word, nullglob, failglob, nocaseglob, dotglob, globskipdots, env_vars);
+    }
+    // GNU `**/foo*/` matches directories named foo* with the trailing slash
+    // preserved: a trailing slash on a non-empty remainder means
+    // directories-only with the pattern still applied.
+    let trailing_slash = raw_suffix.len() > 1 && raw_suffix.ends_with('/');
+    let dirs_only = raw_suffix == "/" || trailing_slash;
     let match_all = raw_suffix.is_empty();
-    let suffix = if dirs_only { "" } else { raw_suffix.trim_start_matches('/') };
+    let suffix = raw_suffix.trim_matches('/');
 
     let logical_base_dir = if prefix.is_empty() {
         ".".to_string()
@@ -345,6 +360,230 @@ fn globstar_expand(
     // do not re-sort globally here (each directory level is sorted in
     // collect_globstar_matches instead).
     PathnameExpansion::Matches(matches)
+}
+
+// GNU multi-globstar expansion. Adjacent ** segments collapse (**/** == **,
+// a/**/** == a/** - probe-verified on WSL GNU 5.2.21: **/** lists every path
+// exactly once, identical to **); a collapsed word re-enters the tested
+// single-** path. Words keeping two or more non-adjacent ** segments
+// (e.g. **/a/**) expand as a concatenation over every directory matching
+// the prefix: each match contributes its own subtree copy, so results
+// repeat once per matching ancestor and nothing is deduplicated.
+fn expand_multi_globstar(
+    word: &str,
+    nullglob: bool,
+    failglob: bool,
+    nocaseglob: bool,
+    dotglob: bool,
+    globskipdots: bool,
+    env_vars: &std::collections::HashMap<String, String>,
+) -> PathnameExpansion {
+    let absolute = word.starts_with('/');
+    let dirs_only = word.len() > 1 && word.ends_with('/');
+    let core = word.trim_matches('/');
+    let mut segments: Vec<&str> = Vec::new();
+    let mut collapsed = false;
+    for segment in core.split('/') {
+        if segment.is_empty() {
+            continue;
+        }
+        if segment == "**" && segments.last() == Some(&"**") {
+            collapsed = true;
+            continue;
+        }
+        segments.push(segment);
+    }
+    let star_count = segments.iter().filter(|segment| **segment == "**").count();
+    if collapsed && star_count <= 1 {
+        let rebuilt = format!(
+            "{}{}{}",
+            if absolute { "/" } else { "" },
+            segments.join("/"),
+            if dirs_only { "/" } else { "" }
+        );
+        return globstar_expand(
+            &rebuilt,
+            nullglob,
+            failglob,
+            nocaseglob,
+            dotglob,
+            globskipdots,
+            env_vars,
+        );
+    }
+    let base = if absolute { "/" } else { "." };
+    let physical_base = shell_path_to_windows(base, env_vars);
+    let mut matches = Vec::new();
+    collect_multi_globstar(
+        &segments,
+        base,
+        &physical_base,
+        dirs_only,
+        &mut matches,
+        nocaseglob,
+        dotglob,
+        globskipdots,
+        env_vars,
+    );
+    let matches = apply_globignore(matches, env_vars);
+    if matches.is_empty() {
+        return unmatched_expansion(word, nullglob, failglob);
+    }
+    PathnameExpansion::Matches(matches)
+}
+
+// Collects the directories reachable from (logical, physical) without ever
+// following symlinks, depth-first with each directory level sorted, self
+// first. Hidden directories are skipped unless dotglob.
+fn star_descend(
+    logical: &str,
+    physical: &Path,
+    out: &mut Vec<(String, PathBuf)>,
+    dotglob: bool,
+    env_vars: &std::collections::HashMap<String, String>,
+) {
+    let entries = match shell_directory_entries(logical, env_vars) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+    let mut names: Vec<String> = entries.iter().map(|entry| entry.name.clone()).collect();
+    names.sort();
+    for name in names {
+        if name.starts_with('.') && !dotglob {
+            continue;
+        }
+        if name == "." || name == ".." {
+            continue;
+        }
+        let child_physical = entries
+            .iter()
+            .find(|entry| entry.name == name)
+            .map(|entry| entry.path.clone())
+            .unwrap_or_else(|| physical.join(&name));
+        if !child_physical.is_dir() {
+            continue;
+        }
+        let is_symlink = std::fs::symlink_metadata(&child_physical)
+            .map(|meta| meta.file_type().is_symlink())
+            .unwrap_or(false);
+        if is_symlink {
+            continue;
+        }
+        let child_logical = join_path_segment(if logical == "." { "" } else { logical }, &name);
+        out.push((child_logical.clone(), child_physical.clone()));
+        star_descend(&child_logical, &child_physical, out, dotglob, env_vars);
+    }
+}
+
+// The segment walk for patterns with two or more non-adjacent ** segments
+// (or multi-segment/trailing-slash remainders). The worklist carries one
+// entry per reachability path, so duplicated results from overlapping
+// matches are semantic (GNU emits one subtree copy per matching prefix).
+#[allow(clippy::too_many_arguments)]
+fn collect_multi_globstar(
+    segments: &[&str],
+    logical_base: &str,
+    physical_base: &Path,
+    dirs_only: bool,
+    matches: &mut Vec<String>,
+    nocaseglob: bool,
+    dotglob: bool,
+    globskipdots: bool,
+    env_vars: &std::collections::HashMap<String, String>,
+) {
+    let last = segments.len() - 1;
+    let mut work: Vec<(String, PathBuf)> =
+        vec![(logical_base.to_string(), physical_base.to_path_buf())];
+    for (index, segment) in segments.iter().enumerate() {
+        let is_last = index == last;
+        if *segment == "**" {
+            let mut expanded: Vec<(String, PathBuf)> = Vec::new();
+            for (logical, physical) in &work {
+                expanded.push((logical.clone(), physical.clone()));
+                star_descend(logical, physical, &mut expanded, dotglob, env_vars);
+            }
+            work = expanded;
+            if is_last {
+                for (logical, physical) in &work {
+                    if logical != "." {
+                        let output = if dirs_only {
+                            format!("{}/", logical)
+                        } else {
+                            logical.clone()
+                        };
+                        matches.push(output);
+                    }
+                    collect_globstar_matches(
+                        logical,
+                        physical,
+                        "",
+                        true,
+                        dirs_only,
+                        matches,
+                        nocaseglob,
+                        dotglob,
+                        globskipdots,
+                        env_vars,
+                    );
+                }
+            }
+        } else {
+            let mut next: Vec<(String, PathBuf)> = Vec::new();
+            for (logical, physical) in &work {
+                let entries = match shell_directory_entries(logical, env_vars) {
+                    Ok(entries) => entries,
+                    Err(_) => continue,
+                };
+                let mut names: Vec<String> =
+                    entries.iter().map(|entry| entry.name.clone()).collect();
+                names.sort();
+                for name in names {
+                    if name.starts_with('.') && !dotglob {
+                        continue;
+                    }
+                    if name == "." || name == ".." {
+                        continue;
+                    }
+                    let matched = if nocaseglob {
+                        case_pattern_matches_nocase(segment, &name)
+                    } else {
+                        super::case_pattern_matches(segment, &name)
+                    };
+                    if !matched {
+                        continue;
+                    }
+                    let child_physical = entries
+                        .iter()
+                        .find(|entry| entry.name == name)
+                        .map(|entry| entry.path.clone())
+                        .unwrap_or_else(|| physical.join(&name));
+                    let child_logical = join_path_segment(
+                        if logical == "." { "" } else { logical },
+                        &name,
+                    );
+                    let is_dir = child_physical.is_dir();
+                    if is_last {
+                        if !dirs_only || is_dir {
+                            let output = if dirs_only {
+                                format!("{}/", child_logical)
+                            } else {
+                                child_logical.clone()
+                            };
+                            matches.push(output);
+                        }
+                    } else if is_dir {
+                        let is_symlink = std::fs::symlink_metadata(&child_physical)
+                            .map(|meta| meta.file_type().is_symlink())
+                            .unwrap_or(false);
+                        if !is_symlink {
+                            next.push((child_logical, child_physical));
+                        }
+                    }
+                }
+            }
+            work = next;
+        }
+    }
 }
 
 fn unmatched_expansion(word: &str, nullglob: bool, failglob: bool) -> PathnameExpansion {
@@ -400,10 +639,19 @@ fn collect_globstar_matches(
         let join_prefix = if logical_dir == "." { "" } else { logical_dir };
         let logical_path = join_path_segment(join_prefix, &name);
         let is_dir = physical_path.is_dir();
-        let matched = if match_all {
+        // dirs_only is checked before match_all so the multi-globstar final
+        // ** can reuse this routine for directories-only emission while
+        // still applying a pattern (**/foo*/ -> suffix "foo*").
+        let matched = if dirs_only {
+            if suffix.is_empty() {
+                is_dir
+            } else if nocaseglob {
+                is_dir && case_pattern_matches_nocase(suffix, &name)
+            } else {
+                is_dir && super::case_pattern_matches(suffix, &name)
+            }
+        } else if match_all {
             true
-        } else if dirs_only {
-            is_dir
         } else if nocaseglob {
             case_pattern_matches_nocase(suffix, &name)
         } else {
