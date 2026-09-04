@@ -1,7 +1,38 @@
 use super::*;
+use crate::executor::fd_table::FdEntry;
+
+/// Saved descriptor state for a numbered fd opened by a compound command's
+/// input redirection (see open_compound_numbered_input_redirects).
+struct SavedNumberedFd {
+    fd: u32,
+    entry: Option<FdEntry>,
+    fd_stdin: Option<String>,
+    fd_stdin_offset: Option<String>,
+    fd_dynamic: Option<String>,
+    fd_closed: Option<String>,
+}
 
 impl Executor {
     pub(crate) fn with_command_input_redirects<T>(
+        &mut self,
+        cmd: &CommandNode,
+        execute: impl FnOnce(&mut Executor) -> Result<T, ExecuteError>,
+    ) -> Result<T, ExecuteError> {
+        // GNU redir.c do_redirection_internal (redir.c:767-955) applies a
+        // compound command's redirections before the command runs, and
+        // execute_cmd.c undoes them when the command finishes (RX_UNDOABLE /
+        // redir.c:949-955). A numbered input redirection such as
+        // `while read -ru3 x; do :; done 3< <(echo x)` (redir10.sub,
+        // procsub.tests bug()) must therefore keep fd 3 open for the whole
+        // compound command - condition and body alike - and restore the
+        // previous descriptor state afterwards.
+        let saved_numbered = self.open_compound_numbered_input_redirects(cmd)?;
+        let result = self.with_command_input_redirects_inner(cmd, execute);
+        self.restore_compound_numbered_input_redirects(saved_numbered);
+        result
+    }
+
+    fn with_command_input_redirects_inner<T>(
         &mut self,
         cmd: &CommandNode,
         execute: impl FnOnce(&mut Executor) -> Result<T, ExecuteError>,
@@ -24,6 +55,111 @@ impl Executor {
             old_function_stdin_offset,
         );
         result
+    }
+
+    /// Opens the numbered input redirections of a compound command in the
+    /// fd table for the command's whole duration. GNU applies compound
+    /// redirections left to right before the command runs (redir.c
+    /// do_redirection_internal:767); procsub targets feed
+    /// FdReadEndpoint-backed text exactly like the persistent fd-var path
+    /// (trap_exec.rs execute_dynamic_fd_var_redirect).
+    fn open_compound_numbered_input_redirects(
+        &mut self,
+        cmd: &CommandNode,
+    ) -> Result<Vec<SavedNumberedFd>, ExecuteError> {
+        let mut saved: Vec<SavedNumberedFd> = Vec::new();
+        for redirect in &cmd.redirects {
+            let Some(fd) = redirect.fd else {
+                continue;
+            };
+            if fd == 0 || redirect.fd_var.is_some() {
+                continue;
+            }
+            if !matches!(
+                redirect.kind,
+                crate::parser::RedirectKind::Input | crate::parser::RedirectKind::ReadWrite
+            ) {
+                continue;
+            }
+            let target = self.expand_word(&redirect.target);
+            if is_closed_redirect_target(&target) {
+                continue;
+            }
+            let input = if is_null_device(&target) {
+                Vec::new()
+            } else if let Some(source) = target
+                .strip_prefix("<(")
+                .and_then(|target| target.strip_suffix(')'))
+            {
+                let Some(output) = self.process_substitution_output(source) else {
+                    continue;
+                };
+                output.into_bytes()
+            } else {
+                let path = shell_path_to_windows(&target, &self.env_vars);
+                if redirect.append {
+                    // Mirrors the exec path (trap_exec.rs): [N]<> opens the
+                    // file for reading and writing (redir.c r_input_output,
+                    // O_RDWR).
+                    let _ = OpenOptions::new()
+                        .create(true)
+                        .read(true)
+                        .write(true)
+                        .open(&path)
+                        .map_err(|error| crate::posix_errors::path_error(&target, error))?;
+                }
+                std::fs::read(&path)
+                    .map_err(|error| crate::posix_errors::path_error(&target, error))?
+            };
+            if !saved.iter().any(|saved| saved.fd == fd) {
+                saved.push(SavedNumberedFd {
+                    fd,
+                    entry: self.fd_table.entries.get(&fd).cloned(),
+                    fd_stdin: self.env_vars.get(&fd_stdin_key(fd)).cloned(),
+                    fd_stdin_offset: self.env_vars.get(&fd_stdin_offset_key(fd)).cloned(),
+                    fd_dynamic: self.env_vars.get(&fd_dynamic_input_key(fd)).cloned(),
+                    fd_closed: self.env_vars.get(&fd_closed_key(fd)).cloned(),
+                });
+            }
+            self.set_fd_input_bytes(fd, input, true);
+            if redirect.kind == crate::parser::RedirectKind::ReadWrite {
+                self.set_fd_output_file(fd, target, true);
+            }
+        }
+        Ok(saved)
+    }
+
+    fn restore_compound_numbered_input_redirects(&mut self, saved: Vec<SavedNumberedFd>) {
+        for saved in saved {
+            match saved.entry {
+                Some(entry) => {
+                    self.fd_table.entries.insert(saved.fd, entry);
+                }
+                None => {
+                    self.fd_table.entries.remove(&saved.fd);
+                }
+            }
+            restore_optional_env_var(
+                &mut self.env_vars,
+                &fd_stdin_key(saved.fd),
+                saved.fd_stdin,
+            );
+            restore_optional_env_var(
+                &mut self.env_vars,
+                &fd_stdin_offset_key(saved.fd),
+                saved.fd_stdin_offset,
+            );
+            restore_optional_env_var(
+                &mut self.env_vars,
+                &fd_dynamic_input_key(saved.fd),
+                saved.fd_dynamic,
+            );
+            restore_optional_env_var(
+                &mut self.env_vars,
+                &fd_closed_key(saved.fd),
+                saved.fd_closed,
+            );
+        }
     }
 
     pub(in crate::executor) fn command_input_redirect(

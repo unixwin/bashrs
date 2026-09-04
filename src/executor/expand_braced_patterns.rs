@@ -181,27 +181,15 @@ impl Executor {
             );
         }
         if is_shell_name(var_name) {
-            let Some(name) = self.resolved_variable_name(var_name) else {
-                return Some(String::new());
-            };
-            if let Some(value) = self.env_vars.get(&name) {
-                if is_marked_var(&self.env_vars, ASSOC_VARS, &name) {
-                    return Some(
-                        assoc_value_at(value, "0")
-                            .map(|value| self.apply_parameter_transform_value(&value, transform))
-                            .unwrap_or_default(),
-                    );
-                }
-                if is_marked_array_var(&self.env_vars, &name) || is_array_storage(value) {
-                    return Some(
-                        array_value_at(value, 0)
-                            .map(|value| self.apply_parameter_transform_value(&value, transform))
-                            .unwrap_or_default(),
-                    );
-                }
-                return Some(self.apply_parameter_transform_value(value, transform));
-            }
-            return Some(String::new());
+            // parameter_pattern_scalar_value resolves namerefs and returns
+            // element [0] for bare indexed-array names (GNU get_string_value
+            // semantics); the previous inline env lookup transformed the raw
+            // array storage string (${av^^} leaked [0]="ABCD" markers).
+            return Some(
+                self.parameter_pattern_scalar_value(var_name)
+                    .map(|value| self.apply_parameter_transform_value(&value, transform))
+                    .unwrap_or_default(),
+            );
         }
         None
     }
@@ -250,10 +238,11 @@ impl Executor {
             );
         }
         if is_shell_name(var_name) {
+            // Same bare-array-name resolution as the transform path above:
+            // apply the case modification to element [0], not the raw storage.
             return Some(
-                self.env_vars
-                    .get(var_name)
-                    .map(|value| apply_parameter_case_mod(value, operation, &pattern))
+                self.parameter_pattern_scalar_value(var_name)
+                    .map(|value| apply_parameter_case_mod(&value, operation, &pattern))
                     .unwrap_or_default(),
             );
         }

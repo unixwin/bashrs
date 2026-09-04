@@ -186,7 +186,18 @@ impl Executor {
             self.apply_alias_expansion_after_word_expansion(expanded, &original_raws);
         let alias_expansion_changed_words = alias_expanded.words != pre_alias_words;
         if alias_expanded.words.is_empty() && !self.arithmetic_expansion_error.get() {
-            if !cmd.assignments.is_empty() {
+            // GNU execute_simple_command (execute_cmd.c): a simple command
+            // whose words all expand to nothing is still executed as a null
+            // command - its redirections run and create/truncate their
+            // targets with status 0 (redir.tests: `$EXIT > $TMPDIR/file`
+            // must create the file, and `exit 3 | $EXIT > file` reports
+            // status 0 for the null side, not command-not-found).
+            if !cmd.assignments.is_empty()
+                || command_has_redirect(&cmd)
+                || !cmd.redirects.is_empty()
+                || cmd.heredoc.is_some()
+                || cmd.here_string.is_some()
+            {
                 return self.execute_empty_words_command(cmd);
             }
             if let Some(status) = self.last_command_substitution_status.get() {
