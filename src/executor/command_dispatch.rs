@@ -6,11 +6,17 @@ impl Executor {
         cmd: &CommandNode,
         process_substitution_files: ProcessSubstitutionFiles,
     ) -> Result<(), ExecuteError> {
+        let standalone_assignments = cmd.words.is_empty() && !cmd.assignments.is_empty();
         let keep_temporary_assignments = self.keeps_temporary_assignments(cmd);
         if self.posix_function_declare_prefix_assignments_are_local(cmd) {
             self.save_assignment_local_names(&cmd.assignments);
         }
-        let temporary_assignments = self.apply_temporary_assignments(&cmd.assignments);
+        let temporary_assignments = if standalone_assignments {
+            self.apply_permanent_assignments(&cmd.assignments);
+            Vec::new()
+        } else {
+            self.apply_temporary_assignments(&cmd.assignments)
+        };
         if self.xtrace_enabled() {
             let prefix = self.xtrace_prefix();
             let text = self.xtrace_command_text(cmd);

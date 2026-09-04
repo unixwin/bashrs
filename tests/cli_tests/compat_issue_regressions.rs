@@ -1641,3 +1641,19 @@ fn arithmetic_trailing_operator_tokens_match_gnu() {
         );
     }
 }
+
+#[test]
+fn standalone_assignment_persists_but_prefix_assignment_restores() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg("( IFS=:; printf 'standalone=%s\\n' \"${#IFS}\" ); IFS=:; IFS=' ' true; printf 'prefix-after=%s\\n' \"${#IFS}\"")
+        .output()
+        .expect("run standalone versus prefix assignment probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "standalone=1\nprefix-after=1\n"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).is_empty());
+}

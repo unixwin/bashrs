@@ -1,6 +1,19 @@
 use super::*;
 
 impl Executor {
+    /// Apply assignments from a command containing no command word. GNU Bash
+    /// keeps these assignments in the current shell scope; they are not the
+    /// temporary environment used by `name=value command`.
+    pub(in crate::executor) fn apply_permanent_assignments(
+        &mut self,
+        assignments: &HashMap<String, String>,
+    ) {
+        for (name, value) in assignments {
+            let expanded_value = self.expand_assignment_value(value);
+            self.apply_shell_assignment(name, expanded_value);
+        }
+    }
+
     pub(in crate::executor) fn apply_temporary_assignments(
         &mut self,
         assignments: &HashMap<String, String>,
