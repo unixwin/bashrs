@@ -215,9 +215,21 @@ index += 1;
 
 **Overlap note**: The `has_unclosed_command_substitution` function already has heredoc-skipping logic at lines 410-413 for the case where `skip_parenthesized_unit` returns `None` (unbalanced). After this fix, `skip_parenthesized_unit` will handle the heredoc case itself, so the lines 410-413 code becomes a redundant safety net. Both paths use the same `skip_heredoc_in_chars` helper, so there is no behavioral conflict.
 
-### No changes needed in mod.rs
+### Corrective finding: mod.rs is required for same-line header close
 
-The `tokenize_with_heredocs` function in `src/lexer/mod.rs` does not need changes. Once `skip_parenthesized_unit` correctly skips heredoc bodies, `has_unclosed_command_substitution` will return true for `$(cat <<eof\nhere doc with )`, causing the line-accumulation loop to continue past the `)` line. The heredoc body collector will then find the delimiter on the next line and correctly collect the body.
+The earlier conclusion that `src/lexer/mod.rs` needs no changes applies only to the
+newline-close form. It does not apply to `echo $(cat << EOF)`, where the scanner emits
+the complete inner command as one opaque `CommandSubst` token. In that form,
+`tokenize_with_heredocs` sees no top-level `HereDoc` token and therefore does not
+consume the following body lines. The resulting `foo`, `bar`, and `EOF` lines are
+tokenized as ordinary commands.
+
+The remaining fix must coordinate `src/lexer/mod.rs`, `src/lexer/heredoc.rs`, and the
+command-substitution scanner/parser. The design must preserve the opaque substitution
+token while carrying nested heredoc metadata/body association, FIFO ordering for
+multiple heredocs, quoted delimiters, `<<-`, and the distinction from `<<<`. A
+continuation-only patch was tested and rejected because it made the balance predicate
+pass without collecting the nested body.
 
 ---
 
