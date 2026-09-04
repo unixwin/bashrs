@@ -1149,6 +1149,12 @@ impl Executor {
         if let Some(redirect) = &cmd.redirect_out {
             let target = self.expand_word(&redirect.target);
             if is_closed_redirect_target(&target) {
+                if self.dynamic_fd_variable_value(name).is_none()
+                    && crate::builtins::set::shell_option_enabled(&self.env_vars, "nounset")
+                {
+                    eprintln!("{}{name}: ambiguous redirect", self.diagnostic_prefix());
+                    return Ok(Some(1));
+                }
                 self.close_dynamic_output_fd(name)?;
                 return Ok(Some(0));
             }
