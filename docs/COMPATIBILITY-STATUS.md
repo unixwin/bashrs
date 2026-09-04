@@ -313,3 +313,10 @@ D iquote-quote lane（quotes/embedded_parameters，captain）/ E ifs-posix LLDB�
 - **printf**：GNU 对照会产生约 2 GiB 的病态基线输出；这属于 pathological baseline，不应按普通 diff/超时门禁解释。分类与处理规则见 `tests/gnu-compat/PATHOLOGICAL-BASELINE.txt`。
 
 后续优先级应据此更新：globstar 多重性、cprint 格式化、dstack 根路径、procsub fd-counter、invocation 长选项/BASH_ARGV0/pretty-print 为真实工作项；mapfile、SHELLOPTS、intl/history/histexp 为已通过或平台归属项。
+
+## 十三、2026-09-04 Globstar 多重性修复
+
+- `src/executor/glob.rs` 已修复非相邻多个 `**` 的重复发射，以及相邻 `**` 折叠后的零深度目录尾斜杠。
+- 聚焦 probe `**/a/**` 的输出数量从 111 收敛到 GNU 的 49；`**/**`、`**/**/a`、`a/**/**`、`**/**/**` 的数量保持分别为 30、15、15、30。
+- 权威门禁：`MSYS_NO_PATHCONV=1 wsl bash tests/gnu-compat/run-83.sh check globstar`，结果 `PASS globstar`（rubash=587，right=587）。
+- heredoc 仍不能据此关闭：`check heredoc` 当前为 `DIFF (rubash=166, right=31)`，同一行 command-substitution header 的 heredoc 仍待 lexer/token collection 专项修复。
