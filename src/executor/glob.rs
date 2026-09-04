@@ -317,6 +317,13 @@ fn globstar_expand(
     let physical_base_dir = shell_path_to_windows(&logical_base_dir, env_vars);
 
     let mut matches = Vec::new();
+    // GNU `lib/**` includes the zero-depth match: the base directory itself
+    // with its trailing slash preserved (`echo lib/**` starts with `lib/`).
+    // A bare `**` (empty prefix) has no depth-0 operand to emit - the base is
+    // the cwd and GNU prints no `./` entry.
+    if match_all && !prefix.is_empty() && logical_base_dir != "/" {
+        matches.push(format!("{}/", logical_base_dir));
+    }
     collect_globstar_matches(
         &logical_base_dir,
         &physical_base_dir,
