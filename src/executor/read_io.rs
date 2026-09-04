@@ -289,6 +289,17 @@ impl Executor {
         subshell.stdout_capture = Some(Vec::new());
         let result = subshell.execute_ast(&ast);
         let output = subshell.stdout_capture.take().unwrap_or_default();
+        // GNU process_substitute leaves the fork's status for `wait $!`
+        // (subst.c:6362+); rubash ran the substitution inline, so register
+        // the finished subshell status under $! before returning.
+        let status = match &result {
+            Ok(()) => subshell.exit_code,
+            Err(ExecuteError::ExitCode(code))
+            | Err(ExecuteError::ExpansionFailure(code))
+            | Err(ExecuteError::Return(code)) => *code,
+            _ => 1,
+        };
+        self.register_process_substitution_status(status);
 
         if let Some(saved_dir) = saved_dir {
             let _ = env::set_current_dir(saved_dir);

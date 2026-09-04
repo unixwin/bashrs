@@ -452,41 +452,6 @@ fn split_sequence_endpoints(s: &str) -> Option<(&str, &str)> {
     }
     None
 }
-fn expand_nested_commas(s: &str) -> Vec<String> {
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] != b'{' { i += 1; continue; }
-        let start = i;
-        let mut depth = 1u32;
-        let mut j = i + 1;
-        while j < bytes.len() && depth > 0 {
-            match bytes[j] {
-                b'\\' => j += 1,
-                b'{' => depth += 1,
-                b'}' => depth -= 1,
-                _ => {}
-            }
-            j += 1;
-        }
-        if depth != 0 { break; }
-        let inner = &s[start + 1..j - 1];
-        let items = split_brace_commas(inner);
-        if items.len() >= 2 {
-            let prefix = &s[..start];
-            let suffix = &s[j..];
-            let mut out = Vec::new();
-            for item in items {
-                for expanded in expand_nested_commas(item) {
-                    out.push(format!("{prefix}{expanded}{suffix}"));
-                }
-            }
-            return out;
-        }
-        i = j;
-    }
-    vec![s.to_string()]
-}
 
 fn split_brace_commas(s: &str) -> Vec<&str> {
     let mut parts = Vec::new();
