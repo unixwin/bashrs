@@ -320,3 +320,4 @@ D iquote-quote lane（quotes/embedded_parameters，captain）/ E ifs-posix LLDB�
 - 聚焦 probe `**/a/**` 的输出数量从 111 收敛到 GNU 的 49；`**/**`、`**/**/a`、`a/**/**`、`**/**/**` 的数量保持分别为 30、15、15、30。
 - 权威门禁：`MSYS_NO_PATHCONV=1 wsl bash tests/gnu-compat/run-83.sh check globstar`，结果 `PASS globstar`（rubash=587，right=587）。
 - heredoc 仍不能据此关闭：`check heredoc` 当前为 `DIFF (rubash=166, right=31)`，同一行 command-substitution header 的 heredoc 仍待 lexer/token collection 专项修复。
+- cprint 的独立 probe 已确认 `declare -c` 是真实缺口：GNU 将每个单词首字母大写，Rubash 当前报告 `declare: -c: invalid option`；`declare -u/-l` 已分别匹配。该缺口属于 declare 属性状态/赋值转换，不应通过修改 cprint expected output 解决。
