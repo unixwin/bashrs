@@ -75,7 +75,12 @@ run_rubash() { # $1=name  $2=outfile
   # is a separate process that sets vars then exec's the target; when the
   # target is a Windows .exe via WSL interop, the env vars are lost. `export`
   # sets them in the current shell so children inherit them directly.
-  (cd "$CLEAN_TESTS" && export PATH="$HELPERS_WIN:$PATH" THIS_SH="$RUBASH" && \
+  # WSLENV=PATH is required for the PATH prepend to survive WSL->Windows
+  # interop: without it the child .exe PATH is rebuilt from the Windows
+  # registry PATH (Winuxsh shim dirs first), so helpers-win only ever wins
+  # for names the shim does not ship (recho/zecho) while `ls` hit the
+  # shim's own incompatible WinuxCmd ls and skewed every ls-based baseline.
+  (cd "$CLEAN_TESTS" && export WSLENV=PATH PATH="$HELPERS_WIN:$PATH" THIS_SH="$RUBASH" && \
     timeout "$TIMEOUT_SECS" "$RUBASH" "./$1.tests") > "$2" 2>&1
 }
 
