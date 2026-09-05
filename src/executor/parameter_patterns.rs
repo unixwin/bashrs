@@ -166,8 +166,58 @@ impl Executor {
     }
 
     pub(in crate::executor) fn expand_parameter_pattern_word(&self, pattern: &str) -> String {
-        let pattern = self.expand_embedded_parameters_preserving_escaped_single_quotes(pattern);
-        decode_parameter_pattern_quotes(&pattern).replace('\x1b', "")
+        // Decode quotes before embedded expansion so quoted glob
+        // metacharacters stay marked, but mask nested braced parameters
+        // first so the decoder does not tag glob chars inside an inner
+        // expansion (keeps ? a glob in the inner removal).
+        let mut masked = String::with_capacity(pattern.len());
+        let mut rest = pattern;
+        let mut slots: Vec<String> = Vec::new();
+        while let Some(pos) = rest.find("${") {
+            masked.push_str(&rest[..pos]);
+            let after = &rest[pos + 2..];
+            match matching_parameter_brace(after) {
+                Some(end) => {
+                    slots.push(format!("${{{}}}", &after[..end]));
+                    masked.push('\x1c');
+                    masked.push_str(&slots.len().to_string());
+                    rest = &after[end + 1..];
+                }
+                None => {
+                    masked.push_str("${");
+                    rest = after;
+                }
+            }
+        }
+        masked.push_str(rest);
+
+        let decoded = decode_parameter_pattern_quotes(&masked).replace('\x1b', "");
+
+        let mut restored = String::with_capacity(decoded.len());
+        let mut rest = decoded.as_str();
+        while let Some(pos) = rest.find('\x1c') {
+            restored.push_str(&rest[..pos]);
+            let digits: String = rest[pos + 1..]
+                .chars()
+                .take_while(|ch| ch.is_ascii_digit())
+                .collect();
+            if digits.is_empty() {
+                restored.push('\x1c');
+                rest = &rest[pos + 1..];
+                continue;
+            }
+            let index: usize = digits.parse().unwrap_or(0);
+            if let Some(slot) = slots.get(index) {
+                restored.push_str(slot);
+            }
+            rest = &rest[pos + 1 + digits.len()..];
+        }
+        restored.push_str(rest);
+
+        let expanded = self.expand_embedded_parameters_preserving_escaped_single_quotes(&restored);
+        // Quoted glob metacharacters remain pattern literals. Preserve the
+        // escape for the parameter matcher instead of exposing a raw marker.
+        expanded.replace('\x11', "\\")
     }
 
     pub(in crate::executor) fn assoc_subscript_key(&self, key: &str) -> String {
