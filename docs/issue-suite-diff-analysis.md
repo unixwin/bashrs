@@ -1,5 +1,51 @@
 # Issue Suite DIFF Analysis
 
+## 2026-09-06 Root-Cause Matrix and Implementation Handoff
+
+This checkpoint separates compatibility families by semantic owner; aggregate DIFF counts are not closure criteria. All semantic probes must compare script files with WSL GNU Bash 5.2.21.
+
+### Confirmed and validated
+
+- declare -c: GNU semantics are uppercase first character and lowercase remainder. Assignment, execution, declare -p, +c, and append paths are covered by focused tests.
+- Dynamic loop-tail redirection, nounset dynamic-fd close diagnostics, typed PWD/OLDPWD, mapfile, herestr, ifs, and globstar have focused evidence recorded elsewhere.
+- Pending lexer changes in src/lexer/continuation.rs and src/lexer/tests.rs are captain-exclusive. The case-pattern ) change passed 29 lexer and 17 parser tests. It still requires a WSL file probe covering nested case, quoted/escaped patterns, extglob, and nested command substitution before submission.
+
+### Open semantic owners
+
+- heredoc: GNU make_here_document (third_party/bash/make_cmd.c:602-627) and parse.y:4563-4567. heredoc3 loses EOF warnings because continuation scanning counts body ); heredoc7 loses nested collection metadata and source locations; heredoc10 loses delimiter/body association across alias expansion. heredoc9 belongs to cprint, not expected-output edits.
+- casemod: GNU subst.c:9557-9673; indexed arrays and positional parameters match. Associative ordering differs because GNU iterates hash buckets while Rubash preserves Vec insertion order. Do not sort or reverse without a hash-compatible data model.
+- procsub: GNU subst.c process_substitute exposes a consuming pipe. Rubash path-based process substitutions reopen regular temporary files and replay input; same virtual-FD cursor behavior is separate. Fix requires endpoint lifecycle/stream ownership, not offset changes.
+- comsub-posix: GNU subst.c:10831-10908 calls chk_arithsub and falls back to command substitution when arithmetic recognition fails. Rubash currently classifies $((...)) irreversibly in parameter_core.rs/embedded_mutations.rs; minimal probe: echo $((echo sh_352.25a);(echo sh_352.25b)).
+- invocation: GNU shell.c option plumbing. src/main.rs::run_args is live; basic -i, --rcfile/--init-file, and BASH_ARGV0 wiring now builds cleanly. --pretty-print, full forced-interactive runtime, and complete command-name/rcfile semantics remain open.
+- cprint: GNU print_cmd.c; Rust owner src/executor/type_functions.rs. Current output flattens compound AST nodes, duplicates redirects, and formats heredocs incorrectly. Implement recursively; do not change expected outputs.
+
+### Evidence artifacts
+
+- docs/investigation/heredoc-investigation.md
+- target/issue-suites/results/check/heredoc.diff
+- target/issue-suites/results/casemod-probe-new.sh
+- target/issue-suites/results/casemod-gnu-new.out
+- target/issue-suites/results/casemod-rub-new.out
+- target/procsub-read-twice.sh
+- target/comsub_probe.sh
+- target/invocation-probe.sh
+
+### Quoted Parameter Pattern Pre-existing Defect
+
+The focused tests quoted_parameter_pattern_glob_chars_are_literal and unquoted_heredoc_backslash_and_parameter_errors_match_bash fail identically on clean HEAD and in the current tree: Rubash prints <*> and <*b> where GNU Bash 5.2.21 prints <> and <b>. Instrumentation shows the pattern argument arrives as quoted '*', but expand_embedded_parameters_preserving_escaped_single_quotes strips the single quotes before decode_parameter_pattern_quotes runs. decode_parameter_pattern_quotes only recognizes $'...' and $"...", so the literal '*' loses its quoted-glob marker (\x11) and becomes a glob wildcard; remove_matching_prefix then matches the empty suffix with '*' and removes nothing. This is a pre-existing owner bug in parameter pattern quote propagation, not introduced by heredoc/comsub work and not fixed by the \x11-to-backslash conversion (which only applies after a successful decode). Keep it out of heredoc fixes; address it in parameter_decode/parameter_patterns with a quote-preserving path.
+
+### Heredoc10 Verification Addendum
+
+The LF-normalized alias/heredoc probe confirms a parser-stream mismatch. GNU Bash treats the lines following a multiline alias definition (`hello`, `world`, `EOF`) as commands and reports command-not-found diagnostics, while Rubash consumes them as heredoc body text. The alias builtin focused test passes and `git diff --check` passes, so this is not an alias output-format defect. The likely owner is parse-time alias expansion and input-stream re-read state around pending heredoc collection. No non-lexer surgical fix was identified; `src/lexer/continuation.rs` and `src/lexer/tests.rs` remain captain-exclusive and must not be overwritten.
+
+### Implementation order
+
+1. Verify and preserve the lexer change, then commit it separately only after WSL file comparison.
+2. Finish invocation runtime plumbing and focused CLI probes; keep pretty-print separate.
+3. Implement comsub arithmetic fallback and heredoc metadata/alias collection by owner.
+4. Implement cprint recursion and separately design pipe-backed procsub endpoints.
+5. Re-run each named suite serially, record real counts, and commit only reviewed author/family groups.
+
 > Date: 2026-08-12
 
 > Status refresh: 2026-08-29. The authoritative compatibility status is
