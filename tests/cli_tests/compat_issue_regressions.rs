@@ -1379,6 +1379,26 @@ fn separated_double_parentheses_parse_as_nested_subshells() {
 }
 
 #[test]
+fn subshell_keeps_variable_assignment_and_positional_params_local() {
+    // GNU keeps `(v=x)`, `set --`, and `IFS` changes local to the subshell.
+    // The subshell body runs in place on the parent executor, so the typed
+    // variable store and positional parameters must be saved and restored
+    // like env_vars (posixexp2 case 36/37).
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"unset v; set -- p1 p2; ( v=hello ); printf '1=%s\n' "${v-unset}"; v=outer; ( v=inner ); printf '2=%s\n' "$v"; ( set -- a b ); printf '3=%s\n' "$#:$1"; unset IFS; ( IFS=: ); printf '4=[%s]\n' "$IFS""#)
+        .output()
+        .expect("run subshell isolation probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "1=unset\n2=outer\n3=2:p1\n4=[]\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn quoted_parameter_pattern_glob_chars_are_literal() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

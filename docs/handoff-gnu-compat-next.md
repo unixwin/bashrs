@@ -118,32 +118,46 @@ Harness note: `tests/gnu-compat/run-83.sh` must be driven by a real POSIX shell.
 
 Next action: Families B and D together (shared double-quote-context `'` literal root cause), then Family C as a designed captain-reviewed task.
 
-### Blocker discovered while fixing Family A: subshell variable assignment leaks
+### Subshell variable isolation - FIXED
 
-posixexp2 case 37 still reports a diff in the upstream test file even though the
-default-word path is fixed. Bisecting the test prefix located case 36:
-"
-    (echo -n '36 '; printf '<%s> ' "${v=a\\ b}" x "${v=c\\ d}"; echo .) 2>&-
-"
-which assigns `v` inside a subshell. WSL GNU Bash 5.2.21 keeps that assignment in
-the subshell (`V value=[]` afterwards), so case 37 falls back to its default word.
-Rubash leaks it (`V value=[a\\ b]`), so case 37 expands `v`'s stored value and
-then IFS-splits it.
+While fixing Family A, bisecting the posixexp2 case-37 prefix located a separate
+defect at case 36, which assigns `v` inside a subshell and then reads it from the
+parent. WSL GNU Bash 5.2.21 keeps that assignment local (V value is empty), so
+case 37 falls back to its default word. Rubash leaked it, so case 37 expanded
+`v`'s stored value and then IFS-split it.
 
-Confirmed as a general pre-existing defect with `target/subshell_iso.sh` -
-identical on HEAD and with the Family A fix applied:
+Root cause: `src/executor/compound_exec.rs::execute_subshell_command_with_redirects`
+runs the subshell body in place on the parent executor and restored only
+`env_vars`, `pipestatus`, `subshell_depth`, and `loop_depth`. The typed variable
+store `shell_state.variables` and `positional_params` were never saved, so
+`(v=x)`, `(set -- ...)`, and `(IFS=...)` all leaked into the parent.
+`src/executor/command_substitution.rs::command_substitution_executor` was already
+correct because it clones the whole executor into a throwaway instance. `unset`
+was already isolated because it removes from `env_vars`, which the existing
+restore covers. Background jobs are unaffected: `execute_background_ast_command`
+spawns a real child `rubash -c` process, so isolation there was already at the
+process boundary. The other three `saved_env` sites (`external_finish.rs` and
+`embedded_mutations.rs` x2) were checked and are correct - the first restores the
+whole `shell_state`, the latter two wrap function calls whose variables are
+isolated by `function_locals.rs`.
 
-- `(v=hello)` and `v=outer; ( v=inner )` leak into the parent (Rubash `hello` /
-  `inner`); GNU leaves the parent untouched.
-- `( ${v=insidesub} )` and `( printf '%s' "${v=inner}" )` leak as well - the
-  `${var=value}` assignment form is not isolated either.
-- `( unset v )` does NOT leak, so the isolation gap is specific to assignment.
+Fix: save `shell_state.variables` and `positional_params` at the subshell
+boundary and restore both on the success and error paths.
 
-Owner: the subshell fork/restore path for the shell variable table. This is a
-deep subsystem (state copy-on-fork plus restore), not a one-line fix, so it is
-recorded and left unaddressed. It must be fixed before posixexp2 case 37 can
-turn green in the suite, and it likely affects other suites that assign inside
-subshells and read the variable afterwards.
+Evidence: `target/subshell_iso.sh`, `target/subiso2.sh`, `target/subiso3.sh`,
+`target/subiso4.sh`, and `target/assign36.sh` now match WSL GNU Bash 5.2.21 on
+stdout and exit status. Regression:
+`subshell_keeps_variable_assignment_and_positional_params_local`. posixexp2
+drops from 13 to 12 differing cases (case 37 gone).
+
+A/B against a clean HEAD build over all 83 suites: summary unchanged
+(PASS=15 DIFF=63 TIMEOUT=2 SKIP=3); 20 suites changed output, 61 identical.
+Measuring lines of `.right` absent from Rubash output, the fix lands 28 lines
+closer overall (set-x +10, arith-for +7, arith +3, redir +2, test +2, varenv +2,
+vredir +2, exp +1, history +1, comsub-posix +1, posixexp2 +1) with func and
+builtins each 2 lines further. Those two are merge-ordering artifacts only:
+captured with separate stdout and stderr, the diagnostic is intact on stderr
+and `11111 ()` is intact on stdout, so there is no semantic regression.
 
 ### comsub-posix: collector/heredoc boundary
 

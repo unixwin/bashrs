@@ -366,6 +366,12 @@ impl Executor {
         let saved_env = self.env_vars.clone();
         let saved_pipestatus = self.pipestatus.clone();
         let saved_depth = self.subshell_depth.get();
+        // The subshell body runs in place on this executor, so the typed
+        // variable store and positional parameters must be saved and restored
+        // like env_vars. GNU keeps assignments, set --, and IFS changes
+        // local to the subshell.
+        let saved_variables = self.shell_state.variables.clone();
+        let saved_positional_params = self.positional_params.clone();
         crate::builtins::trap::reset_for_subshell(&mut self.env_vars);
         let saved_loop_depth = self.loop_depth;
         self.subshell_depth.set(saved_depth + 1);
@@ -444,6 +450,8 @@ impl Executor {
             | Err(ExecuteError::FatalFunctionError(code)) => code,
             Err(error) => {
                 self.restore_shell_env(saved_env);
+                self.shell_state.variables = saved_variables;
+                self.set_positional_params(saved_positional_params);
                 self.pipestatus = saved_pipestatus;
                 self.subshell_depth.set(saved_depth);
                 self.loop_depth = saved_loop_depth;
@@ -452,6 +460,8 @@ impl Executor {
         };
 
         self.restore_shell_env(saved_env);
+        self.shell_state.variables = saved_variables;
+        self.set_positional_params(saved_positional_params);
         self.pipestatus = saved_pipestatus;
         self.subshell_depth.set(saved_depth);
         self.loop_depth = saved_loop_depth;
