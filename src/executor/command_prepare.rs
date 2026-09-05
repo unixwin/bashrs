@@ -754,6 +754,7 @@ impl Executor {
             && !alternate.contains("$*")
             && !alternate.contains('"')
             && !alternate.contains('\'')
+            && !parameter_word_has_escaped_whitespace(alternate)
         {
             return None;
         }

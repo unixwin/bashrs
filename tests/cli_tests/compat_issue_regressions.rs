@@ -952,6 +952,26 @@ fn escaped_glob_in_parameter_alternate_stays_literal() {
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
+#[test]
+fn unquoted_parameter_default_preserves_escaped_space_field_boundary() {
+    // posixexp2 case 37: an unquoted default word keeps a backslash-escaped
+    // space inside a single field instead of letting it become a separator.
+    // `${v-foo\\bar}` must stay untouched - the String-based operator path
+    // already handles non-whitespace escapes, so only escaped IFS whitespace
+    // is routed through the quote-aware fragment expansion.
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"set -- ${v-a\ b}; printf '1=%s\n' "$#"; printf '2=<%s>\n' "$1"; set -- ${v:-a\ b}; printf '3=<%s>\n' "$1"; printf '4=<%s>\n' ${v-foo\\bar}; set -- ${IFS+a\ b}; printf '5=<%s>\n' "$1""#)
+        .output()
+        .expect("run escaped-space parameter default probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "1=1\n2=<a b>\n3=<a b>\n4=<foo\\bar>\n5=<a b>\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
 
 #[test]
 fn parameter_alternate_preserves_nested_literal_double_quotes() {

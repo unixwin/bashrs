@@ -335,6 +335,17 @@ pub(in crate::executor) fn braced_parameter_spans_whole_word_in_context(
         .is_some_and(|index| index + 1 == rest.len())
 }
 
+/// Whether a parameter default/alternate word contains a backslash-escaped
+/// IFS whitespace character. In an unquoted word such an escape keeps the
+/// whitespace literal and suppresses field splitting (parse.y parameter
+/// scanner), which the String-based operator path cannot express because it
+/// unescapes the whitespace to a real separator before field splitting runs.
+pub(in crate::executor) fn parameter_word_has_escaped_whitespace(word: &str) -> bool {
+    word.as_bytes()
+        .windows(2)
+        .any(|pair| pair[0] == b'\\' && matches!(pair[1], b' ' | b'\t' | b'\n'))
+}
+
 pub(in crate::executor) fn command_substitution_spans_whole_word(word: &str) -> bool {
     let Some(rest) = word.strip_prefix("$(") else {
         return false;
