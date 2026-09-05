@@ -115,26 +115,27 @@ impl Executor {
             if let Some(value) = self.eval_arithmetic_expansion_value(expression) {
                 return value.to_string();
             }
-            // Classify fatality unconditionally: a readonly diagnostic may
-            // already have consumed the print gate, but the evaluation error
-            // still decides whether the command list is abandoned.
+            // A command-list separator is GNU's recognition-failure path for
+            // POSIX command substitution, not an arithmetic runtime error.
+            if expression.contains(';') {
+                let command_source = format!("({expression})");
+                return self.expand_command_substitution_mut_with_context(&command_source, context);
+            }
             let actual_fatal = self.arithmetic_last_error_category.take().is_some();
-            if actual_fatal
-                || crate::executor::arithmetic::arithmetic_expansion_is_fatal(expression)
-            {
+            if actual_fatal || crate::executor::arithmetic::arithmetic_expansion_is_fatal(expression) {
                 self.arithmetic_fatal_error.set(true);
-            } else {
-                self.arithmetic_nonfatal_error.set(true);
+                if !self.arithmetic_expansion_error.replace(true) {
+                    let message = crate::executor::arithmetic::arithmetic_error_message(expression, true)
+                        .unwrap_or_else(|| format!("{expression}: syntax error in expression (error token is \"{expression}\")"));
+                    eprintln!("{}{}", self.diagnostic_prefix(), message);
+                }
+                return String::new();
             }
-            if !self.arithmetic_expansion_error.replace(true) {
-                let message = crate::executor::arithmetic::arithmetic_error_message(expression, true)
-                    .unwrap_or_else(|| {
-                        format!(
-                            "{expression}: syntax error in expression (error token is \"{expression}\")"
-                        )
-                    });
-                eprintln!("{}{}", self.diagnostic_prefix(), message);
-            }
+            // GNU subst.c retries unrecognized arithmetic syntax as command substitution.
+            // Keep the parenthesized command source so nested subshell delimiters
+            // are balanced during the fallback parse.
+            let command_source = format!("({expression})");
+            self.expand_command_substitution_mut_with_context(&command_source, context);
         }
 
         // Current-shell forms are special `${...}` expansions, not ordinary

@@ -263,17 +263,22 @@ impl Executor {
                         if matched {
                             if let Some(value) = self.eval_arithmetic_expansion_value(&expression) {
                                 output.push_str(&value.to_string());
-                            } else if !self.arithmetic_expansion_error.replace(true) {
-                                let message = crate::executor::arithmetic::arithmetic_error_message(
-                                    &expression,
-                                    true,
-                                )
-                                .unwrap_or_else(|| {
-                                    format!(
-                                        "{expression}: syntax error in expression (error token is \"{expression}\")"
-                                    )
-                                });
-                                eprintln!("{}{}", self.diagnostic_prefix(), message);
+                            } else {
+                                let actual_fatal = self.arithmetic_last_error_category.take().is_some();
+                                if (actual_fatal
+                                    || crate::executor::arithmetic::arithmetic_expansion_is_fatal(&expression))
+                                    && !embedded_command_substitution_expression(&expression) {
+                                    self.arithmetic_fatal_error.set(true);
+                                    if !self.arithmetic_expansion_error.replace(true) {
+                                        if let Some(message) = crate::executor::arithmetic::arithmetic_error_message(&expression, true) {
+                                            eprintln!("{}{}", self.diagnostic_prefix(), message);
+                                        }
+                                    }
+                                } else {
+                                    output.push_str(&protect_command_substitution_output(
+                                        &self.expand_command_substitution_mut_with_context(&expression, context),
+                                    ));
+                                }
                             }
                         } else {
                             output.push_str("$((");
@@ -664,6 +669,13 @@ fn command_substitution_needs_ast_execution(ast: &Ast) -> bool {
         || (ast.commands.len() > 1 && ast.commands.iter().all(command_is_ast_list_substitution))
 }
 
+// GNU subst.c treats a syntactically command-like $((...)) body as a
+// command substitution fallback, even though arithmetic parsing rejects it.
+// Keep ordinary arithmetic diagnostics (notably 1/0 and invalid octal 08).
+fn embedded_command_substitution_expression(expression: &str) -> bool {
+    expression.contains(';') && expression.contains('(')
+}
+
 fn collect_dollar_paren_arithmetic_expansion(
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
 ) -> (String, bool) {
@@ -675,6 +687,13 @@ fn collect_dollar_paren_arithmetic_expansion(
             '(' => {
                 paren_depth += 1;
                 expression.push(ch);
+            }
+            // A command-like body may end with its own `)` immediately before
+            // the arithmetic expansion's closing `)`: `(echo hi))`.
+            ')' if paren_depth == 1 && chars.peek().copied() == Some(')') => {
+                expression.push(ch);
+                chars.next();
+                return (expression, true);
             }
             ')' if paren_depth == 0 && chars.peek().copied() == Some(')') => {
                 chars.next();
