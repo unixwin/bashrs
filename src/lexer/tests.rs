@@ -157,6 +157,21 @@ fn heredoc_body_paren_does_not_close_command_substitution() {
 }
 
 #[test]
+fn case_pattern_paren_does_not_close_command_substitution() {
+    // parse.y `case_item` owns the pattern list closing `)`, so it must not
+    // balance the surrounding $(). A multi-line case whose `esac` sits on its
+    // own line inside $() must stay one logical line, otherwise the sub-word is
+    // truncated at the newline and the parser reports
+    // `syntax error in command substitution` (comsub-posix line 81).
+    assert!(has_unclosed_command_substitution("echo $(case a in a) echo x"));
+    assert!(has_unclosed_command_substitution("echo $(case a in a) echo x\nesac"));
+    assert!(!has_unclosed_command_substitution("echo $(case a in a) echo x\nesac)"));
+    assert!(!has_unclosed_command_substitution("echo $(case a in a) echo x;; esac)"));
+    // A pattern `)` still leaves an unterminated case open when `esac` is missing.
+    assert!(has_unclosed_command_substitution("echo $(case a in a) echo x)"));
+}
+
+#[test]
 fn nested_heredoc_in_command_substitution_is_collected_before_next_command() {
     let tokens = tokenize("echo $(cat <<EOF)\nfoo\nbar\nEOF\necho after");
     let substitution = tokens

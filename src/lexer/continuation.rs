@@ -164,6 +164,15 @@ fn skip_parenthesized_unit(chars: &[char], open: usize) -> Option<usize> {
     let mut index = open;
     let mut single = false;
     let mut double = false;
+    // A case pattern list owns its closing `)` (parse.y `case_item`), so the
+    // pattern `)` must not balance the command-substitution parenthesis. Track
+    // case depth the same way `has_unclosed_command_substitution` does; without
+    // it `$(case a in a) echo x\nesac)` looks balanced at the pattern `)` and
+    // the logical line is finalized before `esac)`.
+    let mut case_depth = 0usize;
+    let mut word = String::new();
+    let mut word_boundary = true;
+    let mut current_word_boundary = true;
     while index < chars.len() {
         let ch = chars[index];
         if single {
@@ -208,11 +217,23 @@ fn skip_parenthesized_unit(chars: &[char], open: usize) -> Option<usize> {
             index = next;
             continue;
         }
+        // Quoted text is a literal word and cannot begin a reserved word.
+        if !single && !double {
+            update_command_substitution_case_depth(
+                chars,
+                index,
+                ch,
+                &mut word,
+                &mut case_depth,
+                &mut word_boundary,
+                &mut current_word_boundary,
+            );
+        }
         match ch {
             '\'' => single = true,
             '"' => double = true,
-            '(' => depth += 1,
-            ')' => {
+            '(' if case_depth == 0 => depth += 1,
+            ')' if case_depth == 0 => {
                 depth = depth.saturating_sub(1);
                 if depth == 0 {
                     return Some(index + 1);
