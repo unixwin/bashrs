@@ -322,7 +322,13 @@ impl Executor {
         source.push_str(&cmd.words[1..].join(" "));
 
         self.expanding_aliases.push(word.clone());
-        let tokens = crate::lexer::tokenize(&source);
+        let tokens = crate::lexer::tokenize_with_options(
+            &source,
+            crate::lexer::TokenizeOptions {
+                input_origin: crate::lexer::InputOrigin::AliasReplacementDeferredHeredoc,
+                ..Default::default()
+            },
+        );
         let ast = crate::parser::parse(&tokens);
         let result = self.execute_ast(&ast);
         self.expanding_aliases.pop();

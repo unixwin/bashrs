@@ -61,7 +61,13 @@ impl Executor {
         }
 
         self.expanding_aliases.push(first_word.clone());
-        let tokens = crate::lexer::tokenize(&source);
+        let tokens = crate::lexer::tokenize_with_options(
+            &source,
+            crate::lexer::TokenizeOptions {
+                input_origin: crate::lexer::InputOrigin::AliasReplacementDeferredHeredoc,
+                ..Default::default()
+            },
+        );
         let reparsed = crate::parser::parse(&tokens);
         let result = self.execute_ast(&reparsed);
         self.expanding_aliases.pop();
@@ -84,7 +90,13 @@ impl Executor {
 
         let mut source = alias_compound_source_words(&words);
         append_source_redirects(&mut source, command);
-        let tokens = crate::lexer::tokenize(&source);
+        let tokens = crate::lexer::tokenize_with_options(
+            &source,
+            crate::lexer::TokenizeOptions {
+                input_origin: crate::lexer::InputOrigin::AliasReplacementDeferredHeredoc,
+                ..Default::default()
+            },
+        );
         let reparsed = crate::parser::parse(&tokens);
         if !reparsed.commands.first().is_some_and(|command| {
             command.inverted
@@ -112,7 +124,13 @@ impl Executor {
         }
 
         let (source, next_index) = alias_group_source(ast, index, command, &words, ")");
-        let tokens = crate::lexer::tokenize(&source);
+        let tokens = crate::lexer::tokenize_with_options(
+            &source,
+            crate::lexer::TokenizeOptions {
+                input_origin: crate::lexer::InputOrigin::AliasReplacementDeferredHeredoc,
+                ..Default::default()
+            },
+        );
         let reparsed = crate::parser::parse(&tokens);
         if !reparsed
             .commands
@@ -140,7 +158,13 @@ impl Executor {
         }
 
         let (source, next_index) = alias_group_source(ast, index, command, &words, "}");
-        let tokens = crate::lexer::tokenize(&source);
+        let tokens = crate::lexer::tokenize_with_options(
+            &source,
+            crate::lexer::TokenizeOptions {
+                input_origin: crate::lexer::InputOrigin::AliasReplacementDeferredHeredoc,
+                ..Default::default()
+            },
+        );
         let reparsed = crate::parser::parse(&tokens);
         if !reparsed
             .commands
@@ -192,7 +216,13 @@ impl Executor {
         }
         append_source_redirects(&mut source, command);
 
-        let tokens = crate::lexer::tokenize(&source);
+        let tokens = crate::lexer::tokenize_with_options(
+            &source,
+            crate::lexer::TokenizeOptions {
+                input_origin: crate::lexer::InputOrigin::AliasReplacementDeferredHeredoc,
+                ..Default::default()
+            },
+        );
         let reparsed = crate::parser::parse(&tokens);
         if !reparsed
             .commands
@@ -235,7 +265,13 @@ impl Executor {
             return Ok(Some(next_index));
         }
 
-        let tokens = crate::lexer::tokenize(&source);
+        let tokens = crate::lexer::tokenize_with_options(
+            &source,
+            crate::lexer::TokenizeOptions {
+                input_origin: crate::lexer::InputOrigin::AliasReplacementDeferredHeredoc,
+                ..Default::default()
+            },
+        );
         let reparsed = crate::parser::parse(&tokens);
         if !reparsed
             .commands
@@ -274,7 +310,13 @@ impl Executor {
 
         let (source, redirect_command, next_index) =
             self.alias_case_source(ast, index, command, &words);
-        let tokens = crate::lexer::tokenize(&source);
+        let tokens = crate::lexer::tokenize_with_options(
+            &source,
+            crate::lexer::TokenizeOptions {
+                input_origin: crate::lexer::InputOrigin::AliasReplacementDeferredHeredoc,
+                ..Default::default()
+            },
+        );
         let reparsed = crate::parser::parse(&tokens);
         if let Some(case_command) = reparsed
             .commands
@@ -322,7 +364,13 @@ impl Executor {
             }
         }
 
-        let tokens = crate::lexer::tokenize(&source);
+        let tokens = crate::lexer::tokenize_with_options(
+            &source,
+            crate::lexer::TokenizeOptions {
+                input_origin: crate::lexer::InputOrigin::AliasReplacementDeferredHeredoc,
+                ..Default::default()
+            },
+        );
         let reparsed = crate::parser::parse(&tokens);
         if !reparsed
             .commands
@@ -512,7 +560,13 @@ impl Executor {
         }
 
         self.expanding_aliases.push(first_word.clone());
-        let tokens = crate::lexer::tokenize(&source);
+        let tokens = crate::lexer::tokenize_with_options(
+            &source,
+            crate::lexer::TokenizeOptions {
+                input_origin: crate::lexer::InputOrigin::AliasReplacementDeferredHeredoc,
+                ..Default::default()
+            },
+        );
         let ast = crate::parser::parse(&tokens);
         let result = self.execute_ast(&ast);
         self.expanding_aliases.pop();

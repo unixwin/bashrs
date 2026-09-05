@@ -31,8 +31,26 @@ pub use token::{Token, TokenKind};
 
 pub(crate) const QUOTED_HEREDOC_MARKER: &str = "__RUBASH_HD1__";
 
+/// Identifies where lexer input came from; alias handling is reserved for later.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum InputOrigin {
+    #[default]
+    Direct,
+    AliasReplacementDeferredHeredoc,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TokenizeOptions {
+    pub initial_posix: bool,
+    pub input_origin: InputOrigin,
+}
+
 pub fn tokenize(input: &str) -> Vec<Token> {
-    tokenize_with_initial_posix(input, false)
+    tokenize_with_options(input, TokenizeOptions::default())
+}
+
+pub fn tokenize_with_options(input: &str, options: TokenizeOptions) -> Vec<Token> {
+    tokenize_with_initial_posix_and_origin(input, options.initial_posix, options.input_origin)
 }
 
 /// Tokenize with an initial POSIX parse mode. GNU Bash parses commands
@@ -41,11 +59,19 @@ pub fn tokenize(input: &str) -> Vec<Token> {
 /// the line loop below approximates that by flipping the parse mode when it
 /// sees a top-level `set -o posix` / `set +o posix` command.
 pub fn tokenize_with_initial_posix(input: &str, posix: bool) -> Vec<Token> {
+    tokenize_with_initial_posix_and_origin(input, posix, InputOrigin::Direct)
+}
+
+pub fn tokenize_with_initial_posix_and_origin(
+    input: &str,
+    posix: bool,
+    input_origin: InputOrigin,
+) -> Vec<Token> {
     if input.trim().is_empty() {
         return Vec::new();
     }
 
-    let mut tokens = tokenize_with_heredocs(input, posix);
+    let mut tokens = tokenize_with_heredocs(input, posix, input_origin);
     if tokens
         .last()
         .is_some_and(|token| token.kind == TokenKind::Semicolon)
@@ -55,7 +81,11 @@ pub fn tokenize_with_initial_posix(input: &str, posix: bool) -> Vec<Token> {
     tokens
 }
 
-fn tokenize_with_heredocs(input: &str, initial_posix: bool) -> Vec<Token> {
+fn tokenize_with_heredocs(
+    input: &str,
+    initial_posix: bool,
+    input_origin: InputOrigin,
+) -> Vec<Token> {
     // TODO(parse.y/redir.c): Bash parses here-documents after reading the
     // complete command and performs delimiter-specific expansion rules. This
     // line-oriented collector handles the simple `<<word` and `<<'word'`
@@ -134,6 +164,17 @@ fn tokenize_with_heredocs(input: &str, initial_posix: bool) -> Vec<Token> {
         logical_line.clear();
 
         for delimiter in delimiters {
+            // Alias reparsing must leave the caller's physical input available:
+            // its heredoc body belongs to the outer parse, not this replacement.
+            if input_origin == InputOrigin::AliasReplacementDeferredHeredoc {
+                let body = if delimiter.quoted {
+                    QUOTED_HEREDOC_MARKER.to_string()
+                } else {
+                    String::new()
+                };
+                output.push(Token::new(TokenKind::HereDocBody, &body, position));
+                continue;
+            }
             let mut body = String::new();
             let mut continued_body_line = String::new();
             let mut found_delimiter = false;
