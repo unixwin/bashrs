@@ -180,7 +180,7 @@ impl Executor {
                 Some(end) => {
                     slots.push(format!("${{{}}}", &after[..end]));
                     masked.push('\x1c');
-                    masked.push_str(&slots.len().to_string());
+                    masked.push_str(&(slots.len() - 1).to_string());
                     rest = &after[end + 1..];
                 }
                 None => {
