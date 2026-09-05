@@ -30,13 +30,27 @@ This checkpoint separates compatibility families by semantic owner; aggregate DI
 - target/comsub_probe.sh
 - target/invocation-probe.sh
 
-### Quoted Parameter Pattern Pre-existing Defect
+### Quoted Parameter Pattern Defect - Fixed (2026-09-05)
 
-The focused tests quoted_parameter_pattern_glob_chars_are_literal and unquoted_heredoc_backslash_and_parameter_errors_match_bash fail identically on clean HEAD and in the current tree: Rubash prints <*> and <*b> where GNU Bash 5.2.21 prints <> and <b>. Instrumentation shows the pattern argument arrives as quoted '*', but expand_embedded_parameters_preserving_escaped_single_quotes strips the single quotes before decode_parameter_pattern_quotes runs. decode_parameter_pattern_quotes only recognizes $'...' and $"...", so the literal '*' loses its quoted-glob marker (\x11) and becomes a glob wildcard; remove_matching_prefix then matches the empty suffix with '*' and removes nothing. This is a pre-existing owner bug in parameter pattern quote propagation, not introduced by heredoc/comsub work and not fixed by the \x11-to-backslash conversion (which only applies after a successful decode). Keep it out of heredoc fixes; address it in parameter_decode/parameter_patterns with a quote-preserving path.
+The focused tests `quoted_parameter_pattern_glob_chars_are_literal` and `unquoted_heredoc_backslash_and_parameter_errors_match_bash` previously failed identically on clean HEAD: Rubash printed `<*>` and `<*b>` where WSL GNU Bash 5.2.21 printed `<>` and `<b>`. Root cause, confirmed by temporary instrumentation (since removed): the parser passes the pattern to the executor as quoted `'*'`, but `expand_embedded_parameters_preserving_escaped_single_quotes` stripped the single quotes before `decode_parameter_pattern_quotes` ran, so the literal `*` lost its quoted-glob marker (\x11) and became a glob wildcard that matched the empty prefix and removed nothing.
 
-### Heredoc10 Verification Addendum
+Fix landed in three commits:
 
-The LF-normalized alias/heredoc probe confirms a parser-stream mismatch. GNU Bash treats the lines following a multiline alias definition (`hello`, `world`, `EOF`) as commands and reports command-not-found diagnostics, while Rubash consumes them as heredoc body text. The alias builtin focused test passes and `git diff --check` passes, so this is not an alias output-format defect. The likely owner is parse-time alias expansion and input-stream re-read state around pending heredoc collection. No non-lexer surgical fix was identified; `src/lexer/continuation.rs` and `src/lexer/tests.rs` remain captain-exclusive and must not be overwritten.
+- `cc383550`: `src/executor/parameter_patterns.rs::expand_parameter_pattern_word` now masks top-level nested `${...}` behind private slots, decodes pattern quotes so the \x11 marker is injected for literal quoted glob characters, restores the masks, and only then expands embedded parameters. The \x11-to-backslash conversion still applies after a successful decode.
+- `823ae0ce`: `src/lexer/dolbrace.rs::scan_braced_parameter` gives a nested `${...}` a fresh quote scope (quote state is pushed, reset on entry, and restored at the closing brace). Without this, an inner pattern quote such as `${v%"${v#?}"}` unbalanced the outer scan and returned `None`, which made the lexer swallow subsequent physical lines into a single word.
+- `b8f3a5c3`: the masked-slot index was off by one (`slots.len()` instead of `slots.len() - 1`), leaving a residual marker that defeated nested expansion.
+
+Remaining open in this family: the nested-parameter executor path (`${v%"${v#?}"}` still returning `ab` instead of `a` at the whole-word level) is a separate owner in `src/executor/parameter_core.rs` / `expand_braced_patterns.rs` and is tracked separately; the lexer tokenization fix above is the prerequisite.
+
+Evidence: `cargo test --test cli_tests quoted_parameter_pattern` 2/2, `nested_parameter_expansion_can_supply_pattern_removal` 1/1, `unquoted_heredoc_backslash` 1/1, `cargo test --lib lexer` 30 passed, `cargo test --test parser_tests` 17 passed, `cargo test --test heredoc_regressions` 2 passed, `cargo build` clean. The full `cli_tests` failure name list is unchanged before and after (56 to 54 only because the two pattern tests now pass; `comm` of failure names is empty), so no new regression was introduced.
+
+### Heredoc10 Verification Addendum - Fixed (2026-09-05)
+
+The LF-normalized alias/heredoc probe confirmed a parser-stream mismatch: WSL GNU Bash 5.2.21 treats the lines following a multiline alias definition (`hello`, `world`, `EOF`) as commands and reports `hello: command not found`, while Rubash consumed them as heredoc body text.
+
+Fix landed in `f4edbfde`: the alias replacement re-tokenize path passes `InputOrigin::AliasReplacementDeferredHeredoc` (new `TokenizeOptions` / `tokenize_with_options` API in `src/lexer/mod.rs`; call sites in `src/executor/alias_reparse.rs` and `src/executor/arithmetic_aliases.rs`). The lexer collector emits the heredoc body token for the alias origin but does not advance the physical input line iterator, so the following physical lines stay available for normal command parsing after alias expansion. The default `tokenize()` keeps `InputOrigin::Direct` semantics unchanged, so ordinary heredocs, nested command-substitution heredocs, quoted delimiters, `<<-`, here-strings, and EOF diagnostics are unaffected.
+
+Evidence: the alias heredoc probe now matches GNU on stdout, stderr, and exit status (both emit `after` plus `hello: command not found`, exit 0); the nested heredoc probe matches GNU stdout (`foo bar` / `after`) with matching warning text, line number, and exit 0; `cargo test --test heredoc_regressions` 2 passed; `cargo test --lib lexer` passed; `cargo check` and `cargo build` clean. `src/lexer/continuation.rs` and `src/lexer/tests.rs` were not modified.
 
 ### Implementation order
 

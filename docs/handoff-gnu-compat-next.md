@@ -90,30 +90,33 @@ The official braces result 132/77 is contaminated by missing zecho and stale GNU
 
 ## Open Work
 
-### posixexp2: t8 incomplete
+### posixexp2: quote preservation in ${IFS+word} alternate words (refreshed 2026-09-05)
 
 Current authoritative artifacts:
 
 - target/issue-suites/results/check/posixexp2.rubash.out
 - tests/gnu-compat/upstream-rights/posixexp2.right
 - target/issue-suites/results/check/posixexp2.diff
+- target/issue-suites/results/live/posixexp2.gnu.out and .rubash.out
 
-WSL GNU matches expected 40/40. Rubash differs in exactly cases 8, 9, 11, 12, 28, 29, 37, 39. The 39 diff lines are unified diff headers/hunks, not an output count.
+Baseline validity: `tests/gnu-compat/upstream-rights/posixexp2.right` is byte-identical to the live WSL GNU Bash 5.2.21 output (`diff` empty; both 40 lines), so the .right file is a valid authority for this family.
 
-Observed categories:
+Refreshed difference set. The previous list (cases 8, 9, 11, 12, 28, 29, 37, 39) is stale. Rubash now differs in exactly 13 of 40 cases: 2, 3, 8, 9, 11, 12, 24, 28, 29, 33, 34, 37, 38. Case 39 now matches.
 
-- 8/9: literal backslash remains before quote in Rubash.
-- 11/12: nested command substitution/braced expansion quote/brace context is wrong.
-- 28: quote preservation differs.
-- 29: brace/quote field boundary differs.
-- 37: unquoted alternate word incorrectly splits escaped IFS.
-- 39: assignment quote preservation is incomplete on one path; GNU preserves x'a'y so suffix removal yields x'.
+All 40 cases exercise the quote semantics of the alternate/default word in `${IFS+word}` and `${var-word}` under `set -o posix; shopt -u xpg_echo`. Minimal probe kept at `target/px2probe.sh`, compared as `MSYS_NO_PATHCONV=1 wsl bash /mnt/d/repo/rubash/target/px2probe.sh` versus `target/debug/rubash.exe target/px2probe.sh`.
 
-GNU references: third_party/bash/parse.y parameter scanner around 3884-4050, DOLBRACE transitions 4004-4027; third_party/bash/subst.c extraction 1825-2050, parameter_brace_expand and param_expand around 7663-7780 and 9777-10820.
+Observed root-cause families:
 
-t8 changed only src/executor/parameter_words.rs on three quoted alternate return paths. Captain verification found cargo build passes, but command_chaining::part_063 is 17 passed / 5 failed. Do not modify parameter_ops.rs blindly; first run minimal current probes and separate t8 effects from pre-existing replacement failures.
+- Family A (case 37) - unquoted escaped-space loss. `${v-a\ b}` and `${v-c\ d}`: GNU keeps the backslash so each stays one field (`<a b> <x> <c d>`); Rubash drops it and IFS-splits (`<a> <b> <x> <c> <d>`). Isolated and directly comparable; recommended first target.
+- Family B (case 38) - single quote consumed in an unquoted alternate word. Unquoted `${IFS+x'a'y}`: GNU `xay`. Double-quoted "${IFS+x'a'y}": GNU `x'a'y`, Rubash `xay`. Inside double quotes the `'` is literal; Rubash treats it as a real quote opener.
+- Family D (case 24) - double-quoted alternate word, `'` must stay literal. "${IFS+'$key'}" with `key=value`: GNU `'value'`, Rubash `$key`. Rubash opens a real single quote at the first `'`, which both consumes the quote pair and suppresses `$key` expansion. Same root cause as Family B.
+- Family C (cases 2, 3, 8, 9, 11, 12, 28, 29, 33, 34) - quote/brace boundary scanning inside `${IFS+...}`. Examples: GNU `2 ''z}` vs Rubash `2 }z`; GNU `8 "}z` vs Rubash `8 }z`; case 29 brace/quote field drift; cases 33/34 split one quoted word into three. This is the parse.y parameter-scanner depth; the t8 attempt (three quoted alternate return paths in `src/executor/parameter_words.rs`) left `command_chaining::part_063` at 17 passed / 5 failed. Treat as a separate captain-reviewed design task; do not patch parser transitions speculatively.
 
-Next action: continue with a fresh task, source evidence, minimal WSL probe, focused regression, then bounded run-83 check posixexp2.
+GNU references: `third_party/bash/parse.y` parameter scanner around 3884-4050 and DOLBRACE transitions 4004-4027; `third_party/bash/subst.c` extraction 1825-2050, `parameter_brace_expand` and `param_expand` around 7663-7780 and 9777-10820.
+
+Harness note: `tests/gnu-compat/run-83.sh` must be driven by a real POSIX shell. `bash` on PATH is the winuxsh (Niubash) shim and exits silently with RC=2 and no output. Verified with both `D:/Git/bin/bash.exe` and `wsl bash -c` as driver - identical results (only the diff header path prefix differs: `/d/repo/rubash` versus `/mnt/d/repo/rubash`). `run_gnu()` always invokes `wsl bash`, so the semantic baseline is WSL GNU regardless of the driver shell.
+
+Next action: Family A first (minimal probe, focused regression, bounded `run-83.sh check posixexp2`), then Families B and D together (shared double-quote-context `'` literal root cause), then Family C as a designed captain-reviewed task.
 
 ### comsub-posix: collector/heredoc boundary
 
