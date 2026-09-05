@@ -35,6 +35,7 @@ fn run_main() -> i32 {
     }
     if let Some(shell_name) = args.first() {
         executor.set_env("__RUBASH_SHELL_NAME", shell_name);
+        executor.set_env("BASH_ARGV0", shell_name);
     }
     apply_invocation_shell_mode(&mut executor, args.first().map(String::as_str));
 
@@ -132,7 +133,11 @@ fn run_args(executor: &mut Executor, args: &[String]) -> i32 {
                     return 2;
                 }
             }
-            "--init-file" => {
+            "-i" => {
+                executor.set_env("__RUBASH_INTERACTIVE", "1");
+                index += 1;
+            }
+            "--rcfile" | "--init-file" => {
                 if let Some(path) = args.get(index + 1) {
                     init_file = Some(path.clone());
                     index += 2;
@@ -170,6 +175,7 @@ fn run_args(executor: &mut Executor, args: &[String]) -> i32 {
                     executor.set_env("BASH_EXECUTION_STRING", command);
                     if let Some(command_name) = args.get(index + 2) {
                         executor.set_env("__RUBASH_SCRIPT_NAME", command_name);
+                        executor.set_env("BASH_ARGV0", command_name);
                         executor.set_positional_params(args[index + 3..].to_vec());
                     }
                     return run_command_string_with_init(executor, command, init_file.as_deref());
@@ -253,8 +259,9 @@ fn run_command_string_with_init(
         .get_env("__RUBASH_LINE_OFFSET")
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(0);
-    let status = run_source_with_line_offset(executor, command, false, line_offset);
-    finish_shell(executor, status, false)
+    let interactive = executor.get_env("__RUBASH_INTERACTIVE").as_deref() == Some("1");
+    let status = run_source_with_line_offset(executor, command, interactive, line_offset);
+    finish_shell(executor, status, interactive)
 }
 
 fn run_script_file_with_init(
@@ -273,13 +280,15 @@ fn run_script_file_with_init(
     };
 
     executor.set_env("__RUBASH_SCRIPT_NAME", script);
+    executor.set_env("BASH_ARGV0", script);
     executor.inherit_process_stdin();
     executor.set_positional_params(args.to_vec());
     if let Some(init_file) = init_file {
         let _ = run_init_file(executor, init_file);
     }
-    let status = run_source(executor, &contents, false);
-    finish_shell(executor, status, false)
+    let interactive = executor.get_env("__RUBASH_INTERACTIVE").as_deref() == Some("1");
+    let status = run_source(executor, &contents, interactive);
+    finish_shell(executor, status, interactive)
 }
 
 fn run_no_script_with_init(executor: &mut Executor, init_file: Option<&str>) -> i32 {
