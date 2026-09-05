@@ -62,6 +62,11 @@ pub(crate) fn scan_braced_parameter(input: &str, options: BraceContext) -> Optio
     let mut states = Vec::new();
     let mut single = false;
     let mut double = false;
+    // GNU parse.y runs a fresh quote state machine for each nested ${...}.
+    // Save and reset the outer quote state on entry so a `"` in the outer
+    // pattern cannot keep an inner expansion's `}` from closing (e.g.
+    // ${v%"${v#?}"}), and restore it when the inner expansion closes.
+    let mut quote_stack: Vec<(bool, bool)> = Vec::new();
     let mut bracket_depth = 0usize;
     let mut quote_events = Vec::new();
     while cursor < chars.len() {
@@ -94,6 +99,9 @@ pub(crate) fn scan_braced_parameter(input: &str, options: BraceContext) -> Optio
         if ch == '$' && chars.get(cursor).is_some_and(|(_, next)| *next == '{') && !single {
             cursor += 1;
             states.push(state);
+            quote_stack.push((double, single));
+            double = false;
+            single = false;
             depth += 1;
             state = match state {
                 DolbraceState::Word | DolbraceState::Quote | DolbraceState::Quote2 => {
@@ -116,6 +124,7 @@ pub(crate) fn scan_braced_parameter(input: &str, options: BraceContext) -> Optio
                 });
             }
             state = states.pop().unwrap_or(DolbraceState::Param);
+            (double, single) = quote_stack.pop().unwrap_or((false, false));
             continue;
         }
         if ch == '\'' && !double {
@@ -313,6 +322,15 @@ mod tests {
         assert_eq!(scan.quote_events.len(), 1);
         assert_eq!(scan.quote_events[0].kind, QuoteEventKind::Single);
         assert_eq!(scan.quote_events[0].state, DolbraceState::Op);
+    }
+
+    #[test]
+    fn nested_pattern_quote_does_not_block_inner_brace() {
+        // Outer pattern quote `"` must not keep the inner ${v#?} `}` from
+        // closing: ${v%"${v#?}"} has a fresh quote scope per nested ${...}.
+        let input = "${v%\"${v#?}\"}";
+        let scan = scan_braced_parameter(input, OUTER_DOUBLE_DEFAULT).unwrap();
+        assert_eq!(scan.end, input.len());
     }
 
     #[test]
