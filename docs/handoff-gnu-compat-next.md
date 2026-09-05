@@ -108,15 +108,32 @@ All 40 cases exercise the quote semantics of the alternate/default word in `${IF
 Observed root-cause families:
 
 - Family A (case 37) - FIXED in `39403609`. Unquoted escaped-space loss: `${v-a\ b}` and `${v-c\ d}` produced two fields in Rubash (`<a> <b> <x> <c> <d>`) where GNU keeps one each (`<a b> <x> <c d>`). Root cause: `src/executor/command_prepare.rs::braced_alternate_word_values` routed the narrow `-`/`:-` unquoted alternate through the String operator path, whose `unescape_remaining_shell_escapes` converted `\ ` into a real separator before field splitting ran. Such alternates now route through the quote-aware fragment expansion when they contain a backslash-escaped IFS whitespace (`parameter_word_has_escaped_whitespace` in `src/executor/parameter_ops.rs`); non-whitespace escapes such as `${v-foo\\bar}` stay on the String path and still match GNU (`<foo\\bar>`). Regression: `unquoted_parameter_default_preserves_escaped_space_field_boundary`. Bounded `run-83.sh check posixexp` output is byte-identical to HEAD across a clean-build A/B, so the re-routing changed nothing outside the escaped-whitespace case.
-- Family B (case 38) - single quote consumed in an unquoted alternate word. Unquoted `${IFS+x'a'y}`: GNU `xay`. Double-quoted "${IFS+x'a'y}": GNU `x'a'y`, Rubash `xay`. Inside double quotes the `'` is literal; Rubash treats it as a real quote opener.
-- Family D (case 24) - double-quoted alternate word, `'` must stay literal. "${IFS+'$key'}" with `key=value`: GNU `'value'`, Rubash `$key`. Rubash opens a real single quote at the first `'`, which both consumes the quote pair and suppresses `$key` expansion. Same root cause as Family B.
+- Family B (case 38) - single quote consumed in an unquoted alternate word. Unquoted `${IFS+x'a'y}`: GNU `xay`. Double-quoted "${IFS+x'a'y}": GNU `x'a'y`, Rubash `xay`. Inside double quotes the `'` is literal; Rubash treats it as a real quote opener. Blocked on the lexer/parser WORD_DESC quote-state gap documented below.
+- Family D (case 24) - double-quoted alternate word, `'` must stay literal. "${IFS+'$key'}" with `key=value`: GNU `'value'`, Rubash `$key`. Rubash opens a real single quote at the first `'`, which both consumes the quote pair and suppresses `$key` expansion. Same root cause as Family B. Blocked on the lexer/parser WORD_DESC quote-state gap documented below.
 - Family C (cases 2, 3, 8, 9, 11, 12, 28, 29, 33, 34) - quote/brace boundary scanning inside `${IFS+...}`. Examples: GNU `2 ''z}` vs Rubash `2 }z`; GNU `8 "}z` vs Rubash `8 }z`; case 29 brace/quote field drift; cases 33/34 split one quoted word into three. This is the parse.y parameter-scanner depth; the t8 attempt (three quoted alternate return paths in `src/executor/parameter_words.rs`) left `command_chaining::part_063` at 17 passed / 5 failed. Treat as a separate captain-reviewed design task; do not patch parser transitions speculatively.
 
 GNU references: `third_party/bash/parse.y` parameter scanner around 3884-4050 and DOLBRACE transitions 4004-4027; `third_party/bash/subst.c` extraction 1825-2050, `parameter_brace_expand` and `param_expand` around 7663-7780 and 9777-10820.
 
 Harness note: `tests/gnu-compat/run-83.sh` must be driven by a real POSIX shell. `bash` on PATH is the winuxsh (Niubash) shim and exits silently with RC=2 and no output. Verified with both `D:/Git/bin/bash.exe` and `wsl bash -c` as driver - identical results (only the diff header path prefix differs: `/d/repo/rubash` versus `/mnt/d/repo/rubash`). `run_gnu()` always invokes `wsl bash`, so the semantic baseline is WSL GNU regardless of the driver shell.
 
-Next action: Families B and D together (shared double-quote-context `'` literal root cause), then Family C as a designed captain-reviewed task.
+Next action: Family C as a designed captain-reviewed task (parse.y parameter-scanner depth). Families B and D are blocked on the lexer/parser WORD_DESC quote-state gap documented below, not on the executor.
+
+### posixexp2 Families B/D: blocked on word quote-state (2026-09-05 investigation)
+
+An executor-side fix was attempted and reverted; the working tree is clean at `b3323b76`.
+
+The executor already distinguishes a double-quoted whole-word braced parameter with a `\x1d` sentinel: `src/lexer/word.rs::finish_word_token` (lines 65-69) sets `value` to `\x1d{value}` when `raw` starts with a double quote, ends with a double quote, and contains `${`. `src/executor/parameter_core.rs` (lines 40-44) then routes that word to `expand_quoted_parameter_word_mut` with `SubstitutionQuoteContext::DoubleQuoted`, which handles `+` (line 342) and `-` (line 354) through `expand_embedded_parameters_mut_with_context`, keeping `'` literal and still expanding `$key`. So the executor path would be correct if it were reached.
+
+Instrumented both levels with `target/bdq.sh`:
+
+- The `\x1d` branch in `src/lexer/word.rs` never fires. A token-level log added in `src/parser/support.rs::record_word` reports both `token.value` and `token.raw` as `${IFS+'$key'}` for the double-quoted source form - the surrounding double quotes are absent from the lexer slice, so the starts-with-double-quote test is false.
+- Consequently the executor sees a plain unquoted word and `word_metadata.raw` is empty, so the `src/executor/command_prepare.rs` line-647 rebuild never fires either.
+
+The gap is upstream of the executor: double-quote context for a whole-word braced parameter is not carried into the parsed token at all. This is exactly the open TODO already present at `src/lexer/word.rs` lines 47-49 and 66-68 - preserve full quote state on WORD_DESC instead of a sentinel.
+
+- Do not re-attempt this by threading a raw-based double-quote scan into `braced_alternate_word_values`. That attempt (`braced_parameter_is_double_quoted` plus a `double_quoted`-gated branch in `expand_alternate_word_fragment`) compiled and left the `cli_tests` failure list unchanged (54 failures, identical names), but could never observe a double-quoted context because raw is empty. Both instrumentation blocks were removed and the tree reverted to HEAD.
+
+- Correct fix: carry the double-quote flag through the lexer token and `WordMetadata` (WORD_DESC), then let the existing sentinel path do the work. That is a lexer/parser change and should be a designed captain-reviewed task, not a speculative patch.
 
 ### Subshell variable isolation - FIXED
 
