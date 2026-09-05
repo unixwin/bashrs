@@ -343,6 +343,21 @@ TIMEOUT：`arith`、`ifs-posix`、`read`；SKIP：`jobs`、`printf`（无 `.righ
 
 `vredir6.sub` 的独立对照确认其中剩余差异是平台边界：GNU 在 `ulimit -n 6` 后执行 `exec {v}</dev/null`，报告 `cannot duplicate fd: Invalid argument` 与 `/dev/null: Invalid argument`，随后 `${v-unset}` 为 `unset`；Rubash 的虚拟 `FdTable` 不受 POSIX `RLIMIT_NOFILE` 约束，输出 `ok 1` 和动态 fd `10`。该差异属于 Windows-first fd 资源模型，不能伪造 GNU 错误来关闭 suite。`vredir8` 的无设备依赖 probe `shopt -s varredir_close; : {fd}>&1; echo >&$fd` 已与 GNU 一致：`fd=10`、正常命令继续执行，随后 `$fd: Bad file descriptor`。因此 vredir8 剩余的 `/dev/tty` 错误优先归类为 Windows 设备路径差异。下一片改查 `vredir3` 的 `set -u` 动态 fd close 诊断和错误传播。
 
+## 十七、2026-09-06 heredoc 坏基线修复与真实差异
+
+`run-83.sh gen` 依赖 WSL 内调用 `wsl.exe`，在当前 WSL 环境不可用，导致 `heredoc.right` 一直是坏基线（31 行，CR 污染/截断，缺失 heredoc.tests 主文件正常输出）。已用与 run-83.sh 相同机制手动重新生成：WSL GNU Bash 5.2.21 + 编译的 recho/zecho/printenv helpers + CR-free clean copy + `THIS_SH=bash`，得到真实基线 186 行并替换 `tests/gnu-compat/upstream-rights/heredoc.right`。
+
+替换后权威结果：`DIFF heredoc (rubash=169 right=186)`，真实差异 17 行（此前 169 vs 31 是坏基线数字）。逐项分类：
+
+- heredoc3：`$(cat <<EOF\n...\nEOF)` 形式（终止行 `EOF)` 携带命令替换闭合 `)`），GNU `make_cmd.c:602-611` 用 `shell_ungets` 放回 `)` 并报 `here-document at line N delimited by end-of-file` warning；Rubash 执行输出正确但缺 4 条 warning，且尾部 syntax error 行号/措辞不同（`line 92 near unexpected end of file` vs GNU `line 99 unexpected end of file`）。
+- heredoc5：`cat`/`cmp` 对缺失文件（y.tab.c/config.h/version.h）的错误文本差异（引号、`cmp:` 双前缀、截断），属外部命令错误格式。
+- heredoc7：缺 `command substitution: 1 unterminated here-document`（parse.y:4565）；heredoc 终止点/行号差异（GNU line 29 vs Rubash line 26，foobar/EOF 命令行号 29/30 vs 1/2）；`grep` 调用因 Rubash 解析到 Windows grep（全角冒号）属环境差异。
+- heredoc9：函数序列化 heredoc 重定向格式差异（`if cat <<HERE; then` vs `if cat <<HERE\nthen`），与 cprint 递归序列化同族。
+- heredoc10：`alias 'headplus=cat <<EOF\nhello'` 后 GNU 报 `hello/world/EOF: command not found` 与 `unalias: headplus: not found`，Rubash 却执行了 alias 后的 heredoc——alias+heredoc 行为真实差异。
+- heredoc.tests 尾部：`cat <<''` 的 warning 输出顺序差异。
+
+下一片建议从 heredoc7 的 `command substitution: 1 unterminated here-document` 与 heredoc10 的 alias+heredoc 入手（真实语义差异），heredoc3 warning 需在 lexer word 内嵌命令替换路径传递终止符标记（改动面较大）。
+
 ## 十五、2026-09-06 兼容性局部审计（已被完整矩阵 supersede）
 
 本节保留局部 focused 结果作为根因记录；完整 83-test 结果以紧邻的“十六”节为准。
