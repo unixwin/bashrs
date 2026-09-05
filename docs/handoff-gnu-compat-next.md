@@ -107,7 +107,7 @@ All 40 cases exercise the quote semantics of the alternate/default word in `${IF
 
 Observed root-cause families:
 
-- Family A (case 37) - unquoted escaped-space loss. `${v-a\ b}` and `${v-c\ d}`: GNU keeps the backslash so each stays one field (`<a b> <x> <c d>`); Rubash drops it and IFS-splits (`<a> <b> <x> <c> <d>`). Isolated and directly comparable; recommended first target.
+- Family A (case 37) - FIXED in `39403609`. Unquoted escaped-space loss: `${v-a\ b}` and `${v-c\ d}` produced two fields in Rubash (`<a> <b> <x> <c> <d>`) where GNU keeps one each (`<a b> <x> <c d>`). Root cause: `src/executor/command_prepare.rs::braced_alternate_word_values` routed the narrow `-`/`:-` unquoted alternate through the String operator path, whose `unescape_remaining_shell_escapes` converted `\ ` into a real separator before field splitting ran. Such alternates now route through the quote-aware fragment expansion when they contain a backslash-escaped IFS whitespace (`parameter_word_has_escaped_whitespace` in `src/executor/parameter_ops.rs`); non-whitespace escapes such as `${v-foo\\bar}` stay on the String path and still match GNU (`<foo\\bar>`). Regression: `unquoted_parameter_default_preserves_escaped_space_field_boundary`. Bounded `run-83.sh check posixexp` output is byte-identical to HEAD across a clean-build A/B, so the re-routing changed nothing outside the escaped-whitespace case.
 - Family B (case 38) - single quote consumed in an unquoted alternate word. Unquoted `${IFS+x'a'y}`: GNU `xay`. Double-quoted "${IFS+x'a'y}": GNU `x'a'y`, Rubash `xay`. Inside double quotes the `'` is literal; Rubash treats it as a real quote opener.
 - Family D (case 24) - double-quoted alternate word, `'` must stay literal. "${IFS+'$key'}" with `key=value`: GNU `'value'`, Rubash `$key`. Rubash opens a real single quote at the first `'`, which both consumes the quote pair and suppresses `$key` expansion. Same root cause as Family B.
 - Family C (cases 2, 3, 8, 9, 11, 12, 28, 29, 33, 34) - quote/brace boundary scanning inside `${IFS+...}`. Examples: GNU `2 ''z}` vs Rubash `2 }z`; GNU `8 "}z` vs Rubash `8 }z`; case 29 brace/quote field drift; cases 33/34 split one quoted word into three. This is the parse.y parameter-scanner depth; the t8 attempt (three quoted alternate return paths in `src/executor/parameter_words.rs`) left `command_chaining::part_063` at 17 passed / 5 failed. Treat as a separate captain-reviewed design task; do not patch parser transitions speculatively.
@@ -116,7 +116,34 @@ GNU references: `third_party/bash/parse.y` parameter scanner around 3884-4050 an
 
 Harness note: `tests/gnu-compat/run-83.sh` must be driven by a real POSIX shell. `bash` on PATH is the winuxsh (Niubash) shim and exits silently with RC=2 and no output. Verified with both `D:/Git/bin/bash.exe` and `wsl bash -c` as driver - identical results (only the diff header path prefix differs: `/d/repo/rubash` versus `/mnt/d/repo/rubash`). `run_gnu()` always invokes `wsl bash`, so the semantic baseline is WSL GNU regardless of the driver shell.
 
-Next action: Family A first (minimal probe, focused regression, bounded `run-83.sh check posixexp2`), then Families B and D together (shared double-quote-context `'` literal root cause), then Family C as a designed captain-reviewed task.
+Next action: Families B and D together (shared double-quote-context `'` literal root cause), then Family C as a designed captain-reviewed task.
+
+### Blocker discovered while fixing Family A: subshell variable assignment leaks
+
+posixexp2 case 37 still reports a diff in the upstream test file even though the
+default-word path is fixed. Bisecting the test prefix located case 36:
+"
+    (echo -n '36 '; printf '<%s> ' "${v=a\\ b}" x "${v=c\\ d}"; echo .) 2>&-
+"
+which assigns `v` inside a subshell. WSL GNU Bash 5.2.21 keeps that assignment in
+the subshell (`V value=[]` afterwards), so case 37 falls back to its default word.
+Rubash leaks it (`V value=[a\\ b]`), so case 37 expands `v`'s stored value and
+then IFS-splits it.
+
+Confirmed as a general pre-existing defect with `target/subshell_iso.sh` -
+identical on HEAD and with the Family A fix applied:
+
+- `(v=hello)` and `v=outer; ( v=inner )` leak into the parent (Rubash `hello` /
+  `inner`); GNU leaves the parent untouched.
+- `( ${v=insidesub} )` and `( printf '%s' "${v=inner}" )` leak as well - the
+  `${var=value}` assignment form is not isolated either.
+- `( unset v )` does NOT leak, so the isolation gap is specific to assignment.
+
+Owner: the subshell fork/restore path for the shell variable table. This is a
+deep subsystem (state copy-on-fork plus restore), not a one-line fix, so it is
+recorded and left unaddressed. It must be fixed before posixexp2 case 37 can
+turn green in the suite, and it likely affects other suites that assign inside
+subshells and read the variable afterwards.
 
 ### comsub-posix: collector/heredoc boundary
 
