@@ -1399,6 +1399,28 @@ fn subshell_keeps_variable_assignment_and_positional_params_local() {
 }
 
 #[test]
+fn double_quoted_parameter_alternate_keeps_quotes_literal() {
+    // Inside a double-quoted ${IFS+word} or ${v-word} the inner single
+    // quotes are literal and $key still expands (posixexp2 cases 24/38).
+    // The word carries the lexer's \x1d double-quote marker, so brace
+    // expansion must not rebuild it from the unmarked raw: that recursion
+    // drops the marker, re-expands the alternate as unquoted, and the
+    // inner quotes become real single quotes that suppress $key.
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"set -o posix; shopt -u xpg_echo; unset v; key=value; printf "1=[%s]\n" "${IFS+'$key'}"; printf "2=[%s]\n" "${IFS+x'a'y}"; printf "3=[%s]\n" "${IFS+'quoted word'}"; printf "4=[%s]\n" "${v-'a b'}"; printf "5=[%s]\n" "${v-foo\bar}""#)
+        .output()
+        .expect("run double-quoted parameter alternate probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "1=['value']\n2=[x'a'y]\n3=['quoted word']\n4=['a b']\n5=[foo\\bar]\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn quoted_parameter_pattern_glob_chars_are_literal() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

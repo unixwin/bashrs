@@ -615,7 +615,20 @@ impl Executor {
         // any other expansion, and never re-expands expansion results. raw
         // is None only for already-expanded fragments (the brace-result loop
         // below), so their literal braces must not expand again here.
-        if raw.is_some() && self.is_brace_expand_enabled()
+        // A leading '\x1d' marks a fully double-quoted word (word.rs), and a
+        // fully quoted word never brace-expands in GNU. The raw-based
+        // expander below rebuilds its results from raw, which never carries
+        // the marker, so letting it run here drops the marker and the
+        // recursive call (raw = None) re-expands the parameter as unquoted:
+        // the quotes inside a double-quoted alternate become real single
+        // quotes and $key stops expanding (posixexp2 cases 24/38).
+        // A double-quoted $@ or $* is excluded: those reach the per-positional
+        // split through the raw-based path, and skipping it here collapsed
+        // "${1+  $@  }" to one word (exp suite).
+        let quoted_whole_word = word.starts_with('\x1d')
+            && !word.contains("$@")
+            && !word.contains("$*");
+        if !quoted_whole_word && raw.is_some() && self.is_brace_expand_enabled()
         // GNU runs brace expansion before parameter expansion, so a
         // dollar-brace in the word does not suppress it: the dollar-brace
         // body is skipped by the brace scanner (foo{bar,${var.} splits).
@@ -654,11 +667,21 @@ impl Executor {
             word.to_string()
         };
         let word = word.as_str();
-        let context = raw
-            .map(scan_substitution_spans)
-            .filter(|spans| spans.len() == 1)
-            .and_then(|spans| spans.first().map(|span| span.context))
-            .unwrap_or(SubstitutionQuoteContext::Unquoted);
+        // scan_substitution_spans only sees $()/backtick spans, so a
+        // plain double-quoted braced word reports Unquoted. The \x1d marker
+        // is authoritative instead: a fully double-quoted word keeps
+        // inner quotes literal, which is what makes ${IFS+'$key'}
+        // expanded inside double quotes, yield 'value' rather than
+        // the literal $key (posixexp2 cases 24/38).
+        let context = if word.starts_with('\x1d') {
+            SubstitutionQuoteContext::DoubleQuoted
+        } else {
+            raw
+                .map(scan_substitution_spans)
+                .filter(|spans| spans.len() == 1)
+                .and_then(|spans| spans.first().map(|span| span.context))
+                .unwrap_or(SubstitutionQuoteContext::Unquoted)
+        };
         let expanded = self.expand_word_mut_with_context(word, context);
         // GNU does not apply quote removal to parameter-expansion results:
         // quotes in an expanded value are literal data, not syntax. Calling
