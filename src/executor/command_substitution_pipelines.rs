@@ -5,6 +5,23 @@ use std::ffi::OsString;
 #[cfg(windows)]
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 
+/// True when the command-substitution source's first heredoc header line
+/// also carries the closing `)` (`cat << EOF)`). GNU treats this as an
+/// unterminated here-document inside the substitution (parse.y:4563-4567)
+/// and warns before gathering it (heredoc7.sub).
+fn heredoc_header_closes_command_substitution(source: &str) -> bool {
+    let Some(header) = source.lines().next() else {
+        return false;
+    };
+    if !header.contains("<<") {
+        return false;
+    }
+    header
+        .split("<<")
+        .nth(1)
+        .is_some_and(|after| after.trim().ends_with(')'))
+}
+
 fn mktemp_command_substitution_display_path(path: &std::path::Path) -> String {
     #[cfg(windows)]
     {
@@ -165,6 +182,21 @@ impl Executor {
         }
         let closed_by_paren = source.contains('\x1c');
         let source = source.replace('\x1c', "");
+        if heredoc_header_closes_command_substitution(&source) {
+            // GNU parse.y:4563-4567: when the `)` that closes a command
+            // substitution sits on the heredoc header line (`cat << EOF)`),
+            // the heredoc has not been gathered yet, so bash warns and then
+            // gathers it anyway (heredoc7.sub line 17).
+            let start_line = self
+                .env_vars
+                .get("__RUBASH_CURRENT_LINE")
+                .and_then(|line| line.parse::<usize>().ok())
+                .unwrap_or(1);
+            eprintln!(
+                "{}warning: command substitution: 1 unterminated here-document",
+                self.diagnostic_prefix_for_line(start_line)
+            );
+        }
         let tokens =
             crate::lexer::tokenize_with_initial_posix(&source, self.posix_mode_enabled());
         let ast = crate::parser::parse(&tokens);

@@ -224,9 +224,14 @@ where
                 } else if lowercase {
                     value.to_lowercase()
                 } else {
-                    value.chars().next().map(|first| {
-                        first.to_uppercase().collect::<String>() + &value[first.len_utf8()..]
-                    }).unwrap_or(value)
+                    // GNU capitalize: first character uppercased, rest
+                    // lowercased (variables.c capcase, casemod.tests:99-103).
+                    let mut chars = value.chars();
+                    match chars.next() {
+                        Some(first) => first.to_uppercase().collect::<String>()
+                            + &chars.as_str().to_lowercase(),
+                        None => value,
+                    }
                 };
                 variables.insert(name.to_string(), value.clone());
                 env::set_var(name, value);

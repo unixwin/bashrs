@@ -20,7 +20,7 @@ fn capcase_attribute_transforms_assignments_and_prints() {
     let mut stderr = Vec::new();
     execute_with_io_named(
         "declare",
-        &["-c".into(), "name=hello world".into()],
+        &["-c".into(), "name=HeLLo WoRLD".into()],
         &mut variables,
         &mut stdout,
         &mut stderr,

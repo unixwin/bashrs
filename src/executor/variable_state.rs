@@ -17,9 +17,15 @@ impl Executor {
         } else if is_marked_var(&self.env_vars, LOWERCASE_VARS, name) {
             value.to_lowercase()
         } else if is_marked_var(&self.env_vars, CAPCASE_VARS, name) {
-            value.chars().next().map(|first| {
-                first.to_uppercase().collect::<String>() + &value[first.len_utf8()..]
-            }).unwrap_or(value)
+            // GNU capitalize: first character uppercased, rest lowercased
+            // (variables.c capcase assignment, casemod.tests:99-103).
+            let mut chars = value.chars();
+            match chars.next() {
+                Some(first) => {
+                    first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
+                }
+                None => value,
+            }
         } else {
             value
         }
