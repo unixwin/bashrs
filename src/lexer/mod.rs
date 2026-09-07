@@ -20,7 +20,7 @@ mod word;
 mod tests;
 
 use brace_scan::{has_unclosed_brace_group, opens_function_body_after_previous_signature};
-use continuation::{ends_with_unquoted_backslash, has_unclosed_quotes};
+use continuation::{ends_with_unquoted_backslash, has_unclosed_compound_assignment, has_unclosed_quotes};
 
 pub(crate) use continuation::has_unclosed_command_substitution;
 use heredoc::heredoc_delimiters;
@@ -122,6 +122,11 @@ fn tokenize_with_heredocs(
             continue;
         }
         if has_unclosed_command_substitution(&logical_line) {
+            continue;
+        }
+        // A `name=(` compound array assignment keeps reading physical lines
+        // until its matching `)` (parse.y; ISSUE #78).
+        if has_unclosed_compound_assignment(&logical_line) {
             continue;
         }
         let mut line_tokens = tokenize_plain(&logical_line, parse_posix);

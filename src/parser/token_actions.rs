@@ -95,6 +95,15 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                                 compound_value
                             );
                             *i = next_i;
+                        } else {
+                            // The adjacent `(` of a compound array assignment
+                            // was never closed before EOF (parse.y:
+                            // "unexpected EOF while looking for matching `)'",
+                            // reported with status 1 and no source echo).
+                            state.current_cmd.insert_assignment(
+                                "__RUBASH_PARSE_ERROR_EOF_PAREN__".to_string(),
+                                "unexpected EOF while looking for matching `)'".to_string(),
+                            );
                         }
                     }
                     if let Some((value, raw, next_i)) =

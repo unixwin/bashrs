@@ -36,6 +36,20 @@
   论断经 fresh gen 复现 165/24 后否决）。B 残余：exec fd 中毒块（需外部
   stdout 回放调查）、脚本自 stdin 续跑（rubash 整体缓冲）、declare -f
   序列化丢重定向文本、let 后缀自减。
+- 2026-09-08 回归修复（ISSUE #78）：多行复合数组赋值（`plugins=(\n git\n
+  completion\n)`）自 `691cfba0` 起被按行切断、元素当命令执行。根因 =
+  `tokenize_with_heredocs` 逻辑行收集器识别反斜杠续行/未闭合引号/命令替换/
+  花括号组，唯独不识别未闭合的命令位置 `name=(`。修法 = `continuation.rs`
+  新增 `has_unclosed_compound_assignment`（引号/替换/注释全感知扫描），仅对
+  命令位置、赋值前缀区（`x=1 a=(...`）、declare 族操作数（`declare -a b=(...`）
+  的未闭合 `name=(`/`name+=(` 续行——与 GNU parse.y 一致；`echo a=(b` 等
+  非赋值位置照旧立即报语法错误。附带对齐 EOF 未闭合诊断：`unexpected EOF
+  while looking for matching `)'`（无源码回显、rc=1，parse.y 语义）。
+  验证 = 8 个 GNU 边界 A/B（多行/declare/+=/注释/引号包裹/前缀赋值/EOF）
+  逐字节一致；cargo 全 target A/B 失败清单零回归；GNU 官方 78 切片差分
+  A/B 同为 14 OK/64 FAIL 且零翻转，globstar 100→17、vredir 56→50 行差异
+  收窄。已知残留：`a= (1 2)` 类报错的源码回显为 token 重建（`a= ( 1 2 )`）
+  而非原文，属 parse-error 源回显独立问题。
 
 ## 二、真实复现结果（按严重度）
 

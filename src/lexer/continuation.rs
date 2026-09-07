@@ -157,6 +157,333 @@ pub(super) fn has_unclosed_quotes(input: &str) -> bool {
     single || double || ansi_single
 }
 
+const DECLARATION_COMMAND_WORDS: [&str; 5] =
+    ["declare", "typeset", "local", "export", "readonly"];
+
+fn is_identifier_head(ch: char) -> bool {
+    ch.is_ascii_alphabetic() || ch == '_'
+}
+
+fn is_identifier_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_'
+}
+
+fn valid_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(first) if is_identifier_head(first) => {}
+        _ => return false,
+    }
+    chars.all(is_identifier_char)
+}
+
+/// `name=` / `name+=` / `name[subscript]=...` prefix (anything may follow `=`).
+fn assignment_prefix_word(word: &str) -> bool {
+    let Some(eq) = word.find('=') else {
+        return false;
+    };
+    let head = &word[..eq];
+    let head = head.strip_suffix('+').unwrap_or(head);
+    let Some(open) = head.find('[') else {
+        return valid_identifier(head);
+    };
+    head.ends_with(']') && valid_identifier(&head[..open])
+}
+
+/// True when the logical line ends inside an unclosed compound array
+/// assignment: a `name=(` / `name+=(` word whose parentheses are still open
+/// at end of line. GNU parse.y keeps reading physical lines until the
+/// matching `)` closes the compound assignment word, so the line-oriented
+/// collector must not finalize the logical line there (ISSUE #78: a
+/// multi-line `plugins=(...)` rc assignment used to execute its elements as
+/// commands).
+///
+/// GNU only continues for an assignment word in command position, in the
+/// assignment-prefix region of a command (`x=1 a=(...`), or as an operand of
+/// a declaration builtin (`declare -a b=(...`). Any other adjacent `name=(`
+/// (`echo a=(b`) is an immediate syntax error in GNU, so it must NOT swallow
+/// the following lines: the collector finalizes the logical line and the
+/// parser reports the error.
+pub(super) fn has_unclosed_compound_assignment(input: &str) -> bool {
+    let chars = input.chars().collect::<Vec<_>>();
+    let mut index = 0usize;
+    let mut compound_depth = 0usize;
+    let mut single = false;
+    let mut double = false;
+    let mut ansi_single = false;
+    let mut escaped = false;
+    let mut in_comment = false;
+    let mut comment_start = true;
+    let mut word = String::new();
+    let mut word_pure = true;
+    let mut seen_command_word = false;
+    let mut declaration_context = false;
+
+    while index < chars.len() {
+        let ch = chars[index];
+
+        if in_comment {
+            if ch == '\n' {
+                in_comment = false;
+                comment_start = true;
+                if compound_depth == 0 {
+                    seen_command_word = false;
+                    declaration_context = false;
+                }
+            }
+            index += 1;
+            continue;
+        }
+
+        if escaped {
+            escaped = false;
+            comment_start = false;
+            index += 1;
+            continue;
+        }
+
+        if ch == '\n' && !single && !double && !ansi_single {
+            comment_start = true;
+            if compound_depth == 0 {
+                if !word.is_empty() {
+                    classify_top_level_word(
+                        &word,
+                        &mut seen_command_word,
+                        &mut declaration_context,
+                    );
+                    word.clear();
+                    word_pure = true;
+                }
+                seen_command_word = false;
+                declaration_context = false;
+            }
+            index += 1;
+            continue;
+        }
+
+        if ch == '#' && !single && !double && !ansi_single && comment_start {
+            in_comment = true;
+            index += 1;
+            continue;
+        }
+
+        if ch.is_whitespace() && !single && !double && !ansi_single {
+            comment_start = true;
+            if compound_depth == 0 && !word.is_empty() {
+                classify_top_level_word(
+                    &word,
+                    &mut seen_command_word,
+                    &mut declaration_context,
+                );
+                word.clear();
+                word_pure = true;
+            }
+            index += 1;
+            continue;
+        }
+
+        if ansi_single {
+            if ch == '\\' {
+                escaped = true;
+            } else if ch == '\'' {
+                ansi_single = false;
+            }
+            comment_start = false;
+            word_pure = false;
+            index += 1;
+            continue;
+        }
+
+        if ch == '\\' && !single {
+            escaped = true;
+            comment_start = false;
+            word_pure = false;
+            index += 1;
+            continue;
+        }
+
+        if ch == '$' && !single && chars.get(index + 1) == Some(&'\'') {
+            ansi_single = true;
+            comment_start = false;
+            word_pure = false;
+            index += 2;
+            continue;
+        }
+
+        // A `${...}` parameter expansion is opaque to parenthesis balancing.
+        if ch == '$' && !single && !double && chars.get(index + 1) == Some(&'{') {
+            let body: String = chars[index + 2..].iter().collect();
+            let context = crate::lexer::dolbrace::BraceContext {
+                outer_double_quote: false,
+                posix: false,
+                replacement_context: false,
+                initial_state: crate::lexer::dolbrace::DolbraceState::Param,
+            };
+            if let Some(scan) = crate::lexer::dolbrace::scan_braced_parameter_body(&body, context)
+            {
+                index += 2 + body[..scan.end].chars().count();
+            } else {
+                index += 2;
+            }
+            comment_start = false;
+            word_pure = false;
+            continue;
+        }
+
+        // A `$(...)` / `$((...))` command substitution is opaque to
+        // parenthesis balancing; an unbalanced one is reported by
+        // has_unclosed_command_substitution instead.
+        if ch == '$' && !single && chars.get(index + 1) == Some(&'(') {
+            if let Some(end) = skip_parenthesized_unit(&chars, index + 1) {
+                index = end;
+                comment_start = false;
+                word_pure = false;
+                continue;
+            }
+            return false;
+        }
+
+        if ch == '`' && !single && !double {
+            if let Some(end) = skip_backtick_unit(&chars, index) {
+                index = end;
+                comment_start = false;
+                word_pure = false;
+                continue;
+            }
+            return false;
+        }
+
+        if ch == '\'' && !double {
+            single = !single;
+            comment_start = false;
+            word_pure = false;
+            index += 1;
+            continue;
+        }
+
+        if ch == '"' && !single {
+            double = !double;
+            comment_start = false;
+            word_pure = false;
+            index += 1;
+            continue;
+        }
+
+        if single || double {
+            index += 1;
+            continue;
+        }
+
+        if ch == '(' && compound_depth == 0 {
+            let opens_compound = word_pure
+                && word
+                    .strip_suffix('=')
+                    .map(|head| {
+                        let head = head.strip_suffix('+').unwrap_or(head);
+                        valid_identifier(head)
+                    })
+                    .unwrap_or(false)
+                && (!seen_command_word || declaration_context);
+            if opens_compound {
+                compound_depth = 1;
+                word.clear();
+                word_pure = true;
+                // A `#` may start a comment right after the opening paren.
+                comment_start = true;
+                index += 1;
+                continue;
+            }
+            // A subshell/grouping paren ends the assignment-prefix region:
+            // GNU reports `echo a=(b` immediately instead of continuing.
+            if !word.is_empty() {
+                classify_top_level_word(
+                    &word,
+                    &mut seen_command_word,
+                    &mut declaration_context,
+                );
+                word.clear();
+                word_pure = true;
+            }
+            seen_command_word = true;
+            comment_start = true;
+            index += 1;
+            continue;
+        }
+
+        if ch == '(' && compound_depth > 0 {
+            compound_depth += 1;
+            comment_start = true;
+            index += 1;
+            continue;
+        }
+
+        if ch == ')' {
+            if compound_depth > 0 {
+                compound_depth -= 1;
+                word.clear();
+                word_pure = true;
+            } else {
+                if !word.is_empty() {
+                    classify_top_level_word(
+                        &word,
+                        &mut seen_command_word,
+                        &mut declaration_context,
+                    );
+                    word.clear();
+                    word_pure = true;
+                }
+                seen_command_word = true;
+            }
+            comment_start = true;
+            index += 1;
+            continue;
+        }
+
+        if ch == ';' || ch == '|' || ch == '&' {
+            if compound_depth == 0 && !word.is_empty() {
+                classify_top_level_word(
+                    &word,
+                    &mut seen_command_word,
+                    &mut declaration_context,
+                );
+                word.clear();
+                word_pure = true;
+                seen_command_word = false;
+                declaration_context = false;
+            }
+            comment_start = true;
+            index += 1;
+            continue;
+        }
+
+        word.push(ch);
+        comment_start = false;
+        index += 1;
+    }
+
+    compound_depth > 0
+}
+
+fn classify_top_level_word(
+    word: &str,
+    seen_command_word: &mut bool,
+    declaration_context: &mut bool,
+) {
+    if !*seen_command_word && DECLARATION_COMMAND_WORDS.contains(&word) {
+        *declaration_context = true;
+        return;
+    }
+    if assignment_prefix_word(word) {
+        // Assignment words keep the command inside its prefix region.
+        return;
+    }
+    if *declaration_context && (word.starts_with('-') || word.starts_with('+')) {
+        // Declaration builtin flags (`declare -a`).
+        return;
+    }
+    *seen_command_word = true;
+}
+
 /// Skip a balanced `(` ... `)` unit starting at `open` (the index of the `(`),
 /// returning the index just past the matching `)`. Returns `None` if unbalanced.
 fn skip_parenthesized_unit(chars: &[char], open: usize) -> Option<usize> {

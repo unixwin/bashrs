@@ -25,6 +25,15 @@ impl Executor {
             return Ok(());
         }
 
+        if let Some(message) = cmd.get_assignment("__RUBASH_PARSE_ERROR_EOF_PAREN__") {
+            // parse.y: an unclosed `name=(` compound assignment reports the
+            // bare EOF diagnostic with status 1 and no source echo.
+            self.mark_parse_error();
+            eprintln!("{}{}", self.diagnostic_prefix(), message);
+            self.exit_code = 1;
+            return Err(ExecuteError::ExitCode(1));
+        }
+
         if cmd.has_assignment("__RUBASH_PARSE_ERROR__") {
             self.mark_parse_error();
             if let Some(source) = cmd.get_assignment("__RUBASH_PARSE_SOURCE__") {
