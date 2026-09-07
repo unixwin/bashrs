@@ -834,7 +834,7 @@ fn alias_source_compound_end_word(source: &str) -> Option<&'static str> {
 
 fn alias_reparse_command_source(command: &CommandNode) -> String {
     if command.words.is_empty() {
-        if let Some(message) = command.assignments.get("__RUBASH_PARSE_ERROR__") {
+        if let Some(message) = command.get_assignment("__RUBASH_PARSE_ERROR__") {
             return alias_reparse_reserved_word(message);
         }
     }

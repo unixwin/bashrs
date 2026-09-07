@@ -37,7 +37,7 @@ pub(super) fn parse_conditional_command(
                 .collect::<Vec<_>>(),
         )
     {
-        command.assignments.insert(
+        command.insert_assignment(
             "__RUBASH_PARSE_ERROR__".to_string(),
             "unexpected token in conditional expression".to_string(),
         );

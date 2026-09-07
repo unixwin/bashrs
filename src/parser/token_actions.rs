@@ -22,7 +22,7 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                 && token.value.contains(';')
                 && !token.value.contains('}')
             {
-                state.current_cmd.assignments.insert(
+                state.current_cmd.insert_assignment(
                     "__RUBASH_PARSE_ERROR__".to_string(),
                     "unexpected end of file".to_string(),
                 );
@@ -57,7 +57,7 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                 // `name= ( ... )` is not a compound assignment. Bash rejects
                 // the separated `(` during parsing instead of executing the
                 // following words as a command.
-                state.current_cmd.assignments.insert(
+                state.current_cmd.insert_assignment(
                     "__RUBASH_PARSE_ERROR__".to_string(),
                     "unexpected token `('".to_string(),
                 );
@@ -152,7 +152,7 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                             None,
                         );
                     }
-                    state.current_cmd.assignments.insert(var_name, var_value);
+                    state.current_cmd.insert_assignment(var_name, var_value);
                 } else {
                     let mut word = token.value.clone();
                     let raw_word = token.raw.clone();
@@ -492,7 +492,7 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
             if command_is_open_conditional(&state.current_cmd) {
                 push_command_word(&mut state.current_cmd, token);
             } else if command_is_empty(&state.current_cmd) {
-                state.current_cmd.assignments.insert(
+                state.current_cmd.insert_assignment(
                     "__RUBASH_PARSE_ERROR__".to_string(),
                     format!("unexpected token `{}`", token.value),
                 );
@@ -550,15 +550,15 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                 )
             {
                 note_command_line(&mut state.current_cmd, token);
-                state.current_cmd.assignments.insert(
+                state.current_cmd.insert_assignment(
                     "__RUBASH_PARSE_ERROR__".to_string(),
                     format!("unexpected token `{}`", token.value),
                 );
                 if let Some(source) = parse_error_source_line(tokens, *i) {
                     state
                         .current_cmd
-                        .assignments
-                        .insert("__RUBASH_PARSE_SOURCE__".to_string(), source);
+                        
+                        .insert_assignment("__RUBASH_PARSE_SOURCE__".to_string(), source);
                 }
                 state
                     .ast
@@ -595,15 +595,15 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                     state.ast.commands.pop();
                 }
                 note_command_line(&mut state.current_cmd, token);
-                state.current_cmd.assignments.insert(
+                state.current_cmd.insert_assignment(
                     "__RUBASH_PARSE_ERROR__".to_string(),
                     format!("unexpected token `{}`", token.value),
                 );
                 if let Some(source) = parse_error_source_line(tokens, *i) {
                     state
                         .current_cmd
-                        .assignments
-                        .insert("__RUBASH_PARSE_SOURCE__".to_string(), source);
+                        
+                        .insert_assignment("__RUBASH_PARSE_SOURCE__".to_string(), source);
                 }
                 state
                     .ast
@@ -614,15 +614,15 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
             }
 
             if token.value == "(" && !command_is_empty(&state.current_cmd) {
-                state.current_cmd.assignments.insert(
+                state.current_cmd.insert_assignment(
                     "__RUBASH_PARSE_ERROR__".to_string(),
                     "unexpected token `('".to_string(),
                 );
                 if let Some(source) = parse_error_source_line(tokens, *i) {
                     state
                         .current_cmd
-                        .assignments
-                        .insert("__RUBASH_PARSE_SOURCE__".to_string(), source);
+                        
+                        .insert_assignment("__RUBASH_PARSE_SOURCE__".to_string(), source);
                 }
                 *i += 1;
                 return TokenAction::Continue;

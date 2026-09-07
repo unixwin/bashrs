@@ -145,7 +145,8 @@ impl Executor {
         };
 
         matches!(command, "export" | "declare" | "typeset" | "readonly")
-            || (command == "eval" && cmd.assignments.keys().any(|name| name.ends_with('+')))
+            || (command == "eval" && cmd
+.assignment_keys().any(|name| name.ends_with('+')))
             || (self.env_vars.get("__RUBASH_POSIX_MODE").map(String::as_str) == Some("1")
                 && matches!(command, "." | "source" | "eval" | ":" | "return"))
     }
@@ -156,11 +157,11 @@ impl Executor {
 
     pub(in crate::executor) fn applied_temporary_assignment_values(
         &self,
-        assignments: &HashMap<String, String>,
+        assignments: &[(String, String)],
     ) -> HashMap<String, Option<String>> {
         assignments
-            .keys()
-            .map(|name| {
+            .iter()
+            .map(|(name, _)| {
                 let (base_name, _) = assignment_name_and_append(name);
                 (base_name.to_string(), self.env_vars.get(base_name).cloned())
             })

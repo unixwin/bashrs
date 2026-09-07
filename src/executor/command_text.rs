@@ -68,7 +68,7 @@ pub(in crate::executor) fn normalize_leading_assignment_words(cmd: &mut CommandN
         let Some((name, value)) = split_assignment_word(word) else {
             break;
         };
-        cmd.assignments.insert(name.to_string(), value.to_string());
+        cmd.insert_assignment(name.to_string(), value.to_string());
         count += 1;
     }
     if count > 0 {

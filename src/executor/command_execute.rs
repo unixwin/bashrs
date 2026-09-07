@@ -25,9 +25,9 @@ impl Executor {
             return Ok(());
         }
 
-        if cmd.assignments.contains_key("__RUBASH_PARSE_ERROR__") {
+        if cmd.has_assignment("__RUBASH_PARSE_ERROR__") {
             self.mark_parse_error();
-            if let Some(source) = cmd.assignments.get("__RUBASH_PARSE_SOURCE__") {
+            if let Some(source) = cmd.get_assignment("__RUBASH_PARSE_SOURCE__") {
                 if !source.contains("<<") {
                     if let Some(reparsed) = self.reparse_reserved_word_aliases(source) {
                         let tokens = crate::lexer::tokenize(&reparsed);
@@ -37,13 +37,13 @@ impl Executor {
                 }
             }
             let message = cmd
-                .assignments
-                .get("__RUBASH_PARSE_ERROR__")
+                
+                .get_assignment("__RUBASH_PARSE_ERROR__")
                 .map(String::as_str)
                 .unwrap_or("unexpected token");
             if message.starts_with("syntax error:") {
                 eprintln!("{}{}", self.diagnostic_prefix(), message);
-                if let Some(source) = cmd.assignments.get("__RUBASH_PARSE_SOURCE__") {
+                if let Some(source) = cmd.get_assignment("__RUBASH_PARSE_SOURCE__") {
                     eprintln!(
                         "{}`{}'",
                         self.diagnostic_prefix(),
@@ -53,7 +53,7 @@ impl Executor {
             } else {
                 let message = bash_style_unexpected_token_message(message);
                 eprintln!("{}syntax error near {message}", self.diagnostic_prefix(),);
-                if let Some(source) = cmd.assignments.get("__RUBASH_PARSE_SOURCE__") {
+                if let Some(source) = cmd.get_assignment("__RUBASH_PARSE_SOURCE__") {
                     eprintln!(
                         "{}`{}'",
                         self.diagnostic_prefix(),
@@ -70,8 +70,8 @@ impl Executor {
             .iter()
             .any(|metadata| crate::lexer::has_unclosed_command_substitution(&metadata.raw))
             || cmd
-                .assignments
-                .values()
+                
+                .assignment_values()
                 .any(|value| crate::lexer::has_unclosed_command_substitution(value))
         {
             self.mark_parse_error();

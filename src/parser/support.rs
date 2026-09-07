@@ -41,7 +41,7 @@ pub(super) fn push_command_word(cmd: &mut CommandNode, token: &Token) {
         && !embedded_arithmetic
         && crate::parser::array_element_subscript_has_escaped_quote(&token.raw)
     {
-        cmd.assignments.insert(
+        cmd.insert_assignment(
             "__RUBASH_PARSE_ERROR__".to_string(),
             "arithmetic syntax error: operand expected".to_string(),
         );

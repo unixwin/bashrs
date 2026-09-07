@@ -6,7 +6,7 @@ impl Executor {
     /// temporary environment used by `name=value command`.
     pub(in crate::executor) fn apply_permanent_assignments(
         &mut self,
-        assignments: &HashMap<String, String>,
+        assignments: &[(String, String)],
     ) {
         for (name, value) in assignments {
             let expanded_value = self.expand_assignment_value(value);
@@ -16,7 +16,7 @@ impl Executor {
 
     pub(in crate::executor) fn apply_temporary_assignments(
         &mut self,
-        assignments: &HashMap<String, String>,
+        assignments: &[(String, String)],
     ) -> Vec<(String, Option<String>, Option<crate::shell::Variable>)> {
         // TODO(execute_cmd.c/variables.c): Bash applies assignment words with
         // different persistence rules for special builtins, functions, POSIX

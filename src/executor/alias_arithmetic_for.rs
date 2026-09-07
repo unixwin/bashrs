@@ -207,6 +207,6 @@ fn append_alias_arithmetic_redirect(text: &mut String, redirect: Option<&Redirec
 fn alias_arithmetic_empty_command(command: &CommandNode) -> bool {
     command.words.is_empty()
         && command.brace_group.is_none()
-        && command.assignments.get("__RUBASH_PARSE_ERROR__").is_none()
+        && command.get_assignment("__RUBASH_PARSE_ERROR__").is_none()
         && command_has_no_effect(command)
 }

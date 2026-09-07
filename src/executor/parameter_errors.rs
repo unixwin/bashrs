@@ -30,7 +30,7 @@ impl Executor {
                 return Some(error);
             }
         }
-        for value in cmd.assignments.values() {
+        for value in cmd.assignment_values() {
             if let Some(error) = self.parameter_assignment_error_in_word(value) {
                 return Some(error);
             }
@@ -307,7 +307,7 @@ impl Executor {
                 return Some(error);
             }
         }
-        for value in cmd.assignments.values() {
+        for value in cmd.assignment_values() {
             if let Some(error) = self.parameter_expansion_error_in_word(value) {
                 return Some(error);
             }

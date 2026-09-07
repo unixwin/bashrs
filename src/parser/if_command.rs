@@ -58,7 +58,7 @@ pub(super) fn parse_if_command(tokens: &[Token], start: usize) -> Option<(Comman
     if !is_keyword(tokens, index, "fi") {
         let mut command = CommandNode::new();
         command.line = tokens.get(start).map(|token| token.position);
-        command.assignments.insert(
+        command.insert_assignment(
             "__RUBASH_PARSE_ERROR__".to_string(),
             "unexpected token `)`".to_string(),
         );

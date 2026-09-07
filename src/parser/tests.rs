@@ -27,8 +27,8 @@ fn test_extglob_enabled_after_parse_is_rejected() {
     assert_eq!(ast.commands.len(), 2);
     assert_eq!(
         ast.commands[1]
-            .assignments
-            .get("__RUBASH_PARSE_ERROR__")
+            
+            .get_assignment("__RUBASH_PARSE_ERROR__")
             .map(String::as_str),
         Some("unexpected token `('")
     );
@@ -41,7 +41,7 @@ fn test_extglob_on_next_input_line_remains_valid() {
     assert!(ast
         .commands
         .iter()
-        .all(|command| !command.assignments.contains_key("__RUBASH_PARSE_ERROR__")));
+        .all(|command| !command.has_assignment("__RUBASH_PARSE_ERROR__")));
 }
 
 #[test]
@@ -337,6 +337,6 @@ fn test_parse_compact_arithmetic_for_empty_test() {
 fn spaced_compound_assignment_is_marked_as_syntax_error() {
     let ast = parse(&tokenize("a= (1 2)"));
     assert!(ast.commands[0]
-        .assignments
-        .contains_key("__RUBASH_PARSE_ERROR__"));
+        
+        .has_assignment("__RUBASH_PARSE_ERROR__"));
 }

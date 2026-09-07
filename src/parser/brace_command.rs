@@ -14,7 +14,7 @@ pub(super) fn parse_brace_group_command(
         let inner_source = token.value.trim_start_matches('{').trim_end_matches('}');
         if !brace_group_source_has_completed_command(inner_source) {
             let mut command = CommandNode::new();
-            command.assignments.insert(
+            command.insert_assignment(
                 "__RUBASH_PARSE_ERROR__".to_string(),
                 "unexpected token `}'".to_string(),
             );
@@ -40,7 +40,7 @@ pub(super) fn parse_brace_group_command(
 
     let Some(i) = matching_brace_group_end(tokens, start) else {
         let mut command = CommandNode::new();
-        command.assignments.insert(
+        command.insert_assignment(
             "__RUBASH_PARSE_ERROR__".to_string(),
             "unexpected token `}'".to_string(),
         );

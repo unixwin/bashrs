@@ -57,8 +57,8 @@ pub(in crate::executor) fn control_word(command: &CommandNode) -> Option<&str> {
         return Some(word.as_str());
     }
     command
-        .assignments
-        .get("__RUBASH_PARSE_ERROR__")
+        
+        .get_assignment("__RUBASH_PARSE_ERROR__")
         .and_then(|message| message.split_once("unexpected token `"))
         .map(|(_, token)| token.trim_end_matches(['`', '\'']))
 }

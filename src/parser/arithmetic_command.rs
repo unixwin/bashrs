@@ -190,7 +190,7 @@ fn set_arithmetic_command_words(
     arithmetic.raw_expression = raw_expression.filter(|raw| !raw.is_empty());
     command.arithmetic_command = Some(arithmetic);
     if !delimiters_balanced {
-        command.assignments.insert(
+        command.insert_assignment(
             "__RUBASH_PARSE_ERROR__".to_string(),
             "unexpected EOF while looking for matching `)'".to_string(),
         );

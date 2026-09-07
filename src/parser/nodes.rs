@@ -1001,7 +1001,7 @@ pub struct CommandNode {
     /// decisions while the parser still stores words as strings.
     pub word_kinds: Vec<TokenKind>,
     /// Variable assignments
-    pub assignments: std::collections::HashMap<String, String>,
+    pub assignments: Vec<(String, String)>,
     /// Structured compound array assignment words parsed from `name=(...)`.
     pub compound_assignments: Vec<CompoundAssignment>,
     /// Structured array element assignment words parsed from `name[index]=value`.
@@ -1091,13 +1091,33 @@ pub struct CommandNode {
     pub line: Option<usize>,
 }
 
+
+impl CommandNode {
+    /// Assignments keep source order and duplicates (GNU applies prefix
+    /// assignments left-to-right, each expansion seeing the previous one).
+    pub fn insert_assignment(&mut self, name: String, value: String) {
+        self.assignments.push((name, value));
+    }
+    pub fn get_assignment(&self, name: &str) -> Option<&String> {
+        self.assignments.iter().find(|(n, _)| n == name).map(|(_, v)| v)
+    }
+    pub fn has_assignment(&self, name: &str) -> bool {
+        self.assignments.iter().any(|(n, _)| n == name)
+    }
+    pub fn assignment_values(&self) -> impl Iterator<Item = &String> {
+        self.assignments.iter().map(|(_, v)| v)
+    }
+    pub fn assignment_keys(&self) -> impl Iterator<Item = &String> {
+        self.assignments.iter().map(|(n, _)| n)
+    }
+}
 impl CommandNode {
     pub fn new() -> Self {
         Self {
             words: Vec::new(),
             word_metadata: Vec::new(),
             word_kinds: Vec::new(),
-            assignments: std::collections::HashMap::new(),
+            assignments: Vec::new(),
             compound_assignments: Vec::new(),
             array_element_assignments: Vec::new(),
             process_substitutions: Vec::new(),

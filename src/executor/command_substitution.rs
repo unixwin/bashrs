@@ -580,7 +580,7 @@ impl Executor {
 }
 
 fn command_has_parse_error(command: &CommandNode) -> bool {
-    command.assignments.contains_key("__RUBASH_PARSE_ERROR__")
+    command.has_assignment("__RUBASH_PARSE_ERROR__")
         || command
             .and_or_list
             .as_ref()

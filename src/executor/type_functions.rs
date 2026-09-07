@@ -21,7 +21,7 @@ impl Executor {
         writeln!(stdout, "{{ ")?;
         for (index, command) in body.iter().enumerate() {
             let terminates_plain_commands = index + 1 < body.len() && command.heredoc.is_none();
-            if command.assignments.contains_key("v") {
+            if command.has_assignment("v") {
                 writeln!(stdout, "    v='^A'")?;
                 continue;
             }
@@ -53,7 +53,7 @@ impl Executor {
         let _ = writeln!(stdout, "{{ ");
         for (index, command) in body.iter().enumerate() {
             let terminates_plain_commands = index + 1 < body.len() && command.heredoc.is_none();
-            if command.assignments.contains_key("v") {
+            if command.has_assignment("v") {
                 let _ = writeln!(stdout, "    v='^A'");
                 continue;
             }

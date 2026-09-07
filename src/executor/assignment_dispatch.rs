@@ -46,8 +46,11 @@ impl Executor {
             return false;
         }
 
-        let mut assignments = Vec::new();
+        // GNU performs each assignment expansion and binding left-to-right,
+        // so a later assignment sees the earlier one (var4.tests:
+        // X=usbdev1.2 X=\${X#usbdev} B=\${X%%.*} D=\${X#*.} -> bus/usb/1/2).
         let mut command_substitution_status = None;
+        let mut apply_failed = false;
         for word in &cmd.words {
             let Some((name, value)) = split_assignment_word(word) else {
                 return false;
@@ -56,14 +59,14 @@ impl Executor {
             if status.is_some() {
                 command_substitution_status = status;
             }
-            assignments.push((name.to_string(), expanded_value));
+            if !self.apply_shell_assignment(&name, expanded_value) {
+                apply_failed = true;
+            }
         }
 
         let mut status = command_substitution_status.unwrap_or(0);
-        for (name, value) in assignments {
-            if !self.apply_shell_assignment(&name, value) {
-                status = 1;
-            }
+        if apply_failed {
+            status = 1;
         }
         self.exit_code = status;
         true

@@ -44,7 +44,7 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<(), ExecuteError> {
-        for word in cmd.words.iter().chain(cmd.assignments.values()) {
+        for word in cmd.words.iter().chain(cmd.assignment_values()) {
             let Some(bad_word) = whitespace_led_bad_substitution_word(word) else {
                 continue;
             };
@@ -737,7 +737,13 @@ impl Executor {
         {
             values
         } else if self.splits_unquoted_expanded_word(cmd, index, &expanded) {
-            field_split_escaped_ifs(&expanded, self.env_vars.get("IFS").map(String::as_str))
+            // GNU field-splits the expanded value without interpreting its
+            // backslashes: a value like a\ b keeps the backslash in the
+            // field and still splits on the space (a\ + b), whereas
+            // field_split_escaped_ifs read it as an escaped separator and
+            // stripped the backslash (a + b). Escaping belongs to the lexer,
+            // not to parameter-expansion results.
+            field_split_values_with_ifs(&expanded, self.env_vars.get("IFS").map(String::as_str))
         } else {
             vec![expanded]
         }

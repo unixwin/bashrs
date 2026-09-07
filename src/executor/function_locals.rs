@@ -50,11 +50,11 @@ impl Executor {
 
     pub(in crate::executor) fn save_assignment_local_names(
         &mut self,
-        assignments: &HashMap<String, String>,
+        assignments: &[(String, String)],
     ) {
         let names = assignments
-            .keys()
-            .map(|name| assignment_name_and_append(name).0.to_string())
+            .iter()
+            .map(|(name, _)| assignment_name_and_append(name).0.to_string())
             .collect::<Vec<_>>();
 
         let Some(scope) = self.local_var_scopes.last_mut() else {

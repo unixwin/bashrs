@@ -77,7 +77,7 @@ fn mark_parse_time_extglob_errors(ast: &mut Ast, tokens: &[Token]) {
         if extglob_enabled_in_unit && is_unquoted_extglob_word(token) {
             for command in &mut ast.commands {
                 if command.words.iter().any(|word| word == &token.value) {
-                    command.assignments.insert(
+                    command.insert_assignment(
                         "__RUBASH_PARSE_ERROR__".to_string(),
                         "unexpected token `('".to_string(),
                     );
@@ -188,7 +188,7 @@ fn fold_and_or_list_commands(commands: Vec<CommandNode>) -> Vec<CommandNode> {
                     .into_iter()
                     .next()
                     .expect("and-or list has a command");
-                command.assignments.insert(
+                command.insert_assignment(
                     "__RUBASH_PARSE_ERROR__".to_string(),
                     "unexpected end of file".to_string(),
                 );
@@ -255,7 +255,7 @@ fn fold_pipeline_commands(commands: Vec<CommandNode>) -> Vec<CommandNode> {
                     .into_iter()
                     .next()
                     .expect("pipeline has a first stage");
-                command.assignments.insert(
+                command.insert_assignment(
                     "__RUBASH_PARSE_ERROR__".to_string(),
                     "unexpected token `|'".to_string(),
                 );
@@ -543,7 +543,7 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
         // A malformed `if` must remain a syntax error instead of falling
         // through to the simple-command parser (`if then; fi` used to be
         // accepted and silently ran the following commands).
-        state.current_cmd.assignments.insert(
+        state.current_cmd.insert_assignment(
             "__RUBASH_PARSE_ERROR__".to_string(),
             if has_then_without_fi {
                 "unexpected end of file while looking for `fi'".to_string()
@@ -555,7 +555,7 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
         // expands aliases while parsing, so an alias such as `f=fi` can close
         // this compound command even though the first parse did not see `fi`.
         // The parse-error marker still makes genuinely malformed input fail.
-        state.current_cmd.assignments.insert(
+        state.current_cmd.insert_assignment(
             "__RUBASH_PARSE_SOURCE__".to_string(),
             tokens[i..]
                 .iter()
@@ -586,7 +586,7 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
             return Some(next_i);
         }
 
-        state.current_cmd.assignments.insert(
+        state.current_cmd.insert_assignment(
             "__RUBASH_PARSE_ERROR__".to_string(),
             "unexpected token `do'".to_string(),
         );
@@ -665,11 +665,11 @@ fn try_parse_compound_start(tokens: &[Token], i: usize, state: &mut ParseState) 
             } else {
                 "syntax error: `;' unexpected".to_string()
             };
-            state.current_cmd.assignments.insert(
+            state.current_cmd.insert_assignment(
                 "__RUBASH_PARSE_ERROR__".to_string(),
                 error_msg,
             );
-            state.current_cmd.assignments.insert(
+            state.current_cmd.insert_assignment(
                 "__RUBASH_PARSE_SOURCE__".to_string(),
                 format!("(( {} ))", expr_raw.trim()),
             );
@@ -824,8 +824,8 @@ fn push_parse_error_until(
 ) -> usize {
     state
         .current_cmd
-        .assignments
-        .insert("__RUBASH_PARSE_ERROR__".to_string(), message.to_string());
+        
+        .insert_assignment("__RUBASH_PARSE_ERROR__".to_string(), message.to_string());
     let mut next_i = start + 1;
     while tokens.get(next_i).is_some() {
         let is_terminator = is_keyword(tokens, next_i, terminator);

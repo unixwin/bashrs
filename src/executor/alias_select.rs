@@ -35,7 +35,7 @@ impl Executor {
         while ast.commands.get(do_index).is_some_and(|command| {
             command.words.is_empty()
                 && command.brace_group.is_none()
-                && command.assignments.get("__RUBASH_PARSE_ERROR__").is_none()
+                && command.get_assignment("__RUBASH_PARSE_ERROR__").is_none()
         }) {
             do_index += 1;
         }
