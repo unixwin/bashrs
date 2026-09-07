@@ -7,6 +7,14 @@ pub struct ParseLoopOptions {
     /// Treat a ")" or ";;" at command position as a syntax error that aborts
     /// the remaining input (GNU YYABORT). Enabled for eval reparse.
     pub stray_close_is_error: bool,
+    /// The ORIGINAL text being parsed, when the caller has it (eval reparse).
+    /// GNU echoes the offending input line verbatim; token reconstruction
+    /// cannot recover the original spacing, so the guard slices this text.
+    pub source_text: Option<String>,
+    /// How many lines the caller shifted token positions by before parsing
+    /// (eval reparse shifts by the caller's line counter minus one), so the
+    /// guard can map a token position back to a 0-based source-text line.
+    pub source_line_offset: usize,
 }
 
 pub(super) struct ParseState {
@@ -51,20 +59,32 @@ pub fn parse_with_options(tokens: &[Token], options: ParseLoopOptions) -> Ast {
             );
             // GNU echoes only the offending input line, from its first
             // token, not the rest of the file (parse.y y.error prints the
-            // current input line).
-            let line_number = tokens[i].position;
-            let mut line_start = i;
-            while line_start > 0 && tokens[line_start - 1].position == line_number {
-                line_start -= 1;
-            }
-            let mut source = tokens[line_start].raw.clone();
-            for token in tokens[line_start + 1..].iter() {
-                if token.position != line_number {
-                    break;
+            // current input line). With the original text available (eval
+            // reparse) echo that line verbatim; token reconstruction cannot
+            // recover the original spacing.
+            let verbatim = options.source_text.as_ref().and_then(|text| {
+                let string_line = tokens[i]
+                    .position
+                    .checked_sub(options.source_line_offset)?
+                    .checked_sub(1)?;
+                text.split('\n').nth(string_line).map(str::to_string)
+            });
+            let source = verbatim.unwrap_or_else(|| {
+                let line_number = tokens[i].position;
+                let mut line_start = i;
+                while line_start > 0 && tokens[line_start - 1].position == line_number {
+                    line_start -= 1;
                 }
-                source.push(' ');
-                source.push_str(&token.raw);
-            }
+                let mut joined = tokens[line_start].raw.clone();
+                for token in tokens[line_start + 1..].iter() {
+                    if token.position != line_number {
+                        break;
+                    }
+                    joined.push(' ');
+                    joined.push_str(&token.raw);
+                }
+                joined
+            });
             state.current_cmd.insert_assignment(
                 "__RUBASH_PARSE_SOURCE__".to_string(),
                 source,
@@ -1139,4 +1159,51 @@ fn time_prefixed_shell_command_starts_with_compound(tokens: &[Token], index: usi
             && tokens.get(index + 1).is_some_and(|next| next.value == "(")
             && tokens.get(index + 2).is_some_and(|next| next.value == ")")
     })
+}
+
+
+#[cfg(test)]
+mod stray_close_tests {
+    use super::*;
+
+    fn marker_source(ast: &Ast) -> String {
+        ast.commands
+            .iter()
+            .find_map(|command| command.get_assignment("__RUBASH_PARSE_SOURCE__").map(|value| value.clone()))
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn eval_style_verbatim_line_echo_preserves_original_spacing() {
+        // The eval string: one line, caller at script line 199 -> offset 198.
+        let source_text = String::from("case esac in esac) ;; *) echo \"x\";; esac");
+        let tokens = crate::lexer::tokenize(&source_text);
+        let mut tokens = tokens;
+        for token in tokens.iter_mut() {
+            token.position += 198;
+        }
+        let ast = parse_with_options(
+            &tokens,
+            ParseLoopOptions {
+                stray_close_is_error: true,
+                source_text: Some(source_text.clone()),
+                source_line_offset: 198,
+            },
+        );
+        assert_eq!(marker_source(&ast), source_text);
+    }
+
+    #[test]
+    fn without_source_text_falls_back_to_token_join() {
+        let source_text = ") echo never ;; esac";
+        let tokens = crate::lexer::tokenize(source_text);
+        let ast = parse_with_options(
+            &tokens,
+            ParseLoopOptions {
+                stray_close_is_error: true,
+                ..ParseLoopOptions::default()
+            },
+        );
+        assert_eq!(marker_source(&ast), ") echo never ;; esac");
+    }
 }

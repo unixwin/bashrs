@@ -75,6 +75,8 @@ impl Executor {
                     &tokens,
                     crate::parser::ParseLoopOptions {
                         stray_close_is_error: true,
+                        source_text: Some(source.clone()),
+                        source_line_offset: caller_line.saturating_sub(1),
                     },
                 );
                 self.apply_command_output_redirects(cmd, &mut ast)?;
