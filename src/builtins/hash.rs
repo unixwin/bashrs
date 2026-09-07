@@ -149,7 +149,8 @@ where
             }
             return Ok(EXECUTION_SUCCESS);
         }
-        writeln!(stderr, "hash: hash table empty")?;
+        // GNU hash.def prints the empty-table message on stdout.
+        writeln!(stdout, "hash: hash table empty")?;
         return Ok(EXECUTION_SUCCESS);
     }
 

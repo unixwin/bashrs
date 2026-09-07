@@ -94,7 +94,13 @@ where
 
     let mask = current_mask(env_vars);
     if symbolic {
-        writeln!(stdout, "{}", symbolic_mask(mask))?;
+        // GNU umask -p -S prints a reusable command including the -S flag
+        // (umask -p -S -> "umask -S u=...,g=...,o=...").
+        if reusable {
+            writeln!(stdout, "umask -S {}", symbolic_mask(mask))?;
+        } else {
+            writeln!(stdout, "{}", symbolic_mask(mask))?;
+        }
     } else if reusable {
         writeln!(stdout, "umask {mask:04o}")?;
     } else {

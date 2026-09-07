@@ -187,7 +187,10 @@ where
         return Ok(status);
     }
 
-    if operands.is_empty() && (reusable || list_all || !disable) {
+    // GNU enable with no operands lists builtins in every mode: plain
+    // lists enabled ones, -n lists disabled ones (builtins.tests:
+    // "enable -n | grep test" must show a disabled builtin).
+    if operands.is_empty() {
         if special_only {
             let disabled = disabled_builtins(env_vars);
             for name in SPECIAL_BUILTINS {
