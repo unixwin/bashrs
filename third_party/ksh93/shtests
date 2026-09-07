@@ -1,0 +1,69 @@
+# Wrapper script to run the ksh93 regression tests directly.
+# By Martijn Dekker <martijn@inlv.org> 2020-05-14, 2023-03-17, 2024-03-05
+# Public domain. https://creativecommons.org/publicdomain/zero/1.0/
+#
+# The manual: bin/shtests --man
+# Brief help: bin/shtests --help
+#
+# By default, this runs your compiled arch/*/bin/ksh.
+
+# Escape from a non-POSIX shell
+min_posix=/if/this/is/csh/ignore/the/error/message || exec sh $0:q $argv:q
+min_posix='test / -ef / && path=Bad && case $PATH in (Bad) exit 1;; esac && '\
+'PWD=Bad && cd -P -- / && case $PWD in (/) ;; (*) exit 1;; esac && '\
+'! { ! case x in ( x ) : ${0##*/} || : $( : ) ;; esac; } && '\
+'trap "exit 0" 0 && exit 1'
+if	(eval "$min_posix") 2>/dev/null
+then	: good shell
+else	"$SHELL" -c "$min_posix" 2>/dev/null && exec "$SHELL" -- "$0" ${1+"$@"}
+	sh -c "$min_posix" 2>/dev/null && exec sh -- "$0" ${1+"$@"}
+	DEFPATH=`getconf PATH` 2>/dev/null || DEFPATH=/usr/xpg4/bin:/bin:/usr/bin:/sbin:/usr/sbin
+	PATH=$DEFPATH:$PATH
+	export PATH
+	sh -c "$min_posix" 2>/dev/null && exec sh -- "$0" ${1+"$@"}
+	echo "$0: Can't escape from obsolete or broken shell. Run me with a POSIX shell." >&2
+	exit 128
+fi
+
+# bin/package will have set $SHELL to our ksh.
+# Allow override by passing SHELL= or KSH= as arguments.
+for arg do
+	case $arg in
+	( SHELL=* | KSH=* )
+		export KSH=${arg#*=} ;;
+	( * )	set -- "$@" "$1" ;;
+	esac
+	shift
+done
+
+# Relaunch with necessary environment stuff from bin/package
+case ${HOSTTYPE+h}${INSTALLROOT+i}${PACKAGEROOT+p}${LD_LIBRARY_PATH+l} in
+hipl)	;;
+*)	mydir=$(dirname "$0") \
+	&& mydir=$(CDPATH='' cd -P -- "$mydir/.." && printf '%sX' "$PWD") \
+	&& mydir=${mydir%X} \
+	|| exit
+	exec "$mydir/bin/package" use "$mydir" "$0" "$@" ;;
+esac
+
+# Check if there is a ksh to test.
+case ${KSH+set} in
+( '' )	KSH=$SHELL ;;
+esac
+if ! test -x "$KSH" || ! test -f "$KSH"; then
+	printf '%s: shell not found: %s\n' "${0##*/}" "$KSH" >&2
+	printf 'Specify a shell like:  KSH=path/to/ksh bin/shtests\n' >&2
+	exit 1
+fi
+
+# Ensure absolute path to ksh
+KSH=$(CDPATH='' cd -P -- "$(dirname "$KSH")" \
+	&& printf '%s/%sX' "$PWD" "${KSH##*/}") \
+&& KSH=${KSH%X}
+
+# Run the test suite
+CDPATH='' cd -P -- "$PACKAGEROOT/src/cmd/ksh93/tests" || exit
+SHELL=$KSH
+unset -v KSH
+printf '#### Regression-testing %s ####\n' "$SHELL"
+exec "$SHELL" shtests "$@"

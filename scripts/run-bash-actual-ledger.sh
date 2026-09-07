@@ -17,8 +17,14 @@ printf 'commit=%s\nGNU_Bash=%s\nRubash=%s\ntimeout=%s\nnormalization=CRLF_to_LF\
   "$commit" "$gnu" "$rubash" "$timeout_seconds" "$test_filter" > "$out/manifest.txt"
 printf 'test\tstatus\tbash_rc\trubash_rc\n' > "$out/results.tsv"
 
-cp -R "$tests_dir"/. "$out/work/base/bash/"
-cp -R "$tests_dir"/. "$out/work/base/rubash/"
+# Copy robustly: some Windows shims do not honor `cp -R dir/.`; populate
+# each base only when empty so a pre-staged tree is kept.
+if [ -z "$(ls -A "$out/work/base/bash" 2>/dev/null)" ]; then
+  (cd "$tests_dir" && cp -R * "$out/work/base/bash/") || cp -R "$tests_dir"/. "$out/work/base/bash/"
+fi
+if [ -z "$(ls -A "$out/work/base/rubash" 2>/dev/null)" ]; then
+  (cd "$tests_dir" && cp -R * "$out/work/base/rubash/") || cp -R "$tests_dir"/. "$out/work/base/rubash/"
+fi
 find "$out/work/base/bash" "$out/work/base/rubash" -type f -exec sed -i 's/\r$//' {} +
 printf '#!/usr/bin/env bash\nexec "%s" "\$@"\n' "$gnu" > "$out/work/base/bash/bash"
 printf '#!/usr/bin/env bash\nexec "%s" "\$@"\n' "$rubash" > "$out/work/base/rubash/bash"

@@ -1,0 +1,41 @@
+########################################################################
+#                                                                      #
+#              This file is part of the ksh 93u+m package              #
+#          Copyright (c) 1995-2012 AT&T Intellectual Property          #
+#          Copyright (c) 2021-2026 Contributors to ksh 93u+m           #
+#                      and is licensed under the                       #
+#                 Eclipse Public License, Version 2.0                  #
+#                                                                      #
+#                A copy of the License is available at                 #
+#      https://www.eclipse.org/org/documents/epl-2.0/EPL-2.0.html      #
+#         (with md5 checksum 84283fa8859daf213bdda5a9f8d1be1d)         #
+#                                                                      #
+#                  Martijn Dekker <martijn@inlv.org>                   #
+#            Johnothan King <johnothanking@protonmail.com>             #
+#                                                                      #
+########################################################################
+
+_message()
+{
+	print -r $'\t'"${Command}[$1]: ${@:2}" >&2
+}
+function err_exit
+{
+	_message "$1" "FAIL:" "${@:2}"
+	let Errors+=1
+}
+alias err_exit='err_exit $LINENO'  # inaccurate err_exit name kept for historical integrity :)
+alias warning='_message "$LINENO" "warning:"'
+
+Command=${0##*/}
+integer Errors=0
+
+if	[[ -o xtrace ]]
+then	# PS4 is set and exported in shtests
+	typeset -F SECONDS  # show fractional seconds in xtrace output
+fi
+
+if	! [[ -d $tmp && -w $tmp && $tmp == "$PWD" ]]
+then	print -r "$Command: \$tmp not set; run this from shtests. Aborting." >&2
+	exit 1
+fi
