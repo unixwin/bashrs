@@ -524,6 +524,16 @@ impl Executor {
         if let Some(source) = raw.and_then(|raw| {
             raw.strip_prefix("\"$(")
                 .and_then(|rest| rest.strip_suffix(")\""))
+                // GNU subst.c expands each $() span inside the quoted word on
+                // its own ("$(a)$(b)" is two substitutions, not one command
+                // whose text runs from the first $( to the last )). Strip the
+                // fast path only when the quoted content is exactly one
+                // $() group; multi-span words fall through to the fragment
+                // and embedded-parameter expanders (issue niubash#71).
+                .filter(|_| {
+                    raw.get(1..raw.len() - 1)
+                        .is_some_and(command_substitution_spans_whole_word)
+                })
         }) {
             return vec![self.expand_command_substitution_with_context(
                 source,

@@ -92,6 +92,14 @@ impl Executor {
             if let Some(source) = value
                 .strip_prefix("$(")
                 .and_then(|rest| rest.strip_suffix(')'))
+                // GNU expands each $() span in the RHS separately ("$(a)$(b)"
+                // concatenates two substitution outputs, subst.c string
+                // extraction never spans across substitutions). Keep the
+                // single-substitution fast path only for words that are
+                // exactly one $() group; multi-span values fall through to
+                // expand_mixed_command_substitution_assignment (issue
+                // niubash#71).
+                .filter(|_| command_substitution_spans_whole_word(value))
             {
                 let result = self.expand_command_substitution_mut_typed_with_context(
                     source,
