@@ -1,6 +1,6 @@
 use super::classification::{
-    assignment_value_is_quoted, has_unquoted_assignment_equal, is_assignment, is_keyword,
-    mark_quoted_assignment_value, quoted_literal_tilde,
+    assignment_value_is_quoted, is_assignment, is_keyword, mark_quoted_assignment_value,
+    quoted_literal_tilde,
 };
 use super::quotes::{remove_shell_quotes, remove_shell_quotes_outside_backticks};
 use super::scanner::Lexer;
@@ -38,7 +38,12 @@ impl<'a> Lexer<'a> {
         };
         let kind = if allow_keyword && is_keyword(raw) {
             TokenKind::Keyword
-        } else if is_assignment(&value) && has_unquoted_assignment_equal(raw) {
+        // GNU parse.y calls assignment() on the raw token (general.c:480):
+        // the name part may contain only [A-Za-z0-9_], so any quote or
+        // backslash in it disqualifies the word (a''=b is the command
+        // a=b, not an assignment). Validating the de-quoted value instead
+        // wrongly accepted a''=b because the empty quotes vanish.
+        } else if is_assignment(&raw) {
             TokenKind::Assignment
         } else {
             TokenKind::Word

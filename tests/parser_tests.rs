@@ -34,8 +34,8 @@ fn escaped_quote_array_subscript_is_marked_as_arithmetic_parse_error() {
 
     assert_eq!(
         ast.commands[0]
-            .assignments
-            .get("__RUBASH_PARSE_ERROR__")
+            .get_assignment(
+        "__RUBASH_PARSE_ERROR__")
             .map(String::as_str),
         Some("arithmetic syntax error: operand expected")
     );
@@ -47,8 +47,8 @@ fn escaped_quote_array_subscript_is_allowed_for_declare_and_let() {
         let ast = parse(&tokenize(input));
         assert!(
             ast.commands[0]
-                .assignments
-                .get("__RUBASH_PARSE_ERROR__")
+                .get_assignment(
+        "__RUBASH_PARSE_ERROR__")
                 .is_none(),
             "unexpected parse error for {input:?}"
         );
@@ -1105,7 +1105,7 @@ mod command_body_kind_tests {
         assert!(ast
             .commands
             .iter()
-            .any(|command| { command.assignments.get("__RUBASH_PARSE_ERROR__").is_some() }));
+            .any(|command| { command.get_assignment("__RUBASH_PARSE_ERROR__").is_some() }));
     }
 
     #[test]
@@ -2235,7 +2235,7 @@ mod conditional_tests {
         for input in ["[[ a = b c ]]", "[[ a < b c ]]"] {
             let ast = parse(&tokenize(input));
             assert_eq!(
-                ast.commands[0].assignments.get("__RUBASH_PARSE_ERROR__").map(String::as_str),
+                ast.commands[0].get_assignment("__RUBASH_PARSE_ERROR__").map(String::as_str),
                 Some("unexpected token in conditional expression"),
                 "expected Bash-style parse error for {input}",
             );
@@ -3349,9 +3349,9 @@ mod assignment_tests {
         let tokens = tokenize(input);
         let ast = parse(&tokens);
         assert_eq!(ast.commands.len(), 1);
-        assert!(ast.commands[0].assignments.contains_key("VAR"));
+        assert!(ast.commands[0].has_assignment("VAR"));
         assert_eq!(
-            ast.commands[0].assignments.get("VAR"),
+            ast.commands[0].get_assignment("VAR"),
             Some(&"value".to_string())
         );
     }
@@ -3362,7 +3362,7 @@ mod assignment_tests {
         let tokens = tokenize(input);
         let ast = parse(&tokens);
         assert_eq!(ast.commands.len(), 1);
-        assert!(ast.commands[0].assignments.contains_key("X"));
+        assert!(ast.commands[0].has_assignment("X"));
     }
 
     #[test]
@@ -3372,7 +3372,7 @@ mod assignment_tests {
         let ast = parse(&tokens);
         assert_eq!(ast.commands.len(), 1);
         assert_eq!(
-            ast.commands[0].assignments.get("arr").unwrap(),
+            ast.commands[0].get_assignment("arr").unwrap(),
             "__RUBASH_CA1__(one \"two words\")"
         );
 
@@ -3409,7 +3409,7 @@ mod assignment_tests {
         let ast = parse(&tokens);
         assert_eq!(ast.commands.len(), 1);
         assert_eq!(
-            ast.commands[0].assignments.get("arr+").unwrap(),
+            ast.commands[0].get_assignment("arr+").unwrap(),
             "\x1e(three four)"
         );
 
@@ -4116,7 +4116,7 @@ mod command_substitution_tests {
         let ast = parse(&tokens);
         assert_eq!(ast.commands.len(), 1);
         assert_eq!(
-            ast.commands[0].assignments.get("value").unwrap(),
+            ast.commands[0].get_assignment("value").unwrap(),
             "$(printf hi)"
         );
 
@@ -4367,7 +4367,7 @@ mod command_substitution_tests {
         assert_eq!(substitutions[0].source, " REPLY=hi; ");
         assert!(substitutions[0].current_shell);
         assert!(substitutions[0].pipe_output);
-        assert_eq!(substitutions[0].commands[0].assignments["REPLY"], "hi");
+        assert_eq!(substitutions[0].commands[0].get_assignment("REPLY").map(String::as_str), Some("hi"));
         assert_eq!(command.parameter_expansions.len(), 1);
         assert_eq!(command.parameter_expansions[0].text, "${USER:-guest}");
     }
@@ -4441,7 +4441,7 @@ mod arithmetic_expansion_tests {
         let ast = parse(&tokens);
         assert_eq!(ast.commands.len(), 1);
         assert_eq!(
-            ast.commands[0].assignments.get("value").unwrap(),
+            ast.commands[0].get_assignment("value").unwrap(),
             "$((2 + 3))"
         );
 
@@ -4632,7 +4632,7 @@ mod parameter_expansion_tests {
         let ast = parse(&tokens);
         assert_eq!(ast.commands.len(), 1);
         assert_eq!(
-            ast.commands[0].assignments.get("path").unwrap(),
+            ast.commands[0].get_assignment("path").unwrap(),
             "${HOME}/bin"
         );
 

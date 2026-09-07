@@ -35,23 +35,6 @@ pub(super) fn is_assignment(word: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-pub(super) fn has_unquoted_assignment_equal(raw: &str) -> bool {
-    let mut chars = raw.chars();
-    let mut in_single = false;
-    let mut in_double = false;
-    while let Some(ch) = chars.next() {
-        match ch {
-            '\\' => {
-                chars.next();
-            }
-            '\'' if !in_double => in_single = !in_single,
-            '"' if !in_single => in_double = !in_double,
-            '=' if !in_single && !in_double => return true,
-            _ => {}
-        }
-    }
-    false
-}
 
 pub(super) fn is_brace_expansion(word: &str) -> bool {
     word.starts_with('{')

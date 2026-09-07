@@ -37,6 +37,7 @@ impl Executor {
         Ok(true)
     }
 
+    #[allow(unreachable_code)]
     pub(in crate::executor) fn execute_assignment_words(&mut self, cmd: &CommandNode) -> bool {
         // TODO(variables.c/arrayfunc.c/subst.c): Bash recognizes assignment
         // words after alias expansion and routes compound array assignments
@@ -45,6 +46,14 @@ impl Executor {
         if cmd.words.is_empty() || !cmd.assignments.is_empty() {
             return false;
         }
+        // GNU decides assignment words at parse time (parse.y read_token_word
+        // flags W_ASSIGNMENT via general.c assignment()); execute_cmd.c never
+        // re-derives them from word text. Every word reaching here was kept
+        // a command word by the parser on purpose (a''=b runs the command
+        // a=b: not found, rc 127), so re-deriving assignments from
+        // de-quoted values would silently swallow them. The historical
+        // promotion below is unreachable by design.
+        return false;
 
         // GNU performs each assignment expansion and binding left-to-right,
         // so a later assignment sees the earlier one (var4.tests:

@@ -781,7 +781,7 @@ fn test_time_prefix_executes_subshell_group() {
     let ast = parse(&tokens);
     let time_command = ast.commands[1].time_command.as_ref().unwrap();
     let body = &time_command.command.subshell_command.as_ref().unwrap().body;
-    assert_eq!(body[0].assignments.get("value"), Some(&"inner".to_string()));
+    assert_eq!(body[0].get_assignment("value"), Some(&"inner".to_string()));
     assert_eq!(body[1].words, ["echo", "$value"]);
     let mut executor = Executor::new();
 
