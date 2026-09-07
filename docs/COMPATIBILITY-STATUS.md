@@ -41,12 +41,12 @@
 
 | 测试文件 | rubash 行数 | GNU bash 行数 | 严重度 | 现象 |
 |---|---|---|---|---|
-| `posixexp2` | 13 | 40 | **严重** | quote-leak 修复后输出 13 行（原 1 行），仍差 27 行；深层嵌套 $(... 在 ${...} 内泄漏待修 |
-| `mapfile` | 170 | 170 | **严重** | 输出行数与 GNU 一致（170=170），差异为内容而非行数 |
-| `cond` | 166 | 44 | **严重** | 分组条件 [[ (-n a) ]] 解析修复后输出 166 行（原 12 行），但基线 44 行为旧版 GNU 输出 |
+| `posixexp2` | 40 | 40 | 中 | 行数一致（LF 干净基线重跑）；14 行引号保留差异，属 #52/#56 参数展开引号族 |
+| `mapfile` | 170 | 170 | 已关闭 | bash-tests-rw LF 干净目录重跑 diff=0；此前差异为工作树 CRLF 伪影（见十八节） |
+| `cond` | 165 | 174 | 中 | 干净重跑行数接近；49 行差异（rc 语义 [[ 构造） |
 | `comsub-posix` | 30 | 70 | 高 | POSIX 命令替换形态展开不足 |
-| `braces` | 141 | 104 | 高 | 花括号展开实现缺口（见第三节） |
-| `array` | 145 | 621 | 中 | 已不终止，有内容/格式差异 |
+| `braces` | 112 | 102 | 中 | 干净重跑 18 行差异（{0..10} 序列、错误措辞） |
+| `array` | 837 | 853 | 高 | 干净重跑 682 行差异（GNU 侧 rc=1 超时截断，需分段基线） |
 | `arith` | TIMEOUT | TIMEOUT | 中 | 已不终止，有内容/格式差异 |
 | `nameref` | 40 | 40 | 低 | 行数一致，少量内容差异 |
 
@@ -367,3 +367,40 @@ TIMEOUT：`arith`、`ifs-posix`、`read`；SKIP：`jobs`、`printf`（无 `.righ
 - `cd /; echo $PWD; pwd -P` 的最小 probe 已返回 `/`、`/`；dstack suite 剩余主要是错误输出归并和 directory-stack 显示差异，仍需单独处理。
 - invocation 的 `--rcfile` 不能直接复用非交互 `--init-file` 路径：GNU 脚本模式不读取 rcfile，错误接线会产生回归，已验证并撤回。
 - 其余未完成项目（`posixexp2`、`cond`、`comsub-posix`、`braces`、`ifs-posix`、`redir`、`new-exp`、`dbg-support`）仍保留为后续根因专项。
+
+## 十八、2026-09-07 CRLF 伪影纠偏与 read/case/赋值修复（#62 轨道）
+
+### CRLF 伪影（重大基建发现）
+
+core.autocrlf=true 把 vendored bash 测试树（third_party/bash，submodule）检出为 CRLF；GNU 把 CR 当普通数据，凡从工作树直接运行的 GNU 基线均被污染：
+
+- mapfile1.sub 的 echo 行尾 CR 生成幻影尾随空格词；mapfile2.sub 数组名变 A<CR> 触发 sh_invalidid，整个 -d 测试静默跳过。
+- third_party/bash 是上游 submodule，父仓库 .gitattributes 对其无效；worktree 改动已还原。纪律：GNU 基线一律从 LF 归一化的 target/issue-suites/results/bash-tests-rw 运行（THIS_SH 需导出）。
+- bash-tests-rw 已全量重归一化（642 文件；零嵌入 CR 验证）。mapfile.tests 干净重跑 GNU/rubash 完全一致（170=170，diff=0），mapfile 候选关闭。
+
+### 干净基线重跑量化（target/issue-suites/results/ledger62-rerun/，THIS_SH 已导出）
+
+| suite | rubash | GNU | diff 行 | 备注 |
+|---|---|---|---|---|
+| array | 837 | 853 | 682 | GNU rc=1 超时截断，需分段基线 |
+| builtins | 494 | 524 | 280 | GNU rc=2 |
+| quotearray | 143 | 152 | 205 | declare -A key 引号转义 |
+| complete | 366 | 387 | 115 | 打印顺序 |
+| cond | 165 | 174 | 49 | rc 语义 |
+| posixexp2 | 40 | 40 | 14 | ${...} 引号保留，#52/#56 族 |
+| procsub | 33 | 33 | 12 | procsub 进程存活期语义 |
+| braces | 112 | 102 | 18 | {0..10} 序列 |
+| posix2 | 6 | 4 | 8 | 修复后剩 -x 与 set 输出格式 |
+| mapfile | 170 | 170 | 0 | 已关闭 |
+
+### 本轮修复（已推送）
+
+1. c9466df3 read 标量切分三重修复：范围扫描消费转义对；先尾随修剪后解转义（多名末变量逃逸感知 / 单名整行逃逸盲，对应 read.def branch (a)/(b)）；多名余量经 apply_shell_assignment 清空。read.tests 首分歧行 3 → 行 34。
+2. 881b2376 ① case：in 后首个裸 esac 按保留字拒绝（GNU 接受矩阵 5/6 对齐；;; esac) 嵌套深度规则待办）② 赋值值中单引号内双引号为数据（expand_assignment_value hoist/restore 包装）③ quoted-RHS 逃逸引号标记恢复，修 c="a\"b" 泄漏。
+3. 37a27627 .gitattributes（对 submodule 惰性，仅文档价值）。
+
+### 新定位根因（待修）
+
+- procsub：GNU procsub 子进程退出后 /dev/fd 路径 -e 为假；rubash 用持久临时文件 -e 为真。需进程存活期语义（Windows 命名管道方案，高 blast-radius）。
+- posix2 -x：chmod -x 后 test -x 仍真——Windows 可执行位模拟缺失。
+- posix2 variable quoting 1/3：set 内建输出引号格式（SQUOTE 应为反斜杠引号，VHASH 应为裸 ab#cd）。
