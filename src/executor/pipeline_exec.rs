@@ -1157,22 +1157,58 @@ impl Executor {
                 }
             }
             "grep" => {
-                let Some(pattern) = command.words.get(1).map(|word| self.expand_word(word)) else {
-                    return Ok(Some((String::new(), String::new(), 2)));
+                // The inline fast path handles the flag forms GNU pipelines use
+                // most (grep [-cinvq] [--] PATTERN with stdin input only).
+                // Anything else -- regex engine flags, file operands, unknown
+                // options -- must run the real grep; historically words[1] was
+                // treated as the pattern even when it was a flag, so
+                // "set | grep -c VTILDE" grepped for the literal "-c" (it
+                // matched SHELLOPTS' "interactive-comments") and printed the
+                // matching lines instead of a count.
+                let args: Vec<String> = command.words[1..]
+                    .iter()
+                    .map(|word| self.expand_word(word))
+                    .collect();
+                let Some(spec) = inline_grep_args(&args) else {
+                    return self.execute_external_pipeline_stage(command, input);
                 };
-                let mut matched = false;
+                let mut selected = 0usize;
+                let mut line_number = 0usize;
                 let mut output = String::new();
                 for line in input.split_inclusive('\n') {
+                    line_number += 1;
                     let comparable = line.strip_suffix('\n').unwrap_or(line);
-                    if simple_grep_pattern_matches(comparable, &pattern) {
-                        matched = true;
-                        output.push_str(line);
-                        if !line.ends_with('\n') {
-                            output.push('\n');
-                        }
+                    let haystack = if spec.ignore_case {
+                        comparable.to_lowercase()
+                    } else {
+                        comparable.to_string()
+                    };
+                    let needle = if spec.ignore_case {
+                        spec.pattern.to_lowercase()
+                    } else {
+                        spec.pattern.to_string()
+                    };
+                    let hit = simple_grep_pattern_matches(&haystack, &needle) != spec.invert;
+                    if !hit {
+                        continue;
+                    }
+                    selected += 1;
+                    if spec.quiet || spec.count_mode {
+                        continue;
+                    }
+                    if spec.line_numbers {
+                        output.push_str(&line_number.to_string());
+                        output.push(':');
+                    }
+                    output.push_str(line);
+                    if !line.ends_with('\n') {
+                        output.push('\n');
                     }
                 }
-                Ok(Some((output, String::new(), i32::from(!matched))))
+                if spec.count_mode {
+                    output = format!("{selected}\n");
+                }
+                Ok(Some((output, String::new(), i32::from(selected == 0))))
             }
             "wc" => {
                 let option = command.words.get(1).map(String::as_str).unwrap_or("-l");
@@ -1561,4 +1597,54 @@ fn time_pipeline_prefix(command: &CommandNode) -> Option<TimePipelinePrefix> {
         inverted,
         posix_format,
     })
+}
+
+
+/// Parse the inline grep fast-path argument list: options from the set
+/// [-cinvq] (bundled or separate), an optional -- terminator, exactly one
+/// non-option PATTERN, and no file operands. Returns None when anything
+/// outside that subset is present so the pipeline runs the real grep.
+fn inline_grep_args(args: &[String]) -> Option<InlineGrepSpec> {
+    let mut spec = InlineGrepSpec::default();
+    let mut pattern: Option<&str> = None;
+    let mut operands_done = false;
+    for arg in args {
+        if !operands_done && arg == "--" {
+            operands_done = true;
+            continue;
+        }
+        if !operands_done && arg.len() > 1 && arg.starts_with('-') && !arg.starts_with("--") {
+            for flag in arg[1..].chars() {
+                match flag {
+                    'c' => spec.count_mode = true,
+                    'i' => spec.ignore_case = true,
+                    'v' => spec.invert = true,
+                    'n' => spec.line_numbers = true,
+                    'q' => spec.quiet = true,
+                    _ => return None,
+                }
+            }
+            continue;
+        }
+        if pattern.is_none() {
+            pattern = Some(arg.as_str());
+            continue;
+        }
+        // Second operand (or an operand before --) means file input.
+        return None;
+    }
+    Some(InlineGrepSpec {
+        pattern: pattern?.to_string(),
+        ..spec
+    })
+}
+
+#[derive(Default)]
+struct InlineGrepSpec {
+    pattern: String,
+    invert: bool,
+    count_mode: bool,
+    quiet: bool,
+    line_numbers: bool,
+    ignore_case: bool,
 }

@@ -152,6 +152,12 @@ where
     vars.sort_by(|left, right| left.0.cmp(right.0));
 
     for (name, value) in vars {
+        // Internal bookkeeping variables (readonly/array/assoc marks, shell
+        // option state) are invisible in listings, like GNU's invisible_p
+        // vars in print_var_list (variables.c).
+        if name.starts_with("__RUBASH_") {
+            continue;
+        }
         writeln!(stdout, "{}={}", name, shell_quote(value))?;
     }
 
@@ -159,15 +165,83 @@ where
 }
 
 fn shell_quote(value: &str) -> String {
-    if value
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '/' | '.' | '-' | ':'))
-    {
-        value.to_string()
-    } else {
-        let escaped = value.replace('\'', "'\\''");
-        format!("'{}'", escaped)
+    // GNU variables.c print_var_value: dollar-quote for values containing
+    // non-printing characters (ansic_shouldquote), sh_single_quote for
+    // values containing shell metacharacters (sh_contains_shell_metas),
+    // bare otherwise. sh_single_quote special-cases a value that is
+    // exactly one quote and prints it as backslash-quote (posix2.tests
+    // variable quoting 1/3).
+    if ansic_shouldquote(value) {
+        return ansic_quote_value(value);
     }
+    if !contains_shell_metas(value) {
+        return value.to_string();
+    }
+    if value == "'" {
+        return "\\'".to_string();
+    }
+    let escaped = value.replace('\'', "'\\''");
+    format!("'{}'", escaped)
+}
+
+/// GNU ansic_shouldquote: any non-printing character forces the dollar-quote
+/// form. Printable ASCII and printable Unicode text stay unquoted here.
+fn ansic_shouldquote(value: &str) -> bool {
+    value.chars().any(|ch| ch.is_control())
+}
+
+/// GNU ansic_quote with flags=0: dollar-quote wrapping, escaping ESC, the
+/// C-style escapes, backslash, and single quote; other non-printing
+/// characters become three-digit octal escapes.
+fn ansic_quote_value(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 4);
+    out.push_str("$'");
+    for ch in value.chars() {
+        match ch {
+            '\u{1b}' => out.push_str("\\E"),
+            '\u{7}' => out.push_str("\\a"),
+            '\u{b}' => out.push_str("\\v"),
+            '\u{8}' => out.push_str("\\b"),
+            '\u{c}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\\' => out.push_str("\\\\"),
+            _ if ch.is_control() => {
+                let byte = ch as u32;
+                out.push_str(&format!("\\{:03o}", byte));
+            }
+            _ => out.push(ch),
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// GNU sh_contains_shell_metas: IFS whitespace, quoting characters, shell
+/// metacharacters, reserved-word braces, globbing characters, expansion
+/// characters; tilde only at the start or after =/:; hash only at the start.
+fn contains_shell_metas(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    for (index, ch) in value.char_indices() {
+        match ch {
+            ' ' | '\t' | '\n' | '\'' | '"' | '\\' | '|' | '&' | ';'
+            | '(' | ')' | '<' | '>' | '!' | '{' | '}' | '*' | '[' | '?'
+            | ']' | '^' | '$' | '\u{60}' => return true,
+            '~' => {
+                if index == 0 || (index > 0 && matches!(bytes[index - 1], b'=' | b':')) {
+                    return true;
+                }
+            }
+            '#' => {
+                if index == 0 {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 #[cfg(test)]
