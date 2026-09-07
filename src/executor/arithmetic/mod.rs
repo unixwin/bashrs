@@ -23,6 +23,35 @@ pub(crate) enum ArithmeticErrorCategory {
 }
 
 impl Executor {
+    /// Snapshot the arithmetic error flags so a subshell boundary (command
+    /// substitution, pipeline element) can restore them afterwards; errors
+    /// raised inside the subshell must not leak into the enclosing command's
+    /// word-expansion check.
+    pub(crate) fn snapshot_arithmetic_error_flags(
+        &self,
+    ) -> (bool, bool, bool, bool, Option<ArithmeticErrorCategory>) {
+        (
+            self.arithmetic_expansion_error.get(),
+            self.arithmetic_nonfatal_error.get(),
+            self.arithmetic_fatal_error.get(),
+            self.arithmetic_nounset_error.get(),
+            self.arithmetic_last_error_category.get(),
+        )
+    }
+
+    /// Restore flags saved by [`Self::snapshot_arithmetic_error_flags`].
+    /// Returns true when a `set -u` unbound-variable error was raised inside
+    /// the bounded region (it was clear on entry and is set now).
+    pub(crate) fn restore_arithmetic_error_flags(&self, saved: &(bool, bool, bool, bool, Option<ArithmeticErrorCategory>)) -> bool {
+        let nounset_hit = self.arithmetic_nounset_error.get() && !saved.3;
+        self.arithmetic_expansion_error.set(saved.0);
+        self.arithmetic_nonfatal_error.set(saved.1);
+        self.arithmetic_fatal_error.set(saved.2);
+        self.arithmetic_nounset_error.set(saved.3);
+        self.arithmetic_last_error_category.set(saved.4);
+        nounset_hit
+    }
+
     pub(crate) fn eval_arithmetic_command_value(&mut self, expression: &str) -> Option<i128> {
         self.arithmetic_last_error_category.set(None);
         let expression = if self.has_associative_parameter_subscript(expression) {
@@ -149,11 +178,18 @@ impl Executor {
             return Ok(());
         }
         let nounset = self.arithmetic_nounset_error.replace(false);
-        let status = if nounset { 127 } else { 1 };
         self.arithmetic_fatal_error.set(false);
         self.arithmetic_expansion_error.set(false);
-        self.exit_code = status;
-        Err(crate::executor::ExecuteError::ExpansionFailure(status))
+        if nounset {
+            // `set -u` unbound in a compound-expansion context (case words,
+            // loop headers) terminates the noninteractive shell exactly like
+            // the simple-command path (GNU probe a5: `case $((b)) in ...`
+            // exits the script).
+            self.exit_code = 127;
+            return Err(crate::executor::ExecuteError::ExitCode(127));
+        }
+        self.exit_code = 1;
+        Err(crate::executor::ExecuteError::ExpansionFailure(1))
     }
 
     fn has_associative_parameter_subscript(&self, expression: &str) -> bool {
@@ -314,16 +350,67 @@ pub(super) fn arithmetic_unbound_variable(
         {
             name.push(chars.next().expect("peeked arithmetic identifier"));
         }
+        // An identifier that is the left-hand side of an assignment
+        // (`i=0`, `i+=1`, `x = 2`) is a write target, not a value read.
+        // GNU expr.c only routes *reads* through expr_streval, so `set -u;
+        // for ((i=0; i<n; i++))` must not report `i` as unbound (issue #67).
+        // A following `==` is comparison and keeps the read check.
+        if arithmetic_identifier_is_assignment_lhs(&mut chars) {
+            previous = name.chars().last();
+            continue;
+        }
         if !env_vars.contains_key(&name) && !matches!(name.as_str(), "RANDOM" | "SRANDOM") {
             return Some(name);
         }
         previous = name.chars().last();
     }
-    // The scan is a nounset pre-check only: reaching this point means every
-    // identifier in the expression is bound. Return None so evaluation
-    // proceeds; genuine parse failures are reported by the evaluator itself
-    // (operand expected / invalid arithmetic operator diagnostics).
+    // Every identifier in the expression is bound: leave validation to the
+    // real evaluator. GNU expr.c only raises the nounset error for a
+    // reference to an unset variable (expr_streval); a malformed expression
+    // (`a b`, `x=9 y=41`) is reported by the parser with its own
+    // "syntax error in expression" diagnostic regardless of `set -u`.
+    // Returning a synthesized error here used to make `set -u; a=0;
+    // echo $((a))` fail with rc=127 (issue #67).
     None
+}
+
+/// Returns true when the identifier just scanned is immediately followed by
+/// an assignment operator (`=`, `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `^=`,
+/// `|=`, `<<=`, `>>=`, `**=`), optionally after blanks. A `==` at the same
+/// position is an equality test, so the identifier is still a read.
+fn arithmetic_identifier_is_assignment_lhs(
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+) -> bool {
+    while chars.peek().is_some_and(|next| matches!(next, ' ' | '\t')) {
+        chars.next();
+    }
+    let rest_starts_with = |pattern: &str| -> bool {
+        // Peekable has no multi-char lookahead; clone the remaining iterator.
+        let mut clone = chars.clone();
+        pattern
+            .chars()
+            .all(|expected| clone.next().is_some_and(|actual| actual == expected))
+    };
+    if rest_starts_with("==") || !rest_starts_with("=") {
+        return false;
+    }
+    // Consume the operator so the outer scan resumes after it.
+    for _ in 0..rest_assignment_operator_len(chars) {
+        chars.next();
+    }
+    true
+}
+
+fn rest_assignment_operator_len(chars: &std::iter::Peekable<std::str::Chars>) -> usize {
+    let rest: String = chars.clone().collect();
+    for op in [
+        "<<=", ">>=", "**=", "+=", "-=", "*=", "/=", "%=", "&=", "^=", "|=", "=",
+    ] {
+        if rest.starts_with(op) {
+            return op.len();
+        }
+    }
+    1
 }
 
 /// Strip double quotes from an arithmetic expression before evaluation.

@@ -222,12 +222,22 @@ impl Executor {
             self.arithmetic_expansion_error.set(false);
             let was_fatal = self.arithmetic_fatal_error.replace(false);
             let nounset = self.arithmetic_nounset_error.replace(false);
-            let status = if nounset { 127 } else { 1 };
-            if was_fatal || nounset {
-                self.exit_code = status;
-                return Err(ExecuteError::ExpansionFailure(status));
+            if nounset {
+                // GNU expr.c expr_streval: an unbound variable under `set -u`
+                // raises FORCE_EOF and terminates the noninteractive shell.
+                // This mirrors the plain-parameter nounset path
+                // (command_prepare.rs), which also exits the script; other
+                // arithmetic evaluation errors keep the nonfatal
+                // ExpansionFailure line-skip semantics (GNU probe d2:
+                // `echo $((1/0)); echo after` still prints "after").
+                self.exit_code = 127;
+                return Err(ExecuteError::ExitCode(127));
             }
-            self.exit_code = status;
+            if was_fatal {
+                self.exit_code = 1;
+                return Err(ExecuteError::ExpansionFailure(1));
+            }
+            self.exit_code = 1;
         }
 
         if alias_expansion_changed_words

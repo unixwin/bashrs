@@ -139,7 +139,7 @@ impl Executor {
                     }
                     None => self.report_arithmetic_error(expression),
                 }
-                if self.arithmetic_nounset_error.replace(false) {
+                if self.arithmetic_nounset_error.get() {
                     127
                 } else {
                     1

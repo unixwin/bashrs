@@ -416,6 +416,38 @@ impl Executor {
         &mut self,
         commands: &[&CommandNode],
     ) -> Result<Option<()>, ExecuteError> {
+        // The timed fast path expands the producer stage's words on the
+        // shared executor. A pipeline element is still a subshell boundary:
+        // a `set -u` unbound-variable error raised during that expansion
+        // kills only the element (stage status 127), never the enclosing
+        // script (issue #67).
+        let saved = self.snapshot_arithmetic_error_flags();
+        let result = self.execute_timed_read_pipeline_inner(commands);
+        let nounset_hit = self.restore_arithmetic_error_flags(&saved);
+        match (result, nounset_hit) {
+            (Ok(Some(())), true) => {
+                // Producer died with 127, consumer completed: pipeline
+                // status stays the last element's (0).
+                self.set_pipestatus(vec![127, 0]);
+                Ok(Some(()))
+            }
+            (Ok(None), true) => {
+                // The fast path bailed after the diagnostic was already
+                // printed (consumer not supported). Fall through to the
+                // stage loop with the expansion-error latch held: the
+                // stage's re-expansion re-raises the nounset error without
+                // printing the diagnostic a second time.
+                self.arithmetic_expansion_error.set(true);
+                Ok(None)
+            }
+            (other, _) => other,
+        }
+    }
+
+    fn execute_timed_read_pipeline_inner(
+        &mut self,
+        commands: &[&CommandNode],
+    ) -> Result<Option<()>, ExecuteError> {
         if commands.len() != 2 {
             return Ok(None);
         }
@@ -947,7 +979,80 @@ impl Executor {
         statuses.last().copied().unwrap_or(0)
     }
 
+    /// GNU execute_simple_command: an unquoted expansion in the command word
+    /// undergoes field splitting; the first resulting field is the command
+    /// name and the remaining fields become arguments (`v="echo hi there";
+    /// $v | cat` must run `echo hi there`, not look up a command named
+    /// "echo hi there"; issue #68). The stage fast paths below dispatch on
+    /// the raw first word, so materialize the split before dispatching.
+    fn split_pipeline_stage_command_word(&mut self, command: &CommandNode) -> CommandNode {
+        let Some(first) = command.words.first().cloned() else {
+            return command.clone();
+        };
+        let raw = command.word_metadata.first().map(|metadata| metadata.raw.clone());
+        let fields = self.expand_command_word(command, 0, &first, raw.as_deref());
+        if fields.len() <= 1 {
+            return command.clone();
+        }
+        let extra = fields.len() - 1;
+        let mut rebuilt = command.clone();
+        let mut words = fields.clone();
+        words.extend(command.words[1..].iter().cloned());
+        rebuilt.words = words;
+        let mut metadata = Vec::with_capacity(rebuilt.words.len());
+        for (index, field) in fields.iter().enumerate() {
+            // The fields are already fully expanded; literal metadata with
+            // the field text as its raw keeps downstream per-word expansion
+            // idempotent for plain results.
+            metadata.push(crate::parser::WordMetadata::literal(
+                index,
+                field.clone(),
+                field.clone(),
+            ));
+        }
+        for metadata_entry in command.word_metadata.iter().skip(1) {
+            let mut entry = metadata_entry.clone();
+            entry.word_index += extra;
+            metadata.push(entry);
+        }
+        rebuilt.word_metadata = metadata;
+        rebuilt.word_kinds = std::iter::repeat(crate::lexer::TokenKind::Word)
+            .take(extra)
+            .chain(command.word_kinds.iter().skip(1).cloned())
+            .collect();
+        rebuilt
+    }
+
     pub(in crate::executor) fn execute_pipeline_stage(
+        &mut self,
+        command: &CommandNode,
+        input: &str,
+        force_compound_errexit: bool,
+    ) -> Result<Option<(String, String, i32)>, ExecuteError> {
+        // A pipeline element runs in its own subshell: an expansion error
+        // raised while expanding the element's words on the shared executor
+        // (notably `set -u` unbound in `$(( ))`) terminates only that
+        // element with status 127, not the enclosing script (GNU 5.2:
+        // `set -u; echo $((b)) | cat; echo after` prints the diagnostic and
+        // "after", rc=0; issue #67). Snapshot and restore the arithmetic
+        // error flags around the stage so the outer word-expansion check in
+        // command_execute never observes them.
+        let saved = self.snapshot_arithmetic_error_flags();
+        let result = self.execute_pipeline_stage_inner(command, input, force_compound_errexit);
+        let nounset_hit = self.restore_arithmetic_error_flags(&saved);
+        match result {
+            Ok(Some((output, stderr, status))) if nounset_hit => {
+                // The stage re-raised (or consumed) the unbound-variable
+                // error; clear the expansion-error latch so it does not
+                // leak into the enclosing command's exit-status handling.
+                self.arithmetic_expansion_error.set(false);
+                Ok(Some((output, stderr, 127)))
+            }
+            other => other,
+        }
+    }
+
+    fn execute_pipeline_stage_inner(
         &mut self,
         command: &CommandNode,
         input: &str,
@@ -977,6 +1082,8 @@ impl Executor {
 
         let expanded = self.brace_expanded_pipeline_stage(command);
         let command = &expanded;
+        let command = self.split_pipeline_stage_command_word(command);
+        let command = &command;
         let Some(name) = command.words.first().map(String::as_str) else {
             return self
                 .execute_compound_pipeline_stage(command, input, force_compound_errexit)

@@ -200,17 +200,17 @@ impl Executor {
                 // aborts the current command list in Bash. Do not install a
                 // partial assignment or let the AST walker skip only the next
                 // command as if this were an ordinary word expansion.
-                let failure_status = if self.arithmetic_nounset_error.replace(false) {
-                    127
-                } else {
-                    1
-                };
-                self.exit_code = failure_status;
-                // Fatal categories: invalid literal (`08`, `2#2`) inside an
-                // assignment word abandons the whole enclosing list even in
-                // plain script mode with no errexit (later commands never run,
-                // status 1).
-                return Err(ExecuteError::ExpansionFailure(failure_status));
+                // `set -u` unbound is script-fatal (GNU expr.c expr_streval
+                // FORCE_EOF; probe a1: `set -u; x=$((b)); echo after` never
+                // prints "after"), matching the plain-parameter nounset path;
+                // other fatal categories abandon only the command list
+                // (probe a6: `x=$((1/0)); echo after` prints "after").
+                if self.arithmetic_nounset_error.replace(false) {
+                    self.exit_code = 127;
+                    return Err(ExecuteError::ExitCode(127));
+                }
+                self.exit_code = 1;
+                return Err(ExecuteError::ExpansionFailure(1));
             }
             if assignment_result.arithmetic_error {
                 // Nonfatal arithmetic errors (e.g. "attempted assignment to

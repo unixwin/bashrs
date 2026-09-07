@@ -281,6 +281,15 @@ impl Executor {
                 {
                     self.arithmetic_nonfatal_error.set(true);
                 }
+                if self.arithmetic_nounset_error.get() {
+                    // `set -u` unbound is script-fatal (command_prepare turns
+                    // the recorded flag into ExitCode). Returning an empty
+                    // value here stops the slower assignment expanders from
+                    // re-processing the `$(( ))` text as a command
+                    // substitution, which produced a spurious
+                    // `b: command not found` (issue #67).
+                    return Some(String::new());
+                }
                 return None;
             };
             return Some(self.expand_assignment_tilde_if_needed(value.to_string()));

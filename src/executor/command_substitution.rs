@@ -59,6 +59,19 @@ impl Executor {
         self.last_command_substitution_parse_error.set(false);
         let old_depth = self.subshell_depth.get();
         let saved_command = self.debug_trap_command.borrow().clone();
+        // A command substitution is a subshell boundary: an expansion error
+        // raised while expanding the substitution's own words (fast-path
+        // builtins expand on the shared executor) terminates only the
+        // substitution, not the enclosing script. Snapshot and restore the
+        // arithmetic error flags so the outer word-expansion check in
+        // command_execute does not observe errors that already killed the
+        // subshell (GNU: `x=$(echo $((b)))` under `set -u` prints the
+        // diagnostic, leaves x empty, and keeps running; issue #67).
+        let saved_expansion_error = self.arithmetic_expansion_error.get();
+        let saved_nonfatal_error = self.arithmetic_nonfatal_error.get();
+        let saved_fatal_error = self.arithmetic_fatal_error.get();
+        let saved_nounset_error = self.arithmetic_nounset_error.get();
+        let saved_last_category = self.arithmetic_last_error_category.get();
         self.subshell_depth.set(old_depth + 1);
         // Bash evaluates BASH_COMMAND in a command substitution against the
         // substitution's own command source, rather than the outer word.
@@ -66,6 +79,11 @@ impl Executor {
         let result = self.expand_command_substitution_inner(source, context);
         *self.debug_trap_command.borrow_mut() = saved_command;
         self.subshell_depth.set(old_depth);
+        self.arithmetic_expansion_error.set(saved_expansion_error);
+        self.arithmetic_nonfatal_error.set(saved_nonfatal_error);
+        self.arithmetic_fatal_error.set(saved_fatal_error);
+        self.arithmetic_nounset_error.set(saved_nounset_error);
+        self.arithmetic_last_error_category.set(saved_last_category);
         result
     }
 
@@ -94,12 +112,14 @@ impl Executor {
             self.last_command_substitution_status.set(Some(0));
             return String::new();
         }
-        // NOTE: do not strip an `eval ` prefix here. A stripped string falls
-        // into the single-word fast paths below, which expand the remainder as
-        // ONE word: `$(eval "echo hi")` executed the joined string
-        // "echo hi" as a command name and reported command-not-found. eval
-        // sources fall through to the parsed subshell fallback, which
-        // dispatches the eval builtin (full re-parse semantics).
+        // NOTE: an earlier revision stripped a leading `eval ` here and ran
+        // the remainder as a plain command. That breaks eval semantics for
+        // multi-word strings: `x=$(eval "echo hi")` must re-parse the string
+        // into two commands words, not execute a command named "echo hi"
+        // (issue #69). Command substitutions that begin with `eval` now fall
+        // through to the real parser/executor fallback below, which runs the
+        // eval builtin with full re-parse semantics (alias4.sub
+        // `$(eval echo b)` included).
         if let Some(inner) = strip_wrapping_subshell_group(source) {
             return self.expand_command_substitution_inner(inner, context);
         }

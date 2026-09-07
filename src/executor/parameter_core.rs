@@ -131,6 +131,16 @@ impl Executor {
                 }
                 return String::new();
             }
+            // A `set -u` unbound-variable failure in the arithmetic context is
+            // fatal in GNU Bash (expr.c expr_streval raises FORCE_EOF): the
+            // diagnostic was already printed and the enclosing command list is
+            // abandoned. Do not fall through to the command-substitution
+            // retry below — GNU never re-parses the expansion text as a
+            // command, and doing so produced a spurious
+            // `b: command not found` (issue #67).
+            if self.arithmetic_nounset_error.get() {
+                return String::new();
+            }
             // GNU subst.c retries unrecognized arithmetic syntax as command substitution.
             // Keep the parenthesized command source so nested subshell delimiters
             // are balanced during the fallback parse.

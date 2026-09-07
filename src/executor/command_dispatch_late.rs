@@ -162,6 +162,17 @@ impl Executor {
             "((" => {
                 self.apply_no_output_builtin_redirects(cmd)?;
                 self.exit_code = self.execute_arithmetic_command(cmd);
+                // GNU expr.c: an unbound variable under `set -u` inside `((
+                // ))` raises FORCE_EOF and terminates the noninteractive
+                // shell (probe a2: `set -u; ((b)); echo after` never prints
+                // "after"). The status alone would otherwise keep the script
+                // running.
+                if self.arithmetic_nounset_error.get() {
+                    self.arithmetic_nounset_error.set(false);
+                    self.arithmetic_expansion_error.set(false);
+                    self.exit_code = 127;
+                    return Err(ExecuteError::ExitCode(127));
+                }
                 Ok(())
             }
             "dirname" => {
