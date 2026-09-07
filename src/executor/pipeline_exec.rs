@@ -1041,7 +1041,7 @@ impl Executor {
         let result = self.execute_pipeline_stage_inner(command, input, force_compound_errexit);
         let nounset_hit = self.restore_arithmetic_error_flags(&saved);
         match result {
-            Ok(Some((output, stderr, status))) if nounset_hit => {
+            Ok(Some((output, stderr, _status))) if nounset_hit => {
                 // The stage re-raised (or consumed) the unbound-variable
                 // error; clear the expansion-error latch so it does not
                 // leak into the enclosing command's exit-status handling.
