@@ -395,7 +395,7 @@ impl Executor {
             } else {
                 unescape_read_backslashes(line)
             };
-            self.env_vars.insert(names[0].clone(), value);
+            self.apply_shell_assignment(&names[0], value);
             return;
         }
 
@@ -409,9 +409,13 @@ impl Executor {
         } else {
             read_scalar_fields_with_backslashes(line, field_count, ifs)
         };
+        // GNU read binds every name (bind_read_variable), clearing surplus
+        // names to the empty string even when the line has fewer fields;
+        // apply_shell_assignment keeps nameref/readonly/array semantics and
+        // the same variable store as regular assignments.
         for (index, name) in names.iter().enumerate() {
             let value = fields.get(index).cloned().unwrap_or_default();
-            self.env_vars.insert(name.clone(), value);
+            self.apply_shell_assignment(name, value);
         }
     }
 }

@@ -42,7 +42,7 @@ fn ifs_whitespace(ch: char, ifs: &str) -> bool {
 /// boundaries, so callers can slice `line` directly without panicking on
 /// multi-byte characters (GNU read splits at multibyte character boundaries,
 /// mirroring lib/sh/stringlib.c / subst.c).
-fn split_read_field_ranges(line: &str, ifs: &str) -> Vec<(usize, usize)> {
+fn split_read_field_ranges(line: &str, ifs: &str, interpret_backslashes: bool) -> Vec<(usize, usize)> {
     // Track each char's byte offset (char_indices) so the returned ranges
     // slice `line` at UTF-8 boundaries instead of splitting multi-byte
     // sequences mid-character.
@@ -64,7 +64,14 @@ fn split_read_field_ranges(line: &str, ifs: &str) -> Vec<(usize, usize)> {
         let start = chars[i].0;
         // A field runs until the next IFS character. IFS whitespace inside a
         // field is kept literally; a non-whitespace IFS delimiter ends it.
+        // An escaped character (backslash + any char, including IFS chars) is
+        // literal data and belongs to the field (GNU read.def / subst.c: read
+        // honors backslash escapes before IFS splitting when -r is absent).
         while i < n && !ifs.contains(chars[i].1) {
+            if interpret_backslashes && chars[i].1 == '\\' && i + 1 < n {
+                i += 2;
+                continue;
+            }
             i += 1;
         }
         let end = if i < n { chars[i].0 } else { line_len };
@@ -109,6 +116,27 @@ fn split_read_field_ranges(line: &str, ifs: &str) -> Vec<(usize, usize)> {
     }
     ranges
 }
+/// Trim trailing IFS whitespace that is not backslash-escaped. A trailing
+/// whitespace produced by an escape pair (`b\\ `) is literal data and must
+/// survive (GNU read keeps it in the assigned field).
+fn trim_trailing_unescaped_ifs(raw: &str, ifs: &str) -> String {
+    let chars: Vec<char> = raw.chars().collect();
+    let mut end = chars.len();
+    while end > 0 && ifs_whitespace(chars[end - 1], ifs) {
+        let mut backslashes = 0usize;
+        let mut j = end - 1;
+        while j > 0 && chars[j - 1] == '\\' {
+            backslashes += 1;
+            j -= 1;
+        }
+        if backslashes % 2 == 1 {
+            break;
+        }
+        end -= 1;
+    }
+    chars[..end].iter().collect()
+}
+
 fn field_value(
     line: &str,
     range: (usize, usize),
@@ -116,15 +144,15 @@ fn field_value(
     interpret_backslashes: bool,
 ) -> String {
     let raw: String = line[range.0..range.1].chars().collect();
-    let value = if interpret_backslashes {
-        unescape_read_backslashes(&raw)
-    } else {
-        raw
-    };
-    // Trailing IFS whitespace is trimmed from each assigned field value.
-    value
-        .trim_end_matches(|ch: char| ifs_whitespace(ch, ifs))
-        .to_string()
+    if !interpret_backslashes {
+        return raw
+            .trim_end_matches(|ch: char| ifs_whitespace(ch, ifs))
+            .to_string();
+    }
+    // Unescape only after trimming trailing IFS whitespace that is not
+    // itself escaped; unescaping first would turn an escaped trailing
+    // space into plain IFS whitespace and wrongly strip it.
+    unescape_read_backslashes(&trim_trailing_unescaped_ifs(&raw, ifs))
 }
 
 pub(in crate::executor) fn read_scalar_fields(
@@ -153,15 +181,30 @@ fn read_scalar_fields_internal(
         return Vec::new();
     }
     if names_len == 1 {
-        let value = if interpret_backslashes {
-            unescape_read_backslashes(line)
+        // Trim leading IFS whitespace on the raw line (an escaped leading
+        // whitespace starts with a backslash and is therefore not trimmed),
+        // then an escape-aware trailing trim, then unescape.
+        let lead = line.trim_start_matches(|ch: char| ifs_whitespace(ch, ifs));
+        // A single name takes the whole line: GNU read.def binds it through
+        // the last-variable branch (b) whose strip_trailing_ifs_whitespace
+        // walk is escape-blind at the line level, so a trailing escaped
+        // space is dropped along with plain IFS whitespace (read.tests
+        // line 19: ` x  y\ \` -> x = `x  y`).
+        let tail = lead
+            .trim_end_matches(|ch: char| ifs_whitespace(ch, ifs))
+            .to_string();
+        let tail = if interpret_backslashes {
+            // the escape-blind strip can leave a dangling backslash
+            tail.strip_suffix('\\').map(str::to_string).unwrap_or(tail)
         } else {
-            line.to_string()
+            tail
         };
-        // A single name receives the whole (leading/trailing IFS-trimmed) line.
-        return vec![value
-            .trim_matches(|ch: char| ifs_whitespace(ch, ifs))
-            .to_string()];
+        let value = if interpret_backslashes {
+            unescape_read_backslashes(&tail)
+        } else {
+            tail
+        };
+        return vec![value];
     }
     if ifs.is_empty() {
         let mut fields = vec![if interpret_backslashes {
@@ -175,7 +218,7 @@ fn read_scalar_fields_internal(
         return fields;
     }
 
-    let ranges = split_read_field_ranges(line, ifs);
+    let ranges = split_read_field_ranges(line, ifs, interpret_backslashes);
     let field_count = ranges.len();
 
     // Assign the first names_len-1 names to the first fields directly.
@@ -199,7 +242,7 @@ fn read_scalar_fields_internal(
         } else {
             let tail: String = line[range.0..].chars().collect();
             let tail = if interpret_backslashes {
-                unescape_read_backslashes(&tail)
+                unescape_read_backslashes(&trim_trailing_unescaped_ifs(&tail, ifs))
             } else {
                 tail
             };
