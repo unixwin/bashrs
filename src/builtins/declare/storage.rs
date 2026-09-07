@@ -40,36 +40,20 @@ pub(super) fn format_assoc_value(value: &str) -> String {
         return format!("([0]={} )", quote_declare_value(value));
     }
 
-    let order: &[&str] = if entries.iter().any(|(key, _)| key == "four") {
-        &["four", "0", "two", "three", "one"]
-    } else if entries.iter().any(|(key, _)| key == "0") {
-        &["0", "two", "three", "one"]
-    } else {
-        &["two", "three", "one"]
-    };
-
-    let mut rendered = Vec::new();
-    for key in order {
-        if let Some(value) = entries
-            .iter()
-            .find_map(|(entry_key, entry_value)| (entry_key == *key).then_some(entry_value))
-        {
-            rendered.push(format!(
-                "[{}]={}",
-                quote_assoc_key(key),
-                quote_declare_value(value)
-            ));
-        }
-    }
-    for (key, value) in entries {
-        if !order.contains(&key.as_str()) {
-            rendered.push(format!(
+    // print_assoc_assignment walks the hash table: bucket order with
+    // head-insertion chains (hashlib.c). The general order helper replaces
+    // the previous per-test hardcoded key sequences.
+    let ordered = crate::executor::bash_assoc_order(&entries);
+    let rendered = ordered
+        .into_iter()
+        .map(|(_, (key, entry_value))| {
+            format!(
                 "[{}]={}",
                 quote_assoc_key(&key),
-                quote_declare_value(&value)
-            ));
-        }
-    }
+                quote_declare_value(&entry_value)
+            )
+        })
+        .collect::<Vec<_>>();
     format!("({} )", rendered.join(" "))
 }
 

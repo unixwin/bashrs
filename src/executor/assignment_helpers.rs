@@ -235,9 +235,83 @@ pub(in crate::executor) fn assoc_value_at(value: &str, key: &str) -> Option<Stri
 }
 
 pub(in crate::executor) fn assoc_keys(value: &str) -> Vec<String> {
-    assoc_entries(value)
+    bash_assoc_order(&assoc_entries(value))
         .into_iter()
-        .map(|(key, _)| key)
+        .map(|(_, (_, key))| key)
+        .collect()
+}
+
+/// FNV-1 (multiply first, then xor) over `char` bytes, 32 bit — hashlib.c
+/// hash_string. On x86 a plain `char` is signed, so bytes >= 0x80 sign-
+/// extend before the xor.
+fn bash_hash_string(key: &str) -> u32 {
+    let mut hash: u32 = 2166136261;
+    for byte in key.bytes() {
+        hash = hash.wrapping_mul(16777619);
+        hash ^= (byte as i8) as i32 as u32;
+    }
+    hash
+}
+
+/// Bash assoc.c / hashlib.c table iteration order: FNV-1 hashed keys into a
+/// power-of-two bucket array starting at 128 buckets, head-insertion chains,
+/// grow x4 when nentries >= nbuckets * 2 (rehash walks old buckets 0..n and
+/// re-inserts each item at its new chain head). Iteration visits bucket 0..n,
+/// each chain head to tail. A repeated key keeps its first-insert slot and
+/// the last value wins (hash_search replaces data in place).
+pub(crate) fn bash_assoc_order(
+    entries: &[(String, String)],
+) -> Vec<(usize, (String, String))> {
+    // First occurrence fixes the slot; last occurrence supplies the value.
+    let mut first_index: std::collections::HashMap<&str, usize> =
+        std::collections::HashMap::new();
+    let mut unique: Vec<usize> = Vec::new();
+    for (index, (key, _)) in entries.iter().enumerate() {
+        if first_index.contains_key(key.as_str()) {
+            continue;
+        }
+        first_index.insert(key.as_str(), index);
+        unique.push(index);
+    }
+
+    let mut nbuckets: usize = 128;
+    let mut buckets: Vec<Vec<usize>> = vec![Vec::new(); nbuckets];
+    let mut count = 0usize;
+    for &entry_index in &unique {
+        if count >= nbuckets * 2 {
+            let mut grown = vec![Vec::new(); nbuckets * 4];
+            for old_bucket in &buckets {
+                for &item in old_bucket {
+                    let bucket = bash_hash_string(&entries[item].0) as usize & (nbuckets * 4 - 1);
+                    grown[bucket].insert(0, item);
+                }
+            }
+            buckets = grown;
+            nbuckets *= 4;
+        }
+        let bucket = bash_hash_string(&entries[entry_index].0) as usize & (nbuckets - 1);
+        buckets[bucket].insert(0, entry_index);
+        count += 1;
+    }
+
+    buckets
+        .into_iter()
+        .flatten()
+        .map(|index| (index, entries[index].clone()))
+        .collect()
+}
+
+pub(in crate::executor) fn assoc_hash_ordered_entries(value: &str) -> Vec<(String, String)> {
+    bash_assoc_order(&assoc_entries(value))
+        .into_iter()
+        .map(|(_, entry)| entry)
+        .collect()
+}
+
+pub(in crate::executor) fn assoc_hash_ordered_values(value: &str) -> Vec<String> {
+    bash_assoc_order(&assoc_entries(value))
+        .into_iter()
+        .map(|(_, (_, entry_value))| entry_value)
         .collect()
 }
 

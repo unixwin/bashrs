@@ -1,5 +1,7 @@
 use super::*;
-use crate::executor::assoc_keys;
+use crate::executor::{
+    assoc_hash_ordered_entries, assoc_hash_ordered_values, assoc_keys,
+};
 
 impl Executor {
     pub(in crate::executor) fn indexed_array_stack(&self, name: &str) -> Vec<String> {
@@ -41,7 +43,7 @@ impl Executor {
         };
 
         if is_marked_var(&self.env_vars, ASSOC_VARS, name) {
-            let entries = assoc_entries(value);
+            let entries = assoc_hash_ordered_entries(value);
             if entries.is_empty() {
                 return format!("declare -A {name}");
             }
@@ -260,8 +262,11 @@ impl Executor {
         if name == "GROUPS" {
             return Some(self.groups_words());
         }
-        self.parameter_array_storage(name)
-            .map(|value| array_values(&value))
+        let storage = self.parameter_array_storage(name)?;
+        if is_marked_var(&self.env_vars, ASSOC_VARS, name) {
+            return Some(assoc_hash_ordered_values(&storage));
+        }
+        Some(array_values(&storage))
     }
 
     fn array_transform_word_values(
@@ -294,10 +299,18 @@ impl Executor {
             return None;
         }
         let storage = self.parameter_array_storage(array_name)?;
-        let values = array_values(&storage)
-            .into_iter()
-            .map(|value| self.apply_parameter_transform_value(&value, transform))
-            .collect::<Vec<_>>();
+        let values = if is_marked_var(
+            &self.env_vars,
+            ASSOC_VARS,
+            &self.resolved_variable_name(array_name).unwrap_or_default(),
+        ) {
+            assoc_hash_ordered_values(&storage)
+        } else {
+            array_values(&storage)
+        }
+        .into_iter()
+        .map(|value| self.apply_parameter_transform_value(&value, transform))
+        .collect::<Vec<_>>();
         if quoted_array_word && starred {
             return Some(vec![values.join(&self.ifs_first_char_separator())]);
         }
@@ -360,10 +373,18 @@ impl Executor {
             .map(|name| (name, false))
             .or_else(|| var_name.strip_suffix("[*]").map(|name| (name, true)))?;
         let storage = self.parameter_array_storage(array_name)?;
-        let values = array_values(&storage)
-            .into_iter()
-            .map(|value| modify(&value))
-            .collect::<Vec<_>>();
+        let values = if is_marked_var(
+            &self.env_vars,
+            ASSOC_VARS,
+            &self.resolved_variable_name(array_name).unwrap_or_default(),
+        ) {
+            assoc_hash_ordered_values(&storage)
+        } else {
+            array_values(&storage)
+        }
+        .into_iter()
+        .map(|value| modify(&value))
+        .collect::<Vec<_>>();
         if quoted_array_word && starred {
             return Some(vec![values.join(&self.ifs_first_char_separator())]);
         }
@@ -375,7 +396,7 @@ impl Executor {
         let storage = self.parameter_array_storage(array_name)?;
         if is_marked_var(&self.env_vars, ASSOC_VARS, &storage_name) {
             return Some(
-                assoc_entries(&storage)
+                assoc_hash_ordered_entries(&storage)
                     .into_iter()
                     .flat_map(|(key, value)| [key, value])
                     .collect(),

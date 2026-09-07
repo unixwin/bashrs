@@ -73,14 +73,19 @@ pub(in crate::executor) fn apply_parameter_case_mod(
 
     value
         .chars()
-        .map(|ch| {
+        .enumerate()
+        .map(|(char_index, ch)| {
             let char_value = ch.to_string();
             let matches = case_pattern_matches(pattern, &char_value);
             let should_change = matches
                 && match operation {
                     CaseMod::UpperAll | CaseMod::LowerAll | CaseMod::ToggleAll => true,
+                    // subst.c case_transform: the First operators test only
+                    // the word's first character against the pattern — when
+                    // it does not match, the word is left alone (no scan for
+                    // a later matching character; casemod.tests ${@^[rstlne]}).
                     CaseMod::UpperFirst | CaseMod::LowerFirst | CaseMod::ToggleFirst => {
-                        !changed_first
+                        char_index == 0 && !changed_first
                     }
                 };
 

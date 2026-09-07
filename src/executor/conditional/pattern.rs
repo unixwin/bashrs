@@ -208,6 +208,41 @@ fn case_bracket_expression_matches_with_case(
             continue;
         }
 
+        // POSIX bracket prefixes: [.sym.] collating symbols and [=c=]
+        // equivalence classes (lib/glob/sm_loop.c). A valid symbol collapses
+        // to one member character and may anchor a range; an unknown symbol
+        // degenerates to its literal characters (posixpat.tests collating
+        // section).
+        if pattern[index] == '[' {
+            if let Some((members, next_index)) =
+                parse_collating_or_equivalence(pattern, index)
+            {
+                for member in &members {
+                    if chars_match(*member, candidate, nocase) {
+                        matched = true;
+                    }
+                }
+                saw_member = true;
+                if members.len() == 1 {
+                    if let Some((end_char, after)) = collating_range_end(
+                        pattern,
+                        next_index,
+                    ) {
+                        let start_cmp = comparable_char(members[0], nocase);
+                        let end_cmp = comparable_char(end_char, nocase);
+                        if start_cmp <= candidate_cmp && candidate_cmp <= end_cmp {
+                            matched = true;
+                        }
+                        saw_member = true;
+                        index = after;
+                        continue;
+                    }
+                }
+                index = next_index;
+                continue;
+            }
+        }
+
         let current = pattern[index];
         if let Some((class_matched, next_index)) =
             bracket_posix_class_matches(pattern, index, candidate)
@@ -239,6 +274,118 @@ fn case_bracket_expression_matches_with_case(
     }
 
     None
+}
+
+/// Parses a `[.sym.]` collating symbol or `[=c=]` equivalence class at
+/// index (which must point at the opening `[`). Returns the member
+/// characters and the index just past the closing `.]` / `=]`. A valid
+/// single-character symbol yields that character; a recognized multi-
+/// character name resolves through the POSIX portable character set table;
+/// an unrecognized symbol degenerates to its literal characters, matching
+/// bash's sm_loop.c fallback for undefined collating symbols.
+fn parse_collating_or_equivalence(
+    pattern: &[char],
+    index: usize,
+) -> Option<(Vec<char>, usize)> {
+    let open = *pattern.get(index + 1)?;
+    if open != '.' && open != '=' {
+        return None;
+    }
+    let mut scan = index + 2;
+    while scan + 1 < pattern.len() {
+        if pattern[scan] == open && pattern[scan + 1] == ']' {
+            let body: Vec<char> = pattern[index + 2..scan].to_vec();
+            if body.is_empty() {
+                return None;
+            }
+            let members = if body.len() == 1 {
+                body
+            } else {
+                let name: String = body.iter().collect();
+                match named_collating_symbol(&name) {
+                    Some(c) => vec![c],
+                    None => body,
+                }
+            };
+            return Some((members, scan + 2));
+        }
+        scan += 1;
+    }
+    None
+}
+
+/// Resolves a range whose start is a single-character collating symbol:
+/// dash_index points at the `-`; the endpoint may be another `[.sym.]` /
+/// `[=c=]` span, an escaped character, or a plain character. Returns the
+/// endpoint character and the index just past it.
+fn collating_range_end(pattern: &[char], dash_index: usize) -> Option<(char, usize)> {
+    if pattern.get(dash_index) != Some(&'-') {
+        return None;
+    }
+    let end_index = dash_index + 1;
+    let end = *pattern.get(end_index)?;
+    if end == ']' {
+        return None;
+    }
+    if end == '[' {
+        let (members, next) = parse_collating_or_equivalence(pattern, end_index)?;
+        if members.len() == 1 {
+            return Some((members[0], next));
+        }
+        return None;
+    }
+    if matches!(end, '\\' | '\x18') {
+        let after = *pattern.get(end_index + 1)?;
+        return Some((after, end_index + 2));
+    }
+    Some((end, end_index + 1))
+}
+
+/// POSIX portable character set collating-symbol names (the set glibc's C
+/// locale recognizes), mapped to their characters.
+fn named_collating_symbol(name: &str) -> Option<char> {
+    Some(match name {
+        "NUL" => '\0',
+        "space" => ' ',
+        "tab" => '\t',
+        "newline" => '\n',
+        "vertical-tab" => '\u{000b}',
+        "form-feed" => '\u{000c}',
+        "carriage-return" => '\r',
+        "exclamation-mark" => '!',
+        "quotation-mark" => '"',
+        "number-sign" => '#',
+        "dollar-sign" => '$',
+        "percent-sign" => '%',
+        "ampersand" => '&',
+        "apostrophe" => '\'',
+        "left-parenthesis" => '(',
+        "right-parenthesis" => ')',
+        "asterisk" => '*',
+        "plus-sign" => '+',
+        "comma" => ',',
+        "hyphen" => '-',
+        "full-stop" => '.',
+        "slash" => '/',
+        "colon" => ':',
+        "semicolon" => ';',
+        "less-than-sign" => '<',
+        "equals-sign" => '=',
+        "greater-than-sign" => '>',
+        "question-mark" => '?',
+        "commercial-at" => '@',
+        "left-square-bracket" => '[',
+        "backslash" => '\\',
+        "right-square-bracket" => ']',
+        "circumflex-accent" => '^',
+        "low-line" => '_',
+        "grave-accent" => '`',
+        "left-curly-bracket" => '{',
+        "vertical-line" => '|',
+        "right-curly-bracket" => '}',
+        "tilde" => '~',
+        _ => return None,
+    })
 }
 
 fn chars_match(pattern: char, candidate: char, nocase: bool) -> bool {
