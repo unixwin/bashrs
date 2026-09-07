@@ -459,6 +459,26 @@ impl Executor {
             }
         };
 
+        // GNU execute_cmd.c runs the subshell's own EXIT trap (trap.c
+        // run_exit_trap) while the subshell state is still live, before the
+        // parent environment returns: `( trap "echo T" EXIT; echo body )`
+        // prints body then T (niubash#70). reset_for_subshell cleared the
+        // inherited traps at entry, so a pending EXIT here can only have
+        // been registered by the body itself; a trap action that calls
+        // exit N replaces the subshell status (bash exit_shell semantics).
+        let status = match self.run_exit_trap_for_status(status) {
+            Ok(trap_status) => trap_status,
+            Err(error) => {
+                self.restore_shell_env(saved_env);
+                self.shell_state.variables = saved_variables;
+                self.set_positional_params(saved_positional_params);
+                self.pipestatus = saved_pipestatus;
+                self.subshell_depth.set(saved_depth);
+                self.loop_depth = saved_loop_depth;
+                return Err(error);
+            }
+        };
+
         self.restore_shell_env(saved_env);
         self.shell_state.variables = saved_variables;
         self.set_positional_params(saved_positional_params);
