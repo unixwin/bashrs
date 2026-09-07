@@ -57,10 +57,54 @@ impl Executor {
                 }
                 self.write_buffered_builtin_output(cmd, &[], &stderr)?;
                 let source = eval_source_for_reparse(&source);
-                let tokens = crate::lexer::tokenize(&source);
-                let mut ast = crate::parser::parse(&tokens);
+                let mut tokens = crate::lexer::tokenize(&source);
+                // GNU eval reports errors with the caller line numbering:
+                // the string lines continue the script line counter
+                // (posix2.tests: "eval: line 199: syntax error ...").
+                let caller_line: usize = self
+                    .env_vars
+                    .get("__RUBASH_CURRENT_LINE")
+                    .and_then(|value| value.parse().ok())
+                    .unwrap_or(1);
+                if caller_line > 1 {
+                    for token in tokens.iter_mut() {
+                        token.position += caller_line - 1;
+                    }
+                }
+                let mut ast = crate::parser::parse_with_options(
+                    &tokens,
+                    crate::parser::ParseLoopOptions {
+                        stray_close_is_error: true,
+                    },
+                );
                 self.apply_command_output_redirects(cmd, &mut ast)?;
-                self.execute_ast(&ast)
+                // A syntax error inside the eval string makes eval return 2;
+                // it does not abort the calling script the way a top-level
+                // parse error does. An inner exit still exits the shell, so
+                // only the parse-error marker (status 2) becomes a status.
+                let has_parse_error = ast
+                    .commands
+                    .iter()
+                    .any(|command| command.has_assignment("__RUBASH_PARSE_ERROR__"));
+                let saved_eval_context = self
+                    .env_vars
+                    .insert("__RUBASH_EVAL_CONTEXT".to_string(), "1".to_string());
+                let result = self.execute_ast(&ast);
+                match saved_eval_context {
+                    Some(previous) => {
+                        self.env_vars.insert("__RUBASH_EVAL_CONTEXT".to_string(), previous);
+                    }
+                    None => {
+                        self.env_vars.remove("__RUBASH_EVAL_CONTEXT");
+                    }
+                }
+                match result {
+                    Err(ExecuteError::ExitCode(code)) if has_parse_error && code == 2 => {
+                        self.exit_code = code;
+                        Ok(())
+                    }
+                    other => other,
+                }
             }
         }
     }

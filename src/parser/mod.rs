@@ -36,7 +36,7 @@ mod word_quote;
 mod tests;
 
 pub use nodes::*;
-pub use parse_loop::parse;
+pub use parse_loop::{parse, parse_with_options, ParseLoopOptions};
 
 use arithmetic_command::*;
 use arithmetic_expansion::*;

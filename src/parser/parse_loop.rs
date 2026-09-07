@@ -2,6 +2,13 @@ use crate::lexer::{Token, TokenKind};
 
 use super::*;
 
+#[derive(Default)]
+pub struct ParseLoopOptions {
+    /// Treat a ")" or ";;" at command position as a syntax error that aborts
+    /// the remaining input (GNU YYABORT). Enabled for eval reparse.
+    pub stray_close_is_error: bool,
+}
+
 pub(super) struct ParseState {
     pub(super) ast: Ast,
     pub(super) current_cmd: CommandNode,
@@ -10,6 +17,15 @@ pub(super) struct ParseState {
 
 /// Parse tokens into an AST
 pub fn parse(tokens: &[Token]) -> Ast {
+    parse_with_options(tokens, ParseLoopOptions::default())
+}
+
+/// Options for the parse loop. The stray-close guard is enabled only for
+/// eval reparse: a top-level ")" can also be the legitimate closer of a
+/// multi-line $(...) substitution whose folding the lexer does not yet
+/// perform (comsub-posix.tests), so the top-level loop must keep dropping
+/// it silently until the lexer folds multi-line substitutions.
+pub fn parse_with_options(tokens: &[Token], options: ParseLoopOptions) -> Ast {
     let mut state = ParseState {
         ast: Ast {
             commands: Vec::new(),
@@ -20,6 +36,44 @@ pub fn parse(tokens: &[Token]) -> Ast {
 
     let mut i = 0;
     while i < tokens.len() {
+        // GNU parse.y: a ')' or a case clause terminator at command position
+        // is a syntax error that aborts the remaining input ("case x in
+        // esac)" -- the empty case list closes at esac and the ')' is
+        // unexpected). The parser used to drop the token silently and run
+        // the rest of the line as a simple command.
+        if options.stray_close_is_error && command_is_empty(&state.current_cmd)
+            && (tokens[i].value == ")"
+                || matches!(tokens[i].raw.as_str(), ";;" | ";&" | ";;;&"))
+        {
+            state.current_cmd.insert_assignment(
+                "__RUBASH_PARSE_ERROR__".to_string(),
+                format!("unexpected token `{}'", tokens[i].value),
+            );
+            // GNU echoes only the offending input line, from its first
+            // token, not the rest of the file (parse.y y.error prints the
+            // current input line).
+            let line_number = tokens[i].position;
+            let mut line_start = i;
+            while line_start > 0 && tokens[line_start - 1].position == line_number {
+                line_start -= 1;
+            }
+            let mut source = tokens[line_start].raw.clone();
+            for token in tokens[line_start + 1..].iter() {
+                if token.position != line_number {
+                    break;
+                }
+                source.push(' ');
+                source.push_str(&token.raw);
+            }
+            state.current_cmd.insert_assignment(
+                "__RUBASH_PARSE_SOURCE__".to_string(),
+                source,
+            );
+            state.ast.commands.push(state.current_cmd);
+            state.current_cmd = CommandNode::new();
+            break;
+        }
+
         if let Some(next_i) = try_parse_compound_start(tokens, i, &mut state) {
             i = next_i;
             continue;

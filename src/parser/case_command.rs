@@ -22,15 +22,28 @@ pub(super) fn parse_case_command(tokens: &[Token], start: usize) -> Option<(Comm
     let in_keyword_metadata = build_keyword_metadata(&tokens[i]);
     i += 1;
 
-    // GNU parse.y: the token right after `in` is read in the pattern-list state
-    // where a bare `esac` is still the reserved terminator, so `case x in esac)`
-    // ends the empty case list and the `)` is a syntax error. After `(` or `|`
-    // an esac is an ordinary pattern word.
-    if is_keyword(tokens, i, "esac")
-        || is_keyword(tokens, i, "do")
-        || is_keyword(tokens, i, "then")
-    {
-        return None;
+    // GNU parse.y: the token right after `in` is read in the pattern-list
+    // state where a bare `esac` terminates an EMPTY case list — `case x in
+    // esac` is a complete case command with zero clauses (verified against
+    // GNU 5.2.21: it runs the following commands and falls through). The
+    // `)` that often follows (`case x in esac)`) is then a separate syntax
+    // error reported at the paren. do/then are ordinary pattern words in
+    // this position; after `(` or `|` even an esac is an ordinary word.
+    if is_keyword(tokens, i, "esac") {
+        let mut command = CommandNode::new();
+        command.line = tokens.get(start).map(|token| token.position);
+        command.case_command = Some(Box::new(CaseCommand {
+            keyword: tokens[start].value.clone(),
+            keyword_metadata: build_keyword_metadata(&tokens[start]),
+            word_metadata: build_word_metadata(0, &word, &raw_word),
+            word,
+            in_keyword,
+            in_keyword_metadata,
+            clauses: Vec::new(),
+            end_keyword: tokens[i].value.clone(),
+            end_keyword_metadata: build_keyword_metadata(&tokens[i]),
+        }));
+        return Some(finish_compound_command(command, tokens, i + 1));
     }
 
     let mut clauses = Vec::new();

@@ -452,6 +452,11 @@ impl Executor {
             self.env_vars.get("__RUBASH_SCRIPT_NAME"),
             self.env_vars.get("__RUBASH_CURRENT_LINE"),
         ) {
+            // Errors inside eval carry the "eval:" segment and report the
+            // caller-relative line, like GNU evalstring diagnostics.
+            if self.env_vars.contains_key("__RUBASH_EVAL_CONTEXT") {
+                return format!("{script}: eval: line {line}: ");
+            }
             return format!("{script}: line {line}: ");
         }
 
