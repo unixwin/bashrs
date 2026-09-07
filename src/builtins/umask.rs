@@ -170,31 +170,24 @@ fn apply_symbolic_clause(
         who = 0o777;
     }
 
-    let mut has_operator = false;
-    while index < chars.len() {
-        let op = chars[index];
-        if !matches!(op, '+' | '-' | '=') {
-            return Err(SymbolicModeError::Operator(op));
-        }
-        has_operator = true;
-        index += 1;
-
-        let start = index;
-        while index < chars.len() && !matches!(chars[index], '+' | '-' | '=') {
-            index += 1;
-        }
-
-        let perms = symbolic_permission_bits(&chars[start..index], initial_allowed, who)?;
-        match op {
-            '+' => allowed |= perms,
-            '-' => allowed &= !perms,
-            '=' => allowed = (allowed & !who) | perms,
-            _ => unreachable!("validated symbolic umask operator"),
-        }
-    }
-
-    if !has_operator {
+    // GNU umask symbolic clauses carry exactly one operator; everything
+    // after it must be permission characters (builtins8.sub: "u=r+w" is
+    // rejected with "invalid symbolic mode character `+'", and a who or
+    // operator character is not re-parsed as a new clause).
+    let Some(op) = chars.get(index).copied() else {
         return Err(SymbolicModeError::Operator('\0'));
+    };
+    if !matches!(op, '+' | '-' | '=') {
+        return Err(SymbolicModeError::Operator(op));
+    }
+    index += 1;
+
+    let perms = symbolic_permission_bits(&chars[index..], initial_allowed, who)?;
+    match op {
+        '+' => allowed |= perms,
+        '-' => allowed &= !perms,
+        '=' => allowed = (allowed & !who) | perms,
+        _ => unreachable!("validated symbolic umask operator"),
     }
 
     Ok(allowed & 0o777)
@@ -202,43 +195,22 @@ fn apply_symbolic_clause(
 
 fn symbolic_permission_bits(
     perms: &[char],
-    allowed: u32,
+    _initial_allowed: u32,
     who: u32,
 ) -> Result<u32, SymbolicModeError> {
     let mut bits = 0;
     for ch in perms {
         match ch {
+            // GNU umask symbolic modes accept only r, w and x; the who
+            // characters and X/s/t are rejected as invalid mode characters
+            // (umask.def parses perms with "rwx" only).
             'r' => bits |= expand_permission_to_who(0o444, who),
             'w' => bits |= expand_permission_to_who(0o222, who),
             'x' => bits |= expand_permission_to_who(0o111, who),
-            'u' => bits |= copy_permission_class(allowed, 0o700, who),
-            'g' => bits |= copy_permission_class(allowed, 0o070, who),
-            'o' => bits |= copy_permission_class(allowed, 0o007, who),
             _ => return Err(SymbolicModeError::Character(*ch)),
         }
     }
     Ok(bits)
-}
-
-fn copy_permission_class(allowed: u32, source_class: u32, who: u32) -> u32 {
-    let shift = match source_class {
-        0o700 => 6,
-        0o070 => 3,
-        0o007 => 0,
-        _ => return 0,
-    };
-    let source = (allowed >> shift) & 0o7;
-    let mut permissions = 0;
-    if source & 0o4 != 0 {
-        permissions |= expand_permission_to_who(0o444, who);
-    }
-    if source & 0o2 != 0 {
-        permissions |= expand_permission_to_who(0o222, who);
-    }
-    if source & 0o1 != 0 {
-        permissions |= expand_permission_to_who(0o111, who);
-    }
-    permissions
 }
 
 fn expand_permission_to_who(permission: u32, who: u32) -> u32 {
@@ -292,19 +264,28 @@ mod tests {
     }
 
     #[test]
-    fn symbolic_mode_copies_user_permissions() {
-        let (status, stdout, stderr) = run("o=u", "022");
-        assert_eq!(status, EXECUTION_SUCCESS);
-        assert_eq!(stdout, "u=rwx,g=rx,o=rwx\n");
-        assert!(stderr.is_empty());
+    fn symbolic_mode_rejects_who_copy_characters() {
+        // GNU umask has no who-copy: u/g/o are not permission characters
+        // (builtins8.sub: "umask o=u" fails with "invalid symbolic mode
+        // character `u'" and leaves the mask alone).
+        for mode in ["o=u", "g=u", "o=g", "u+g", "g+o"] {
+            let (status, stdout, stderr) = run(mode, "022");
+            assert_eq!(status, EXECUTION_FAILURE);
+            assert!(stdout.is_empty());
+            assert!(stderr.contains("invalid symbolic mode character"));
+        }
     }
 
     #[test]
-    fn symbolic_mode_copies_group_permissions() {
-        let (status, stdout, stderr) = run("o=g", "002");
-        assert_eq!(status, EXECUTION_SUCCESS);
-        assert_eq!(stdout, "u=rwx,g=rwx,o=rwx\n");
-        assert!(stderr.is_empty());
+    fn symbolic_mode_rejects_second_operator_in_clause() {
+        // A second operator inside a clause is read as a permission
+        // character and rejected ("u=r+w" -> invalid mode character `+').
+        for mode in ["u=r+w", "u=r-w", "u+w=r+x", "u+g,g+o,o-rw"] {
+            let (status, stdout, stderr) = run(mode, "022");
+            assert_eq!(status, EXECUTION_FAILURE);
+            assert!(stdout.is_empty());
+            assert!(stderr.contains("invalid symbolic mode character"));
+        }
     }
 
     #[test]
@@ -325,14 +306,6 @@ mod tests {
             assert!(stdout.is_empty());
             assert!(stderr.contains("invalid symbolic mode operator"));
         }
-    }
-
-    #[test]
-    fn symbolic_copy_uses_permissions_from_before_the_clause_list() {
-        let (status, stdout, stderr) = run("u=,o=u", "022");
-        assert_eq!(status, EXECUTION_SUCCESS);
-        assert_eq!(stdout, "u=,g=rx,o=rwx\n");
-        assert!(stderr.is_empty());
     }
 
     #[test]
