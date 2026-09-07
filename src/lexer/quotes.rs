@@ -198,6 +198,15 @@ fn remove_double_quoted_into(
                     out.push('\\');
                 }
             }
+            '\'' => {
+                // GNU parse.y skip_double_quoted: only ", \, $ and ` are
+                // special inside double quotes; a single quote is an ordinary
+                // literal character. Carry it with the same protected-literal
+                // marker as \' so the expansion stage keeps it as data instead
+                // of re-reading it as a single-quote delimiter (which would
+                // also suppress parameter expansion across the pseudo span).
+                out.push('\x17');
+            }
             _ if matches!(quoted, '*' | '?' | '[' | '@' | '+' | '!') => {
                 out.push('\x11');
                 out.push(quoted);
@@ -346,6 +355,19 @@ mod tests {
     fn preserves_single_quotes_inside_double_quoted_parameter_word() {
         assert_eq!(remove_shell_quotes("\"${IFS+'}'z}\""), "${IFS+'}'z}");
     }
+
+    #[test]
+    fn double_quoted_single_quote_becomes_protected_literal_data() {
+        // GNU parse.y skip_double_quoted: a single quote inside double
+        // quotes is ordinary data, carried with the same protected marker
+        // as an escaped quote so expansion never re-reads it as a
+        // single-quote delimiter.
+        assert_eq!(
+            remove_shell_quotes("\"a:'b' c\""),
+            "a:\x17b\x17 c"
+        );
+    }
+
 }
 
 // Source-mapped to subst.c::extract_dollar_brace_string: quote removal
