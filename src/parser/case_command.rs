@@ -22,13 +22,11 @@ pub(super) fn parse_case_command(tokens: &[Token], start: usize) -> Option<(Comm
     let in_keyword_metadata = build_keyword_metadata(&tokens[i]);
     i += 1;
 
-    // In Bash, `esac` is recognized as the case terminator when it appears
-    // at the start of a clause and is followed by `)`. Likewise, `do` cannot
-    // begin a case pattern. Do not reinterpret either reserved word as a
-    // pattern; let the caller create the normal rc=2 parse-error node.
-    if (is_keyword(tokens, i, "esac")
-        && is_keyword(tokens, i + 1, ")")
-        && case_esac_pattern_lacks_terminator(tokens, i))
+    // GNU parse.y: the token right after `in` is read in the pattern-list state
+    // where a bare `esac` is still the reserved terminator, so `case x in esac)`
+    // ends the empty case list and the `)` is a syntax error. After `(` or `|`
+    // an esac is an ordinary pattern word.
+    if is_keyword(tokens, i, "esac")
         || is_keyword(tokens, i, "do")
         || is_keyword(tokens, i, "then")
     {
@@ -265,20 +263,6 @@ pub(super) fn case_parse_error_message(tokens: &[Token], start: usize) -> &'stat
         index += 1;
     }
     "unexpected token `esac'"
-}
-
-fn case_esac_pattern_lacks_terminator(tokens: &[Token], pattern_start: usize) -> bool {
-    let mut index = pattern_start + 2;
-    while index < tokens.len() {
-        if is_case_clause_terminator_token(&tokens[index]) {
-            return false;
-        }
-        if is_keyword(tokens, index, "esac") {
-            return true;
-        }
-        index += 1;
-    }
-    true
 }
 
 fn is_case_clause_terminator_token(token: &Token) -> bool {

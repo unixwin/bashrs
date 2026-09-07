@@ -27,7 +27,29 @@ impl Executor {
         }
     }
 
+    /// Raw double quotes surviving in a token value are single-quote DATA at
+    /// this point: remove_shell_quotes already consumed the active ones, so a
+    /// remaining `"` can only come from a single-quoted segment (GNU keeps it
+    /// literal in the assigned value). The downstream embedded-parameter
+    /// re-scan would re-process it as syntax, so carry those quotes with the
+    /// internal DATA_DOUBLE_QUOTE marker across expansion and restore them on
+    /// the way out (assignment_expansion hoist/restore contract).
     pub(in crate::executor) fn expand_assignment_value(&mut self, value: &str) -> String {
+        // Only hoist when no command-substitution payload is present: quotes
+        // inside a $()/backtick body are syntax for the nested parse, not data.
+        if !value.contains('"')
+            || value.contains('`')
+            || value.contains("$(")
+            || contains_command_substitution_payload(value)
+        {
+            return self.expand_assignment_value_inner(value);
+        }
+        const DQ_DATA: &str = "\u{E001}";
+        let expanded = self.expand_assignment_value_inner(&value.replace('"', DQ_DATA));
+        expanded.replace(DQ_DATA, "\"")
+    }
+
+    fn expand_assignment_value_inner(&mut self, value: &str) -> String {
         if !value.contains("$(") && !value.contains('`') {
             if let Some(array_value) = normalize_single_element_array_assignment(value) {
                 return array_value;
@@ -143,10 +165,11 @@ impl Executor {
             // still undergo the normal assignment quote-removal pass.
             {
                 let mut restored = preserve_prompt_escapes(&expanded_value).replace('\x11', "");
-                if value.contains('\x16') {
+                if value.contains(['\x16', '\x17', '\x18']) {
                     restored = restored
                         .replace('\x16', "'")
                         .replace('\x17', "'")
+                        .replace('\x18', "\"")
                         .replace("\\'", "'");
                 }
                 restored
