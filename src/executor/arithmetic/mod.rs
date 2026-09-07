@@ -319,18 +319,11 @@ pub(super) fn arithmetic_unbound_variable(
         }
         previous = name.chars().last();
     }
-    // `expr.c::evalexp` marks every parser failure invalid, including
-    // malformed array subscripts and adjacent operands that do not fit one
-    // of the specialized diagnostics above. Keep the failure observable even
-    // when we cannot identify the exact parser token.
-    let token = expression
-        .split_whitespace()
-        .last()
-        .filter(|token| !token.is_empty())
-        .unwrap_or(expression);
-    Some(format!(
-        "{expression}: syntax error in expression (error token is \"{token}\")"
-    ))
+    // The scan is a nounset pre-check only: reaching this point means every
+    // identifier in the expression is bound. Return None so evaluation
+    // proceeds; genuine parse failures are reported by the evaluator itself
+    // (operand expected / invalid arithmetic operator diagnostics).
+    None
 }
 
 /// Strip double quotes from an arithmetic expression before evaluation.

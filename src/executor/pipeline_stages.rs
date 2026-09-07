@@ -195,8 +195,19 @@ impl Executor {
         let Some(name) = command.words.first() else {
             return Ok(None);
         };
-        let expanded_name = self.expand_word(name);
-        if !crate::executor::builtin_names::is_shell_builtin_name(&expanded_name) {
+        // GNU bash field-splits the expanded first word before command
+        // dispatch, so `v="echo hi"; $v | cat` runs the builtin echo in this
+        // stage. expand_word alone would classify the joined "echo hi" string
+        // as a non-builtin name and fall through to the external stage.
+        let first_raw = command
+            .word_metadata
+            .first()
+            .map(|metadata| metadata.raw.as_str());
+        let expanded_first = self.expand_command_word(command, 0, name, first_raw);
+        let Some(expanded_name) = expanded_first.first() else {
+            return Ok(None);
+        };
+        if !crate::executor::builtin_names::is_shell_builtin_name(expanded_name) {
             return Ok(None);
         }
 
@@ -282,7 +293,25 @@ impl Executor {
                 output.status,
             )));
         }
-        let expanded_name = self.expand_word(name);
+        // Field-split the expanded first word like GNU bash: `v="echo -n hi
+        // there"; $v | cat` dispatches on the first field "echo" and passes
+        // the remaining fields as leading arguments. expand_word alone joined
+        // the whole expansion into one command name and reported
+        // "echo -n hi there: command not found".
+        let first_raw = command
+            .word_metadata
+            .first()
+            .map(|metadata| metadata.raw.as_str());
+        let mut first_fields = self
+            .expand_command_word(command, 0, name, first_raw)
+            .into_iter()
+            .map(|word| {
+                crate::executor::command_prepare::restore_pathname_escape_markers(
+                    &word.replace('\x15', "\\").replace('\x14', "\\"),
+                )
+            });
+        let expanded_name = first_fields.next().unwrap_or_default();
+        let leading_args: Vec<String> = first_fields.collect();
         let Some(program) = find_user_command(&expanded_name, &self.env_vars) else {
             return Ok(Some((
                 String::new(),
@@ -295,7 +324,8 @@ impl Executor {
             )));
         };
 
-        let args: Vec<String> = command.words[1..]
+        let mut args: Vec<String> = leading_args;
+        args.extend(command.words[1..]
             .iter()
             .enumerate()
             .flat_map(|(offset, word)| {
@@ -311,8 +341,7 @@ impl Executor {
                             &word.replace('\x15', "\\").replace('\x14', "\\"),
                         )
                     })
-            })
-            .collect();
+            }));
         let (mut process, _) = external_command_for_named_program(
             &program,
             Some(&expanded_name),

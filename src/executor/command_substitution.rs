@@ -94,7 +94,12 @@ impl Executor {
             self.last_command_substitution_status.set(Some(0));
             return String::new();
         }
-        let source = source.strip_prefix("eval ").unwrap_or(source);
+        // NOTE: do not strip an `eval ` prefix here. A stripped string falls
+        // into the single-word fast paths below, which expand the remainder as
+        // ONE word: `$(eval "echo hi")` executed the joined string
+        // "echo hi" as a command name and reported command-not-found. eval
+        // sources fall through to the parsed subshell fallback, which
+        // dispatches the eval builtin (full re-parse semantics).
         if let Some(inner) = strip_wrapping_subshell_group(source) {
             return self.expand_command_substitution_inner(inner, context);
         }
@@ -185,13 +190,18 @@ impl Executor {
 
         if words
             .iter()
-            .any(|word| matches!(word.as_str(), ";" | "&&" | "||"))
+            .any(|word| matches!(word.as_str(), ";" | "&&" | "||" | "|"))
         {
             // subst.c command_substitute: the whole source is parsed and
             // executed as a command list (`echo "" ; echo ""` is two echo
             // commands, not one echo with `; echo ""` in its arguments).
             // The single-command shortcuts below assume a lone command word,
             // so route multi-command sources through the real executor.
+            // The bare `|` arm also catches pipelines the fast-path above
+            // bailed on (unsupported filter stage, non-external first
+            // stage): without it, `f a b | wc -l` reached the function and
+            // single-command shortcuts with `| wc -l` still in the
+            // argument list.
             if let Some(output) = self.command_list_substitution_output(source, context) {
                 return output;
             }
