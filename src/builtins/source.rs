@@ -147,6 +147,43 @@ where
         }
     }
 
+    if matches!(
+        filename,
+        "/dev/stdin" | "/proc/self/fd/0" | "/dev/fd/0"
+    ) {
+        // GNU source.def opens /dev/stdin, which in a pipeline is the pipe
+        // read end inherited as stdin ("echo x | . /dev/stdin" from
+        // source6.sub). Read the shell's stdin instead of resolving a
+        // filesystem path (Windows has no /dev node for it).
+        // Inside a pipeline stage the upstream text is carried in
+        // __RUBASH_FUNCTION_STDIN (execute_builtin_pipeline_stage); prefer it
+        // over the process stdin, which is not wired for builtin stages.
+        let piped = executor
+            .get_env(crate::executor::types::FUNCTION_STDIN)
+            .map(str::to_string);
+        let buffer = match piped {
+            Some(text) => text,
+            None => {
+                use std::io::Read;
+                let mut buffer = String::new();
+                match std::io::stdin().read_to_string(&mut buffer) {
+                    Ok(_) => buffer,
+                    Err(_) => {
+                        executor.set_exit_code(1);
+                        return Ok(());
+                    }
+                }
+            }
+        };
+        return execution::execute_text_maybe_redirected(
+            executor,
+            &buffer,
+            invocation.args,
+            redirect_cmd,
+            Some(filename),
+        );
+    }
+
     let Some(source_path) = invocation.resolve_path(executor) else {
         if invocation.path.is_some() || posix_plain_name_lookup(executor, filename) {
             writeln!(
