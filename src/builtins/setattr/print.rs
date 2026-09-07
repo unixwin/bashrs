@@ -12,6 +12,7 @@ pub(super) fn print_readonly<W>(
     env_vars: &HashMap<String, String>,
     array_filter: bool,
     assoc_filter: bool,
+    posix_mode: bool,
     stdout: &mut W,
 ) -> io::Result<()>
 where
@@ -42,6 +43,17 @@ where
         }
         if let Some(value) = env_vars.get(&name) {
             if is_array {
+                // POSIX mode (bash posix-mode notes): readonly displays
+                // "readonly -a name=value" for arrays instead of the
+                // declare-format listing (array.tests readonly -a probe).
+                if posix_mode {
+                    writeln!(
+                        stdout,
+                        "readonly -a {name}={}",
+                        format_array_value(value)
+                    )?;
+                    continue;
+                }
                 let attrs = setattr_array_attrs(
                     &name,
                     true,
@@ -70,6 +82,8 @@ where
                     quote_export_value(value)
                 )?;
             }
+        } else if posix_mode && is_array {
+            writeln!(stdout, "readonly -a {name}")?;
         } else {
             let attrs = setattr_scalar_attrs(
                 &name,

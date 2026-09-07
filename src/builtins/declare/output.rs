@@ -124,6 +124,15 @@ where
 
 fn declaration_scalar_attrs(attrs: DeclarationAttrs) -> Option<String> {
     let mut flags = String::from("-");
+    // GNU prints a declared-but-unassigned array as "declare -a name" and
+    // an associative one as "declare -A name" (declare -p on a size-hint
+    // declaration like "declare -a b[256]").
+    if attrs.array {
+        flags.push('a');
+    }
+    if attrs.assoc {
+        flags.push('A');
+    }
     if attrs.nameref {
         flags.push('n');
     }

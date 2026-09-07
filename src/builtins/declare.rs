@@ -382,6 +382,22 @@ where
     }
 
     let had_name_args = !names.is_empty();
+    // GNU declare.def: an operand name[subscript] without = declares or
+    // re-declares the array; the subscript is only a size hint and is
+    // discarded ("declare -a b[256]" declares b, and "declare -p b" prints
+    // "declare -a b"). Strip it before any downstream name processing.
+    if array || assoc {
+        for name in names.iter_mut() {
+            if name.contains('=') {
+                continue;
+            }
+            if let Some((base, _subscript)) = name.split_once('[') {
+                if !base.is_empty() && name.ends_with(']') && !base.contains('[') {
+                    *name = base;
+                }
+            }
+        }
+    }
     let mut assign_names = Vec::new();
     let mut attr_status = EXECUTION_SUCCESS;
     let arrays = marked_vars(variables, ARRAY_VARS);

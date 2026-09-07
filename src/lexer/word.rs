@@ -92,6 +92,12 @@ impl<'a> Lexer<'a> {
         let array_assignment = self.looks_like_array_element_assignment();
         let mut array_subscript_depth = 0usize;
         let mut array_value_paren_depth = 0usize;
+        let word_start = self.position;
+        // GNU parse.y keeps a "name=(...)" compound assignment word atomic
+        // even when it appears as a builtin operand ("declare -ar
+        // b=([1]="" [2]="bdef")"); the word must not be split at the
+        // whitespace inside the parentheses.
+        let mut compound_paren_depth = 0usize;
         while let Some(c) = self.peek() {
             let in_array_value = array_assignment && array_value_paren_depth > 0;
             if " \t\n|&;<>(){}".contains(c)
@@ -99,11 +105,12 @@ impl<'a> Lexer<'a> {
                 && !(array_assignment && array_subscript_depth > 0 && c.is_ascii_whitespace())
                 && !(in_array_value && c.is_ascii_whitespace())
                 && !(in_array_value && matches!(c, '(' | ')'))
-                && !(array_assignment
-                    && array_subscript_depth == 0
+                && !(compound_paren_depth > 0 && matches!(c, '(' | ')'))
+                && !(compound_paren_depth > 0 && c.is_ascii_whitespace())
+                && !(compound_paren_depth == 0
                     && array_value_paren_depth == 0
                     && c == '('
-                    && self.input[..self.position].ends_with('='))
+                    && self.compound_assignment_start(word_start))
             {
                 if c == '(' && extglob_operator {
                     self.skip_extglob_group();
@@ -119,6 +126,21 @@ impl<'a> Lexer<'a> {
                 break;
             }
             match c {
+                '(' if compound_paren_depth == 0
+                    && array_value_paren_depth == 0
+                    && self.compound_assignment_start(word_start) =>
+                {
+                    self.advance();
+                    compound_paren_depth = 1;
+                }
+                '(' if compound_paren_depth > 0 => {
+                    self.advance();
+                    compound_paren_depth += 1;
+                }
+')' if compound_paren_depth > 0 => {
+                    self.advance();
+                    compound_paren_depth -= 1;
+                }
                 '(' if array_assignment
                     && array_subscript_depth == 0
                     && array_value_paren_depth == 0
@@ -202,6 +224,24 @@ impl<'a> Lexer<'a> {
                 }
             }
         }
+    }
+
+    // True when the word begun at word_start is exactly "name=" with name
+    // a valid identifier: the adjacent "(" then opens a compound array
+    // assignment value that must stay one word.
+    fn compound_assignment_start(&self, word_start: usize) -> bool {
+        let prefix = &self.input[word_start..self.position];
+        let Some(head) = prefix.strip_suffix('=') else {
+            return false;
+        };
+        let bytes = head.as_bytes();
+        !bytes.is_empty()
+            && bytes
+                .iter()
+                .all(|b| b.is_ascii_alphanumeric() || *b == b'_')
+            && bytes
+                .iter()
+                .any(|b| b.is_ascii_alphabetic() || *b == b'_')
     }
 
     fn looks_like_array_element_assignment(&self) -> bool {

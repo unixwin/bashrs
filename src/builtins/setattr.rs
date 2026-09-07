@@ -190,7 +190,13 @@ where
     if index >= args.len() || print {
         // GNU setattr.def: without names, -a/-A restrict the printed set to
         // readonly indexed/associative arrays; -p alone prints everything.
-        print_readonly(env_vars, array, assoc, stdout)?;
+        print_readonly(
+        env_vars,
+        array,
+        assoc,
+        env_vars.get("__RUBASH_POSIX_MODE").map(String::as_str) == Some("1"),
+        stdout,
+    )?;
         if index >= args.len() {
             return Ok(EXECUTION_SUCCESS);
         }

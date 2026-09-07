@@ -404,3 +404,13 @@ core.autocrlf=true 把 vendored bash 测试树（third_party/bash，submodule）
 - procsub：GNU procsub 子进程退出后 /dev/fd 路径 -e 为假；rubash 用持久临时文件 -e 为真。需进程存活期语义（Windows 命名管道方案，高 blast-radius）。
 - posix2 -x：chmod -x 后 test -x 仍真——Windows 可执行位模拟缺失。
 - posix2 variable quoting 1/3：set 内建输出引号格式（SQUOTE 应为反斜杠引号，VHASH 应为裸 ab#cd）。
+
+## 2026-09-07 第八轮：GNU 上游覆盖 19→83 套件（新接入 64）
+
+- 新接入 64 个上游 .tests（bash-tests-rw-new/，LF 规范化），其中 **20 个直接 diff=0**：alias、appendop、attr、case、comsub-eof、dbg-support2、dstack2、extglob2、extglob3、glob-bracket、herestr、ifs、invert、parser、posixpipe、set-e、set-x、strip、tilde、vredir。
+- 新增最大待收敛块：dbg-support 635、new-exp 455、exp 141、nquote1 133、more-exp 112、shopt 107、globstar 101、glob 97。
+- 本轮修复（array 627→622）：
+  - declare size-hint：`declare -a b[256]`（无 `=`）GNU 丢弃下标，按裸名登记并在 `declare -p` 打印 `declare -a b`（declare.def）；print_unset_declaration 渲染 a/A 属性。
+  - POSIX 模式 `readonly -a` 列表：`readonly -a name=...`（原为 declare 格式；setattr.def posix 语义）。
+  - lexer：`name=(...)` 复合赋值词在作为内建操作数时保持原子（skip_word compound_paren_depth；GNU parse.y 语义）——18 套件台账零回归。
+- 已知深层缺口（诚实登记，未硬凑）：declare 复合操作数经去引号后元素边界丢失（`declare -ar b=([5]="hello world")` 被拆成 [5]/[6]；assign.rs:139 TODO 承认的 parser 限制）；dbg-support/new-exp 分诊待做（子代理通道本会话 4 次全灭，转单兵）。

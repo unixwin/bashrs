@@ -30,9 +30,24 @@ where
     let mut status = EXECUTION_SUCCESS;
     for name in names {
         let Some((var_name, value)) = name.split_once('=') else {
-            let var_name = name.strip_suffix('+').unwrap_or(name);
-            if mark_unset_declarations && !variables.contains_key(var_name) {
-                mark_typed(variables, DECLARED_UNSET_VARS, var_name);
+            // GNU declare.def: a "name[subscript]" operand without '=' is a
+            // declaration with a size hint; the subscript is discarded and
+            // the variable is recorded under the bare name ("declare -a
+            // b[256]" then prints as "declare -a b"). This holds when -a/-A
+            // is given and when the base is already a marked array.
+            let stripped = name.strip_suffix('+').unwrap_or(name);
+            let bare = if array || assoc {
+                declare_indexed_element(stripped)
+                    .map(|(base, _)| base)
+                    .unwrap_or(stripped)
+            } else {
+                stripped
+            };
+            if array && bare != stripped {
+                mark_typed(variables, ARRAY_VARS, bare);
+            }
+            if mark_unset_declarations && !variables.contains_key(bare) {
+                mark_typed(variables, DECLARED_UNSET_VARS, bare);
             }
             continue;
         };
