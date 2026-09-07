@@ -7,6 +7,7 @@ fn materialize_expanded_command_word(word: &str) -> String {
     ))
 }
 
+#[allow(dead_code)]
 /// GNU subst.c::param_expand reaches `bad_substitution:` for a whitespace-led
 /// `${ command; }` word and reports the FULL word text under expansion
 /// (subst.c:10278 `report_error (_("%s: bad substitution"), string)`), not
@@ -40,6 +41,8 @@ fn whitespace_led_bad_substitution_word(word: &str) -> Option<String> {
 impl Executor {
     /// Shared whole-word bad-substitution pre-check; see
     /// whitespace_led_bad_substitution_word for the GNU source mapping.
+    /// Dead since the 5.3 funsub flip; kept for the line-number notes.
+    #[allow(dead_code)]
     pub(in crate::executor) fn report_whitespace_led_bad_substitution(
         &mut self,
         cmd: &CommandNode,
@@ -170,7 +173,10 @@ impl Executor {
             // bubbled to the top and terminated the whole script.
             return Err(ExecuteError::ExpansionFailure(1));
         }
-        self.report_whitespace_led_bad_substitution(cmd)?;
+        // Bash 5.3 (parser.h FUNSUB_CHAR) executes whitespace-led
+        // `${ command; }` as a foreground current-shell command
+        // substitution, so the 5.2-era whole-word `bad substitution`
+        // pre-check no longer applies.
         if let Some((name, message, status)) = self.parameter_expansion_error(cmd) {
             eprintln!("{}{}: {}", self.diagnostic_prefix(), name, message);
             self.exit_code = status;
@@ -302,7 +308,10 @@ impl Executor {
             // running after the diagnostic.
             return Err(ExecuteError::ExpansionFailure(1));
         }
-        self.report_whitespace_led_bad_substitution(cmd)?;
+        // Bash 5.3 (parser.h FUNSUB_CHAR) executes whitespace-led
+        // `${ command; }` as a foreground current-shell command
+        // substitution, so the 5.2-era whole-word `bad substitution`
+        // pre-check no longer applies.
         if let Some((name, message, status)) = self.parameter_expansion_error(cmd) {
             eprintln!("{}{}: {}", self.diagnostic_prefix(), name, message);
             self.exit_code = status;

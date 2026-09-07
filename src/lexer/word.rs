@@ -110,7 +110,13 @@ impl<'a> Lexer<'a> {
                 && !(compound_paren_depth == 0
                     && array_value_paren_depth == 0
                     && c == '('
-                    && self.compound_assignment_start(word_start))
+                    && (self.compound_assignment_start(word_start)
+                        // `d[7]=(list)`: an array-element assignment whose
+                        // value is a compound list parses as one word; GNU
+                        // rejects it at execution time, not parse time.
+                        || (array_assignment
+                            && array_subscript_depth == 0
+                            && self.input[..self.position].ends_with('='))))
             {
                 if c == '(' && extglob_operator {
                     self.skip_extglob_group();
@@ -226,13 +232,31 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    // True when the word begun at word_start is exactly "name=" with name
-    // a valid identifier: the adjacent "(" then opens a compound array
-    // assignment value that must stay one word.
+    // True when the word begun at word_start is exactly "name=" or
+    // "name[subscript]=" with name a valid identifier and a balanced
+    // subscript: the adjacent "(" then opens a compound array assignment
+    // value that must stay one word. GNU parse.y accepts both spellings in
+    // command position; `d[7]=(list)` later fails at execution time with
+    // "cannot assign list to array member" instead of a parse error
+    // (array.tests line 131).
     fn compound_assignment_start(&self, word_start: usize) -> bool {
         let prefix = &self.input[word_start..self.position];
         let Some(head) = prefix.strip_suffix('=') else {
             return false;
+        };
+        // Optional trailing balanced [subscript] before the `=`.
+        let head = if head.ends_with(']') {
+            let Some(open_rel) = head.rfind('[') else {
+                return false;
+            };
+            // Reject nested-close imbalances: the subscript must balance.
+            let subscript = &head[open_rel + 1..head.len() - 1];
+            if subscript.contains('[') || subscript.contains(']') {
+                return false;
+            }
+            &head[..open_rel]
+        } else {
+            head
         };
         let bytes = head.as_bytes();
         !bytes.is_empty()

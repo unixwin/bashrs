@@ -438,13 +438,12 @@ pub(in crate::executor) fn current_shell_command_substitution_span(word: &str) -
         }
         let after_open = start + 2;
         let first = word.get(after_open..)?.chars().next()?;
-        // GNU Bash 5.2 param_expand (subst.c case LBRACE) only special-cases
-        // FUNSUB_CHAR, i.e. `${|`; a whitespace-led `${ command; }` is an
-        // ordinary (invalid) parameter expansion that falls through to
-        // `bad substitution`. Only the `${|` Rubash current-shell extension
-        // may take this span, so the frozen parameter_errors pre-check keeps
-        // rejecting the whitespace-led form exactly as GNU does.
-        if first != '|' {
+        // Bash 5.3 param_expand (parser.h FUNSUB_CHAR) treats `${` followed
+        // by whitespace or `|` as a foreground current-shell command
+        // substitution (`${ command; }` / `${|command;}`), not a parameter
+        // expansion. Every other character keeps the classic parameter
+        // spelling (`${-3}`, `${#:}` stay `bad substitution` candidates).
+        if !(first == '|' || first.is_whitespace()) {
             search_start = after_open;
             continue;
         }
@@ -473,6 +472,10 @@ pub(in crate::executor) fn current_shell_command_substitution_span(word: &str) -
                     depth += 1;
                     index += 1;
                 }
+                // Plain command-group braces inside the body (`${ f() { :; }
+                // }`) must nest the depth as well, or the function body's `}`
+                // would close the substitution span early.
+                '{' if !single && !double => depth += 1,
                 '}' if !single && !double => {
                     depth = depth.saturating_sub(1);
                     if depth == 0 {
@@ -500,10 +503,9 @@ mod current_shell_detector_tests {
 
     #[test]
     fn detects_current_shell_braced_command_body() {
-        // Only the `${|` funsub marker selects the current-shell form.
-        // GNU Bash 5.2 param_expand (subst.c case LBRACE) treats every other
-        // `${...}` as a parameter expansion, and a whitespace-led body is a
-        // `bad substitution` there, so it must not take this span.
+        // Bash 5.3 param_expand (parser.h FUNSUB_CHAR): `${` followed by
+        // whitespace or `|` opens a foreground current-shell command
+        // substitution.
         let word = "${| value=new; echo alpha; echo; }";
         assert_eq!(current_shell_command_substitution_span(word), Some(word));
         assert!(word_contains_current_shell_command_substitution(word));
@@ -513,14 +515,18 @@ mod current_shell_detector_tests {
     }
 
     #[test]
-    fn whitespace_led_braced_body_is_not_current_shell() {
-        // GNU comsub2.tests: every `${ printf ...; }` line is rejected with
-        // `bad substitution` by WSL bash 5.2.21.
-        assert!(!word_contains_current_shell_command_substitution(
+    fn whitespace_led_braced_body_is_current_shell() {
+        // Bash 5.3: `${ printf '%s\n' aa bb cc dd; }` captures command
+        // output in the current shell (comsub2.tests). Plain command-group
+        // braces inside the body must not close the span early.
+        assert!(word_contains_current_shell_command_substitution(
             "${ printf '%s\\n' aa bb cc dd; }"
         ));
-        assert!(!word_contains_current_shell_command_substitution(
+        assert!(word_contains_current_shell_command_substitution(
             "AA${ printf 'x'; }BB"
+        ));
+        assert!(word_contains_current_shell_command_substitution(
+            "${ func() { echo func-inside; }; }"
         ));
     }
 

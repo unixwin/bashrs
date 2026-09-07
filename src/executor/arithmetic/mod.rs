@@ -476,6 +476,12 @@ pub(in crate::executor) fn arithmetic_error_message(
     expression: &str,
     trailing_space: bool,
 ) -> Option<String> {
+    // GNU expr.c evalerror skips the expression's leading whitespace at
+    // display time (expr.c:1528: `for (t = expression; whitespace (*t); t++)`)
+    // while keeping everything from there on verbatim, trailing blanks
+    // included. Every message below therefore echoes the leading-trimmed
+    // text, never the raw expansion.
+    let expression = expression.trim_start();
     let token_space = if trailing_space { " " } else { "" };
     if let Some(token) = arithmetic_division_by_zero_token(expression) {
         return Some(format!(
@@ -484,8 +490,13 @@ pub(in crate::executor) fn arithmetic_error_message(
     }
 
     if let Some((token, error)) = invalid_based_literal(expression) {
+        // readtok NUL-terminates the number token in place before calling
+        // strlong (expr.c:1404-1408), so both the display and the error token
+        // appear truncated at the token itself: `$(( 3425#56 ))` reports
+        // `3425#56:`, with no trailing blank.
+        let display = expression.trim_end();
         return Some(format!(
-            "{expression}: {error} (error token is \"{token}\")"
+            "{display}: {error} (error token is \"{token}\")"
         ));
     }
 
@@ -541,37 +552,39 @@ pub(in crate::executor) fn arithmetic_error_message(
             "{display_expression}: syntax error: operand expected (error token is \"{token}\")"
         ));
     }
-    if trimmed
+    let assignment_lvalue_is_digit = trimmed
         .split_once('=')
-        .is_some_and(|(left, _)| left.trim().chars().all(|ch| ch.is_ascii_digit()))
+        .is_some_and(|(left, _)| {
+            let left = left.trim();
+            !left.ends_with(['=', '<', '>', '!'])
+                && left.chars().all(|ch| ch.is_ascii_digit())
+        })
         || trimmed
             .strip_suffix("++")
             .or_else(|| trimmed.strip_suffix("--"))
-            .is_some_and(|value| value.trim().chars().all(|ch| ch.is_ascii_digit()))
-    {
-        let message = if trimmed.split_once('=').is_some() {
+            .is_some_and(|value| value.trim().chars().all(|ch| ch.is_ascii_digit()));
+    if assignment_lvalue_is_digit {
+        // GNU raises these from expassign/expvalue with lasttp pointing at
+        // the operator token that has no valid left side (`=` for `7=4`, the
+        // second `+` of `7++` because curtok==STR is required for POSTINC).
+        // The reported token is the raw remainder from that operator to the
+        // end of the expression, trailing blanks included; the display is the
+        // leading-trimmed expression verbatim.
+        let message = if trimmed.contains('=') {
             "attempted assignment to non-variable"
         } else {
             "syntax error: operand expected"
         };
-        let token = trimmed.trim_start_matches(|ch: char| ch.is_ascii_digit());
-        // A raw-captured display keeps the section's trailing blank before
-        // `))`; GNU's lasttp remainder includes it (7=4 -> "=4 "), so carry
-        // the display's own trailing blank instead of only the synthesized
-        // token space. GNU skips leading blanks at display time (expr.c
-        // echoes from lasttp), so slice the tail from the leading-trimmed
-        // text: trim() is not a prefix slice of the raw expression when a
-        // leading blank exists (` 7=4 ` sliced at trimmed.len() would emit
-        // a stray `4`).
-        let leading_trimmed = expression.trim_start();
-        let trailing_blank = &leading_trimmed[trimmed.len()..];
-        // The error token is the raw-text remainder after the last token
-        // (lasttp): the token plus whatever whitespace follows it in the
-        // expression itself. No synthesized blank - GNU never adds one
-        // beyond the raw remainder (probe2: ` 7=4` -> "=4", `7=4 ` ->
-        // "=4 ").
+        let token_start = if trimmed.contains('=') {
+            expression.find('=').unwrap_or(0)
+        } else {
+            // `7++`: the error token starts at the LAST +/- in the run —
+            // the operator whose right operand is missing.
+            expression.rfind(['+', '-']).unwrap_or(0)
+        };
         return Some(format!(
-            "{leading_trimmed}: {message} (error token is \"{token}{trailing_blank}\")"
+            "{expression}: {message} (error token is \"{}\")",
+            &expression[token_start..]
         ));
     }
 
@@ -976,12 +989,18 @@ fn logical_rhs_assignment_token(expression: &str) -> Option<String> {
             if !after_trimmed.starts_with('=') {
                 return None;
             }
-            let operand: String = after_trimmed[1..]
-                .trim_start()
-                .chars()
-                .take_while(|ch| !matches!(ch, ' ' | '\t' | ')' | ',' | ';'))
-                .collect();
-            return Some(format!("={operand}"));
+            // `B==42` is an equality test, not an assignment.
+            if after_trimmed[1..].starts_with('=') {
+                return None;
+            }
+            // GNU lasttp points at the `=` operator; the token is the raw
+            // remainder to the end of the expression, trailing blanks
+            // included (`0 && B=42 ` -> "=42 ").
+            let from_abs = from + at + op.len();
+            let rest_abs = from_abs + (expression[from_abs..].len() - rest.len());
+            let skipped_ws = rest[len..].len() - after_trimmed.len();
+            let eq_abs = rest_abs + len + skipped_ws;
+            return Some(expression[eq_abs..].to_string());
         }
     }
     None
@@ -1010,7 +1029,7 @@ fn empty_ternary_branch_token(expression: &str) -> Option<String> {
 /// (`if (lasttok != STR)`) is `attempted assignment to non-variable`,
 /// while a variable left-hand side passes the lvalue check and then fails
 /// with `operand expected` once the missing operand is read.
-fn trailing_operator_error(expression: &str, trailing_space: bool) -> Option<String> {
+fn trailing_operator_error(expression: &str, _trailing_space: bool) -> Option<String> {
     // Bare `++` / `--` keep their dedicated diagnostic.
     let trimmed = expression.trim();
     if trimmed == "++" || trimmed == "--" {
@@ -1151,11 +1170,11 @@ fn trailing_operator_error(expression: &str, trailing_space: bool) -> Option<Str
         "syntax error: operand expected"
     };
     let token = &expression[last_start..];
-    // GNU expr.c includes a trailing space in the error token to separate
-    // it from the closing parenthesis (e.g. "+ " not "+"), except in the
-    // `[[ ... ]]` conditional context where the token has no trailing space.
+    // The token is the raw remainder from lasttp to the end of the
+    // expression: the operator plus whatever whitespace follows it. GNU
+    // never appends a synthetic separator (expr.c evalerror echoes lasttp
+    // verbatim), so the captured trailing blank is the only one.
     Some(format!(
-        "{expression}: {message} (error token is \"{token}{space}\")",
-        space = if trailing_space { " " } else { "" },
+        "{expression}: {message} (error token is \"{token}\")"
     ))
 }

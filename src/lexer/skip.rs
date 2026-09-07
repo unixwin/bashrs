@@ -247,6 +247,43 @@ impl<'a> Lexer<'a> {
     }
     pub(super) fn skip_braced(&mut self, outer_double_quote: bool) {
         let start = self.position.saturating_sub(2);
+        // Bash 5.3 funsub: `${ command; }` / `${|command;}` bodies are
+        // command lists where every plain `{`/`}` (function bodies, brace
+        // groups) nests the match — the parameter-expansion scanner would
+        // close the span at the first unquoted `}`.
+        if self
+            .input
+            .get(start + 2..start + 3)
+            .is_some_and(|ch| ch == "|" || ch.chars().next().is_some_and(|c| c.is_whitespace()))
+        {
+            let mut depth = 1usize;
+            let mut single = false;
+            let mut double = false;
+            let mut escaped = false;
+            while let Some(c) = self.advance() {
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                if c == '\\' && !single {
+                    escaped = true;
+                    continue;
+                }
+                match c {
+                    '\'' if !double => single = !single,
+                    '"' if !single => double = !double,
+                    '{' if !single && !double => depth += 1,
+                    '}' if !single && !double => {
+                        depth = depth.saturating_sub(1);
+                        if depth == 0 {
+                            return;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            return;
+        }
         let context = BraceContext {
             outer_double_quote,
             // parse.y::parse_matched_pair keeps POSIX mode separate from the

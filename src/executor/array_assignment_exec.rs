@@ -147,10 +147,11 @@ impl Executor {
 
         let index = index.trim_end_matches(']');
         if value_is_syntactic_compound_list {
+            // GNU subst.c:3603 reports the LHS name[subscript] only, not the
+            // whole assignment word.
             eprintln!(
-                "{}{}: cannot assign list to array member",
-                self.diagnostic_prefix(),
-                cmd.words[0]
+                "{}{name}[{index}]: cannot assign list to array member",
+                self.diagnostic_prefix()
             );
             self.exit_code = 1;
             return true;
