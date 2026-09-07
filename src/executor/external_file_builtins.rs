@@ -18,10 +18,7 @@ impl Executor {
             }
             "mkdir" => self.external_mkdir(cmd),
             "touch" => self.external_touch(cmd),
-            "chmod" => {
-                self.exit_code = 0;
-                Ok(true)
-            }
+            "chmod" => self.external_chmod(cmd),
             "cp" => self.external_cp(cmd),
             "rm" => self.external_rm(cmd),
             "rmdir" => self.external_rmdir(cmd),
@@ -422,4 +419,151 @@ fn is_cat_redirect_operator_word(word: &str) -> bool {
                 .as_str(),
             "<" | ">" | ">|" | ">>"
         )
+}
+
+impl Executor {
+    /// GNU chmod: [options] mode file... The emulated mode bits live in
+    /// __RUBASH_FILE_MODES so test -r/-w/-x observe them (Windows has no
+    /// POSIX mode bits). Symbolic clauses [ugoa]*[+-=][rwxX]+ (comma
+    /// separated) and octal modes are honored; unknown option-looking words
+    /// that precede the mode are ignored the way coreutils skips -f/-R/-v.
+    fn external_chmod(&mut self, cmd: &CommandNode) -> Result<bool, ExecuteError> {
+        let mut mode: Option<&str> = None;
+        let mut files: Vec<String> = Vec::new();
+        for arg in &cmd.words[1..] {
+            if mode.is_none() {
+                if matches!(arg.as_str(), "-f" | "-R" | "-v" | "-c" | "--") || arg.starts_with("--")
+                {
+                    continue;
+                }
+                if arg.starts_with('-') && arg.len() > 1 && arg[1..].chars().all(|ch| "fRvc".contains(ch))
+                {
+                    continue;
+                }
+                mode = Some(arg);
+                continue;
+            }
+            files.push(arg.clone());
+        }
+        let Some(mode) = mode else {
+            self.exit_code = 0;
+            return Ok(true);
+        };
+        let mut failures = 0usize;
+        for file in &files {
+            let windows = crate::executor::path::shell_path_to_windows(file, &self.env_vars)
+                .to_string_lossy()
+                .to_string();
+            let base = crate::builtins::test::emulated_file_mode(file, &self.env_vars)
+                .unwrap_or_else(|| self.default_emulated_mode(&windows));
+            match apply_chmod_mode(base, mode) {
+                Some(new_mode) => {
+                    store_emulated_file_mode(&mut self.env_vars, &windows, new_mode);
+                }
+                None => {
+                    failures += 1;
+                    eprintln!("chmod: invalid mode: '{}'", mode);
+                }
+            }
+        }
+        self.exit_code = i32::from(failures > 0 || files.is_empty());
+        Ok(true)
+    }
+
+    /// Default rwx bits for a file never chmod'd: readable and writable like
+    /// a fresh Windows file; executable only for extension-based executables
+    /// (GNU-on-Linux would say not executable for a fresh text file).
+    fn default_emulated_mode(&self, windows: &str) -> u32 {
+        let executable = std::path::Path::new(windows)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| matches!(ext.to_ascii_lowercase().as_str(), "exe" | "com" | "bat" | "cmd"))
+            .unwrap_or(false);
+        let mut mode = 0o600u32;
+        if executable {
+            mode |= 0o111;
+        }
+        mode
+    }
+}
+
+/// Apply one chmod MODE operand (octal or symbolic clauses) to BASE.
+fn apply_chmod_mode(base: u32, mode: &str) -> Option<u32> {
+    let trimmed = mode.trim();
+    if !trimmed.is_empty() && trimmed.chars().all(|ch| ch.is_ascii_digit()) && trimmed.len() <= 4
+        {
+            return u32::from_str_radix(trimmed, 8).ok().map(|value| value & 0o777);
+        }
+    let mut current = base;
+    for clause in trimmed.split(',') {
+        let mut chars = clause.chars().peekable();
+        let mut who = 0u32;
+        let mut who_seen = false;
+        while let Some(&ch) = chars.peek() {
+            let bit = match ch {
+                'u' => 0o700,
+                'g' => 0o070,
+                'o' => 0o007,
+                'a' => 0o777,
+                _ => break,
+            };
+            who |= bit;
+            who_seen = true;
+            chars.next();
+        }
+        if !who_seen {
+            who = 0o777;
+        }
+        let op = chars.next()?;
+        if !matches!(op, '+' | '-' | '=') {
+            return None;
+        }
+        let mut perms = 0u32;
+        while let Some(&ch) = chars.peek() {
+            match ch {
+                'r' => perms |= 0o444,
+                'w' => perms |= 0o222,
+                'x' => perms |= 0o111,
+                'X' => {
+                    // Directory, or some execute bit already set.
+                    if (current & 0o111) != 0 {
+                        perms |= 0o111;
+                    }
+                }
+                _ => return None,
+            }
+            chars.next();
+        }
+        if chars.next().is_some() {
+            return None;
+        }
+        match op {
+            '+' => {
+                current |= who & perms;
+            }
+            '-' => {
+                current &= !(who & perms);
+            }
+            '=' => {
+                current = (current & !who) | (who & perms);
+            }
+            _ => return None,
+        }
+    }
+    Some(current & 0o777)
+}
+
+fn store_emulated_file_mode(env_vars: &mut HashMap<String, String>, windows: &str, mode: u32) {
+    let key = crate::builtins::test::EMULATED_FILE_MODES;
+    let entries = env_vars.get(key).cloned().unwrap_or_default();
+    let mut kept: Vec<String> = entries
+        .split('\x1f')
+        .filter(|entry| {
+            !entry.is_empty()
+                && entry.rsplit_once('=').map(|(path, _)| path != windows).unwrap_or(true)
+        })
+        .map(str::to_string)
+        .collect();
+    kept.push(format!("{}={:o}", windows, mode));
+    env_vars.insert(key.to_string(), kept.join("\x1f"));
 }

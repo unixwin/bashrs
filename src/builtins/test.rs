@@ -423,7 +423,19 @@ fn eval_unary(op: &str, operand: &str, env_vars: &HashMap<String, String>) -> Re
         "-s" => Ok(fs::metadata(test_path(operand, env_vars))
             .map(|metadata| metadata.len() > 0)
             .unwrap_or(false)),
-        "-r" | "-w" | "-x" => Ok(test_path(operand, env_vars).exists()),
+        "-r" | "-w" | "-x" => {
+            // chmod through the emulated POSIX mode layer (Windows has no
+            // mode bits) takes precedence, like GNU stat'ing the real mode.
+            let bit = match op {
+                "-r" => 0o400,
+                "-w" => 0o200,
+                _ => 0o100,
+            };
+            match emulated_file_mode(operand, env_vars) {
+                Some(mode) => Ok(mode & bit != 0),
+                None => Ok(test_path(operand, env_vars).exists()),
+            }
+        }
         "-O" => Ok(file_owned_by_effective_user(operand, env_vars)),
         "-G" => Ok(file_owned_by_effective_group(operand, env_vars)),
         "-N" => Ok(modified_since_last_read(operand, env_vars)),
@@ -652,4 +664,20 @@ fn same_file(left: &str, right: &str, env_vars: &HashMap<String, String>) -> boo
         return false;
     };
     left == right
+}
+
+pub(crate) const EMULATED_FILE_MODES: &str = "__RUBASH_FILE_MODES";
+
+/// The mode recorded by the emulated chmod for this path, if any. Entries are
+/// stored as windows-path=octal pairs separated by the unit separator.
+pub(crate) fn emulated_file_mode(operand: &str, env_vars: &HashMap<String, String>) -> Option<u32> {
+    let windows = test_path(operand, env_vars).to_string_lossy().to_string();
+    let entries = env_vars.get(EMULATED_FILE_MODES)?;
+    for entry in entries.split('\x1f') {
+        let (path, mode) = entry.rsplit_once('=')?;
+        if path == windows {
+            return u32::from_str_radix(mode, 8).ok();
+        }
+    }
+    None
 }
