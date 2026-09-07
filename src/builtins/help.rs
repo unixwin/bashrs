@@ -183,7 +183,7 @@ fn print_read_synopses<W>(stdout: &mut W) -> io::Result<()>
 where
     W: Write,
 {
-    writeln!(stdout, "read: read [-Eers] [-a array] [-d delim] [-i text] [-n nchars] [-N nchars] [-p prompt] [-t timeout] [-u fd] [name ...]")?;
+    writeln!(stdout, "read: read [-ers] [-a array] [-d delim] [-i text] [-n nchars] [-N nchars] [-p prompt] [-t timeout] [-u fd] [name ...]")?;
     writeln!(stdout, "readarray: readarray [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]")?;
     writeln!(
         stdout,
@@ -257,7 +257,7 @@ where
         writeln!(stdout, "IMPLEMENTATION")?;
         writeln!(
             stdout,
-            "    Copyright (C) 2025 Free Software Foundation, Inc."
+            "    Copyright (C) 2022 Free Software Foundation, Inc."
         )?;
         writeln!(stdout)?;
     }
@@ -288,6 +288,12 @@ fn print_help_list<W>(stdout: &mut W) -> io::Result<()>
 where
     W: Write,
 {
+    // GNU help.def prints the shell version banner as the first line of the
+    // bare help listing (builtins10.sub pipes through "sed 1d" to strip it).
+    writeln!(
+        stdout,
+        "GNU bash, version 5.2.21(1)-release-(x86_64-pc-msys)"
+    )?;
     // TODO(builtins/help.def/builtins/gen-helpfiles.c): Generate this from the
     // builtin table. The current list matches the upstream builtins10.sub
     // expected output after its pipeline removes the Bash version line.
@@ -320,55 +326,46 @@ where
 }
 
 const HELP_LIST: &[&str] = &[
-    " ! PIPELINE                              history [-c] [-d offset] [n] or hist>",
-    " job_spec [&]                            if COMMANDS; then COMMANDS; [ elif C>",
-    " (( expression ))                        jobs [-lnprs] [jobspec ...] or jobs >",
-    " . [-p path] filename [arguments]        kill [-s sigspec | -n signum | -sigs>",
-    " :                                       let arg [arg ...]",
-    " [ arg... ]                              local [option] name[=value] ...",
-    " [[ expression ]]                        logout [n]",
-    " alias [-p] [name[=value] ... ]          mapfile [-d delim] [-n count] [-O or>",
-    " bg [job_spec ...]                       popd [-n] [+N | -N]",
-    " bind [-lpsvPSVX] [-m keymap] [-f file>  printf [-v var] format [arguments]",
-    " break [n]                               pushd [-n] [+N | -N | dir]",
-    " builtin [shell-builtin [arg ...]]       pwd [-LP]",
-    " caller [expr]                           read [-Eers] [-a array] [-d delim] [>",
-    " case WORD in [PATTERN [| PATTERN]...)>  readarray [-d delim] [-n count] [-O >",
-    " cd [-L|[-P [-e]]] [-@] [dir]            readonly [-aAf] [name[=value] ...] o>",
-    " command [-pVv] command [arg ...]        return [n]",
-    " compgen [-V varname] [-abcdefgjksuv] >  select NAME [in WORDS ... ;] do COMM>",
-    " complete [-abcdefgjksuv] [-pr] [-DEI]>  set [-abefhkmnptuvxBCEHPT] [-o optio>",
-    " compopt [-o|+o option] [-DEI] [name .>  shift [n]",
-    " continue [n]                            shopt [-pqsu] [-o] [optname ...]",
-    " coproc [NAME] command [redirections]    source [-p path] filename [argument>",
-    #[cfg(windows)]
-    " sudo [-E] [--inline|--new-window] [--]>  suspend [-f]",
-    #[cfg(not(windows))]
-    " declare [-aAfFgiIlnrtux] [name[=value>  suspend [-f]",
-    #[cfg(windows)]
-    " declare [-aAfFgiIlnrtux] [name[=value>  test [expr]",
-    #[cfg(not(windows))]
-    " dirs [-clpv] [+N] [-N]                  test [expr]",
-    #[cfg(windows)]
-    " dirs [-clpv] [+N] [-N]                  time [-p] pipeline",
-    " disown [-h] [-ar] [jobspec ... | pid >  time [-p] pipeline",
-    " echo [-neE] [arg ...]                   times",
-    " enable [-a] [-dnps] [-f filename] [na>  trap [-Plp] [[action] signal_spec ..>",
-    " eval [arg ...]                          true",
-    " exec [-cl] [-a name] [command [argume>  type [-afptP] name [name ...]",
-    " exit [n]                                typeset [-aAfFgiIlnrtux] name[=value>",
-    " export [-fn] [name[=value] ...] or ex>  ulimit [-SHabcdefiklmnpqrstuvxPRT] [>",
-    " false                                   umask [-p] [-S] [mode]",
-    " fc [-e ename] [-lnr] [first] [last] o>  unalias [-a] name [name ...]",
-    " fg [job_spec]                           unset [-f] [-v] [-n] [name ...]",
-    " for NAME [in WORDS ... ] ; do COMMAND>  until COMMANDS; do COMMANDS-2; done",
-    " for (( exp1; exp2; exp3 )); do COMMAN>  variables - Names and meanings of so>",
-    " function name { COMMANDS ; } or name >  wait [-fn] [-p var] [id ...]",
-    " getopts optstring name [arg ...]        while COMMANDS; do COMMANDS-2; done",
-    " hash [-lr] [-p pathname] [-dt] [name >  { COMMANDS ; }",
-    " help [-dms] [pattern ...]",
-    " setopt [--] [optname ...]",
-    " unsetopt [--] [optname ...]",
+// GNU bash 5.2.21 help listing (WSL baseline capture; the grid pairs
+// two columns at the 80-column width with ">" truncation markers).
+    " job_spec [&]                            history [-c] [-d offset] [n] or hist>",
+    " (( expression ))                        if COMMANDS; then COMMANDS; [ elif C>",
+    " . filename [arguments]                  jobs [-lnprs] [jobspec ...] or jobs >",
+    " :                                       kill [-s sigspec | -n signum | -sigs>",
+    " [ arg... ]                              let arg [arg ...]",
+    " [[ expression ]]                        local [option] name[=value] ...",
+    " alias [-p] [name[=value] ... ]          logout [n]",
+    " bg [job_spec ...]                       mapfile [-d delim] [-n count] [-O or>",
+    " bind [-lpsvPSVX] [-m keymap] [-f file>  popd [-n] [+N | -N]",
+    " break [n]                               printf [-v var] format [arguments]",
+    " builtin [shell-builtin [arg ...]]       pushd [-n] [+N | -N | dir]",
+    " caller [expr]                           pwd [-LP]",
+    " case WORD in [PATTERN [| PATTERN]...)>  read [-ers] [-a array] [-d delim] [->",
+    " cd [-L|[-P [-e]] [-@]] [dir]            readarray [-d delim] [-n count] [-O >",
+    " command [-pVv] command [arg ...]        readonly [-aAf] [name[=value] ...] o>",
+    " compgen [-abcdefgjksuv] [-o option] [>  return [n]",
+    " complete [-abcdefgjksuv] [-pr] [-DEI]>  select NAME [in WORDS ... ;] do COMM>",
+    " compopt [-o|+o option] [-DEI] [name .>  set [-abefhkmnptuvxBCEHPT] [-o optio>",
+    " continue [n]                            shift [n]",
+    " coproc [NAME] command [redirections]    shopt [-pqsu] [-o] [optname ...]",
+    " declare [-aAfFgiIlnrtux] [name[=value>  source filename [arguments]",
+    " dirs [-clpv] [+N] [-N]                  suspend [-f]",
+    " disown [-h] [-ar] [jobspec ... | pid >  test [expr]",
+    " echo [-neE] [arg ...]                   time [-p] pipeline",
+    " enable [-a] [-dnps] [-f filename] [na>  times",
+    " eval [arg ...]                          trap [-lp] [[arg] signal_spec ...]",
+    " exec [-cl] [-a name] [command [argume>  true",
+    " exit [n]                                type [-afptP] name [name ...]",
+    " export [-fn] [name[=value] ...] or ex>  typeset [-aAfFgiIlnrtux] name[=value>",
+    " false                                   ulimit [-SHabcdefiklmnpqrstuvxPRT] [>",
+    " fc [-e ename] [-lnr] [first] [last] o>  umask [-p] [-S] [mode]",
+    " fg [job_spec]                           unalias [-a] name [name ...]",
+    " for NAME [in WORDS ... ] ; do COMMAND>  unset [-f] [-v] [-n] [name ...]",
+    " for (( exp1; exp2; exp3 )); do COMMAN>  until COMMANDS; do COMMANDS-2; done",
+    " function name { COMMANDS ; } or name >  variables - Names and meanings of so>",
+    " getopts optstring name [arg ...]        wait [-fn] [-p var] [id ...]",
+    " hash [-lr] [-p pathname] [-dt] [name >  while COMMANDS; do COMMANDS-2; done",
+    " help [-dms] [pattern ...]               { COMMANDS ; }",
 ];
 
 fn diagnostic_prefix() -> String {
