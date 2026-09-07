@@ -313,15 +313,41 @@ impl Executor {
         let expanded_name = first_fields.next().unwrap_or_default();
         let leading_args: Vec<String> = first_fields.collect();
         let Some(program) = find_user_command(&expanded_name, &self.env_vars) else {
-            return Ok(Some((
-                String::new(),
-                format!(
-                    "{}{}: command not found\n",
-                    self.diagnostic_prefix(),
-                    expanded_name
-                ),
-                127,
-            )));
+            let diagnostic = format!(
+                "{}{}: command not found\n",
+                self.diagnostic_prefix(),
+                expanded_name
+            );
+            // Bash applies a pipeline element's redirections before the
+            // command lookup fails (redir.c do_redirection_internal runs for
+            // every command): `2>/dev/null` discards the diagnostic,
+            // `2>file` writes it there, and `2>&1` sends it down this
+            // stage's pipe (issue #70's `git ... 2>/dev/null | sed` idiom).
+            if let Some(redirect) = &command.redirect_err {
+                let target = self.expand_word(&redirect.target);
+                if redirect_target_fd(&target) == Some(1) {
+                    return Ok(Some((diagnostic, String::new(), 127)));
+                }
+                if !is_closed_redirect_target(&target) && redirect_target_fd(&target).is_none() {
+                    if let Ok(mut file) = self.create_redirect_output(&target, redirect.clobber) {
+                        let _ = file.write_all(diagnostic.as_bytes());
+                    }
+                    return Ok(Some((String::new(), String::new(), 127)));
+                }
+            } else if let Some(redirect) = &command.redirect_err_append {
+                let target = self.expand_word(&redirect.target);
+                if !is_closed_redirect_target(&target) && redirect_target_fd(&target).is_none() {
+                    if let Ok(mut file) = OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(shell_path_to_windows(&target, &self.env_vars))
+                    {
+                        let _ = file.write_all(diagnostic.as_bytes());
+                    }
+                    return Ok(Some((String::new(), String::new(), 127)));
+                }
+            }
+            return Ok(Some((String::new(), diagnostic, 127)));
         };
 
         let mut args: Vec<String> = leading_args;
@@ -359,6 +385,36 @@ impl Executor {
         }
         process.stdin(Stdio::piped()).stdout(Stdio::piped());
 
+        // Bash applies a pipeline element's redirections before running the
+        // command (redir.c do_redirection_internal). The child's stderr must
+        // follow the stage's parsed `2>`/`2>>`/`2>&1` redirect instead of
+        // inheriting the shell's stderr, or diagnostics such as ls's
+        // "cannot access" leak past `2>/dev/null` (issue #70).
+        let mut stderr_merges_into_stdout = false;
+        if let Some(redirect) = &command.redirect_err {
+            let target = self.expand_word(&redirect.target);
+            if redirect_target_fd(&target) == Some(1) {
+                stderr_merges_into_stdout = true;
+                process.stderr(Stdio::piped());
+            } else if !is_closed_redirect_target(&target) && redirect_target_fd(&target).is_none()
+            {
+                if let Ok(file) = self.create_redirect_output(&target, redirect.clobber) {
+                    process.stderr(Stdio::from(file));
+                }
+            }
+        } else if let Some(redirect) = &command.redirect_err_append {
+            let target = self.expand_word(&redirect.target);
+            if !is_closed_redirect_target(&target) && redirect_target_fd(&target).is_none() {
+                if let Ok(file) = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(shell_path_to_windows(&target, &self.env_vars))
+                {
+                    process.stderr(Stdio::from(file));
+                }
+            }
+        }
+
         let mut child = process.spawn()?;
         if let Some(mut stdin) = child.stdin.take() {
             stdin.write_all(
@@ -367,9 +423,18 @@ impl Executor {
         }
         let output = child.wait_with_output()?;
 
+        let mut stdout_bytes = output.stdout;
+        let mut stderr_bytes = output.stderr;
+        if stderr_merges_into_stdout {
+            // 2>&1: the stage pipe is fd 1, so the captured stderr belongs
+            // to the pipe payload, not to the shell's stderr.
+            stdout_bytes.extend_from_slice(&stderr_bytes);
+            stderr_bytes.clear();
+        }
+
         Ok(Some((
-            crate::executor::substitution_metadata::bytes_to_shell_text(&output.stdout),
-            crate::executor::substitution_metadata::bytes_to_shell_text(&output.stderr),
+            crate::executor::substitution_metadata::bytes_to_shell_text(&stdout_bytes),
+            crate::executor::substitution_metadata::bytes_to_shell_text(&stderr_bytes),
             output.status.code().unwrap_or(1),
         )))
     }

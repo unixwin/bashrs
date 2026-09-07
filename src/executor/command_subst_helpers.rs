@@ -215,6 +215,33 @@ pub(in crate::executor) fn split_pipeline_words(words: &[String]) -> Option<Vec<
     (stages.len() > 1).then_some(stages)
 }
 
+/// True when any word is a shell control/redirection operator that the
+/// word-based command-substitution shortcuts cannot interpret. GNU subst.c
+/// parses the whole substitution body into a command list before executing
+/// it; a word shortcut that assumes a lone simple command would hand the
+/// operators to the command as literal arguments (`$(f a b | wc -l)` runs
+/// f with `| wc -l` in its positional params, issue #70).
+pub(in crate::executor) fn command_substitution_words_have_operators(words: &[String]) -> bool {
+    words.iter().any(|word| command_word_is_operator(word))
+}
+
+/// True when the word itself carries redirection syntax: either a bare
+/// operator token or an attached form without whitespace (`2>/dev/null`,
+/// `>out`, `<in`, `<<EOF`).
+pub(in crate::executor) fn command_word_carries_redirect(word: &str) -> bool {
+    let body = word.trim_start_matches(|ch: char| ch.is_ascii_digit());
+    body.starts_with('<') || body.starts_with('>')
+}
+
+fn command_word_is_operator(word: &str) -> bool {
+    match word {
+        "|" | "|&" | "||" | "&&" | "&" | ";" | ";;" | ";&" | ";;&" => true,
+        "<" | ">" | ">>" | ">|" | "<>" | "<<" | "<<<" | "<&" | ">&" | "&>" | "&>>" | "1>"
+        | "1>>" | "1>|" | "1<&" | "1>&" | "2>" | "2>>" | "2>|" | "2<&" | "2>&" => true,
+        _ => command_word_carries_redirect(word),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

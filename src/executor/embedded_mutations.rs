@@ -623,6 +623,13 @@ impl Executor {
         if !self.functions.contains_key(name) {
             return None;
         }
+        // A function call is only a shortcut when the substitution body is a
+        // single simple command. GNU subst.c parses the body into a command
+        // list first: `$(f a b | wc -l)` must pipe f's output through wc,
+        // not run f with `| wc -l` in its positional params (issue #70).
+        if command_substitution_words_have_operators(words) {
+            return None;
+        }
 
         let args = words[1..]
             .iter()

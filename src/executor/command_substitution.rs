@@ -204,6 +204,29 @@ impl Executor {
             return output;
         }
 
+        // GNU subst.c parses the whole substitution body into a command list
+        // before executing it. The single-command shortcuts below treat a
+        // pipeline/redirection operator as a literal argument (`$(echo | f a b)`
+        // echoes `| f a b`, issue #70), so anything still carrying operators
+        // must run through the real parser/executor instead. The `kill -l` and
+        // `trap -l` pipelines have their own operator-aware shortcuts further
+        // down and keep bypassing this route (builtins.tests sigone).
+        if command_substitution_words_have_operators(&words)
+            && !matches!(
+                (
+                    words.first().map(String::as_str),
+                    words.get(1).map(String::as_str),
+                    words.get(2).map(String::as_str),
+                ),
+                (Some("kill"), Some("-l"), Some("|")) | (Some("trap"), Some("-l"), Some("|"))
+            )
+        {
+            if let Some(output) = self.command_list_substitution_output(source, context) {
+                return output;
+            }
+            return String::new();
+        }
+
         if let Some(output) = self.timed_command_substitution_output(&words) {
             return output;
         }

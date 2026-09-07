@@ -351,7 +351,21 @@ fn apply_simple_sed_line(line: &str, pattern: &str, replacement: &str) -> String
         // Plain `s/pattern/replacement/`: apply a literal replacement. GNU
         // sed treats the pattern as a BRE, but the upstream tests that reach
         // this path use literal needles (`s/a/B/`).
-        _ => line.replace(pattern.as_str(), &unescape_sed_replacement(replacement)),
+        _ if pattern.starts_with('^') => {
+            // GNU BRE: a leading `^` anchors the match at the line start and
+            // s/// then rewrites that one occurrence only. The s command's
+            // escaped delimiter (`\/` in `s/^refs\/heads\///`, the
+            // git-symbolic-ref idiom in issue #70) is the literal character.
+            let needle = pattern[1..].replace(r"\/", "/");
+            match line.strip_prefix(needle.as_str()) {
+                Some(rest) => format!("{}{rest}", unescape_sed_replacement(replacement)),
+                None => line.to_string(),
+            }
+        }
+        _ => line.replace(
+            pattern.replace(r"\/", "/").as_str(),
+            &unescape_sed_replacement(replacement),
+        ),
     }
 }
 

@@ -113,6 +113,49 @@ mod unit_tests {
     }
 
     #[test]
+    fn function_pipeline_command_substitution_pipes_stage_output() {
+        // Issue #70: the function-call fast path used to run f with
+        // `| while ...` as literal positional params instead of piping f's
+        // output into the next pipeline stage.
+        let tokens = tokenize(
+            "f() { echo ARGS=[$@]; }; x=$(f a b | while read -r line; do echo \"GOT:$line\"; done); echo \"x=$x\"",
+        );
+        let ast = parse(&tokens);
+        let mut executor = Executor::new();
+        executor.stdout_capture = Some(Vec::new());
+        executor.execute_ast(&ast).expect("function pipeline comsub");
+        let captured = executor.stdout_capture.take().unwrap_or_default();
+        let text = String::from_utf8_lossy(&captured);
+        assert!(text.contains("x=GOT:ARGS=[a b]"), "got: {text}");
+    }
+
+    #[test]
+    fn function_pipeline_command_substitution_keeps_plain_call_shortcut() {
+        // The single-simple-command shortcut must survive the #70 guard.
+        let mut executor = Executor::new();
+        let tokens = tokenize("f() { echo ARGS=[$@]; }; x=$(f a b); echo \"x=$x\"");
+        let ast = parse(&tokens);
+        executor.stdout_capture = Some(Vec::new());
+        executor.execute_ast(&ast).expect("plain function comsub");
+        let captured = executor.stdout_capture.take().unwrap_or_default();
+        let text = String::from_utf8_lossy(&captured);
+        assert!(text.contains("x=ARGS=[a b]"), "got: {text}");
+    }
+
+    #[test]
+    fn command_substitution_operator_words_are_detected() {
+        use crate::executor::command_subst_helpers::command_substitution_words_have_operators;
+
+        let words = |source: &str| {
+            crate::executor::split_shell_words(source)
+        };
+        assert!(command_substitution_words_have_operators(&words("f a b | wc -l")));
+        assert!(command_substitution_words_have_operators(&words("f a b 2>/dev/null")));
+        assert!(command_substitution_words_have_operators(&words("gitC | sed -e s/a/b/")));
+        assert!(!command_substitution_words_have_operators(&words("f a b")));
+    }
+
+    #[test]
     fn quoted_command_substitution_preserves_internal_newlines() {
         let tokens = tokenize("echo \"$(printf 'echo foo\\necho bar\\n')\"");
         let ast = parse(&tokens);

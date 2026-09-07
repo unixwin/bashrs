@@ -322,6 +322,24 @@ impl Executor {
         }
 
         let stages = split_pipeline_words(words)?;
+        // GNU subst.c parses and executes the whole pipeline; this word-level
+        // shortcut only covers plain producer/filter stages. A stage carrying
+        // redirection syntax (`git symbolic-ref HEAD 2>/dev/null | sed ...`)
+        // would receive the redirect as a literal argument, and a stage whose
+        // head names a shell function must run the function, not an external
+        // program of the same name. Both fall back to the real parser
+        // (issue #70).
+        if stages
+            .iter()
+            .any(|stage| stage.iter().any(|word| command_word_carries_redirect(word)))
+        {
+            return None;
+        }
+        if let Some(head) = stages.first().and_then(|stage| stage.first()) {
+            if self.functions.contains_key(head) {
+                return None;
+            }
+        }
         let mut output = self.command_substitution_pipeline_first_stage(stages.first()?)?;
         let mut status = 0;
         for stage in stages.iter().skip(1) {
