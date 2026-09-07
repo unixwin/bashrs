@@ -64,6 +64,8 @@ fn execute_ast_with_args(
         executor.set_positional_params(source_positional_params.clone());
     }
 
+    let old_dollar_vars_changed = executor.dollar_vars_changed_by_set;
+    executor.dollar_vars_changed_by_set = false;
     let result = executor.execute_ast(&ast);
     // GNU Bash runs the RETURN trap when a sourced script finishes
     // (builtins/evalfile.c run_return_trap after source_file).
@@ -87,8 +89,17 @@ fn execute_ast_with_args(
     }
 
     if had_source_args {
-        executor.set_positional_params(old_positional_params);
+        // GNU source.def uw_maybe_pop_dollar_vars: when the sourced script
+        // reassigned the dollar vars through the set builtin and we are not
+        // inside a shell function, the new values stay and the saved copy is
+        // discarded; otherwise the saved positionals are restored.
+        if executor.dollar_vars_changed_by_set && executor.function_depth == 0 {
+            // keep the sourced script's new positionals
+        } else {
+            executor.set_positional_params(old_positional_params);
+        }
     }
+    executor.dollar_vars_changed_by_set = old_dollar_vars_changed;
 
     match result {
         Err(ExecuteError::Return(status)) => {

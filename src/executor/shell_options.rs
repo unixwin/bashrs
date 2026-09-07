@@ -335,6 +335,7 @@ impl Executor {
             let arg = &args[index];
             if arg == "--" {
                 self.apply_set_flag_updates(&flag_updates);
+                self.dollar_vars_changed_by_set = true;
                 self.set_positional_params(args[index + 1..].to_vec());
                 return true;
             }
@@ -344,13 +345,15 @@ impl Executor {
                 self.env_vars.remove("__RUBASH_XTRACE");
                 crate::builtins::set::set_shell_option(&mut self.env_vars, "xtrace", false);
                 if index + 1 < args.len() {
-                    self.set_positional_params(args[index + 1..].to_vec());
+                    self.dollar_vars_changed_by_set = true;
+                self.set_positional_params(args[index + 1..].to_vec());
                 }
                 return true;
             }
 
             let Some(prefix) = arg.chars().next().filter(|ch| matches!(ch, '-' | '+')) else {
                 self.apply_set_flag_updates(&flag_updates);
+                self.dollar_vars_changed_by_set = true;
                 self.set_positional_params(args[index..].to_vec());
                 return true;
             };
@@ -358,6 +361,7 @@ impl Executor {
             let flags = &arg[1..];
             if flags.is_empty() {
                 self.apply_set_flag_updates(&flag_updates);
+                self.dollar_vars_changed_by_set = true;
                 self.set_positional_params(args[index + 1..].to_vec());
                 return true;
             }
