@@ -309,7 +309,12 @@ impl Executor {
                     .cloned()
                     .unwrap_or_default()
             }
-            b'@' | b'*' => self.positional_params.join(" "),
+            // Assignment RHS joins $* / $@ with the first IFS character
+            // (GNU subst.c string_list_dollar_star / string_list_dollar_at
+            // under W_ASSIGNRHS; expand_no_split_dollar_star, Posix interp
+            // 888). IFS unset joins with space, IFS empty joins with
+            // nothing.
+            b'@' | b'*' => self.positional_params.join(&self.ifs_first_char_separator()),
             b'#' => self.positional_params.len().to_string(),
             b'?' => self.exit_code.to_string(),
             b'$' => self.shell_pid_value().to_string(),

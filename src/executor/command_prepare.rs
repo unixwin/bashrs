@@ -596,7 +596,7 @@ impl Executor {
             return vec![word.replace('\x1f', "$")];
         }
         if !word.starts_with('\x1d') {
-            if let Some(values) = self.braced_alternate_word_values(word) {
+            if let Some(values) = self.braced_alternate_word_values(word, raw) {
                 return values;
             }
         }
@@ -629,6 +629,17 @@ impl Executor {
                 );
             }
             return values;
+        }
+        // A fully double-quoted `${op...}` word whose alternate embeds `$@`
+        // (e.g. `"${1+  $@  }"`) is skipped by braced_alternate_word_values
+        // above (its \x1d marker), but GNU still expands the alternate with
+        // the quoted-$@ word-boundary semantics: affixes attach to the
+        // first/last positional word, one word per parameter (subst.c
+        // param_expand carries `quoted` into the alternate word).
+        if word.starts_with('\x1d') {
+            if let Some(values) = self.quoted_braced_alternate_positional_at_values(word) {
+                return values;
+            }
         }
         // GNU bash runs brace expansion once, on the original word, before
         // any other expansion, and never re-expands expansion results. raw
@@ -784,7 +795,7 @@ impl Executor {
         Some(values)
     }
 
-    fn braced_alternate_word_values(&mut self, word: &str) -> Option<Vec<String>> {
+    fn braced_alternate_word_values(&mut self, word: &str, raw: Option<&str>) -> Option<Vec<String>> {
         let name = word.strip_prefix("${")?.strip_suffix('}')?;
         if !braced_parameter_spans_whole_word(word) {
             return None;
@@ -828,7 +839,78 @@ impl Executor {
             return None;
         }
 
+        // A double-quoted outer word quotes its alternate text: GNU expands
+        // `${1+  $@  }` with the surrounding double-quote context intact
+        // (subst.c param_expand passes `quoted` down to the alternate word),
+        // so the affix spaces are quote-protected and the $@ still produces
+        // one word per parameter. Re-lex the fragment inside synthetic double
+        // quotes so the raw-level quoted-$@ path can split it. Fragments that
+        // already carry their own quotes keep today's path.
+        let outer_double_quoted = raw
+            .filter(|raw| raw.len() >= 2 && raw.starts_with('"') && raw.ends_with('"'))
+            .is_some();
+        let fragment_quoted = alternate.starts_with('"') && alternate.ends_with('"');
+        if outer_double_quoted
+            && !fragment_quoted
+            && (alternate.contains("$@") || alternate.contains("${@}"))
+        {
+            return Some(self.expand_alternate_word_fragment(&format!(
+                "\"{alternate}\""
+            )));
+        }
+
         Some(self.expand_alternate_word_fragment(alternate))
+    }
+
+    // Fully double-quoted `${op...$@...}` words (e.g. `"${1+  $@  }"`) carry
+    // the \x1d marker, so braced_alternate_word_values skips them, but GNU
+    // still expands their alternate with quoted-$@ word-boundary semantics
+    // (subst.c param_expand keeps `quoted` set for the alternate word). The
+    // alternate is expanded here as the body of a double-quoted span: affix
+    // text attaches to the first/last positional word, one word per
+    // parameter. Returning None leaves every other form on its existing path.
+    fn quoted_braced_alternate_positional_at_values(
+        &mut self,
+        word: &str,
+    ) -> Option<Vec<String>> {
+        let braced = word.strip_prefix('\x1d')?;
+        if !braced.starts_with("${") || !braced.ends_with('}') {
+            return None;
+        }
+        if !braced_parameter_spans_whole_word(braced) {
+            return None;
+        }
+        let inner = &braced[2..braced.len() - 1];
+        if !inner.contains("$@") && !inner.contains("${@}") {
+            return None;
+        }
+        let (var_name, alternate, use_when_set, require_non_empty) =
+            if let Some((var_name, alternate)) = inner.split_once(":+") {
+                (var_name, alternate, true, true)
+            } else if let Some((var_name, alternate)) = inner.split_once('+') {
+                (var_name, alternate, true, false)
+            } else if let Some((var_name, alternate)) = inner.split_once(":-") {
+                (var_name, alternate, false, true)
+            } else if let Some((var_name, alternate)) = inner.split_once('-') {
+                (var_name, alternate, false, false)
+            } else {
+                return None;
+            };
+
+        let value = self.parameter_operator_value(var_name);
+        let word_used = if use_when_set {
+            value.is_some() && (!require_non_empty || !value.unwrap_or_default().is_empty())
+        } else {
+            value.is_none() || (require_non_empty && value.unwrap_or_default().is_empty())
+        };
+        if !word_used {
+            // Alternate unused: quoted-empty/quoted-null handling belongs to
+            // the existing paths, which already match GNU for those forms.
+            return None;
+        }
+
+        let synthetic_raw = format!("\"{alternate}\"");
+        self.quoted_positional_at_word_values_with_raw(alternate, Some(&synthetic_raw), None)
     }
 
     fn expand_alternate_word_fragment(&mut self, fragment: &str) -> Vec<String> {
