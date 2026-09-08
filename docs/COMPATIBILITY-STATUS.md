@@ -508,3 +508,23 @@ dbg-support 635、array 456、assoc 360、nameref 303、new-exp 241、more-exp 2
 - **`scripts/true-baseline.sh` 已入库**：LF 归一化 bash-tests-rw 同步、recho/zecho PATH、THIS_SH 约定（GNU 侧 /bin/bash，rubash 侧自检测）、`__RUBASH_NO_UPSTREAM_SCRIPTS=1`、stdout-only diff、按套件参数化。用法：`MSYS_NO_PATHCONV=1 wsl bash /mnt/d/repo/rubash/scripts/true-baseline.sh [suite...]`。
 - **纪律**：任何套件数字只出自该 harness；禁止手搓探针测量（本轮 −540 的假改善即由此而来）。
 - **下一个 P1 家族**：`declare -a d='(...)'` 整体单引号复合需解析器侧 CA 标记（已证实加宽执行器守卫会禁掉复合值内 glob/brace 展开而回退，方案在解析器）；随后 readonly 列出、`e[10]=test` 尺寸提示、DIRSTACK 惰性同步。
+
+## 目标轮 5：并行子代理编队 + readonly 家族证据（进行中）
+
+### 编队
+- 代理 A（rubash-wt-hint，detached bf03eb1a）：尺寸提示家族 `declare -a e[10]=test` → element[0]（GNU arrayfunc.c convert_assign_array_element）
+- 代理 B（rubash-wt-dstack，同提交）：DIRSTACK 惰性同步（GNU 新 shell `declare -a DIRSTACK=()` 直到 pushd）
+- 代理 C（只读分析）：P2 参数展开族战役计划（new-exp/more-exp/exp 按特性分类 + subst.c 归属 + 修复顺序）
+- 队长（主树）：readonly 家族证据收集 + 合并验证
+
+### readonly 家族证据（已定位，待代理 A 的尺寸提示修复落地后跟进）
+- array.tests:62 `declare -r c[100]`（带尺寸提示、无赋值）→ GNU：`c` 成为只读索引数组（声明未赋值），`declare -r` 列出 `declare -ar c`（仅属性无值）、`declare -p c` 同
+- rubash 现状：`c` 完全未创建（`declare: c: not found`）——根因：无 `-a` 旗标时 `c[100]` 的下标剥离/数组创建路径未走（declare.rs ~389 的 strip 仅在 `array || assoc` 下运行）
+- 该修复与代理 A 的尺寸提示机械同源（declare.rs 名字处理 + assign.rs），待其 worktree 报告后由队长统一合并实施，避免同路径冲突
+- 列出层：DECLARED_UNSET_VARS 的只读数组必须出现在 `declare -r`/`readonly -p` 列表中（仅属性形式）
+
+### v5 全台账（bf03eb1a，83 套件）：总缺口 5265
+- 大户：dbg-support 635、array 442、assoc 358、new-exp 241、more-exp 232、posixexp 211、nameref 214、histexp 199、comsub2 190、history 188、rsh 194、quotearray 153、quote 132、complete 113、shopt 113、varenv 107、globstar 101、invocation 93、exp 134
+- 绿区（0）：attr、cprint、dbg-support2、dstack2、dynvar、extglob2/3、getopts、glob-bracket、herestr、ifs、ifs-posix、intl(57→57 是 int-l 含义待核)、invert、mapfile、nquote2/3、posixpat、printf、strip、tilde/tilde2
+- 注意：本轮 v5 与两个 worktree 代理并发运行时出现 GNU 侧一次段错误+一次 Killed（WSL 资源竞争迹象），对应套件数字可能有噪声；后续收敛轮复测确认
+- 方法论警告：v5 运行与 worktree harness 并发时 stdout 日志与 ledger 分离（ledger 在 true-baseline-ledger.log，stdout 只有 TRUE-DONE/错误），勿把空 stdout 误判为失败
