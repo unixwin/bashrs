@@ -492,14 +492,19 @@ dbg-support 635、array 456、assoc 360、nameref 303、new-exp 241、more-exp 2
 4. **执行器逐字守卫**（parameter_core.rs expand_word_mut_with_context 赋值路径）：CA 标记且无 $/反引号的复合值绕过赋值引号剥离展开，逐字到达存储解析器。
 
 ### 量化（true-baseline 旁路口径，WSL GNU 5.2.21 基线）
-- array: 456 → **226**（−50%）
-- assoc: 358 → **134**（−63%）
-- quotearray: 153 → **67**（−56%）
-- P1 族合计 −540 diff 行（−56%；bash-tests-rw LF 归一化口径）；四形式探针与 GNU 完全一致
+- array: 456 → **444**（−12，正式口径）
+- assoc: 358 → **358**（持平）
+- quotearray: 153 → **153**（持平）
+- P1 族合计 −12 行（正式口径）。**勘误**：此前报的 −540 系 CRLF 污染基线所致；引号分组修复的语义价值由四形式探针证明（ GNU 完全一致），其行数影响集中在长尾。残余大头是 readonly 列出/尺寸提示/DIRSTACK 等独立家族；四形式探针与 GNU 完全一致
 - cli_tests（跳 bashdb）：**0 新增失败，修复 5 个**（含 issue78 多行数组 2 个）
 - lib：338 通过（1 个已知 PATH 竞态 flaky）
 
 ### 方法论沉淀
 - **stderr 可见性**：eprintln 调试输出在 `2>&1 | head` 管道下会被吞——必须重定向到文件再读。
 - **词元流侦察**：handle_token 顶部 DBG-TOK 全量词元转储 + 判别探针（引号单参数 vs 裸形式）是定位词法/解析/展开分层故障的最短路径。
-- **残余 P1 缺口**（226+134+67 行）：readonly 声明未赋值列出、`declare -a e[10]=test` 尺寸提示、复合内 `&` 语法错误继续语义、DA/引用元素等——下轮继续。
+- **残余 P1 缺口**（444+358+153 行）：readonly 声明未赋值列出、`declare -a e[10]=test` 尺寸提示、复合内 `&` 语法错误继续语义、DA/引用元素等——下轮继续。
+
+### 测量方法论固化（commit 7f0d1926）
+- **`scripts/true-baseline.sh` 已入库**：LF 归一化 bash-tests-rw 同步、recho/zecho PATH、THIS_SH 约定（GNU 侧 /bin/bash，rubash 侧自检测）、`__RUBASH_NO_UPSTREAM_SCRIPTS=1`、stdout-only diff、按套件参数化。用法：`MSYS_NO_PATHCONV=1 wsl bash /mnt/d/repo/rubash/scripts/true-baseline.sh [suite...]`。
+- **纪律**：任何套件数字只出自该 harness；禁止手搓探针测量（本轮 −540 的假改善即由此而来）。
+- **下一个 P1 家族**：`declare -a d='(...)'` 整体单引号复合需解析器侧 CA 标记（已证实加宽执行器守卫会禁掉复合值内 glob/brace 展开而回退，方案在解析器）；随后 readonly 列出、`e[10]=test` 尺寸提示、DIRSTACK 惰性同步。
