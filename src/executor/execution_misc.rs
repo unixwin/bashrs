@@ -228,6 +228,20 @@ pub(in crate::executor) fn word_has_unquoted_command_substitution(word: &str) ->
         if !single && !double && ch == '$' && chars.get(index + 1) == Some(&'(') {
             return true;
         }
+        if !single && !double && ch == '$' && chars.get(index + 1) == Some(&'{') {
+            // Bash 5.3 (parser.h FUNSUB_CHAR): a whitespace-led `${ command; }`
+            // is a nofork command substitution. Its unquoted output word-splits
+            // and vanishes when empty, exactly like $() output
+            // (comsub2.tests: `echo ${ printf '%s\n' aa bb; }` -> one line).
+            // The `${| command; }` funsub form keeps field integrity and must
+            // not trigger splitting here.
+            if chars
+                .get(index + 2)
+                .is_some_and(|next| next.is_whitespace())
+            {
+                return true;
+            }
+        }
         index += 1;
     }
     false

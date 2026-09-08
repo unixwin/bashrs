@@ -62,6 +62,30 @@ pub fn tokenize_with_initial_posix(input: &str, posix: bool) -> Vec<Token> {
     tokenize_with_initial_posix_and_origin(input, posix, InputOrigin::Direct)
 }
 
+/// Tokenize a substitution body whose text was extracted from a larger
+/// script. `start_line` is the 1-based script line where the body begins, so
+/// tokens (and the diagnostics they produce) carry original script line
+/// numbers instead of restarting at 1 (GNU parse.y keeps in-place line
+/// counters for command substitutions).
+pub fn tokenize_with_initial_posix_and_line(
+    input: &str,
+    posix: bool,
+    start_line: usize,
+) -> Vec<Token> {
+    if input.trim().is_empty() {
+        return Vec::new();
+    }
+
+    let mut tokens = tokenize_with_heredocs(input, posix, InputOrigin::Direct, start_line);
+    if tokens
+        .last()
+        .is_some_and(|token| token.kind == TokenKind::Semicolon)
+    {
+        tokens.pop();
+    }
+    tokens
+}
+
 pub fn tokenize_with_initial_posix_and_origin(
     input: &str,
     posix: bool,
@@ -71,7 +95,7 @@ pub fn tokenize_with_initial_posix_and_origin(
         return Vec::new();
     }
 
-    let mut tokens = tokenize_with_heredocs(input, posix, input_origin);
+    let mut tokens = tokenize_with_heredocs(input, posix, input_origin, 1);
     if tokens
         .last()
         .is_some_and(|token| token.kind == TokenKind::Semicolon)
@@ -85,6 +109,7 @@ fn tokenize_with_heredocs(
     input: &str,
     initial_posix: bool,
     input_origin: InputOrigin,
+    start_line: usize,
 ) -> Vec<Token> {
     // TODO(parse.y/redir.c): Bash parses here-documents after reading the
     // complete command and performs delimiter-specific expansion rules. This
@@ -93,8 +118,8 @@ fn tokenize_with_heredocs(
     let mut output = Vec::new();
     let mut lines = input.lines();
     let mut position = 0;
-    let mut line_number = 1;
-    let mut logical_start_line = 1;
+    let mut line_number = start_line;
+    let mut logical_start_line = start_line;
     let mut logical_line = String::new();
     let mut continued_line = false;
     let mut parse_posix = initial_posix;

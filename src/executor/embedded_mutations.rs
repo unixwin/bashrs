@@ -126,10 +126,29 @@ impl Executor {
                 continue;
             }
 
-            if ch == '\\' && chars.peek() == Some(&'`') {
-                chars.next();
-                output.push('\x1a');
-                continue;
+            if ch == '\\' {
+                if let Some(&next) = chars.peek() {
+                    match next {
+                        '`' => {
+                            chars.next();
+                            output.push('\x1a');
+                            continue;
+                        }
+                        // A backslash inside a parameter body protects the
+                        // next special character (GNU subst.c: the backslash
+                        // keeps its escaping meaning before $, `, ", \.
+                        // Emit $ and " literally here: by the time the later
+                        // unescape pass runs, an unprotected $ has already
+                        // opened a parameter expansion (esc6/esc7 probes:
+                        // "${v-\$x}" must yield a$x, not drop the $x).
+                        '$' | '"' => {
+                            chars.next();
+                            output.push(next);
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
             }
 
             if ch == '`' {
@@ -443,18 +462,32 @@ impl Executor {
         source: &str,
         pipe_output: bool,
     ) -> String {
-        let tokens = crate::lexer::tokenize_with_initial_posix(source, self.posix_mode_enabled());
+        // The body text was cut out of the current word, so its tokens would
+        // restart at line 1. GNU parse.y keeps the in-place line counter for
+        // command substitutions — diagnostics inside the body report the
+        // original script line of the substitution (comsub2.tests: line 68).
+        let body_start_line = self
+            .env_vars
+            .get("__RUBASH_CURRENT_LINE")
+            .and_then(|line| line.parse::<usize>().ok())
+            .filter(|line| *line > 0)
+            .unwrap_or(1);
+        let tokens = crate::lexer::tokenize_with_initial_posix_and_line(
+            source,
+            self.posix_mode_enabled(),
+            body_start_line,
+        );
         let ast = crate::parser::parse(&tokens);
         let saved_exit_code = self.exit_code;
 
         let (status, output) = if pipe_output {
-            let result = self.execute_ast(&ast);
+            let result = self.execute_current_shell_body(&ast);
             let status = command_substitution_status(result, self.exit_code);
             (status, String::new())
         } else {
             let saved_capture = self.stdout_capture.take();
             self.stdout_capture = Some(Vec::new());
-            let result = self.execute_ast(&ast);
+            let result = self.execute_current_shell_body(&ast);
             let status = command_substitution_status(result, self.exit_code);
             let output = bytes_to_shell_text(&self.stdout_capture.take().unwrap_or_default())
                 .trim_end_matches('\n')
@@ -471,6 +504,25 @@ impl Executor {
         } else {
             output
         }
+    }
+
+    /// Bash 5.3 nofork command substitution (subst.c): the `${ command; }` /
+    /// `${| command; }` body runs in the current shell but with a
+    /// function-like variable frame — `local` scopes to the body and `return`
+    /// ends only the body, while plain assignments still mutate the current
+    /// environment (comsub2.tests: `outside: 42` vs `outside:` empty).
+    fn execute_current_shell_body(
+        &mut self,
+        ast: &crate::parser::Ast,
+    ) -> Result<(), ExecuteError> {
+        self.local_var_scopes.push(HashMap::new());
+        self.local_attr_scopes.push(HashMap::new());
+        self.local_typed_scopes.push(HashMap::new());
+        self.function_depth += 1;
+        let result = self.execute_ast(ast);
+        self.function_depth -= 1;
+        self.restore_function_locals();
+        result
     }
 
     pub(in crate::executor) fn expand_command_substitution_mut_typed_with_context(
@@ -552,8 +604,20 @@ impl Executor {
             return None;
         }
 
-        let tokens =
-            crate::lexer::tokenize_with_initial_posix(source, self.posix_mode_enabled());
+        // Keep GNU's in-place line counter: the body was extracted from the
+        // current word, so body diagnostics must report the original script
+        // line instead of restarting at 1.
+        let body_start_line = self
+            .env_vars
+            .get("__RUBASH_CURRENT_LINE")
+            .and_then(|line| line.parse::<usize>().ok())
+            .filter(|line| *line > 0)
+            .unwrap_or(1);
+        let tokens = crate::lexer::tokenize_with_initial_posix_and_line(
+            source,
+            self.posix_mode_enabled(),
+            body_start_line,
+        );
         let ast = crate::parser::parse(&tokens);
         if !command_substitution_needs_ast_execution(&ast) {
             return None;

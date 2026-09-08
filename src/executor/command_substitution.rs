@@ -488,8 +488,20 @@ impl Executor {
         source: &str,
         context: SubstitutionQuoteContext,
     ) -> Option<SubstitutionOutput> {
-        let tokens =
-            crate::lexer::tokenize_with_initial_posix(source, self.posix_mode_enabled());
+        // The body was extracted from the current word; keep GNU's in-place
+        // line counter so body diagnostics report the original script line
+        // instead of restarting at 1 (subst.c comsub handling).
+        let body_start_line = self
+            .env_vars
+            .get("__RUBASH_CURRENT_LINE")
+            .and_then(|line| line.parse::<usize>().ok())
+            .filter(|line| *line > 0)
+            .unwrap_or(1);
+        let tokens = crate::lexer::tokenize_with_initial_posix_and_line(
+            source,
+            self.posix_mode_enabled(),
+            body_start_line,
+        );
         let ast = crate::parser::parse(&tokens);
 
         if ast.commands.iter().any(command_has_parse_error) {

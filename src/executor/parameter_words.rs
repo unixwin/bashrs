@@ -43,6 +43,7 @@ impl Executor {
                     .unwrap_or_else(|| {
                         expand_quoted_parameter_operator_word(
                             &self.expand_embedded_parameters(default),
+                            SubstitutionQuoteContext::DoubleQuoted,
                         )
                     });
             }
@@ -56,6 +57,7 @@ impl Executor {
                 {
                     return expand_quoted_parameter_operator_word(
                         &self.expand_embedded_parameters(alternate),
+                        SubstitutionQuoteContext::DoubleQuoted,
                     );
                 }
                 return String::new();
@@ -143,6 +145,7 @@ impl Executor {
                 if self.parameter_operator_value(var_name).is_some() {
                     return expand_quoted_parameter_operator_word(
                         &self.expand_embedded_parameters(alternate),
+                        SubstitutionQuoteContext::DoubleQuoted,
                     );
                 }
                 return String::new();
@@ -157,6 +160,7 @@ impl Executor {
                     .unwrap_or_else(|| {
                         expand_quoted_parameter_operator_word(
                             &self.expand_embedded_parameters(default),
+                            SubstitutionQuoteContext::DoubleQuoted,
                         )
                     });
             }
@@ -233,6 +237,7 @@ impl Executor {
                         let default = self.tilde_expand_operator_word(default, context);
                         expand_quoted_parameter_operator_word(
                             &self.expand_embedded_parameters_mut_with_context(&default, context),
+                            context,
                         )
                     });
             }
@@ -247,6 +252,7 @@ impl Executor {
                     let alternate = self.tilde_expand_operator_word(alternate, context);
                     return expand_quoted_parameter_operator_word(
                         &self.expand_embedded_parameters_mut_with_context(&alternate, context),
+                        context,
                     );
                 }
                 return String::new();
@@ -345,7 +351,7 @@ impl Executor {
                     let alternate = self.tilde_expand_operator_word(alternate, context);
                     let expanded =
                         self.expand_embedded_parameters_mut_with_context(&alternate, context);
-                    return expand_quoted_parameter_operator_word(&expanded);
+                    return expand_quoted_parameter_operator_word(&expanded, context);
                 }
                 return String::new();
             }
@@ -360,6 +366,7 @@ impl Executor {
                         let default = self.tilde_expand_operator_word(default, context);
                         expand_quoted_parameter_operator_word(
                             &self.expand_embedded_parameters_mut_with_context(&default, context),
+                            context,
                         )
                     });
             }
@@ -495,6 +502,37 @@ fn decode_double_quotes_in_quoted_parameter_word(word: &str) -> String {
     output
 }
 
-fn expand_quoted_parameter_operator_word(word: &str) -> String {
-    unescape_remaining_shell_escapes(&decode_double_quotes_in_quoted_parameter_word(word))
+fn expand_quoted_parameter_operator_word(
+    word: &str,
+    context: SubstitutionQuoteContext,
+) -> String {
+    let decoded = decode_double_quotes_in_quoted_parameter_word(word);
+    if matches!(context, SubstitutionQuoteContext::DoubleQuoted) {
+        // Inside double quotes a backslash escapes only $, `, ", \, and a
+        // newline; any other backslash stays literal, so the escaped space
+        // in a double-quoted alternate stays a\ b instead of collapsing
+        // to a b (escspace C-quoted / D-alt-narrow).
+        return unescape_double_quoted_backslashes(&decoded);
+    }
+    unescape_remaining_shell_escapes(&decoded)
+}
+
+fn unescape_double_quoted_backslashes(value: &str) -> String {
+    let mut output = String::new();
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(next) = chars.peek().copied() {
+                if matches!(next, '$' | '`' | '"' | '\\' | '\n') {
+                    chars.next();
+                    if next != '\n' {
+                        output.push(next);
+                    }
+                    continue;
+                }
+            }
+        }
+        output.push(ch);
+    }
+    output
 }

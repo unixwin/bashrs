@@ -745,14 +745,25 @@ impl Executor {
         } else if let Some(values) = self.field_split_word_with_quoted_empty_suffix(raw, &expanded)
         {
             values
-        } else if self.splits_unquoted_expanded_word(cmd, index, &expanded) {
+        } else if self.splits_unquoted_expanded_word(
+            cmd,
+            index,
+            &decode_command_substitution_payload(&expanded),
+        ) {
+            // Command-substitution output arrives payload-protected (control
+            // bytes such as \n are encoded as __RUBASH_CSB1_ markers). Field
+            // splitting must see the real IFS bytes — GNU subst.c splits the
+            // expanded word before any of this protection is undone — so
+            // decode here for the split decision and the split itself. The
+            // no-split path keeps the protected form and decodes later.
+            let decoded = decode_command_substitution_payload(&expanded);
             // GNU field-splits the expanded value without interpreting its
             // backslashes: a value like a\ b keeps the backslash in the
             // field and still splits on the space (a\ + b), whereas
             // field_split_escaped_ifs read it as an escaped separator and
             // stripped the backslash (a + b). Escaping belongs to the lexer,
             // not to parameter-expansion results.
-            field_split_values_with_ifs(&expanded, self.env_vars.get("IFS").map(String::as_str))
+            field_split_values_with_ifs(&decoded, self.env_vars.get("IFS").map(String::as_str))
         } else {
             vec![expanded]
         }
