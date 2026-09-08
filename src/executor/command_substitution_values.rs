@@ -311,6 +311,23 @@ impl Executor {
                 .collect::<Vec<_>>()
         };
 
+        if var_name == "*" && transform != ParameterTransform::Assignment {
+            // GNU string_list_pos_params (subst.c:3030-3057): an unquoted `*`
+            // uses dollar_star (IFS[0]) except when IFS is set empty, where
+            // Posix interp 888 falls back to dollar_at (space separator); the
+            // joined word is then field-split like any unquoted expansion
+            // (W_SPLITSPACE).
+            let ifs_set_empty = self
+                .env_vars
+                .get("IFS")
+                .is_some_and(|value| value.is_empty());
+            let separator = if ifs_set_empty {
+                " ".to_string()
+            } else {
+                self.ifs_first_char_separator()
+            };
+            return Some(vec![values.join(&separator)]);
+        }
         if quoted && var_name == "*" {
             if transform == ParameterTransform::Assignment {
                 let mut rendered = String::from("set -- ");
@@ -426,12 +443,9 @@ impl Executor {
         expression: &str,
     ) -> String {
         if expression.ends_with("[*]") {
-            let separator = self
-                .env_vars
-                .get("IFS")
-                .and_then(|ifs| ifs.chars().next())
-                .unwrap_or(' ');
-            return values.join(&separator.to_string());
+            // GNU dollar_star (subst.c string_list_dollar_star): IFS[0], the
+            // empty string when IFS is set empty, a space when IFS is unset.
+            return values.join(&self.ifs_first_char_separator());
         }
         values.join(" ")
     }

@@ -95,7 +95,10 @@ pub(in crate::executor) fn uid_value() -> String {
     std::env::var("UID")
         .ok()
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "1000".to_string())
+        // Rubash emulates a root Unix session: the WSL GNU Bash 5.2.21
+        // comparison baseline runs as root (UID/EUID 0), and `\$` prompt
+        // decoding plus $UID/$EUID parity depend on the same identity.
+        .unwrap_or_else(|| "0".to_string())
 }
 
 pub(in crate::executor) fn euid_value() -> String {

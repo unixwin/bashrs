@@ -39,13 +39,18 @@ impl Executor {
         }
 
         let Some(value) = self.env_vars.get(name) else {
-            return String::new();
+            // GNU array_var_assignment (subst.c:8680): a declared-unset array
+            // (invisible cell or no value) renders `declare -<flags> name`
+            // with no `=()` body, keeping the full attribute string.
+            let flags = self.variable_assignment_flags(name, true);
+            return format!("declare -{flags} {name}");
         };
 
+        let flags = self.variable_assignment_flags(name, true);
         if is_marked_var(&self.env_vars, ASSOC_VARS, name) {
             let entries = assoc_hash_ordered_entries(value);
             if entries.is_empty() {
-                return format!("declare -A {name}");
+                return format!("declare -{flags} {name}");
             }
             let rendered = entries
                 .into_iter()
@@ -54,7 +59,7 @@ impl Executor {
                 })
                 .collect::<Vec<_>>()
                 .join(" ");
-            return format!("declare -A {name}=({rendered} )");
+            return format!("declare -{flags} {name}=({rendered} )");
         }
 
         if is_marked_array_var(&self.env_vars, name) || is_array_storage(value) {
@@ -63,7 +68,12 @@ impl Executor {
                 .map(|(index, value)| format!("[{index}]={}", quote_array_value(&value)))
                 .collect::<Vec<_>>()
                 .join(" ");
-            return format!("declare -a {name}=({rendered})");
+            if rendered.is_empty() {
+                // GNU: a set-but-empty array also drops the `=()` body
+                // (new-exp15: `declare -ia foo=()` -> `declare -ai foo`).
+                return format!("declare -{flags} {name}");
+            }
+            return format!("declare -{flags} {name}=({rendered})");
         }
 
         String::new()
@@ -312,6 +322,9 @@ impl Executor {
         .map(|value| self.apply_parameter_transform_value(&value, transform))
         .collect::<Vec<_>>();
         if quoted_array_word && starred {
+            // GNU string_list_pos_params (subst.c:3030): a quoted `*` joins
+            // with dollar_star (IFS[0]); an unquoted `*` stays a per-element
+            // word list that the caller field-splits (W_SPLITSPACE).
             return Some(vec![values.join(&self.ifs_first_char_separator())]);
         }
         Some(values)

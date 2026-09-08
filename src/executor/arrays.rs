@@ -277,6 +277,17 @@ pub(super) fn word_is_unquoted_array_list_expansion(word: &str) -> bool {
         return false;
     };
     let name = inner.split_once(':').map_or(inner, |(name, _)| name);
+    if let Some((_var_name, transform)) = parse_parameter_transform(name) {
+        match transform {
+            // GNU subst.c parameter_brace_transform renders @A/@a/@K as one
+            // word and never field-splits array transform results (no
+            // W_SPLITSPACE is set for VT_ARRAYVAR results).
+            ParameterTransform::Assignment
+            | ParameterTransform::Attributes
+            | ParameterTransform::KeyValueQuoted => return false,
+            _ => {}
+        }
+    }
     let name = parse_parameter_transform(name)
         .map(|(name, _)| name)
         .or_else(|| parse_indirect_pattern_removal(name).map(|(name, _, _)| name))

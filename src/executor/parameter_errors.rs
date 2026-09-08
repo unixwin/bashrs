@@ -491,7 +491,14 @@ impl Executor {
                         name.push(name_ch);
                     }
                     if self.nounset_braced_parameter_is_unbound(&name) {
-                        return Some(name);
+                        // GNU reports the transform target without the @a/@A
+                        // suffix, and a nameref target as the `!ref`
+                        // expression (new-exp15: `!bar: unbound variable`).
+                        let reported = name
+                            .strip_suffix("@a")
+                            .or_else(|| name.strip_suffix("@A"))
+                            .unwrap_or(&name);
+                        return Some(reported.to_string());
                     }
                 }
                 Some(first) if first.is_ascii_digit() => {
@@ -545,8 +552,25 @@ impl Executor {
             || name.contains('/')
             || name.contains('^')
             || name.contains(',')
-            || name.contains('@')
         {
+            return false;
+        }
+
+        // GNU subst.c parameter_brace_expand: under nounset the attribute
+        // transforms ${name@a}/${name@A} report the target as unbound when it
+        // has no value, even though the transforms themselves would expand
+        // (new-exp15 `-uc` cases; check_unbound_variable precedes
+        // string_transform). Run this before the generic `@` bail-out.
+        if let Some(stripped) = name.strip_suffix("@a").or_else(|| name.strip_suffix("@A")) {
+            let target = stripped.strip_prefix('!').unwrap_or(stripped);
+            let resolved = self
+                .resolved_variable_name(target)
+                .unwrap_or_else(|| target.to_string());
+            return !self.dynamic_parameter_is_set(&resolved)
+                && !self.env_vars.contains_key(&resolved);
+        }
+
+        if name.contains('@') {
             return false;
         }
 

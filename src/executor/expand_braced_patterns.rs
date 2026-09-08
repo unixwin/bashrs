@@ -145,12 +145,20 @@ impl Executor {
             return Some(self.parameter_attribute_transform(var_name));
         }
         if matches!(var_name, "@" | "*") {
+            // GNU string_list_pos_params (subst.c:3030): unquoted `*` joins
+            // with dollar_star (IFS[0], empty when IFS is set empty), while
+            // `@` joins with a space (dollar_at).
+            let separator = if var_name == "*" {
+                self.ifs_first_char_separator()
+            } else {
+                " ".to_string()
+            };
             return Some(
                 self.positional_params
                     .iter()
                     .map(|value| self.apply_parameter_transform_value(value, transform))
                     .collect::<Vec<_>>()
-                    .join(" "),
+                    .join(&separator),
             );
         }
         if let Ok(index) = var_name.parse::<usize>() {

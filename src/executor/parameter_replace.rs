@@ -411,12 +411,15 @@ pub(in crate::executor) fn apply_parameter_transform(
     transform: ParameterTransform,
 ) -> String {
     match transform {
-        ParameterTransform::Quote => shell_single_quote_assignment_value(value),
+        // GNU string_transform (subst.c:8740) routes Q/K/k through
+        // sh_quote_reusable and 'A' through string_var_assignment, whose
+        // value part is also sh_quote_reusable (subst.c:8660).
+        ParameterTransform::Quote => shell_reusable_quote(value),
         ParameterTransform::Escape => decode_ansi_c_escapes(value),
-        ParameterTransform::Assignment => shell_single_quote_assignment_value(value),
+        ParameterTransform::Assignment => shell_reusable_quote(value),
         ParameterTransform::Attributes => String::new(),
-        ParameterTransform::KeyValueQuoted => shell_single_quote_assignment_value(value),
-        ParameterTransform::KeyValueSplit => shell_single_quote_assignment_value(value),
+        ParameterTransform::KeyValueQuoted => shell_reusable_quote(value),
+        ParameterTransform::KeyValueSplit => shell_reusable_quote(value),
         ParameterTransform::Prompt => value.to_string(),
         ParameterTransform::Upper => value.chars().flat_map(char::to_uppercase).collect(),
         ParameterTransform::UpperFirst => uppercase_first_char(value),
@@ -474,6 +477,76 @@ fn shouldexp_replacement(replacement: &str) -> bool {
 /// flags 2: each `&` copies the match, `\&` is a literal `&`, and with
 /// flag 2 `\\` is a literal backslash. Any other backslash stays literal
 /// together with the character it precedes.
+/// GNU sh_quote_reusable (lib/sh/shquote.c:353): render a value so it can be
+/// reused as shell input — `''` for the empty string, `$'...'` (ansic_quote)
+/// when any non-printing character is present, else `'...'` single quotes.
+/// Used by the string transforms @Q/@K/@k and by string_var_assignment.
+/// TODO(declare -p): subst.c's declare -p value rendering should share this
+/// helper; it is intentionally left untouched in this pass.
+pub(in crate::executor) fn shell_reusable_quote(value: &str) -> String {
+    if value.is_empty() {
+        return "''".to_string();
+    }
+    if ansic_should_quote_value(value) {
+        ansic_quote_value(value)
+    } else {
+        shell_single_quote_assignment_value(value)
+    }
+}
+
+/// GNU ansic_shouldquote (lib/sh/strtrans.c:341): $'...' quoting is used when
+/// the string contains any character that is not printable in the locale
+/// (ISPRINT for ASCII bytes, iswprint for the rest).
+fn ansic_should_quote_value(value: &str) -> bool {
+    value
+        .chars()
+        .any(|ch| !is_ansic_printable(ch))
+}
+
+fn is_ansic_printable(ch: char) -> bool {
+    if ch.is_ascii() {
+        (0x20..=0x7e).contains(&(ch as u8))
+    } else {
+        // Non-ASCII bytes go through mbrtowc + iswprint in GNU; valid UTF-8
+        // non-ASCII code points that are not control characters print.
+        !ch.is_control()
+    }
+}
+
+/// GNU ansic_quote (lib/sh/strtrans.c:230): `$'...'` with named escapes for
+/// \a \b \e(\E) \f \n \r \t \v, `\\` and `\'` doubled, printable characters
+/// copied verbatim, and every other byte rendered as a 3-digit octal escape.
+fn ansic_quote_value(value: &str) -> String {
+    let mut output = String::from("$'");
+    for ch in value.chars() {
+        match ch {
+            '\x1b' => output.push_str("\\E"),
+            '\x07' => output.push_str("\\a"),
+            '\x08' => output.push_str("\\b"),
+            '\x0b' => output.push_str("\\v"),
+            '\x0c' => output.push_str("\\f"),
+            '\n' => output.push_str("\\n"),
+            '\r' => output.push_str("\\r"),
+            '\t' => output.push_str("\\t"),
+            '\\' => output.push_str("\\\\"),
+            '\'' => output.push_str("\\'"),
+            c if is_ansic_printable(c) => output.push(c),
+            c => {
+                // GNU walks unsigned bytes; each non-printable byte becomes
+                // \NNN, so encode the UTF-8 byte sequence byte-for-byte.
+                let mut buffer = [0u8; 4];
+                for byte in c.encode_utf8(&mut buffer).as_bytes() {
+                    output.push_str(&format!("\\{byte:03o}"));
+                }
+            }
+        }
+    }
+    output.push('\'');
+    output
+}
+
+/// Expands `&` in a patsub replacement string to the matched text, like Bash
+/// (subst.c replace_pattern): `&` copies the match, `\&` is a literal `&`.
 fn expand_replacement_amp(matched: &str, replacement: &str) -> String {
     let mut output = String::new();
     let mut chars = replacement.chars().peekable();

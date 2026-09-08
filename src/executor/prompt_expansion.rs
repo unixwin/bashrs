@@ -69,6 +69,18 @@ impl Executor {
         let mut output = String::new();
         let mut chars = value.chars().peekable();
         while let Some(ch) = chars.next() {
+            // GNU parse.y:6269-6288: in POSIX mode a bare `!' expands to the
+            // prompt history number and `!!' is a literal `!'. This runs
+            // before the backslash switch, so it covers unescaped `!' too.
+            if self.posix_mode_enabled() && ch == '!' {
+                if chars.peek() == Some(&'!') {
+                    chars.next();
+                    output.push('!');
+                } else {
+                    output.push_str(&self.prompt_history_number().to_string());
+                }
+                continue;
+            }
             if ch != '\\' {
                 output.push(ch);
                 continue;
@@ -95,11 +107,30 @@ impl Executor {
                 Some('v') => output.push_str(&prompt_short_version(&self.env_vars)),
                 Some('V') => output.push_str(&prompt_release_version(&self.env_vars)),
                 Some('j') => output.push_str(&self.prompt_job_count().to_string()),
+                // GNU parse.y: the `\!' escape always renders the prompt
+                // history number (no POSIX gate here; the POSIX rule governs
+                // only a bare `!').
                 Some('!') => output.push_str(&self.prompt_history_number().to_string()),
                 Some('#') => output.push_str(&self.prompt_command_number().to_string()),
                 Some('$') => output.push(prompt_dollar(&self.env_vars)),
                 Some('\\') => output.push('\\'),
-                Some('[') | Some(']') => {}
+                Some('[') | Some(']') => {
+                    // GNU parse.y:6609-6622: \[ and \] emit the readline
+                    // prompt-ignore markers (RL_PROMPT_START/END_IGNORE) only
+                    // when the line editor is active; with no_line_editing (a
+                    // script without `set -o emacs`/`vi`) they are dropped
+                    // entirely. A marker equal to CTLESC (0x01) carries a
+                    // CTLESC prefix exactly as GNU does, so the pair dequote
+                    // downstream yields the single marker byte.
+                    if crate::builtins::set::shell_option_enabled(&self.env_vars, "emacs")
+                        || crate::builtins::set::shell_option_enabled(&self.env_vars, "vi")
+                    {
+                        // The marker bytes pass through the word carrier as
+                        //-is when followed by non-marker bytes, matching how
+                        // the octal \001 escape already renders through @P.
+                        output.push(if ch == '[' { '\x01' } else { '\x02' });
+                    }
+                }
                 Some(octal @ '0'..='7') => {
                     push_ansi_c_codepoint(&mut output, read_prompt_octal(octal, &mut chars))
                 }
@@ -202,6 +233,11 @@ impl Executor {
         };
 
         if basename_only {
+            // GNU polite_directory_format (parse.y): ROOT_PATH renders as
+            // itself; the basename of `/` is not the empty string.
+            if rendered == "/" {
+                return rendered;
+            }
             rendered
                 .trim_end_matches('/')
                 .rsplit('/')
@@ -218,7 +254,11 @@ impl Executor {
     }
 
     pub(in crate::executor) fn prompt_history_number(&self) -> usize {
-        0
+        // GNU parse.y prompt_history_number (parse.y:6209-6216): with no
+        // history entries history_number() returns history_base (1) and the
+        // value is returned unchanged, which is what a script-driven
+        // ${var@P} \! sees (new-exp.tests new-exp10: 1).
+        1
     }
 
     pub(in crate::executor) fn prompt_command_number(&self) -> usize {
