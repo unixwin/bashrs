@@ -105,8 +105,13 @@ impl<'a> Lexer<'a> {
                 && !(array_assignment && array_subscript_depth > 0 && c.is_ascii_whitespace())
                 && !(in_array_value && c.is_ascii_whitespace())
                 && !(in_array_value && matches!(c, '(' | ')'))
-                && !(compound_paren_depth > 0 && matches!(c, '(' | ')'))
-                && !(compound_paren_depth > 0 && c.is_ascii_whitespace())
+                // GNU read_token_word: inside a name=(...) compound
+                // assignment value every metacharacter -- whitespace, |, &,
+                // ;, <, >, the parens themselves -- is part of the word
+                // until the matching close paren (array.tests
+                // "test=(first & second)" is a single failing assignment,
+                // not an async list).
+                && compound_paren_depth == 0
                 && !(compound_paren_depth == 0
                     && array_value_paren_depth == 0
                     && c == '('
