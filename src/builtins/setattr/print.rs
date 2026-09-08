@@ -43,6 +43,26 @@ where
         }
         if let Some(value) = env_vars.get(&name) {
             if is_array {
+                // GNU setattr.def: an empty readonly array (declared with a
+                // size hint, never assigned elements) lists without the value
+                // part -- "declare -ar c" in the default listing and
+                // "readonly -a c" in posix mode (array.tests:62,101,103).
+                if value.is_empty() {
+                    if posix_mode {
+                        writeln!(stdout, "readonly -a {name}")?;
+                    } else {
+                        let attrs = setattr_array_attrs(
+                            &name,
+                            true,
+                            exported.contains(&name),
+                            &integers,
+                            &uppercase,
+                            &lowercase,
+                        );
+                        writeln!(stdout, "declare {attrs} {name}")?;
+                    }
+                    continue;
+                }
                 // POSIX mode (bash posix-mode notes): readonly displays
                 // "readonly -a name=value" for arrays instead of the
                 // declare-format listing (array.tests readonly -a probe).

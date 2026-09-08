@@ -33,17 +33,15 @@ where
             // GNU declare.def: a "name[subscript]" operand without '=' is a
             // declaration with a size hint; the subscript is discarded and
             // the variable is recorded under the bare name ("declare -a
-            // b[256]" then prints as "declare -a b"). This holds when -a/-A
-            // is given and when the base is already a marked array.
+            // b[256]" then prints as "declare -a b"). declare.def:605 sets
+            // making_array_special for ANY subscripted operand and 959-962
+            // converts the variable to an indexed array even without -a, so
+            // "declare -r c[100]" lists as "declare -ar c" (array.tests:62).
             let stripped = name.strip_suffix('+').unwrap_or(name);
-            let bare = if array || assoc {
-                declare_indexed_element(stripped)
-                    .map(|(base, _)| base)
-                    .unwrap_or(stripped)
-            } else {
-                stripped
-            };
-            if array && bare != stripped {
+            let bare = declare_indexed_element(stripped)
+                .map(|(base, _)| base)
+                .unwrap_or(stripped);
+            if bare != stripped && !marked_vars(variables, ASSOC_VARS).contains(bare) {
                 mark_typed(variables, ARRAY_VARS, bare);
             }
             if mark_unset_declarations && !variables.contains_key(bare) {
@@ -55,6 +53,29 @@ where
             .strip_suffix('+')
             .map(|base| (base, true))
             .unwrap_or((var_name, false));
+        // GNU subst.c:13084 expand_declaration_argument performs an unquoted
+        // compound list (parser CA-marked) as a separate assignment before
+        // the builtin sees the operand, and subst.c:3599-3605 rejects a list
+        // to a subscripted member ("cannot assign list to array member");
+        // the word is then truncated to the bare name[sub], so the array is
+        // only declared and no element is assigned (array.tests:
+        // declare -a e[10]=(test) leaves "declare -a e").
+        if value.starts_with(COMPOUND_ASSIGNMENT_MARKER) && raw_target.contains('[') {
+            let (base, _) = declare_indexed_element(raw_target).unwrap_or((raw_target, ""));
+            writeln!(
+                stderr,
+                "{}{raw_target}: cannot assign list to array member",
+                diagnostic_prefix(variables)
+            )?;
+            status = EXECUTION_FAILURE;
+            if !assoc && !marked_vars(variables, ASSOC_VARS).contains(base) {
+                mark_typed(variables, ARRAY_VARS, base);
+            }
+            if mark_unset_declarations && !variables.contains_key(base) {
+                mark_typed(variables, DECLARED_UNSET_VARS, base);
+            }
+            continue;
+        }
         if let Some((base, index_expression)) = declare_indexed_element(raw_target) {
             if assoc || marked_vars(variables, ASSOC_VARS).contains(base) {
                 if readonly.contains(base) {
@@ -81,6 +102,20 @@ where
                 continue;
             }
             if !assoc {
+                // GNU declare.def:935-943 (compat > 43: a parenthesized value
+                // on a declare operand is a compound array assignment, taken
+                // without the deprecated warning while the array is being
+                // created) and 992-993 (compound_array_assign outranks the
+                // subscript path): the subscript is discarded and the
+                // compound replaces the array (array.tests:112
+                // declare -a e[10]='(test)' stores [0]="test").
+                if !append_elem && value.starts_with('(') && value.ends_with(')') {
+                    let storage = append_array_value("()", value, integer);
+                    variables.insert(base.to_string(), storage);
+                    mark_typed(variables, ARRAY_VARS, base);
+                    unmark_typed(variables, DECLARED_UNSET_VARS, base);
+                    continue;
+                }
                 let index = if index_expression.trim().is_empty() {
                     Some(0)
                 } else {
@@ -88,8 +123,22 @@ where
                         .and_then(|value| usize::try_from(value).ok())
                 };
                 if let Some(index) = index {
-                    let current = variables.get(base).cloned().unwrap_or_default();
-                    let mut entries = indexed_array_entries(&current);
+                    // GNU make_new_array_variable creates an indexed array
+                    // with no elements; only convert_var_to_array (an existing
+                    // scalar promoted by the declare operand) lands the scalar
+                    // in [0] (array.tests: m=; declare -a m[10]=v keeps
+                    // [0]=""). Parsing "" as one empty word materialized a
+                    // phantom [0]="" element in every freshly created array.
+                    let arrays = marked_vars(variables, ARRAY_VARS);
+                    let mut entries = match variables.get(base).cloned() {
+                        Some(current) if current.starts_with('\x1d') => {
+                            indexed_array_entries(&current)
+                        }
+                        Some(current) if !current.is_empty() || !arrays.contains(base) => {
+                            indexed_array_entries(&current)
+                        }
+                        _ => Default::default(),
+                    };
                     // GNU bind_array_element: appends through a nameref land
                     // on the referenced element, arithmetically when the
                     // referenced array carries the integer attribute

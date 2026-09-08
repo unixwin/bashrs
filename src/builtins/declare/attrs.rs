@@ -71,13 +71,20 @@ where
     // nameref itself (nameref21.sub: \`declare -A ref\` marks var). Only when
     // the command is not itself toggling the nameref attribute: declare.def
     // 695-701 keeps -n/+n operating on the refvar.
+    // GNU declare.def:593-604 truncates a `name[subscript]` operand at the
+    // `[' before any attribute work: the subscript belongs to the element
+    // assignment, never to the variable name, so every attribute and the
+    // variable creation land on the bare name (array.tests: `declare -a
+    // e[10]=test` must not leave a variable literally named "e[10]").
+    let attr_targets: Vec<(String, bool)> =
+        names.iter().map(|name| attr_target_name(name)).collect();
     let attr_names_owned: Vec<String> = if !nameref && !unset_nameref {
         let namerefs = marked_vars(variables, NAMEREF_VARS);
-        names
+        attr_targets
             .iter()
-            .map(|name| {
+            .map(|(name, _)| {
                 if name.contains('=') {
-                    return (*name).to_string();
+                    return name.clone();
                 }
                 let base = name.strip_suffix('+').unwrap_or(name);
                 if namerefs.contains(base) {
@@ -85,11 +92,11 @@ where
                         return target;
                     }
                 }
-                (*name).to_string()
+                name.clone()
             })
             .collect()
     } else {
-        names.iter().map(|name| (*name).to_string()).collect()
+        attr_targets.iter().map(|(name, _)| name.clone()).collect()
     };
     let names: Vec<&str> = attr_names_owned.iter().map(String::as_str).collect();
     let names = &names[..];
@@ -153,17 +160,28 @@ where
             }
         }
     }
-    if array || assoc {
-        for name in names {
-            let name = name.split_once('=').map(|(name, _)| name).unwrap_or(name);
-            if array {
+    for (i, name) in attr_names_owned.iter().enumerate() {
+        let made_array_special = attr_targets[i].1;
+        if !array && !assoc && !made_array_special {
+            continue;
+        }
+        let name = name.split_once('=').map(|(name, _)| name).unwrap_or(name);
+        let name = name.strip_suffix('+').unwrap_or(name);
+        if array {
+            mark_array(variables, name);
+        }
+        if assoc {
+            mark_assoc(variables, name);
+        }
+        if made_array_special && !array && !assoc {
+            // GNU declare.def:959-962: making_array_special converts the
+            // variable to an indexed array even without -a (array.tests:62
+            // `declare -r c[100]` lists as "declare -ar c").
+            if !marked_vars(variables, ASSOC_VARS).contains(name) {
                 mark_array(variables, name);
             }
-            if assoc {
-                mark_assoc(variables, name);
-            }
-            variables.entry(name.to_string()).or_default();
         }
+        variables.entry(name.to_string()).or_default();
     }
     if integer {
         for name in names {
@@ -277,4 +295,33 @@ where
         }
     }
     Ok(attr_status)
+}
+
+/// GNU declare.def:593-604 truncates a `name[subscript]` operand at the `['
+/// before attribute processing and keeps the assignment side intact. Returns
+/// the normalized operand plus whether the name carried a subscript
+/// (making_array_special). Malformed subscripts pass through unchanged (the
+/// caller reports them through valid_declare_name before we get here).
+fn attr_target_name(name: &str) -> (String, bool) {
+    let (lhs, rhs) = match name.split_once('=') {
+        Some((lhs, rhs)) => (lhs, Some(rhs)),
+        None => (name, None),
+    };
+    let append = lhs.strip_suffix('+');
+    let lhs = append.unwrap_or(lhs);
+    let Some((base, subscript)) = lhs.split_once('[') else {
+        return ((*name).to_string(), false);
+    };
+    if base.is_empty() || base.contains('[') || !subscript.ends_with(']') {
+        return ((*name).to_string(), false);
+    }
+    let mut normalized = String::from(base);
+    if append.is_some() {
+        normalized.push('+');
+    }
+    if let Some(rhs) = rhs {
+        normalized.push('=');
+        normalized.push_str(rhs);
+    }
+    (normalized, true)
 }
