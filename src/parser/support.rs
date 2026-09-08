@@ -262,7 +262,17 @@ pub(super) fn token_completes_brace_group_command(token: &Token) -> bool {
 }
 
 pub(super) fn matching_brace_group_end(tokens: &[Token], start: usize) -> Option<usize> {
-    if !is_keyword(tokens, start, "{") {
+    // The lexer keeps trailing blanks inside a '{' keyword token when the
+    // brace is followed by blanks before the physical newline ("{\t"), so
+    // recognize the opening brace the same way parse_function_command's
+    // value.trim() == "{" gate does. An exact is_keyword(tokens, start,
+    // "{") here rejects "{\t", the function-body scan returned None, and
+    // the caller's last-'}' fallback silently absorbed the rest of the
+    // script into a dead function body (GNU parse.y reads the reserved
+    // word '{' and treats the blanks as a token separator).
+    if !tokens.get(start).is_some_and(|token| {
+        token.kind == TokenKind::Keyword && token.value.trim() == "{"
+    }) {
         return None;
     }
 

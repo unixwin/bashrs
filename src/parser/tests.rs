@@ -340,3 +340,23 @@ fn spaced_compound_assignment_is_marked_as_syntax_error() {
         
         .has_assignment("__RUBASH_PARSE_ERROR__"));
 }
+
+#[test]
+fn function_body_opening_brace_with_trailing_blanks_parses_body() {
+    // GNU parse.y reads the reserved word '{' and treats trailing blanks as
+    // a token separator. The lexer emits the '{' + TAB line in more-exp.tests'
+    // "b2()" / "{" TAB body as one Keyword token whose value is "{" TAB;
+    // the exact is_keyword check in matching_brace_group_end rejected it, the
+    // body scan returned None, and the caller's last-"}" fallback silently
+    // absorbed the rest of the script into the dead function body (rc=0, no
+    // diagnostics). The trailing '}' the lexer splits out of
+    // ${abc:-G { I } K } further down the stream is what the old fallback
+    // used to grab, so keep a later '}'-carrying command in this test.
+    let source = "b1()\n{\n\tb2 ${1+\"$@\"}\n}\n\nb2()\n{\t\n\trecho $*\n\trecho ${#}\n}\nrecho ${abc:-G { I } K }\necho after";
+    let ast = parse(&tokenize(source));
+    assert_eq!(ast.commands.len(), 4);
+    assert!(ast.commands[0].function_command.is_some());
+    let function = ast.commands[1].function_command.as_ref().unwrap();
+    assert_eq!(function.body.len(), 2);
+    assert_eq!(ast.commands[3].words, ["echo", "after"]);
+}
