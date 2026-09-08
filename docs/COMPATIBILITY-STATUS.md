@@ -428,3 +428,13 @@ core.autocrlf=true 把 vendored bash 测试树（third_party/bash，submodule）
   - POSIX 模式 `readonly -a` 列表：`readonly -a name=...`（原为 declare 格式；setattr.def posix 语义）。
   - lexer：`name=(...)` 复合赋值词在作为内建操作数时保持原子（skip_word compound_paren_depth；GNU parse.y 语义）——18 套件台账零回归。
 - 已知深层缺口（诚实登记，未硬凑）：declare 复合操作数经去引号后元素边界丢失（`declare -ar b=([5]="hello world")` 被拆成 [5]/[6]；assign.rs:139 TODO 承认的 parser 限制）；dbg-support/new-exp 分诊待做（子代理通道本会话 4 次全灭，转单兵）。
+
+## 2026-09-07 合并收拢：两线开发并轨（master ← wt/crew-r9）
+
+- 主树 in-flight 工作落为 1c8987e5（lexer/parameter 语义）+ 883438f4（ast_print print_cmd.c 移植重构，含 parser/mod.rs 与新文件必须同批提交）。
+- wt-busybox 工作区（detach @ bcb3ae21，落后 master 27 提交）checkpoint 为 wt/crew-r9 1d847284；三方合并仅 4 文件冲突（word.rs / command_prepare / command_execute / type_functions），全部取 master 侧——accessor API 与 ast_print 移植均为 crew 意图的超集。
+- 合并树 5ac716c8 与 master 逐字节一致：**crew 的表面增量已被 master 全部吸收**，唯一独有内容（pipe_source 2 行）经评估不保留。
+- 方法论教训（重要）：
+  1. **二进制路径污染**：套件输出嵌入 $0/THIS_SH 路径，不同目录构建的二进制对跑会产生数百行假差异（builtins 444 vs 19 全为此因）。跨二进制对比必须在同一路径重建。
+  2. **GNU 侧早退截断**：WSL 侧 GNU 无 THIS_SH 时 comsub2/rsh 等 `${THIS_SH}` 依赖套件仅输出 32B/24B 即中止；rubash 正常跑完反而「diff 更大」。crew 的 0 差是复刻了截断行为的假完美。此类套件的真基线需 `export THIS_SH=/bin/bash` 的 GNU 全量输出。
+  3. lib/cli_tests 通过 ≠ 套件台账通过：1c8987e5 提交前的 in-flight 验证漏掉了台账维度，套件级回归必须进提交前检查单。
