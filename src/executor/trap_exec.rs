@@ -210,10 +210,35 @@ impl Executor {
         }
         self.return_trap_running = true;
         let tokens = crate::lexer::tokenize(&action);
-        let ast = crate::parser::parse(&tokens);
+        let mut ast = crate::parser::parse(&tokens);
+        // GNU trap.c:_run_trap_internal:1196 only sets SEVAL_RESETLINE for
+        // ordinary signal traps; the RETURN trap keeps the caller's current
+        // line_number, so $LINENO inside the action (and the DEBUG fire for
+        // the trap command itself, execute_simple_command:4506) reports the
+        // caller's line. Stamp the parsed action with that line, mirroring
+        // run_debug_trap above.
+        let call_line = self
+            .env_vars
+            .get("__RUBASH_CURRENT_LINE")
+            .and_then(|line| line.parse::<usize>().ok());
+        if let Some(call_line) = call_line {
+            for command in &mut ast.commands {
+                command.line = Some(call_line);
+            }
+        }
         let result = self.execute_ast(&ast);
         self.return_trap_running = false;
         result
+    }
+
+    /// Whether the DEBUG trap is in execution scope at the current context.
+    /// GNU removes the DEBUG trap inside functions that do not inherit it
+    /// (execute_cmd.c:5270: no trace attribute and functrace off), so fires
+    /// for compound-command sub-parts (for / arith-for expressions) only
+    /// happen at the top level or inside inheriting functions.
+    pub(crate) fn debug_trap_in_scope(&self) -> bool {
+        (self.subshell_depth.get() == 0 && self.function_depth == 0)
+            || crate::builtins::set::shell_option_enabled(&self.env_vars, "functrace")
     }
 
     pub(crate) fn run_pending_signal_traps(&mut self) -> Result<(), ExecuteError> {
@@ -276,11 +301,21 @@ impl Executor {
     }
 
     pub(crate) fn run_function_return_trap(&mut self) -> Result<(), ExecuteError> {
-        // Bash only fires a RETURN trap for function returns when tracing is
-        // enabled (`set -T`) or `extdebug` is active.  Sourced files use the
-        // unconditional run_return_trap path above.
-        let traced = crate::builtins::set::shell_option_enabled(&self.env_vars, "functrace")
-            || crate::builtins::shopt::option_enabled(&self.env_vars, "extdebug");
+        // GNU execute_cmd.c:5295 (execute_function): while the DEBUG trap is
+        // executing (signal_in_progress (DEBUG_TRAP)), a function does not
+        // inherit the RETURN trap at all (restore_default_signal(RETURN_TRAP)
+        // plus the unwind-protect restore), so no RETURN trap fires when the
+        // DEBUG trap handler function itself returns
+        // (dbg-support.tests: no "return lineno" lines for print_debug_trap).
+        if self.debug_trap_running {
+            return Ok(());
+        }
+        // Bash only fires a RETURN trap for function returns when the
+        // function inherits the DEBUG/RETURN traps, which tracks the
+        // functrace flag alone (execute_cmd.c:5295 checks
+        // function_trace_mode, not debugging_mode; shopt extdebug reaches it
+        // only through the functrace it enables, shopt.def:621).
+        let traced = crate::builtins::set::shell_option_enabled(&self.env_vars, "functrace");
         let function_scoped = self
             .env_vars
             .get("__RUBASH_RETURN_TRAP_FUNCTION")

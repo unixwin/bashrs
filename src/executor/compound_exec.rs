@@ -235,6 +235,24 @@ impl Executor {
         body: &[CommandNode],
     ) -> Result<(), ExecuteError> {
         let mut arithmetic_failed = false;
+        // GNU execute_arith_for_command:3236 sets line_number = arith_lineno
+        // = arith_for_command->line, and eval_arith_for_expr:3187 runs the
+        // DEBUG trap before each expression evaluation (init once; test and
+        // step once per iteration) with that line restored, so $LINENO inside
+        // the fire is the for command's line (dbg-support.tests: the double
+        // "debug lineno: 108 main" per iteration).
+        let for_line = self.env_vars.get("__RUBASH_CURRENT_LINE").cloned();
+        let restore_for_line = |executor: &mut Executor| {
+            if let Some(line) = &for_line {
+                executor
+                    .env_vars
+                    .insert("__RUBASH_CURRENT_LINE".to_string(), line.clone());
+            }
+        };
+        if self.debug_trap_in_scope() && !arithmetic.init.trim().is_empty() {
+            restore_for_line(self);
+            self.run_debug_trap(&arithmetic.init)?;
+        }
         if !arithmetic.init.trim().is_empty()
             && self
                 .eval_arithmetic_command_value(&arithmetic.init)
@@ -250,6 +268,10 @@ impl Executor {
             commands: body.to_vec(),
         };
         while !arithmetic_failed {
+            if self.debug_trap_in_scope() && !arithmetic.test.trim().is_empty() {
+                restore_for_line(self);
+                self.run_debug_trap(&arithmetic.test)?;
+            }
             if !arithmetic.test.trim().is_empty() {
                 match self.eval_arithmetic_command_value(&arithmetic.test) {
                     Some(0) => break,
@@ -283,6 +305,10 @@ impl Executor {
                 Err(error) => return Err(error),
             }
 
+            if self.debug_trap_in_scope() && !arithmetic.update.trim().is_empty() {
+                restore_for_line(self);
+                self.run_debug_trap(&arithmetic.update)?;
+            }
             if !arithmetic.update.trim().is_empty()
                 && self
                     .eval_arithmetic_command_value(&arithmetic.update)

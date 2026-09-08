@@ -163,6 +163,20 @@ impl Executor {
             } else {
                 value.clone()
             };
+            // GNU evalfile.c:253 pushes the sourced file onto BASH_SOURCE
+            // instead of resetting the stack: inside `source file`, frames for
+            // the sourcing function and the main script stay visible
+            // (dbg-support.sub traces "FUNCNAME[1]: source called from
+            // ./dbg-support.tests"), so only a top-level script-name change
+            // (startup, -c, bashdb launcher) rebinds BASH_SOURCE.
+            if self.env_vars.contains_key("__RUBASH_IN_SOURCE") {
+                store_indexed_array(
+                    &mut self.env_vars,
+                    "BASH_SOURCE",
+                    self.bash_source_stack.clone(),
+                );
+                return;
+            }
             self.bash_source_stack = vec![source_value.clone()];
             store_indexed_array(&mut self.env_vars, "BASH_SOURCE", vec![source_value]);
         }
@@ -236,6 +250,36 @@ impl Executor {
             &mut self.env_vars,
             "BASH_SOURCE",
             self.bash_source_stack.clone(),
+        );
+    }
+
+    /// Pushes the synthetic "source" call frame for a `source`/`.` of a
+    /// file: GNU executes a sourced file with FUNCNAME[0]="source" and
+    /// BASH_LINENO[0]=the source command's line (dbg-support.tests: the
+    /// DEBUG trap inside dbg-support.sub reports FUNCNAME[1]="source", and
+    /// dbg-support.sub's stack trace shows a "source" frame between
+    /// sourced_fn and the sourcing function).
+    pub(crate) fn push_source_call_frame(&mut self, call_line: String) {
+        self.function_name_stack.insert(0, "source".to_string());
+        self.bash_lineno_stack.insert(0, call_line);
+        store_indexed_array(
+            &mut self.env_vars,
+            "BASH_LINENO",
+            self.bash_lineno_stack.clone(),
+        );
+    }
+
+    pub(crate) fn pop_source_call_frame(&mut self) {
+        if self.function_name_stack.first().map(String::as_str) == Some("source") {
+            self.function_name_stack.remove(0);
+        }
+        if !self.bash_lineno_stack.is_empty() {
+            self.bash_lineno_stack.remove(0);
+        }
+        store_indexed_array(
+            &mut self.env_vars,
+            "BASH_LINENO",
+            self.bash_lineno_stack.clone(),
         );
     }
 

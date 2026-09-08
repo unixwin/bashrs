@@ -200,7 +200,7 @@ impl Executor {
             function_name_stack: Vec::new(),
             bash_argc_stack: Vec::new(),
             bash_argv_stack: Vec::new(),
-            bash_lineno_stack: vec!["0".to_string()],
+            bash_lineno_stack: Vec::new(),
             bash_source_stack: Vec::new(),
             local_var_scopes: Vec::new(),
             local_attr_scopes: Vec::new(),

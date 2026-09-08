@@ -16,7 +16,7 @@ impl Executor {
             }
             "BASH_ARGC" => return self.bash_argc_stack.clone(),
             "BASH_ARGV" => return self.bash_argv_stack.clone(),
-            "BASH_LINENO" => return self.bash_lineno_stack.clone(),
+            "BASH_LINENO" => return self.bash_lineno_view(),
             "BASH_SOURCE" => return self.bash_source_stack.clone(),
             _ => {}
         }

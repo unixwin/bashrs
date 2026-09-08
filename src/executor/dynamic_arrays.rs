@@ -98,6 +98,24 @@ impl Executor {
         )
     }
 
+    /// GNU keeps a bottom BASH_LINENO frame of "0" for the main script frame
+    /// in script-file mode only: dbg-support.tests reports
+    /// BASH_LINENO=("0") at the top level and BASH_LINENO[3]=0 inside nested
+    /// calls ("main called from ... at line 0"), while `bash -c` has no main
+    /// frame and reports BASH_LINENO with no trailing "0" (cli function
+    /// stack probes: "inner outer|environment environment|1 1"). The main
+    /// script frame exists exactly when __RUBASH_SCRIPT_NAME is bound, the
+    /// same condition FUNCNAME's synthetic "main" uses.
+    pub(in crate::executor) fn bash_lineno_view(&self) -> Vec<String> {
+        let mut stack = self.bash_lineno_stack.clone();
+        if self.env_vars.contains_key("__RUBASH_SCRIPT_NAME")
+            && stack.last().map(String::as_str) != Some("0")
+        {
+            stack.push("0".to_string());
+        }
+        stack
+    }
+
     pub(in crate::executor) fn parameter_array_storage(&self, name: &str) -> Option<String> {
         let name = self.resolved_variable_name(name)?;
         let name = name.as_str();
@@ -118,7 +136,7 @@ impl Executor {
             "BASH_ARGC" => return Some(format_indexed_array_values(self.bash_argc_stack.clone())),
             "BASH_ARGV" => return Some(format_indexed_array_values(self.bash_argv_stack.clone())),
             "BASH_LINENO" => {
-                return Some(format_indexed_array_values(self.bash_lineno_stack.clone()))
+                return Some(format_indexed_array_values(self.bash_lineno_view()))
             }
             "BASH_SOURCE" => {
                 return Some(format_indexed_array_values(self.bash_source_stack.clone()))

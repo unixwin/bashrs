@@ -109,11 +109,11 @@ impl Executor {
             // firing would let the action's commands overwrite LINENO with
             // their own (synthetic) line before run_debug_trap's guard sees
             // the flag (dbg-support2.tests `print_trap $LINENO`).
-            let tracing_subshells =
-                crate::builtins::set::shell_option_enabled(&self.env_vars, "functrace")
-                    || crate::builtins::shopt::option_enabled(&self.env_vars, "extdebug");
-            let debug_trap_in_scope =
-                (self.subshell_depth.get() == 0 && self.function_depth == 0) || tracing_subshells;
+            // The DEBUG trap is inherited by functions only under functrace
+            // (execute_cmd.c:5270); extdebug reaches that state solely through
+            // the functrace it enables (shopt.def:621), so a later set +T
+            // disables inheritance even with extdebug active.
+            let debug_trap_in_scope = self.debug_trap_in_scope();
             if !skips_debug_trap
                 && debug_trap_in_scope
                 && debug_trap_active

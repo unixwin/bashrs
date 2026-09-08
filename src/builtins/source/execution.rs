@@ -53,7 +53,20 @@ fn execute_ast_with_args(
             .unwrap_or("rubash");
         executor.set_env("__RUBASH_TOP_LEVEL_NAME", top_level_name);
     }
+    let old_current_line = executor.get_env("__RUBASH_CURRENT_LINE").map(str::to_string);
     if let Some(source_name) = source_name {
+        // GNU builtins/evalfile.c:253-257 pushes a "source" frame for a
+        // sourced file: BASH_SOURCE += filename, BASH_LINENO += the source
+        // command's line, FUNCNAME += "source". The frame is popped (and
+        // line_number restored) by run_unwind_frame before source_file's
+        // run_return_trap (evalfile.c:395), which is why the RETURN trap at
+        // sourced-file exit reports the sourcer's context with the source
+        // call line (dbg-support.tests: "return lineno: 59 fn3").
+        let source_call_line = executor
+            .get_env("__RUBASH_CURRENT_LINE")
+            .unwrap_or("0")
+            .to_string();
+        executor.push_source_call_frame(source_call_line);
         executor.push_bash_source(source_name.to_string());
         if let Some(top_level_name) = old_script_name.as_deref().or(old_bash_argv0.as_deref()) {
             executor.set_env("BASH_ARGV0", top_level_name);
@@ -67,18 +80,23 @@ fn execute_ast_with_args(
     let old_dollar_vars_changed = executor.dollar_vars_changed_by_set;
     executor.dollar_vars_changed_by_set = false;
     let result = executor.execute_ast(&ast);
-    // GNU Bash runs the RETURN trap when a sourced script finishes
-    // (builtins/evalfile.c run_return_trap after source_file).
-    executor.run_return_trap()?;
 
     if source_name.is_some() {
+        // evalfile_internal's run_unwind_frame pops the "source" frame and
+        // restores line_number before source_file runs the RETURN trap.
         executor.pop_bash_source();
+        executor.pop_source_call_frame();
+        match &old_current_line {
+            Some(line) => executor.set_env("__RUBASH_CURRENT_LINE", line),
+            None => executor.remove_env("__RUBASH_CURRENT_LINE"),
+        }
     }
 
-    match old_source_marker {
-        Some(value) => executor.set_env("__RUBASH_IN_SOURCE", &value),
-        None => executor.remove_env("__RUBASH_IN_SOURCE"),
-    }
+    // Restore the sourcer's shell state while __RUBASH_IN_SOURCE is still
+    // set, so set_env's top-level BASH_SOURCE rebinding stays skipped and
+    // the sourcer's BASH_SOURCE frames survive (GNU evalfile_internal's
+    // run_unwind_frame restores its own state without touching the
+    // sourcer's stack). The in-source marker itself must be removed last.
     match old_script_name {
         Some(value) => executor.set_env("__RUBASH_SCRIPT_NAME", &value),
         None => executor.remove_env("__RUBASH_SCRIPT_NAME"),
@@ -87,6 +105,15 @@ fn execute_ast_with_args(
         Some(value) => executor.set_env("BASH_ARGV0", &value),
         None => executor.remove_env("BASH_ARGV0"),
     }
+    match old_source_marker {
+        Some(value) => executor.set_env("__RUBASH_IN_SOURCE", &value),
+        None => executor.remove_env("__RUBASH_IN_SOURCE"),
+    }
+
+    // GNU Bash runs the RETURN trap when a sourced script finishes
+    // (builtins/evalfile.c source_file: run_return_trap after
+    // evalfile_internal).
+    executor.run_return_trap()?;
 
     if had_source_args {
         // GNU source.def uw_maybe_pop_dollar_vars: when the sourced script

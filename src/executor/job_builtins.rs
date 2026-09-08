@@ -21,7 +21,11 @@ impl Executor {
         &mut self,
         cmd: &CommandNode,
     ) -> Result<i32, ExecuteError> {
-        let funcname = self.funcname_stack();
+        // GNU caller.def reads the FUNCNAME array, whose bottom frame is the
+        // synthetic "main" (variables.c make_funcname_visible / execute_intern_function),
+        // so `caller 0` inside a function called from the script reports
+        // FUNCNAME[1]="main" (dbg-support.tests: "85 main ./dbg-support.tests").
+        let funcname = self.indexed_array_stack("FUNCNAME");
         let lineno = self.indexed_array_stack("BASH_LINENO");
         // The executor uses `main` as the synthetic source name for function
         // calls made from an inline command string.  Bash's `caller` builtin

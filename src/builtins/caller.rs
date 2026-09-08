@@ -60,17 +60,19 @@ fn print_current_call<W>(
 where
     W: Write,
 {
-    if funcname.is_empty() {
+    // GNU builtins/caller.def:89-105: the no-argument form never consults
+    // FUNCNAME. It fails only when the BASH_LINENO or BASH_SOURCE array is
+    // empty, then prints BASH_LINENO[0] and BASH_SOURCE[1] with a literal
+    // NULL for absent elements. At the top level that renders "0 NULL"
+    // (dbg-support.tests line 71); inside a function called from line N of
+    // file F it renders "N F".
+    let _ = funcname;
+    if lineno.is_empty() || source.is_empty() {
         return Ok(EXECUTION_FAILURE);
     }
-
-    let line = lineno.first().map(String::as_str).unwrap_or("0");
-    let source = if funcname.len() > 1 {
-        source_name(source.get(1).or_else(|| source.first()))
-    } else {
-        "NULL"
-    };
-    writeln!(stdout, "{line} {source}")?;
+    let line = lineno.first().map(String::as_str).unwrap_or("NULL");
+    let caller_source = source.get(1).map(String::as_str).unwrap_or("NULL");
+    writeln!(stdout, "{line} {caller_source}")?;
     Ok(EXECUTION_SUCCESS)
 }
 
@@ -84,18 +86,22 @@ fn print_call_frame<W>(
 where
     W: Write,
 {
+    // GNU builtins/caller.def:108-121: with EXPR the frame is
+    // BASH_LINENO[expr] FUNCNAME[expr+1] BASH_SOURCE[expr+1]; any absent
+    // element fails the builtin with status 1 and no output (no "0" /
+    // "environment" fallbacks).
+    if funcname.is_empty() {
+        return Ok(EXECUTION_FAILURE);
+    }
+    let Some(line) = lineno.get(level) else {
+        return Ok(EXECUTION_FAILURE);
+    };
     let Some(function) = funcname.get(level + 1) else {
         return Ok(EXECUTION_FAILURE);
     };
-    let line = lineno.get(level).map(String::as_str).unwrap_or("0");
-    let source = source_name(source.get(level + 1).or_else(|| source.first()));
-    writeln!(stdout, "{line} {function} {source}")?;
+    let Some(caller_source) = source.get(level + 1) else {
+        return Ok(EXECUTION_FAILURE);
+    };
+    writeln!(stdout, "{line} {function} {caller_source}")?;
     Ok(EXECUTION_SUCCESS)
-}
-
-fn source_name(source: Option<&String>) -> &str {
-    source
-        .map(String::as_str)
-        .filter(|source| !source.is_empty())
-        .unwrap_or("environment")
 }

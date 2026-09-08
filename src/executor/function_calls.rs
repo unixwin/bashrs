@@ -203,13 +203,13 @@ impl Executor {
                 .cloned()
                 .or_else(|| call_cmd.line.map(|line| line.to_string()))
                 .unwrap_or_else(|| "0".to_string());
-            if self.bash_lineno_stack.len() == 1
-                && self.bash_lineno_stack.first().map(String::as_str) == Some("0")
-            {
-                self.bash_lineno_stack[0] = call_line;
-            } else {
-                self.bash_lineno_stack.insert(0, call_line);
-            }
+// GNU execute_function:5311-5317 pushes the call line onto
+            // BASH_LINENO (array_push) instead of overwriting the bottom
+            // frame: inside fn called at line N, BASH_LINENO=(N, "0"), so
+            // ${BASH_LINENO[1]} is "0" ("main()'s file is the same as the first caller",
+            // dbg-support.tests) and `caller` sees the full caller chain
+            // (probe: BASH_LINENO[1]=[] vs GNU [0]).
+            self.bash_lineno_stack.insert(0, call_line);
             let source = self.current_bash_source();
             self.bash_source_stack.insert(
                 0,
@@ -239,8 +239,43 @@ impl Executor {
         if self.debug_trap_running {
             self.debug_trap_function_line = body.commands.first().and_then(|command| command.line);
         }
+        // GNU execute_cmd.c:5351 sets line_number = function_line_number =
+        // tc->line (the function definition line) at entry, and 5383-5387
+        // runs the DEBUG trap there ("so we can trap at the start of a
+        // function's execution rather than the execution of the body's first
+        // command"). The fire only happens when the function inherits the
+        // DEBUG trap (5270: trace attribute or functrace); otherwise
+        // restore_default_signal(DEBUG_TRAP) removed it. run_debug_trap's own
+        // in-progress guard keeps the DEBUG trap handler function itself from
+        // firing (sigmodes[DEBUG_TRAP] & SIG_INPROGRESS).
+        let function_traced = crate::builtins::set::shell_option_enabled(&self.env_vars, "functrace");
+        let definition_line = self
+            .function_definition_locations
+            .get(name)
+            .map(|location| location.line);
+        if function_traced {
+            if let Some(line) = definition_line {
+                self.env_vars
+                    .insert("__RUBASH_CURRENT_LINE".to_string(), line.to_string());
+            }
+            let command_text =
+                crate::executor::command_text::bash_command_source_text(call_cmd);
+            self.run_debug_trap(&command_text)?;
+        }
         let result = self.execute_ast_inner(body_ast);
         self.debug_trap_function_line = old_debug_trap_function_line;
+        // GNU restores line_number to the function definition line when the
+        // body group finishes (the group's execute_command_internal unwinds
+        // line_number to the value set at 5351), so the RETURN trap action
+        // and the DEBUG fire for its command see the definition line
+        // (dbg-support.tests: "debug lineno: 30 fn1" and
+        // "return lineno: 30 fn1" at fn1's exit).
+        if result.is_ok() {
+            if let Some(line) = definition_line {
+                self.env_vars
+                    .insert("__RUBASH_CURRENT_LINE".to_string(), line.to_string());
+            }
+        }
         self.run_function_return_trap()?;
         {
             self.function_depth -= 1;
@@ -251,9 +286,6 @@ impl Executor {
             }
             if !self.bash_lineno_stack.is_empty() {
                 self.bash_lineno_stack.remove(0);
-            }
-            if self.bash_lineno_stack.is_empty() {
-                self.bash_lineno_stack.push("0".to_string());
             }
             if !self.bash_source_stack.is_empty() {
                 self.bash_source_stack.remove(0);

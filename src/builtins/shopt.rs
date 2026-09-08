@@ -251,6 +251,17 @@ pub(crate) fn set_option(env_vars: &mut HashMap<String, String>, name: &str, ena
                 std::env::remove_var("__RUBASH_SHOPT_CHECKHASH");
             }
         }
+        // GNU builtins/shopt.def:617-627 (shopt_set_debug_mode):
+        // error_trace_mode = function_trace_mode = debugging_mode, so turning
+        // extdebug on also enables the functrace and errtrace flags, and
+        // turning it off clears them (a later `set +T` then stops
+        // DEBUG/RETURN inheritance even with extdebug active,
+        // dbg-support.tests:19 vs :91).
+        "extdebug" => {
+            for option in ["functrace", "errtrace"] {
+                crate::builtins::set::set_shell_option(env_vars, option, enabled);
+            }
+        }
         _ => {}
     }
 
