@@ -97,12 +97,14 @@ impl Executor {
                 return format!("{name}={marker}{expanded}");
             }
             // A CA-marked compound value without expansions must reach the
-            // array storage verbatim: expand_embedded_parameters_mut performs
-            // assignment quote removal, which destroys the element quote
-            // grouping the storage parser needs (declare -a e=([0]="x y")
-            // must keep one element, GNU arrayfunc.c assign_array_var_from
-            // _string). Words containing $ or ` still take the expansion
-            // path below.
+            // array storage verbatim: the expansion pass performs assignment
+            // quote removal, which destroys the element quote grouping the
+            // storage parser needs (declare -a e=([0]="x y") must keep one
+            // element, GNU arrayfunc.c). Words containing $ or ` still take
+            // the expansion path below. Unmarked compound values (including
+            // the declare -a d='(...)' whole-single-quoted form) need a
+            // parser-side marker instead; do NOT widen this guard, it would
+            // suppress glob and brace expansion inside compound values.
             if compound_assignment
                 && !value.contains('$')
                 && !value.contains('`')
