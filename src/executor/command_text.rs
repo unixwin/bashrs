@@ -84,52 +84,6 @@ pub(in crate::executor) fn command_has_redirect(cmd: &CommandNode) -> bool {
         || cmd.redirect_err_append.is_some()
 }
 
-pub(in crate::executor) fn function_definition_command_is_printable(command: &CommandNode) -> bool {
-    !command.words.is_empty()
-        || command.pipeline_command.is_some()
-        || command.and_or_list.is_some()
-        || command.time_command.is_some()
-        || command.background_command.is_some()
-        || command.inverted_command.is_some()
-        || command.arithmetic_command.is_some()
-        || command.for_command.is_some()
-        || command.if_command.is_some()
-        || command.loop_command.is_some()
-        || command.conditional_command.is_some()
-        || command.subshell_command.is_some()
-        || command.case_command.is_some()
-        || command.select_command.is_some()
-        || command.brace_group.is_some()
-        || command.coproc_command.is_some()
-        || command.function_command.is_some()
-}
-
-pub(in crate::executor) fn function_definition_command_omits_terminator(
-    command: &CommandNode,
-) -> bool {
-    command.heredoc.is_some()
-        || matches!(
-            command.words.first().map(String::as_str),
-            Some("then" | "do" | "else" | "elif" | "fi" | "done")
-        )
-}
-
-pub(in crate::executor) fn function_definition_command_closes_block(command: &CommandNode) -> bool {
-    matches!(
-        command.words.first().map(String::as_str),
-        Some("else" | "elif" | "fi" | "done")
-    )
-}
-
-pub(in crate::executor) fn function_definition_command_opens_nested_body(
-    command: &CommandNode,
-) -> bool {
-    matches!(
-        command.words.first().map(String::as_str),
-        Some("then" | "do" | "else" | "elif")
-    )
-}
-
 pub(in crate::executor) fn function_definition_command_uses_source_text(
     command: &CommandNode,
 ) -> bool {
@@ -150,24 +104,6 @@ pub(in crate::executor) fn function_definition_command_uses_source_text(
         || command.brace_group.is_some()
         || command.coproc_command.is_some()
         || command.function_command.is_some()
-}
-
-pub(in crate::executor) fn write_function_definition_heredoc_body<W>(
-    command: &CommandNode,
-    stdout: &mut W,
-) -> io::Result<()>
-where
-    W: Write,
-{
-    let (Some(body), Some(delimiter)) = (&command.heredoc, &command.heredoc_delimiter) else {
-        return Ok(());
-    };
-    let body = body
-        .strip_prefix(crate::lexer::QUOTED_HEREDOC_MARKER)
-        .unwrap_or(body);
-    write!(stdout, "{body}")?;
-    writeln!(stdout, "{delimiter}")?;
-    Ok(())
 }
 
 pub(in crate::executor) fn append_function_redirect(
@@ -714,23 +650,4 @@ pub(in crate::executor) fn append_source_redirects(text: &mut String, cmd: &Comm
         text.push_str(" <<< ");
         text.push_str(here_string);
     }
-}
-
-pub(in crate::executor) fn function_here_string_text(
-    value: &str,
-    multi_command_body: bool,
-) -> String {
-    if value.contains('$') {
-        return format!("\"{}\"", value.replace('"', "\\\""));
-    }
-
-    if value.contains(char::is_whitespace) || value.contains('"') {
-        return shell_single_quote_assignment_value(value);
-    }
-
-    if multi_command_body {
-        return format!("\"{}\"", value.replace('"', "\\\""));
-    }
-
-    value.to_string()
 }

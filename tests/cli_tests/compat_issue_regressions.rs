@@ -1421,6 +1421,48 @@ fn double_quoted_parameter_alternate_keeps_quotes_literal() {
 }
 
 #[test]
+fn double_quoted_parameter_default_keeps_escaped_space_literal() {
+    // Inside a double-quoted ${v-word} the backslash of an escaped space
+    // is literal: bash lets \ escape only $, `, ", \, and newline inside
+    // double quotes. The unquoted form drops the backslash and keeps the
+    // space as one field (escspace C-quoted/D-alt-narrow/H-narrow-q).
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"unset v; printf "1=<%s>\n" "${v-a\ b}"; printf "2=<%s>\n" "${v:-a\ b}"; printf "3=<%s>\n" ${v-a\ b}; printf "4=<%s>\n" ${v-foo\\bar}"#)
+        .output()
+        .expect("run double-quoted escaped-space probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "1=<a\\ b>\n2=<a\\ b>\n3=<a b>\n4=<foo\\bar>\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
+fn double_quoted_parameter_alternate_keeps_escaped_space_literal() {
+    // Inside a double-quoted ${v-word} a backslash escapes only $, `,"',\, and
+    // a newline, so an escaped space keeps its backslash (a\ b) rather than
+    // collapsing to a space. Unquoted, the backslash is dropped and the space
+    // stays one field. Separately, an unquoted expansion of a value that
+    // already contains a backslash keeps it: w='a\ b' yields fields a\ and
+    // b, not a and b.
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(r#"unset v; printf '1=<%s>\n' "${v-a\ b}"; printf '2=<%s>\n' "${v:-a\ b}"; printf '3=<%s>\n' ${v-a\ b}"; printf '4=<%s>\n' ${v-foo\\bar}"#)
+        .output()
+        .expect("run double-quoted escaped-space probe");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "1=<a\\ b>\n2=<a\\ b>\n3=<a b>\n4=<foo\\bar>\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+}
+
+#[test]
 fn quoted_parameter_pattern_glob_chars_are_literal() {
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")

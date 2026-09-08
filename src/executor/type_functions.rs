@@ -1,12 +1,9 @@
 use super::*;
 
-fn clean_serialized_function_text(text: &str) -> String {
-    text.chars()
-        .filter(|ch| !matches!(*ch, '\x1a' | '\x1b' | '\x1c' | '\x1d' | '\x1e'))
-        .collect()
-}
-
 impl Executor {
+    /// `type NAME` (verbose) function description. The definition body is
+    /// rendered by the GNU print_cmd.c port so `type` and `declare -f`
+    /// agree byte-for-byte with upstream.
     pub(in crate::executor) fn write_function_description<W>(
         &self,
         name: &str,
@@ -17,26 +14,8 @@ impl Executor {
         W: Write,
     {
         writeln!(stdout, "{name} is a function")?;
-        writeln!(stdout, "{name} () ")?;
-        writeln!(stdout, "{{ ")?;
-        for (index, command) in body.iter().enumerate() {
-            let terminates_plain_commands = index + 1 < body.len() && command.heredoc.is_none();
-            if command.has_assignment("v") {
-                writeln!(stdout, "    v='^A'")?;
-                continue;
-            }
-            if command.words.is_empty() && !command.assignments.is_empty() {
-                writeln!(stdout, "    {}", function_assignment_text(command))?;
-                continue;
-            }
-            if let Some(line) =
-                self.function_command_description_line(command, terminates_plain_commands)
-            {
-                writeln!(stdout, "    {line}")?;
-                self.write_function_heredoc_body(command, stdout)?;
-            }
-        }
-        writeln!(stdout, "}}")?;
+        let text = crate::parser::ast_print::multiline_function_def_text(name, body);
+        writeln!(stdout, "{text}")?;
         Ok(())
     }
 
@@ -48,134 +27,8 @@ impl Executor {
         use crate::executor::shell_options::GlobalStdout;
         use std::io::Write;
         let mut stdout = GlobalStdout;
-        let _ = writeln!(stdout, "{name} is a function");
-        let _ = writeln!(stdout, "{name} () ");
-        let _ = writeln!(stdout, "{{ ");
-        for (index, command) in body.iter().enumerate() {
-            let terminates_plain_commands = index + 1 < body.len() && command.heredoc.is_none();
-            if command.has_assignment("v") {
-                let _ = writeln!(stdout, "    v='^A'");
-                continue;
-            }
-            if command.words.is_empty() && !command.assignments.is_empty() {
-                let _ = writeln!(stdout, "    {}", function_assignment_text(command));
-                continue;
-            }
-            if let Some(line) =
-                self.function_command_description_line(command, terminates_plain_commands)
-            {
-                let _ = writeln!(stdout, "    {line}");
-                let _ = self.write_function_heredoc_body(command, &mut stdout);
-            }
-        }
-        let _ = writeln!(stdout, "}}");
-    }
-
-    pub(in crate::executor) fn function_command_description_line(
-        &self,
-        command: &CommandNode,
-        terminates_plain_commands: bool,
-    ) -> Option<String> {
-        if function_definition_command_uses_source_text(command) {
-            let line = clean_serialized_function_text(&bash_command_source_text(command));
-            if !line.trim().is_empty() {
-                return Some(line);
-            }
-        }
-
-        if command.words.is_empty() {
-            return None;
-        }
-
-        let mut line =
-            clean_serialized_function_text(&command.words.join(" ").replace("$(<x1)", "$(< x1)"));
-        if !command_has_redirect(command) && command.heredoc.is_none() {
-            if terminates_plain_commands {
-                line.push(';');
-            }
-            return Some(line);
-        }
-
-        if let Some(delimiter) = &command.heredoc_delimiter {
-            line.push_str(" <<");
-            line.push_str(delimiter);
-        }
-        append_function_redirect(&mut line, command.redirect_in.as_ref(), "<");
-        let combined = command
-            .redirect_out
-            .as_ref()
-            .filter(|redirect| {
-                matches!(
-                    redirect.kind,
-                    crate::parser::RedirectKind::CombinedOutput
-                        | crate::parser::RedirectKind::CombinedAppend
-                )
-            })
-            .or_else(|| {
-                command.redirect_err_append.as_ref().filter(|redirect| {
-                    matches!(
-                        redirect.kind,
-                        crate::parser::RedirectKind::CombinedOutput
-                            | crate::parser::RedirectKind::CombinedAppend
-                    )
-                })
-            });
-        if let Some(redirect) = combined {
-            let op = if redirect.kind == crate::parser::RedirectKind::CombinedAppend {
-                "&>>"
-            } else {
-                "&>"
-            };
-            append_function_redirect(&mut line, Some(redirect), op);
-        } else {
-            append_function_redirect(
-                &mut line,
-                command.redirect_out.as_ref(),
-                command
-                    .redirect_out
-                    .as_ref()
-                    .filter(|redirect| redirect.clobber)
-                    .map(|_| ">|")
-                    .unwrap_or(">"),
-            );
-            append_function_redirect(&mut line, command.append.as_ref(), ">>");
-            append_function_redirect(
-                &mut line,
-                command.redirect_err.as_ref(),
-                command
-                    .redirect_err
-                    .as_ref()
-                    .filter(|redirect| redirect.clobber)
-                    .map(|_| "2>|")
-                    .unwrap_or("2>"),
-            );
-            append_function_redirect(&mut line, command.redirect_err_append.as_ref(), "2>>");
-        }
-        if command.heredoc.is_none() && terminates_plain_commands {
-            line.push(';');
-        }
-        Some(line)
-    }
-
-    pub(in crate::executor) fn write_function_heredoc_body<W>(
-        &self,
-        command: &CommandNode,
-        stdout: &mut W,
-    ) -> Result<(), ExecuteError>
-    where
-        W: Write,
-    {
-        let (Some(body), Some(delimiter)) = (&command.heredoc, &command.heredoc_delimiter) else {
-            return Ok(());
-        };
-
-        let body = body
-            .strip_prefix(crate::lexer::QUOTED_HEREDOC_MARKER)
-            .unwrap_or(body);
-        write!(stdout, "{body}")?;
-        writeln!(stdout, "{delimiter}")?;
-        writeln!(stdout)?;
-        Ok(())
+        let text = crate::parser::ast_print::multiline_function_def_text(name, body);
+        let _ = write!(stdout, "{name} is a function\n{text}\n");
     }
 
     pub(in crate::executor) fn print_upstream_type_function(
@@ -185,8 +38,8 @@ impl Executor {
     ) -> bool {
         // TODO(parse.y/print_cmd.c/type.def): Bash stores and prints the
         // original function command tree, including heredocs and coproc nodes.
-        // Rubash's parser does not preserve enough structure yet, so keep the
-        // upstream type*.sub renderings localized here.
+        // The ast_print module now covers ordinary trees; keep the upstream
+        // type*.sub renderings localized here until execution matches too.
         let script = self
             .env_vars
             .get("__RUBASH_SCRIPT_NAME")
