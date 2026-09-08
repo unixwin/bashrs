@@ -4,9 +4,22 @@ use super::dolbrace::{scan_braced_parameter, BraceContext, DolbraceState};
 pub(crate) fn remove_shell_quotes(raw: &str) -> String {
     let mut out = String::new();
     let mut chars = raw.chars().peekable();
+    // Array-subscript regions keep `\"` as a bare data quote: the subscript
+    // parser owns quote semantics there and the word-value contract expects
+    // the de-escaped form. Outside subscripts `\"` must survive expansion as
+    // data, so it travels as the walker's data-double-quote marker.
+    let mut subscript_depth = 0usize;
 
     while let Some(ch) = chars.next() {
         match ch {
+            '[' => {
+                subscript_depth += 1;
+                out.push(ch);
+            }
+            ']' if subscript_depth > 0 => {
+                subscript_depth -= 1;
+                out.push(ch);
+            }
             '$' if chars.peek() == Some(&'(') => {
                 copy_dollar_paren_substitution(&mut out, &mut chars);
             }
@@ -74,6 +87,20 @@ pub(crate) fn remove_shell_quotes(raw: &str) -> String {
                     out.push('\x1a');
                 } else if escaped == '\'' {
                     out.push('\x17');
+                } else if escaped == '"' {
+                    if subscript_depth > 0 {
+                        // Inside a subscript the de-escaped quote is data for
+                        // the subscript parser (`a[\" \"]=15` keeps `a[" "]=15`).
+                        out.push('"');
+                    } else {
+                        // `\"` outside quotes is a literal double quote that
+                        // must survive as data: downstream expansion scanners
+                        // toggle quote state on bare quotes, which would
+                        // swallow it (posixexp2 case 8, `echo \"`). \x18 is
+                        // the walker's data-double-quote marker, restored on
+                        // output.
+                        out.push('\x18');
+                    }
                 } else if escaped == '\\' {
                     // Keep a literal backslash distinct from the protected
                     // double-quote marker used by expansion internals.
@@ -466,3 +493,14 @@ fn copy_braced_parameter_unquoted(
         }
     }
 }
+
+#[cfg(test)]
+mod probe_tests {
+    #[test]
+    fn probe_escaped_quote_value() {
+        let out = super::remove_shell_quotes("a[\\\" \\\"]=15");
+        eprintln!("PROBE-OUT={out:?}");
+    }
+}
+
+

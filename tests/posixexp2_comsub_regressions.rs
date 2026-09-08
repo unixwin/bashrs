@@ -68,3 +68,49 @@ fn non_posix_brace_body_keeps_quote_operator_pairing() {
     assert_eq!(stdout, "}z\n");
     assert_eq!(code, Some(0));
 }
+
+#[test]
+fn assignment_alternate_unquoted_is_quote_removed_and_field_split() {
+    // posixexp2.tests case 35: the unquoted `=` alternate is quote-removed
+    // before assignment, and the expansion result field-splits.
+    let (stdout, _stderr, code) = rubash(r#"set -o posix; unset v; printf '<%s> ' ${v=a\ b} x ${v=c\ d}"#);
+    assert_eq!(stdout, "<a> <b> <x> <a> <b> ");
+    assert_eq!(code, Some(0));
+}
+
+#[test]
+fn assignment_alternate_double_quoted_keeps_literal_backslash() {
+    // posixexp2.tests case 36: inside double quotes `\` escapes only
+    // $, `, ", \, and newline, so `\ ` stays literal in the assigned value
+    // and the quoted expansion prints it verbatim.
+    let (stdout, _stderr, code) = rubash(r#"set -o posix; unset v; printf '<%s> ' "${v=a\ b}" x "${v=c\ d}""#);
+    assert_eq!(stdout, "<a\\ b> <x> <a\\ b> ");
+    assert_eq!(code, Some(0));
+}
+
+#[test]
+fn word_alternate_unquoted_never_field_splits() {
+    // posixexp2.tests case 37: the `-` alternate undergoes quote removal but
+    // its quoted-space markers survive, so the result stays one field.
+    let (stdout, _stderr, code) = rubash(r#"set -o posix; unset v; printf '<%s> ' ${v-a\ b} x ${v-c\ d}"#);
+    assert_eq!(stdout, "<a b> <x> <c d> ");
+    assert_eq!(code, Some(0));
+}
+
+#[test]
+fn assignment_inside_command_substitution_uses_inner_quote_context() {
+    // The `${v=...}` body inside a command substitution does not inherit the
+    // enclosing double-quoted word's quote context: GNU assigns `a b` here.
+    let (stdout, _stderr, code) = rubash(r#"unset v; echo "$(printf '<%s> ' ${v=a\ b})""#);
+    assert_eq!(stdout, "<a> <b> \n");
+    assert_eq!(code, Some(0));
+}
+
+#[test]
+fn escaped_quote_in_unquoted_alternate_yields_literal_quote() {
+    // posixexp2.tests cases 8/14: `\"` inside a `${...}` body is a literal
+    // data quote, not a syntax quote the expansion stages can swallow.
+    let (stdout, _stderr, code) = rubash(r#"set -o posix; unset v; echo "${IFS+\"}""#);
+    assert_eq!(stdout, "\"\n");
+    assert_eq!(code, Some(0));
+}
