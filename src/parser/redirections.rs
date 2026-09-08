@@ -334,6 +334,13 @@ pub(super) fn redirect_fd_var_prefix(tokens: &[Token], redirect_index: usize) ->
         .and_then(|index| tokens.get(index))?;
     let name = previous.value.strip_prefix('{')?.strip_suffix('}')?;
     if is_shell_identifier(name) {
+        return Some(name.to_string());
+    }
+    // bash's REDIR_VARASSIGN also accepts array elements: {fd[0]}>&1.
+    // Same grammar as the executor's dynamic_fd_var_name word path.
+    let (array_name, index) = name.split_once('[')?;
+    let index = index.strip_suffix(']')?;
+    if is_shell_identifier(array_name) && !index.is_empty() && index.chars().all(|ch| ch.is_ascii_digit()) {
         Some(name.to_string())
     } else {
         None
