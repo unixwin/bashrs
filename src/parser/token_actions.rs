@@ -224,6 +224,36 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                                 *i = next_i;
                             }
                         }
+                    } else if raw_word.ends_with(")'")
+                        && raw_word.contains("='(")
+                        && state.current_cmd.words.first().is_some_and(|command| {
+                            matches!(command.as_str(), "declare" | "typeset" | "local")
+                        })
+                        && state.current_cmd.words.iter().take(4).any(|argument| {
+                            (argument.starts_with('-') || argument.starts_with('+'))
+                                && argument.chars().any(|flag| flag == 'a' || flag == 'A')
+                        })
+                    {
+                        // Whole-single-quoted compound operand
+                        // (declare -a d='(...)'): mark the value so the
+                        // executor keeps it verbatim; the token value already
+                        // has the inner element quotes preserved.
+                        if let Some((lhs, raw_rhs)) = raw_word.split_once('=') {
+                            if valid_compound_assignment_lhs(lhs)
+                                && raw_rhs.starts_with("'(")
+                                && raw_rhs.ends_with(")'")
+                            {
+                                // Strip only the outer single quotes; the
+                                // inner double quotes are the element
+                                // grouping the storage parser needs.
+                                let inner = &raw_rhs[1..raw_rhs.len() - 1];
+                                word = format!(
+                                    "{lhs}={}{}",
+                                    crate::executor::types::COMPOUND_ASSIGNMENT_MARKER,
+                                    inner
+                                );
+                            }
+                        }
                     } else if word.ends_with('=') {
                         if let Some((compound_value, next_i)) =
                             collect_compound_assignment(tokens, *i)
