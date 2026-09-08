@@ -143,8 +143,11 @@ impl Executor {
         mark_env_name(&mut env_vars, ASSOC_VARS, "BASH_CMDS");
         env_vars.insert("BASH_ALIASES".to_string(), "()".to_string());
         mark_env_name(&mut env_vars, ASSOC_VARS, "BASH_ALIASES");
-        env_vars.insert("DIRSTACK".to_string(), String::new());
-        mark_env_name(&mut env_vars, ARRAY_VARS, "DIRSTACK");
+        // The stored DIRSTACK cell starts as an empty indexed array, not
+        // scalar-empty: a bare `declare -a` listing prints the last
+        // materialized cell (variables.c get_dirstack runs on named access
+        // only), and GNU shows `declare -a DIRSTACK=()` there.
+        store_indexed_array(&mut env_vars, "DIRSTACK", Vec::new());
         env_vars.insert("FUNCNAME".to_string(), String::new());
         mark_env_name(&mut env_vars, ARRAY_VARS, "FUNCNAME");
         env_vars

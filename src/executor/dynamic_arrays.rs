@@ -194,15 +194,32 @@ impl Executor {
     }
 
     pub(in crate::executor) fn sync_dynamic_assoc_vars(&mut self) {
-        self.env_vars
-            .insert("DIRSTACK".to_string(), self.dirstack_storage());
-        mark_env_name(&mut self.env_vars, ARRAY_VARS, "DIRSTACK");
+        // DIRSTACK is deliberately NOT synced here. GNU materializes the
+        // DIRSTACK array cell only when the variable is directly named:
+        // variables.c get_dirstack (1618-1630) rebuilds the array from
+        // get_directory_stack on each named access, while a bare list-all
+        // `declare -a` prints the last materialized cell -- which stays
+        // empty in a shell that never named DIRSTACK (array.tests
+        // `declare -a | ignore_builtin_arrays` lines). See
+        // sync_dirstack_cell for the named-access materialization.
         self.env_vars
             .insert("BASH_ALIASES".to_string(), self.bash_aliases_storage());
         mark_env_name(&mut self.env_vars, ASSOC_VARS, "BASH_ALIASES");
         self.env_vars
             .insert("BASH_CMDS".to_string(), self.bash_cmds_storage());
         mark_env_name(&mut self.env_vars, ASSOC_VARS, "BASH_CMDS");
+    }
+
+    /// Materializes the DIRSTACK array cell from the live directory stack.
+    /// GNU runs this getter only when DIRSTACK itself is named by a command
+    /// (named `declare -p DIRSTACK`, `declare -a DIRSTACK`, subscript
+    /// access, assignment) -- pushd/popd/dirs and unrelated declares leave
+    /// the stored cell untouched (variables.c:1618 get_dirstack,
+    /// builtins/pushd.def:669 get_directory_stack).
+    pub(in crate::executor) fn sync_dirstack_cell(&mut self) {
+        self.env_vars
+            .insert("DIRSTACK".to_string(), self.dirstack_storage());
+        mark_env_name(&mut self.env_vars, ARRAY_VARS, "DIRSTACK");
     }
 
     pub(in crate::executor) fn funcname_stack(&self) -> Vec<String> {

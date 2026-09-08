@@ -126,6 +126,12 @@ impl Executor {
         cmd: &CommandNode,
     ) -> Result<i32, ExecuteError> {
         self.sync_dynamic_assoc_vars();
+        // GNU materializes the DIRSTACK cell only when the command names
+        // DIRSTACK itself; a bare list-all `declare -a` must keep the cell
+        // empty (variables.c get_dirstack runs on named access only).
+        if declare_words_name_dirstack(&cmd.words[1..]) {
+            self.sync_dirstack_cell();
+        }
         let mut args = self.expand_declare_assignment_args(&cmd.words[1..]);
         if declare_args_request_integer(&args) {
             args = self.evaluate_declare_integer_assignment_args(&args);
@@ -426,4 +432,30 @@ impl Executor {
             set_var_attrs(&mut self.env_vars, &name, VarAttrs::default());
         }
     }
+}
+
+/// True when a declare/typeset/local command line explicitly names DIRSTACK
+/// (as an operand or assignment target). GNU variables.c get_dirstack runs
+/// the dynamic getter -- materializing the stored array cell -- only on
+/// named access; a bare list-all `declare -a` shows the last materialized
+/// cell, which stays empty when DIRSTACK was never named.
+fn declare_words_name_dirstack(words: &[String]) -> bool {
+    let mut options_ended = false;
+    for word in words {
+        if !options_ended {
+            if word == "--" {
+                options_ended = true;
+                continue;
+            }
+            if word.starts_with('-') || word.starts_with('+') {
+                continue;
+            }
+        }
+        let base = word.split('=').next().unwrap_or(word);
+        let base = base.split('[').next().unwrap_or(base);
+        if base == "DIRSTACK" {
+            return true;
+        }
+    }
+    false
 }
