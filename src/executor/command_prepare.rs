@@ -859,6 +859,39 @@ impl Executor {
             )));
         }
 
+        let positional_at = alternate.contains("$@")
+            || alternate.contains("${@}")
+            || alternate.contains("$*");
+        let posix_literal_quotes = self.posix_mode_enabled()
+            && alternate.starts_with("\"")
+            && alternate.ends_with("\"")
+            && alternate.len() >= 2;
+        // Fragments without $@/$* do not need the re-parse path, and the
+        // lexer strips quotes while building word tokens, so a re-parsed
+        // fragment loses the quoted/unquoted whitespace distinction
+        // (posixexp2 29: the IFS alternate must yield fields `abx{ {{`
+        // and `{}b`). The String path decodes quotes first and marks
+        // quoted whitespace, keeping the boundary intact. It is
+        // restricted to whitespace IFS: the whitespace sentinel only
+        // protects space/tab/newline, and a non-whitespace IFS character
+        // inside a quoted region must not split (GNU keeps a quoted
+        // `a:b` whole under IFS=:), so those fragments stay on the
+        // quote-aware re-parse path.
+        let ifs_all_whitespace = self
+            .env_vars
+            .get("IFS")
+            .map(|ifs| ifs.chars().all(|ch| matches!(ch, ' ' | '\t' | '\n')))
+            .unwrap_or(true);
+        if !positional_at && !posix_literal_quotes && ifs_all_whitespace {
+            let expanded = self.expand_alternate_parameter_word(alternate);
+            // A fully quoted empty alternate (foo:-quote-quote) is a
+            // quoted null: GNU yields one empty field, not zero
+            // (subst.c W_HASQUOTEDNULL).
+            if expanded.is_empty() && alternate.contains(['"', '\'']) {
+                return Some(vec![String::new()]);
+            }
+            return Some(self.field_split_values(&expanded));
+        }
         Some(self.expand_alternate_word_fragment(alternate))
     }
 

@@ -11,22 +11,46 @@ impl Executor {
         self.expand_embedded_parameters_with_context(word, false)
     }
 
+    // Variant for `${var-word}` style alternate words: whitespace that was
+    // inside quotes is marked \x1c so the field splitter keeps it glued
+    // (posixexp2 37), while bare spaces stay splittable.
+    pub(in crate::executor) fn expand_embedded_parameters_protect_ifs(
+        &self,
+        word: &str,
+    ) -> String {
+        self.expand_embedded_parameters_with_context_inner(word, false, true)
+    }
+
     pub(in crate::executor) fn expand_embedded_parameters_for_heredoc(&self, word: &str) -> String {
         self.expand_embedded_parameters_with_context(word, true)
     }
 
     fn expand_embedded_parameters_with_context(&self, word: &str, heredoc: bool) -> String {
+        self.expand_embedded_parameters_with_context_inner(word, heredoc, false)
+    }
+
+    fn expand_embedded_parameters_with_context_inner(
+        &self,
+        word: &str,
+        heredoc: bool,
+        protect_ifs: bool,
+    ) -> String {
         let depth = EXPAND_DEPTH.with(|d| d.get());
         if depth >= MAX_EXPAND_DEPTH {
             return word.to_string();
         }
         EXPAND_DEPTH.with(|d| d.set(depth + 1));
-        let result = self.expand_embedded_parameters_inner(word, heredoc);
+        let result = self.expand_embedded_parameters_inner(word, heredoc, protect_ifs);
         EXPAND_DEPTH.with(|d| d.set(depth));
         result
     }
 
-    fn expand_embedded_parameters_inner(&self, word: &str, heredoc: bool) -> String {
+    fn expand_embedded_parameters_inner(
+        &self,
+        word: &str,
+        heredoc: bool,
+        protect_ifs: bool,
+    ) -> String {
         // TODO(subst.c/subst.h): This is a narrow parameter-expansion subset.
         // GNU Bash handles quoting state, operators like ${name:-word},
         // positional/special parameters, arrays, command substitution, and IFS
@@ -36,6 +60,11 @@ impl Executor {
         let mut in_double = false;
 
         while let Some(ch) = chars.next() {
+            if protect_ifs && in_double && matches!(ch, ' ' | '\t' | '\n') {
+                output.push('\x1c');
+                output.push(ch);
+                continue;
+            }
             if ch == '\x1a' {
                 output.push('`');
                 continue;
@@ -92,6 +121,9 @@ impl Executor {
                 for quoted_ch in chars.by_ref() {
                     if quoted_ch == '\'' {
                         break;
+                    }
+                    if protect_ifs && matches!(quoted_ch, ' ' | '\t' | '\n') {
+                        output.push('\x1c');
                     }
                     output.push(quoted_ch);
                 }

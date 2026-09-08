@@ -50,10 +50,21 @@ fn is_ifs_whitespace(ch: char) -> bool {
     matches!(ch, ' ' | '\t' | '\n')
 }
 
+// \x1c marks whitespace that was quoted/escaped inside a `${var-word}`
+// style alternate: GNU removes the quotes but keeps such whitespace out of
+// field splitting (posixexp2 37). The marker is consumed here and the
+// protected char becomes plain field data.
 fn split_ifs_whitespace(value: &str, ifs: &str) -> Vec<String> {
     let mut fields = Vec::new();
     let mut current = String::new();
-    for ch in value.chars() {
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1c' {
+            if let Some(protected) = chars.next() {
+                current.push(protected);
+            }
+            continue;
+        }
         if ifs.contains(ch) {
             if !current.is_empty() {
                 fields.push(std::mem::take(&mut current));
@@ -76,6 +87,14 @@ fn split_mixed_ifs(value: &str, ifs: &str) -> Vec<String> {
 
     while index < chars.len() {
         let ch = chars[index];
+        if ch == '\x1c' {
+            index += 1;
+            if index < chars.len() {
+                current.push(chars[index]);
+                index += 1;
+            }
+            continue;
+        }
         if !ifs.contains(ch) {
             current.push(ch);
             index += 1;

@@ -254,10 +254,13 @@ impl<'a> Lexer<'a> {
                     // A brace group adjacent to a closed parameter expansion
                     // continues the same word (parse.y read_token_word keeps
                     // scanning until a real metacharacter): "${a}{x,y}" is
-                    // one word whose brace group then expands.
+                    // one word whose brace group then expands. A `}` right
+                    // after the close is literal word text too (GNU probe:
+                    // `echo ${x-d{}}` is the single word d{}; splitting it
+                    // off made the trailing brace a standalone word).
                     if self
                         .peek()
-                        .is_some_and(|ch| !is_word_delimiter(ch) || ch == '{')
+                        .is_some_and(|ch| !is_word_delimiter(ch) || ch == '{' || ch == '}')
                     {
                         return Some(self.finish_word_token(start, false));
                     }

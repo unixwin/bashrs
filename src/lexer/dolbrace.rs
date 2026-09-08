@@ -262,6 +262,16 @@ mod tests {
     };
 
     #[test]
+    fn posix_dquote_interleaved_quotes_close_at_first_unquoted_brace() {
+        // posixexp2 test 28 body: in POSIX mode inside double quotes the
+        // big-hammer makes `'` literal, so the body closes at the FIRST `}`
+        // after `x'` (GNU probe: the word ends before `}'x"'}"...`).
+        let word = r#"${IFS+"'"x ~ x'}'x"'}"x}" #'"#;
+        let scan = scan_braced_parameter(word, OUTER_DOUBLE_POSIX).unwrap();
+        assert_eq!(&word[..scan.end], "${IFS+\"'\"x ~ x'}");
+    }
+
+    #[test]
     fn initial_parameter_word_state_is_preserved() {
         let scan = scan_braced_parameter("${name}", PARAMETER_WORD).unwrap();
         assert_eq!(scan.final_state, DolbraceState::Word);
