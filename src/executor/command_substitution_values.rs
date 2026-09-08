@@ -339,17 +339,9 @@ impl Executor {
 
         if let Some((var_name, pattern, replacement, global)) = parse_parameter_replacement(name) {
             let pattern = self.expand_parameter_pattern_word(pattern);
-            let replacement = decode_parameter_replacement_quotes(
-                &self.expand_embedded_parameters_preserving_escaped_single_quotes(replacement),
-            );
+            let replacement = self.expand_patsub_replacement_text(replacement);
             return self.positional_modified_values(var_name, quoted, |value| {
-                replace_parameter_pattern(
-                    value,
-                    &pattern,
-                    &replacement,
-                    global,
-                    self.nocasematch_enabled(),
-                )
+                self.replace_patsub_pattern(value, &pattern, &replacement, global)
             });
         }
 

@@ -6,15 +6,62 @@ pub(in crate::executor) fn replace_parameter_pattern(
     replacement: &str,
     global: bool,
     nocase: bool,
+    patsub_replacement: bool,
 ) -> String {
+    // GNU subst.c: parameter_brace_patsub:9440-9444 sets MATCH_EXPREP only
+    // when the patsub_replacement shopt is on AND shouldexp_replacement
+    // (subst.c:9150-9181) finds an unquoted `&`, `\\&`, or `\\\\` in the
+    // expanded replacement. pat_subst then runs strcreplace per match.
+    let expand_amp = patsub_replacement && shouldexp_replacement(replacement);
+    let amp = |matched: &str| -> String {
+        if expand_amp {
+            expand_replacement_amp(matched, replacement)
+        } else {
+            replacement.to_string()
+        }
+    };
+
+    // GNU parameter_brace_patsub (subst.c:9451-9465): with `//` the match
+    // type is MATCH_ANY and a leading `#`/`%` is literal; only the
+    // single-slash form anchors at the beginning (`#`) or end (`%`).
+    if !global {
+        if let Some(prefix_pattern) = pattern.strip_prefix('#') {
+            return replace_parameter_prefix(value, prefix_pattern, &amp);
+        }
+
+        if let Some(suffix_pattern) = pattern.strip_prefix('%') {
+            return replace_parameter_suffix(value, suffix_pattern, &amp);
+        }
+    }
+
     if pattern.is_empty() {
-        return value.to_string();
+        // GNU pat_subst:9197-9229: a null pattern anchored at the beginning
+        // prefixes REP, at the end appends REP, with `&` expanding to the
+        // empty match. Unanchored, MATCH_ANY matches the empty string
+        // everywhere; a global substitution inserts REP at every position
+        // and copies one character after each zero-length match
+        // (pat_subst:9286-9304).
+        if !global {
+            return format!("{}{value}", amp(""));
+        }
+        let mut output = String::new();
+        for (_, ch) in value.char_indices() {
+            output.push_str(&amp(""));
+            output.push(ch);
+        }
+        output.push_str(&amp(""));
+        return output;
     }
 
     // Bash's glob `*` also matches an empty parameter value. Handle this
     // before the replacement loop so an empty match cannot loop forever.
-    if value.is_empty() && parameter_pattern_match(pattern, "", nocase) {
-        return replacement.to_string();
+    // GNU pat_subst:9230-9232: an empty string with a matching pattern
+    // yields the replacement with `&` expanding to the empty match.
+    if value.is_empty() {
+        if parameter_pattern_match(pattern, "", nocase) {
+            return amp("");
+        }
+        return String::new();
     }
 
     if global && replacement.is_empty() {
@@ -26,20 +73,12 @@ pub(in crate::executor) fn replace_parameter_pattern(
         }
     }
 
-    if let Some(prefix_pattern) = pattern.strip_prefix('#') {
-        return replace_parameter_prefix(value, prefix_pattern, replacement);
-    }
-
-    if let Some(suffix_pattern) = pattern.strip_prefix('%') {
-        return replace_parameter_suffix(value, suffix_pattern, replacement);
-    }
-
     if !pattern_contains_glob(pattern) {
         // `\x14` is the internal marker for a literal backslash decoded by
         // decode_parameter_pattern_quotes; plain string replacement must
         // match the real `\` character in the value.
         let literal = normalize_parameter_pattern_backslashes(pattern);
-        return replace_with_amp(value, &literal, replacement, global, nocase);
+        return replace_with_amp(value, &literal, replacement, global, nocase, expand_amp);
     }
 
     // A quoted backslash in a replacement pattern is a literal character,
@@ -64,8 +103,20 @@ pub(in crate::executor) fn replace_parameter_pattern(
         };
 
         output.push_str(&value[cursor..start]);
-        output.push_str(replacement);
-        cursor = end;
+        output.push_str(&amp(&value[start..end]));
+        if end == start {
+            // GNU pat_subst:9286-9304: on a zero-length match copy one
+            // character so the scan advances past it.
+            match value[end..].chars().next() {
+                Some(ch) => {
+                    output.push(ch);
+                    cursor = end + ch.len_utf8();
+                }
+                None => return output,
+            }
+        } else {
+            cursor = end;
+        }
 
         if !global {
             output.push_str(&value[cursor..]);
@@ -97,23 +148,23 @@ fn normalize_parameter_pattern_backslashes(pattern: &str) -> String {
 pub(in crate::executor) fn replace_parameter_prefix(
     value: &str,
     pattern: &str,
-    replacement: &str,
+    amp: &dyn Fn(&str) -> String,
 ) -> String {
     let Some(end) = find_parameter_prefix_match(value, pattern) else {
         return value.to_string();
     };
-    format!("{replacement}{}", &value[end..])
+    format!("{}{}", amp(&value[..end]), &value[end..])
 }
 
 pub(in crate::executor) fn replace_parameter_suffix(
     value: &str,
     pattern: &str,
-    replacement: &str,
+    amp: &dyn Fn(&str) -> String,
 ) -> String {
     let Some(start) = find_parameter_suffix_match(value, pattern) else {
         return value.to_string();
     };
-    format!("{}{replacement}", &value[..start])
+    format!("{}{}", &value[..start], amp(&value[start..]))
 }
 
 pub(super) fn pattern_contains_glob(pattern: &str) -> bool {
@@ -397,18 +448,49 @@ pub(in crate::executor) fn shell_single_quote_assignment_value(value: &str) -> S
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-/// Expands `&` in a patsub replacement string to the matched text, like Bash
-/// (subst.c replace_pattern): `&` copies the match, `\&` is a literal `&`.
+/// GNU subst.c shouldexp_replacement (subst.c:9150-9181): the replacement
+/// needs the strcreplace pass when it contains an unquoted `&`, a `\&`,
+/// or a `\\` (an escaped backslash).
+fn shouldexp_replacement(replacement: &str) -> bool {
+    let mut chars = replacement.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' => match chars.peek() {
+                Some('&') | Some('\\') => return true,
+                Some(_) => {
+                    chars.next();
+                }
+                None => {}
+            },
+            '&' => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Expands `&` in a patsub replacement string to the matched text, like GNU
+/// strcreplace (stringlib.c:180) called from pat_subst (subst.c:9252) with
+/// flags 2: each `&` copies the match, `\&` is a literal `&`, and with
+/// flag 2 `\\` is a literal backslash. Any other backslash stays literal
+/// together with the character it precedes.
 fn expand_replacement_amp(matched: &str, replacement: &str) -> String {
     let mut output = String::new();
     let mut chars = replacement.chars().peekable();
     while let Some(ch) = chars.next() {
         match ch {
             '&' => output.push_str(matched),
-            '\\' if chars.peek() == Some(&'&') => {
-                chars.next();
-                output.push('&');
-            }
+            '\\' => match chars.peek() {
+                Some('&') => {
+                    chars.next();
+                    output.push('&');
+                }
+                Some('\\') => {
+                    chars.next();
+                    output.push('\\');
+                }
+                _ => output.push('\\'),
+            },
             _ => output.push(ch),
         }
     }
@@ -422,7 +504,38 @@ mod tests {
 
     #[test]
     fn glob_replacement_matches_empty_value() {
-        assert_eq!(replace_parameter_pattern("", "*", "w", false, false), "w");
+        assert_eq!(replace_parameter_pattern("", "*", "w", false, false, true), "w");
+    }
+
+    #[test]
+    fn ampersand_expansion_follows_shopt() {
+        // shopt patsub_replacement on: & copies the match (subst.c:9252).
+        assert_eq!(replace_parameter_pattern("abcd", "b", "x&y", false, false, true), "axbycd");
+        // shopt off: & stays literal (no MATCH_EXPREP, subst.c:9430-9431).
+        assert_eq!(replace_parameter_pattern("abcd", "b", "x&y", false, false, false), "ax&ycd");
+    }
+
+    #[test]
+    fn escaped_ampersand_and_backslash_are_literal() {
+        // strcreplace flags=2 (stringlib.c:223-226): \& -> &, \\ -> \.
+        assert_eq!(replace_parameter_pattern("abcd", "b", "\\&", false, false, true), "a&cd");
+        assert_eq!(replace_parameter_pattern("abcd", "b", "\\\\", false, false, true), "a\\cd");
+    }
+
+    #[test]
+    fn global_substitution_treats_hash_anchor_as_literal() {
+        // subst.c:9452-9453: MATCH_GLOBREP forces MATCH_ANY, so a leading
+        // `#` in a `//` substitution is a literal pattern character.
+        assert_eq!(replace_parameter_pattern("abc", "#abc", "foo", true, false, true), "abc");
+        assert_eq!(replace_parameter_pattern("abc", "#a", "foo", false, false, true), "foobc");
+    }
+
+    #[test]
+    fn anchored_empty_pattern_inserts_replacement() {
+        // pat_subst:9197-9229: null pattern + MATCH_BEG prefixes REP with
+        // `&` expanding to the empty match.
+        assert_eq!(replace_parameter_pattern("one", "#", "&two", false, false, true), "twoone");
+        assert_eq!(replace_parameter_pattern("one", "%", "&two", false, false, true), "onetwo");
     }
 
     #[test]
@@ -437,6 +550,7 @@ fn replace_with_amp(
     replacement: &str,
     global: bool,
     nocase: bool,
+    expand_amp: bool,
 ) -> String {
     let mut output = String::new();
     let mut last = 0;
@@ -446,7 +560,11 @@ fn replace_with_amp(
             break;
         }
         output.push_str(&value[last..index]);
-        output.push_str(&expand_replacement_amp(matched, replacement));
+        if expand_amp {
+            output.push_str(&expand_replacement_amp(matched, replacement));
+        } else {
+            output.push_str(replacement);
+        }
         last = index + matched.len();
         replaced = true;
     }

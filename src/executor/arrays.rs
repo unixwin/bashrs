@@ -21,10 +21,10 @@ use std::fs;
 
 use super::{
     apply_parameter_case_mod, assoc_value_at, case_pattern_matches,
-    decode_parameter_replacement_quotes, eval_arith_value, eval_conditional_arith_value,
+    eval_arith_value, eval_conditional_arith_value,
     is_marked_var, is_shell_name, parse_indirect_pattern_removal, parse_parameter_case_mod,
     parse_parameter_replacement, parse_parameter_transform, pattern_contains_glob, quote_assoc_key,
-    remove_parameter_pattern, replace_parameter_pattern, split_storage_words,
+    remove_parameter_pattern, split_storage_words,
     strip_matching_quotes, unquote_storage_value, Executor, ParameterTransform,
     ARRAY_FIELD_SPLIT_MARKER, ASSOC_VARS,
 };

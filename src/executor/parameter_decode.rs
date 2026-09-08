@@ -292,6 +292,14 @@ fn push_quoted_pattern_str(output: &mut String, value: &str) {
 }
 
 fn push_quoted_pattern_char(output: &mut String, ch: char) {
+    if ch == '\'' {
+        // A decoded literal quote must survive the embedded-parameter
+        // expander, which drops a bare quote as an unclosed span. Emit it
+        // escaped; the expander turns \\' into data.
+        output.push('\\');
+        output.push('\'');
+        return;
+    }
     if matches!(ch, '*' | '?' | '[' | '\\') {
         output.push('\x11');
     }

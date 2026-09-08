@@ -6,13 +6,11 @@ pub(in crate::executor) fn is_arithmetic_command_words(words: &[String]) -> bool
 
 pub(in crate::executor) fn echo_args_without_background_marker(args: &[String]) -> Vec<String> {
     // TODO(parse.y/jobs.c): `&` is a command terminator that launches the
-    // preceding command asynchronously. Until the parser represents it that
-    // way, keep source6.sub's `echo ... > fifo &` from writing a literal ampersand.
-    let mut args = args.to_vec();
-    if args.last().map(String::as_str) == Some("&") {
-        args.pop();
-    }
-    args
+    // preceding command asynchronously. The parser now consumes a source-level
+    // `&` (token_actions sets CommandNode::background), so args ending in `&`
+    // are field-split expansion data (e.g. echo ${s//?/\\& }) and must be
+    // printed. Keep the hook for legacy word shapes that still carry `&`.
+    args.to_vec()
 }
 
 pub(in crate::executor) fn is_null_device(path: &str) -> bool {
