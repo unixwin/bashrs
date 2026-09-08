@@ -460,3 +460,11 @@ dbg-support 635、array 456、assoc 360、nameref 303、new-exp 241、more-exp 2
 
 ### 子代理通道
 本会话 8/8 全部在开工前夭折（零产物）。所有任务单兵完成。通道修复前不建议再派发。
+
+## 2026-09-07 重大发现：上游仿真层拦截套件，台账测的是仿真不是语义
+
+- `src/executor/upstream_scripts.rs` 的 `try_upstream_scripts()` 按 script 路径/CWD 拦截 ~70 个上游测试套件，输出硬编码仿真结果——83 套件台账历轮数字（含真基线轮）衡量的是**仿真保真度**，非 rubash 真实 GNU 语义。
+- 已加测量旁路开关 `__RUBASH_NO_UPSTREAM_SCRIPTS=1`（runner 已启用）：旁路时全部套件走真实 lexer/parser/executor。
+- 复合赋值 RAW 保留（token_actions）：`name=(...) `原子词加 `__RUBASH_CA1__`+原样 RHS，独立赋值语句形式已端到端正确；declare 操作数形式经 and_or_list 执行路径仍有二次去引号，待该路径与 materialized 分派的合流后收敛。
+- 执行分派存在双路径：单命令走 execute_materialized_command（instrumented 可见），多命令走 and_or_list 快路径（绕过前者）。后续插桩需两路同插。
+- 下一步：旁路真基线全量重跑 → 真实语义缺口地图 → 按根因逐族收敛，仿真层按 AGENTS.md 规则待真实语义达标后退役。

@@ -165,7 +165,23 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                 } else {
                     let mut word = token.value.clone();
                     let raw_word = token.raw.clone();
-                    if word.ends_with('=') {
+                    if raw_word.ends_with(')') && raw_word.contains("=(") {
+                        // Atomic compound (the lexer keeps name=(...) whole
+                        // through whitespace and metacharacters, GNU
+                        // read_token_word): mark it and preserve the raw
+                        // right-hand side verbatim so element quote grouping
+                        // survives into the array storage, exactly like the
+                        // split-form path below.
+                        if let Some((lhs, rhs)) = raw_word.split_once('=') {
+                            if valid_compound_assignment_lhs(lhs) {
+                                word = format!(
+                                    "{lhs}={}",
+                                    crate::executor::types::COMPOUND_ASSIGNMENT_MARKER
+                                );
+                                word.push_str(rhs);
+                            }
+                        }
+                    } else if word.ends_with('=') {
                         if let Some((compound_value, next_i)) =
                             collect_compound_assignment(tokens, *i)
                         {
@@ -902,4 +918,25 @@ fn collect_process_substitution_suffix(
     }
 
     (value, raw, index.saturating_sub(1))
+}
+
+/// Name-side validator for atomic compound assignments: optional
+/// `name[subscript]` head, then identifier rules (GNU arrayfunc.c).
+fn valid_compound_assignment_lhs(lhs: &str) -> bool {
+    let head = if lhs.ends_with(']') {
+        let Some(open) = lhs.rfind('[') else {
+            return false;
+        };
+        let subscript = &lhs[open + 1..lhs.len() - 1];
+        if subscript.contains('[') || subscript.contains(']') {
+            return false;
+        }
+        &lhs[..open]
+    } else {
+        lhs
+    };
+    let bytes = head.as_bytes();
+    !bytes.is_empty()
+        && bytes.iter().all(|b| b.is_ascii_alphanumeric() || *b == b'_')
+        && bytes.iter().any(|b| b.is_ascii_alphabetic() || *b == b'_')
 }
