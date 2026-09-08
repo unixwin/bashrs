@@ -482,3 +482,24 @@ dbg-support 635、array 456、assoc 360、nameref 303、new-exp 241、more-exp 2
 - 修复：`bash scripts/setup-bashdb-fixture.sh C:/Users/Administrator/Downloads/bashdb-5.2-1.2.0/bashdb-5.2-1.2.0/_install`——**必须用 `_install`（构建产物）**，源码树 launcher 含未展开 autoconf 变量会 syntax error。
 - **进程卫生教训**：本机多代理共享——taskkill 前必须 `wmic process get commandline` 确认归属；本轮误杀了并行代理的 niubash-runtime 测试进程链。
 - 待办：fixture 修复后重跑 bashdb_compat 子集确认 master 基线，再分层重落 P1（每层：lib→cli→bashdb 子集→np 探针）。
+
+## 目标轮 2：P1 复合赋值引号分组——完整修复落地（commit c7ee8df1）
+
+### 修复链（四层，全部经真实语义验证）
+1. **解析器收集器 RAW 合并**（assignment.rs）：词法在复合值内引号含空白处分裂的词元，在 collect_compound_assignment 内按 raw 引号配对重新接合——`[5]="hello` + `world\"` 重接为 `[5]="hello world\"` 单元素。
+2. **declare 操作数收集器接入**（token_actions.rs else 分支）：`declare -a e=( ... )` 的分裂形式复合操作数改走引号保全收集器（此前走词值去引号路径）。
+3. **Word 臂原子复合处理**（token_actions.rs）：非首词的原子 `name=(...)` 词元以 CA 标记 + raw RHS 入词表（对齐 9ad47872 的首词路径）。
+4. **执行器逐字守卫**（parameter_core.rs expand_word_mut_with_context 赋值路径）：CA 标记且无 $/反引号的复合值绕过赋值引号剥离展开，逐字到达存储解析器。
+
+### 量化（true-baseline 旁路口径，WSL GNU 5.2.21 基线）
+- array: 456 → **226**（−50%）
+- assoc: 358 → **134**（−63%）
+- quotearray: 153 → **67**（−56%）
+- P1 族合计 −540 diff 行（−56%；bash-tests-rw LF 归一化口径）；四形式探针与 GNU 完全一致
+- cli_tests（跳 bashdb）：**0 新增失败，修复 5 个**（含 issue78 多行数组 2 个）
+- lib：338 通过（1 个已知 PATH 竞态 flaky）
+
+### 方法论沉淀
+- **stderr 可见性**：eprintln 调试输出在 `2>&1 | head` 管道下会被吞——必须重定向到文件再读。
+- **词元流侦察**：handle_token 顶部 DBG-TOK 全量词元转储 + 判别探针（引号单参数 vs 裸形式）是定位词法/解析/展开分层故障的最短路径。
+- **残余 P1 缺口**（226+134+67 行）：readonly 声明未赋值列出、`declare -a e[10]=test` 尺寸提示、复合内 `&` 语法错误继续语义、DA/引用元素等——下轮继续。
