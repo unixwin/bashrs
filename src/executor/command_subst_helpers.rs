@@ -152,17 +152,10 @@ fn push_backtick_source_char(output: &mut String, ch: char, single: bool) {
 }
 
 pub(super) fn unescape_remaining_shell_escapes(value: &str) -> String {
-    unescape_remaining_shell_escapes_inner(value, false)
+    unescape_remaining_shell_escapes_inner(value)
 }
 
-// `${var-word}` style alternates keep escaped whitespace protected from
-// field splitting (posixexp2 37: `${v-a\ b}` is the single field `a b`),
-// while the `=`/`:=` assignment forms expand to plain data and split.
-pub(super) fn unescape_remaining_shell_escapes_protect_ifs(value: &str) -> String {
-    unescape_remaining_shell_escapes_inner(value, true)
-}
-
-fn unescape_remaining_shell_escapes_inner(value: &str, protect_ifs: bool) -> String {
+fn unescape_remaining_shell_escapes_inner(value: &str) -> String {
     let mut output = String::new();
     let mut chars = value.chars().peekable();
     while let Some(ch) = chars.next() {
@@ -180,9 +173,6 @@ fn unescape_remaining_shell_escapes_inner(value: &str, protect_ifs: bool) -> Str
             ) = chars.peek().copied()
             {
                 chars.next();
-                if protect_ifs && next == ' ' {
-                    output.push('\x1c');
-                }
                 output.push(next);
                 continue;
             }

@@ -1,6 +1,20 @@
 use super::*;
 use crate::executor::parameter_core::word_contains_current_shell_command_substitution;
 
+// Whitespace that an expansion produced inside a quoted region of an
+// alternate word must survive field splitting (GNU carries CTLESC on
+// quoted expansion results); the \x1c prefix marks it for the splitter.
+fn mark_alternate_whitespace(value: &str) -> String {
+    let mut marked = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if matches!(ch, ' ' | '\t' | '\n') {
+            marked.push('\x1c');
+        }
+        marked.push(ch);
+    }
+    marked
+}
+
 impl Executor {
     pub(in crate::executor) fn expand_embedded_parameters_mut(&mut self, word: &str) -> String {
         self.expand_embedded_parameters_mut_with_context(word, SubstitutionQuoteContext::Unquoted)
@@ -11,7 +25,30 @@ impl Executor {
         word: &str,
         context: SubstitutionQuoteContext,
     ) -> String {
-        self.expand_embedded_parameters_mut_inner(word, context, false)
+        self.expand_embedded_parameters_mut_inner(word, context, false, false)
+    }
+
+    // Alternate-operator rhs (`${var-word}` word half) expansion: the same
+    // walker with Unquoted quote removal plus two additions GNU applies to
+    // an unquoted word's expansion (subst.c expand_string_for_rhs with
+    // quoted == 0): whitespace that was quoted or escaped is marked with
+    // the \x1c sentinel so the field splitter keeps it glued to its field
+    // (posixexp2 37, more-exp ${B:-"$A"}), and backslash escapes resolve
+    // per unquoted-word rules (\$name is a protected literal $ that must
+    // NOT expand -- rhs-exp t33/t34 -- while \p drops the backslash,
+    // t47). The quote structure stays in the word during the walk, so
+    // expansions that happen inside a quoted region see in_double and
+    // their own whitespace gets the sentinel too.
+    pub(in crate::executor) fn expand_embedded_parameters_alternate_mut(
+        &mut self,
+        word: &str,
+    ) -> String {
+        self.expand_embedded_parameters_mut_inner(
+            word,
+            SubstitutionQuoteContext::Unquoted,
+            false,
+            true,
+        )
     }
 
     // Here-string content has already had quote removal applied by the parser
@@ -20,7 +57,7 @@ impl Executor {
     // mirrors GNU subst.c here-string handling, where the word is expanded
     // without re-parsing quotes.
     pub(in crate::executor) fn expand_here_string_mut(&mut self, word: &str) -> String {
-        self.expand_embedded_parameters_mut_inner(word, SubstitutionQuoteContext::Unquoted, true)
+        self.expand_embedded_parameters_mut_inner(word, SubstitutionQuoteContext::Unquoted, true, false)
     }
 
     fn expand_embedded_parameters_mut_inner(
@@ -28,6 +65,7 @@ impl Executor {
         word: &str,
         context: SubstitutionQuoteContext,
         heredoc: bool,
+        alternate: bool,
     ) -> String {
         self.apply_parameter_assignment_expansions_in_word(word);
         let saved_parameter_state = word_contains_current_shell_command_substitution(word)
@@ -37,6 +75,7 @@ impl Executor {
             saved_parameter_state.as_ref(),
             context,
             heredoc,
+            alternate,
         );
         let expanded = if word.contains("$(") || word.contains('`') {
             if matches!(context, SubstitutionQuoteContext::HereDocument) {
@@ -62,12 +101,20 @@ impl Executor {
         saved_parameter_state: Option<&(std::collections::HashMap<String, String>, Vec<i32>)>,
         context: SubstitutionQuoteContext,
         heredoc: bool,
+        alternate: bool,
     ) -> String {
         let mut output = String::new();
         let mut chars = word.chars().peekable();
         let mut in_double = false;
 
         while let Some(ch) = chars.next() {
+            // Alternate rhs: whitespace inside a quoted region is quote
+            // data for the field splitter even after quote removal.
+            if alternate && in_double && matches!(ch, ' ' | '\t' | '\n') {
+                output.push('\x1c');
+                output.push(ch);
+                continue;
+            }
             if ch == '\x1a' {
                 output.push('`');
                 continue;
@@ -121,9 +168,67 @@ impl Executor {
                     if quoted_ch == '\'' {
                         break;
                     }
+                    if alternate && matches!(quoted_ch, ' ' | '\t' | '\n') {
+                        output.push('\x1c');
+                    }
                     output.push(quoted_ch);
                 }
                 continue;
+            }
+
+            if ch == '\\' && alternate {
+                // Unquoted-word escape rules for the alternate rhs: $, `,
+                // \\, " keep their protection; an escaped blank stays out
+                // of field splitting; a backslash before any other
+                // character is removed (GNU quote removal).
+                match chars.peek().copied() {
+                    Some('`') => {
+                        chars.next();
+                        output.push('\x1a');
+                        continue;
+                    }
+                    Some('$') | Some('"') => {
+                        let next = chars.next().unwrap();
+                        output.push(next);
+                        continue;
+                    }
+                    Some('\\') => {
+                        chars.next();
+                        output.push('\\');
+                        continue;
+                    }
+                    Some('\'') => {
+                        chars.next();
+                        if in_double {
+                            // GNU dquote rule: a backslash before an
+                            // ordinary character is literal data.
+                            output.push('\\');
+                        }
+                        output.push('\'');
+                        continue;
+                    }
+                    Some('\n') | Some('\r') => {
+                        chars.next();
+                        continue;
+                    }
+                    Some(ws @ (' ' | '\t')) => {
+                        chars.next();
+                        output.push('\x1c');
+                        output.push(ws);
+                        continue;
+                    }
+                    Some(other) => {
+                        chars.next();
+                        if in_double {
+                            // GNU dquote rule: a backslash before an
+                            // ordinary character is literal data.
+                            output.push('\\');
+                        }
+                        output.push(other);
+                        continue;
+                    }
+                    None => {}
+                }
             }
 
             if ch == '\\' {
@@ -179,7 +284,14 @@ impl Executor {
                         .expand_command_substitution_mut_typed_with_context(&source, context)
                         .text_lossy();
                     let protected = protect_command_substitution_output(&expanded);
-                    if matches!(context, SubstitutionQuoteContext::HereDocument) {
+                    if alternate && in_double {
+                        let value = mark_alternate_whitespace(&protected);
+                        if matches!(context, SubstitutionQuoteContext::HereDocument) {
+                            output.push_str(&value.replace('\x15', "\x14"));
+                        } else {
+                            output.push_str(&value);
+                        }
+                    } else if matches!(context, SubstitutionQuoteContext::HereDocument) {
                         output.push_str(&protected.replace('\x15', "\x14"));
                     } else {
                         output.push_str(&protected);
@@ -238,7 +350,7 @@ impl Executor {
                             let consumed = word.len() - remainder.len();
                             let name = remainder[..close].to_string();
                             chars = word[consumed + close + 1..].chars().peekable();
-                            output.push_str(&self.expand_with_parameter_env(
+                            let value = self.expand_with_parameter_env(
                                 saved_parameter_state,
                                 |executor| {
                                     executor.expand_word_mut_with_context(
@@ -246,10 +358,15 @@ impl Executor {
                                         context,
                                     )
                                 },
-                            ));
+                            );
+                        if alternate && in_double {
+                            output.push_str(&mark_alternate_whitespace(&value));
+                        } else {
+                            output.push_str(&value);
+                        }
                         } else {
                             let name = collect_braced_parameter_name(&mut chars);
-                            output.push_str(&self.expand_with_parameter_env(
+                            let value = self.expand_with_parameter_env(
                                 saved_parameter_state,
                                 |executor| {
                                     executor.expand_word_mut_with_context(
@@ -257,11 +374,16 @@ impl Executor {
                                         context,
                                     )
                                 },
-                            ));
+                            );
+                        if alternate && in_double {
+                            output.push_str(&mark_alternate_whitespace(&value));
+                        } else {
+                            output.push_str(&value);
+                        }
                         }
                     } else {
                         let name = collect_braced_parameter_name(&mut chars);
-                        output.push_str(&self.expand_with_parameter_env(
+                        let value = self.expand_with_parameter_env(
                             saved_parameter_state,
                             |executor| {
                                 // Propagate the outer quote context so a
@@ -270,7 +392,12 @@ impl Executor {
                                 executor
                                     .expand_word_mut_with_context(&format!("${{{name}}}"), context)
                             },
-                        ));
+                        );
+                        if alternate && in_double {
+                            output.push_str(&mark_alternate_whitespace(&value));
+                        } else {
+                            output.push_str(&value);
+                        }
                     }
                 }
                 Some('(') => {
@@ -294,9 +421,14 @@ impl Executor {
                                         }
                                     }
                                 } else {
-                                    output.push_str(&protect_command_substitution_output(
+                                    let value = protect_command_substitution_output(
                                         &self.expand_command_substitution_mut_with_context(&expression, context),
-                                    ));
+                                    );
+                                    if alternate && in_double {
+                                        output.push_str(&mark_alternate_whitespace(&value));
+                                    } else {
+                                        output.push_str(&value);
+                                    }
                                 }
                             }
                         } else {
@@ -307,9 +439,14 @@ impl Executor {
                     }
 
                     let source = collect_command_substitution_source(&mut chars);
-                    output.push_str(&protect_command_substitution_output(
+                    let value = protect_command_substitution_output(
                         &self.expand_command_substitution_mut_with_context(&source, context),
-                    ));
+                    );
+                    if alternate && in_double {
+                        output.push_str(&mark_alternate_whitespace(&value));
+                    } else {
+                        output.push_str(&value);
+                    }
                 }
                 Some('[') => {
                     chars.next();
@@ -328,7 +465,12 @@ impl Executor {
                     chars.next();
                     let index = first.to_digit(10).unwrap_or(0) as usize;
                     if index == 0 {
-                        output.push_str(&self.script_name_value());
+                        let value = self.script_name_value();
+                        if alternate && in_double {
+                            output.push_str(&mark_alternate_whitespace(&value));
+                        } else {
+                            output.push_str(&value);
+                        }
                     } else {
                         output.push_str(
                             self.positional_params
@@ -356,7 +498,12 @@ impl Executor {
                             })
                         })
                     {
-                        output.push_str(&shell_safe_value(&value));
+                        let value = shell_safe_value(&value);
+                        if alternate && in_double {
+                            output.push_str(&mark_alternate_whitespace(&value));
+                        } else {
+                            output.push_str(&value);
+                        }
                     }
                 }
                 Some(other) => {

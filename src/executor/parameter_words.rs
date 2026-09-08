@@ -12,25 +12,16 @@ impl Executor {
         tilde_expand::expand_assignment_tilde_value(&expanded, &self.home_value(), false)
     }
 
-    // Alternate word of the `-`/`+`/`:-`/`:+` operators: GNU removes the
-    // quotes but keeps whitespace that was quoted or escaped protected from
-    // field splitting (posixexp2 37: `${v-a\ b}` is one field `a b`). The
-    // `=`/`:=` assignment forms expand to plain data and split (case 35),
-    // so they keep using expand_parameter_word.
-    //
-    // subst.c parameter_brace_expand_rhs (quoted == 0) expands the rhs like
-    // any unquoted word: quote removal happens BEFORE parameter expansion,
-    // so `\$name` reaches the expander as a protected literal `$` (rhs-exp
-    // t33/t34 must NOT expand) and `\p` loses its backslash (t47). The
-    // decoder below mirrors the lexer's unquoted-word processing
-    // (remove_shell_quotes) with two additions: quoted/escaped whitespace is
-    // marked with the \x1c sentinel for the field splitter, and quotes that
-    // survive as data inside double-quote regions travel as \x17/\x18
-    // sentinels so the expansion walker never re-reads them as live quote
-    // structure.
-    pub(in crate::executor) fn expand_alternate_parameter_word(&self, word: &str) -> String {
-        let decoded = decode_alternate_fragment_unquoted(word);
-        let expanded = self.expand_embedded_parameters_protect_ifs(&decoded);
+    // Alternate word of the `-`/`+`/`:-`/`:+` operators. GNU expands the
+    // rhs like an unquoted word (subst.c parameter_brace_expand_rhs with
+    // quoted == 0) while keeping quoted/escaped whitespace out of field
+    // splitting (posixexp2 37). The walk-time variant in
+    // expand_embedded_parameters_alternate_mut applies Unquoted quote
+    // removal, the whitespace sentinel, and unquoted backslash rules in
+    // one pass, so expansions inside quoted regions see the quote state
+    // and their own whitespace stays protected (more-exp ${B:-"$A"}).
+    pub(in crate::executor) fn expand_alternate_parameter_word(&mut self, word: &str) -> String {
+        let expanded = self.expand_embedded_parameters_alternate_mut(word);
         tilde_expand::expand_assignment_tilde_value(&expanded, &self.home_value(), false)
     }
 
@@ -763,99 +754,4 @@ mod scanner_tests {
         assert!(!cs, "body after the CS span is outer");
         assert!(dq);
     }
-}
-
-// Decode an alternate-operator rhs the way GNU expands an unquoted word
-// before parameter expansion (subst.c parameter_brace_expand_rhs with
-// quoted == 0, reached via expand_string_for_rhs): quotes are removed and
-// backslash escapes resolved up front. Mirrors the lexer's
-// remove_shell_quotes / remove_double_quoted_into mapping with two
-// additions for the field splitter: whitespace that was quoted or escaped
-// is marked \x1c so it stays glued to its field (posixexp2 37), and a
-// double-quote region's literal single quotes ride as \x17 sentinels so
-// the expansion walker does not open a single-quote span on them.
-fn decode_alternate_fragment_unquoted(fragment: &str) -> String {
-    fn is_protected_whitespace(ch: char) -> bool {
-        matches!(ch, ' ' | '\t' | '\n')
-    }
-    let mut out = String::with_capacity(fragment.len());
-    let mut chars = fragment.chars().peekable();
-    while let Some(ch) = chars.next() {
-        match ch {
-            '\'' => {
-                // Single-quote region: content is literal data. `$` travels
-                // as the protected-dollar marker so the walker does not
-                // expand it; quoted whitespace is kept out of field
-                // splitting with the \x1c prefix.
-                for quoted in chars.by_ref() {
-                    if quoted == '\'' {
-                        break;
-                    }
-                    if quoted == '$' {
-                        out.push('\x1f');
-                    } else if is_protected_whitespace(quoted) {
-                        out.push('\x1c');
-                        out.push(quoted);
-                    } else {
-                        out.push(quoted);
-                    }
-                }
-            }
-            '"' => {
-                // Double-quote region: mirror remove_double_quoted_into.
-                while let Some(quoted) = chars.next() {
-                    match quoted {
-                        '"' => break,
-                        '\\' => match chars.peek().copied() {
-                            Some('$') => {
-                                chars.next();
-                                out.push('\x1f');
-                            }
-                            Some('`') => {
-                                chars.next();
-                                out.push('\x1a');
-                            }
-                            Some('\\') => {
-                                chars.next();
-                                out.push('\x14');
-                            }
-                            Some('"') => {
-                                chars.next();
-                                out.push('\x18');
-                            }
-                            Some('\n') => {
-                                chars.next();
-                            }
-                            _ => out.push('\\'),
-                        },
-                        '\'' => out.push('\x17'),
-                        other if is_protected_whitespace(other) => {
-                            out.push('\x1c');
-                            out.push(other);
-                        }
-                        other => out.push(other),
-                    }
-                }
-            }
-            '\\' => match chars.next() {
-                Some('$') => out.push('\x1f'),
-                Some('`') => out.push('\x1a'),
-                Some('\'') => out.push('\x17'),
-                Some('"') => out.push('\x18'),
-                Some('\\') => out.push('\x14'),
-                Some(escaped) if is_protected_whitespace(escaped) => {
-                    out.push('\x1c');
-                    out.push(escaped);
-                }
-                Some(escaped @ ('*' | '?' | '[' | '@' | '+' | '!')) => {
-                    out.push('\x11');
-                    out.push(escaped);
-                }
-                Some(escaped) => out.push(escaped),
-                None => out.push('\\'),
-            },
-            other => out.push(other),
-        }
-    }
-    out
 }
