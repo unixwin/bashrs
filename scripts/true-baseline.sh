@@ -37,6 +37,19 @@ sync_suite() {
   tr -d "\r" < "$TESTS_SRC/$1.tests" > "$BASE/$1.tests"
 }
 
+# ---- helpers: recho/zecho must exist or every GNU output truncates ---------
+# (a fresh checkout has no binaries; a missing helper makes the GNU side
+#  abort with "command not found", poisoning the baseline silently)
+ensure_test_helpers() {
+  local h
+  for h in recho zecho; do
+    if [ ! -x "$BASE/$h" ] && [ -f "$REPO/third_party/bash/support/$h.c" ]; then
+      gcc -O1 -o "$BASE/$h" "$REPO/third_party/bash/support/$h.c" 2>/dev/null || true
+    fi
+  done
+}
+ensure_test_helpers
+
 # ---- suite list -------------------------------------------------------------
 if [ $# -eq 0 ]; then
   SUITES=$(cd "$TESTS_SRC" && ls *.tests 2>/dev/null | sed "s/[.]tests$//")
