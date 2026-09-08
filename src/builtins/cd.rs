@@ -9,8 +9,8 @@ mod paths;
 use crate::expand::tilde::tilde::home_value;
 use paths::{
     current_logical_pwd, filesystem_path_for_display, logical_destination,
-    logical_destination_display, set_shell_env, shell_display_path, shell_pwd_display_path,
-    shell_var, starts_with_dot_component,
+    logical_destination_display, logical_pwd_var_display, set_shell_env, shell_display_path,
+    shell_pwd_display_path, shell_var, starts_with_dot_component,
 };
 use std::env;
 use std::io::{self, Write};
@@ -92,7 +92,7 @@ where
         // TODO(builtins/cd.def): This is a Windows-host bridge for the GNU
         // Bash upstream tests that use POSIX system directories. A complete
         // shell should keep logical and physical directory state separately.
-        set_shell_env(env_vars, "OLDPWD", shell_display_path(&old_pwd));
+        set_shell_env(env_vars, "OLDPWD", logical_pwd_var_display(&old_pwd));
         set_shell_env(env_vars, "PWD", shell_pwd_display_path(&logical_dir));
         env_vars.insert("__RUBASH_PHYSICAL_PWD".to_string(), logical_dir.to_string());
         match target.print {
@@ -125,7 +125,7 @@ where
         Mode::Physical => shell_display_path(&new_pwd),
     };
 
-    set_shell_env(env_vars, "OLDPWD", shell_display_path(&old_pwd));
+    set_shell_env(env_vars, "OLDPWD", logical_pwd_var_display(&old_pwd));
     let pwd_value = match mode {
         Mode::Logical => new_pwd_display.clone(),
         Mode::Physical => shell_pwd_display_path(&new_pwd.to_string_lossy()),

@@ -144,7 +144,11 @@ impl Executor {
                 .unwrap_or(expanded);
         }
         if for_word_has_unquoted_expansion(word, raw) {
-            return Ok(expanded.split_whitespace().map(str::to_string).collect());
+            // Field splitting follows $IFS (builtins/eval.def word_list /
+            // word_expand: split on IFS whitespace and delimiters), not on
+            // generic Unicode whitespace. `IFS=$'\001' for x in $a` must
+            // split on \001 exactly like an external command's word list.
+            return Ok(self.field_split_values(&expanded));
         }
         if suppress_glob {
             return Ok(vec![expanded]);

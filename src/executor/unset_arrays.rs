@@ -166,6 +166,19 @@ impl Executor {
         }
 
         if is_marked_array_var(&self.env_vars, array_name) || is_array_storage(&current) {
+            // GNU unbind_array_element (arrayfunc.c:1180-1200): with the
+            // default compat level (> 51), `unset arr[*]` / `unset arr[@]`
+            // FLUSHES every element (behavior 2) instead of unsetting the
+            // variable or treating * as an index; the variable itself stays
+            // declared as an empty array (array.tests: `unset e[*]` then
+            // `declare -a e=()`).
+            if subscript == "*" || subscript == "@" {
+                self.env_vars.insert(
+                    array_name.to_string(),
+                    format_indexed_array_storage(Default::default()),
+                );
+                return true;
+            }
             let subscript = self.expand_arithmetic_special_parameters(subscript);
             let Some(index) = self.eval_arithmetic_expansion_value(&subscript) else {
                 return false;

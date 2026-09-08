@@ -83,6 +83,20 @@ pub(super) fn shell_display_path(path: &Path) -> String {
     }
 }
 
+/// OLDPWD carries the previous *logical* PWD value verbatim (builtins/cd.def:
+/// `set_working_directory` stores the old `$PWD` string). It must not be
+/// routed through `shell_display_path`, whose slash-drive→native bridge
+/// would rewrite `/c/Users/...` into `C:/Users/...` and desynchronize
+/// `OLDPWD` from the value `$PWD` held.
+pub(super) fn logical_pwd_var_display(path: &Path) -> String {
+    let value = path.to_string_lossy().replace('\\', "/");
+    if value.is_empty() {
+        "/".to_string()
+    } else {
+        value
+    }
+}
+
 pub(super) fn shell_pwd_display_path(path: &str) -> String {
     let value = path.replace('\\', "/");
     if cfg!(windows) && std::env::var_os("WINUXSH_SHELL_PATH_STYLE").is_some() {

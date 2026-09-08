@@ -208,8 +208,9 @@ impl Executor {
     }
 
     /// Valid indirect target values: shell names, all-digit positionals,
-    /// and the special parameters. Anything else triggers GNU's "invalid
-    /// variable name" when indirected through (probe: x=123bad).
+    /// the special parameters, and valid array references. Anything else
+    /// triggers GNU's "invalid variable name" when indirected through
+    /// (probe: x=123bad).
     fn is_valid_indirect_target(value: &str) -> bool {
         if value.is_empty() {
             return false;
@@ -217,7 +218,32 @@ impl Executor {
         if is_shell_name(value) || value.chars().all(|c| c.is_ascii_digit()) {
             return true;
         }
-        matches!(value, "@" | "*" | "#" | "?" | "$" | "-" | "!")
+        if matches!(value, "@" | "*" | "#" | "?" | "$" | "-" | "!") {
+            return true;
+        }
+        // GNU valid_brace_expansion_word (subst.c:7590) accepts a value
+        // that is a valid array reference: ${!ref} with ref="a[@]"
+        // performs array indirection (new-exp9.sub) instead of reporting
+        // "invalid variable name".
+        Self::is_valid_indirect_array_reference(value)
+    }
+
+    /// GNU valid_array_reference (arrayfunc.c): a `{name[...]}` form
+    /// whose base is a shell identifier and whose bracketed subscript is
+    /// non-empty and simple (no nested brackets).
+    pub(in crate::executor) fn is_valid_indirect_array_reference(value: &str) -> bool {
+        let Some(open) = value.find('[') else {
+            return false;
+        };
+        if !value.ends_with(']') {
+            return false;
+        }
+        let base = &value[..open];
+        let subscript = &value[open + 1..value.len() - 1];
+        !subscript.is_empty()
+            && !subscript.contains('[')
+            && !subscript.contains(']')
+            && is_shell_name(base)
     }
 
     /// Validates the body of a `${!...}` expansion: a simple parameter
@@ -248,6 +274,28 @@ impl Executor {
         // expression applied to the indirect value (${!x//c/x}, ${!x:-y},
         // ${!x#pat}, ...; subst.c param_expand). A name followed by a
         // non-operator character (${!bad!}) stays a bad substitution.
+        // A nested `${...}` parameter inside the indirect name (eval
+        // re-expansion: ${!${1}[@]}) expands first in GNU, so the tail
+        // after the balanced group decides validity.
+        if expr.starts_with("${") {
+            if let Some(end) = matching_parameter_brace(&expr[2..]) {
+                let tail = &expr[end + 3..];
+                if tail.is_empty() {
+                    return true;
+                }
+                if tail.starts_with('[') {
+                    return match Self::skip_indirect_array_subscript(tail) {
+                        Some(after) => tail[after..].is_empty(),
+                        None => false,
+                    };
+                }
+                return matches!(
+                    tail.chars().next(),
+                    Some(':' | '-' | '+' | '=' | '?' | '#' | '%' | '/' | '^' | ',' | '@')
+                );
+            }
+            return false;
+        }
         let name_end = base
             .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
             .unwrap_or(base.len());
@@ -267,7 +315,21 @@ impl Executor {
                 );
             }
             if is_shell_name(head) {
-                let rest = &base[name_end..];
+                let mut rest = &base[name_end..];
+                // GNU string_extract with SX_VARNAME (subst.c:812-819)
+                // skips `[...]` subscripts while scanning the parameter
+                // name, so the name ends at the first operator character
+                // AFTER a balanced subscript: ${!varname[@]@Q} and
+                // ${!varname[@]%b} name the array reference varname[@]
+                // with a transform / pattern operator applied to the
+                // indirect result. A bracket that never closes stays a
+                // bad substitution.
+                if rest.starts_with('[') {
+                    match Self::skip_indirect_array_subscript(rest) {
+                        Some(end) => rest = &rest[end..],
+                        None => return false,
+                    }
+                }
                 return matches!(
                     rest.chars().next(),
                     Some(':' | '-' | '+' | '=' | '?' | '#' | '%' | '/' | '^' | ',' | '@')
@@ -275,6 +337,46 @@ impl Executor {
             }
         }
         false
+    }
+
+    /// True for a `${!name[sub]<op>...}` body: a subscript followed by an
+    /// operator tail means GNU re-expands the base variable's value as the
+    /// indirect target (indirection), unlike the bare `${!name[sub]}` keys
+    /// form.
+    fn is_indirect_array_operator_expression(indirect: &str) -> bool {
+        let Some(open) = indirect.find('[') else {
+            return false;
+        };
+        if !is_shell_name(&indirect[..open]) {
+            return false;
+        }
+        let rest = &indirect[open..];
+        let Some(end) = Self::skip_indirect_array_subscript(rest) else {
+            return false;
+        };
+        matches!(
+            rest[end..].chars().next(),
+            Some(':' | '-' | '+' | '=' | '?' | '#' | '%' | '/' | '^' | ',' | '~' | '@' | '*')
+        )
+    }
+
+    /// Offsets just past the `]` closing the `[...]` subscript at the head
+    /// of `expr`, mirroring GNU skipsubscript bracket nesting (subst.c).
+    fn skip_indirect_array_subscript(expr: &str) -> Option<usize> {
+        let mut depth = 0usize;
+        for (index, ch) in expr.char_indices() {
+            match ch {
+                '[' => depth += 1,
+                ']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(index + 1);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
     }
     /// Validates the remainder of a `${#...}` expansion when it does not
     /// start with a shell name: `#` is then the `$#` parameter itself and
@@ -402,6 +504,44 @@ impl Executor {
                             if !Self::is_valid_indirect_target(value) {
                                 return Some((
                                     value.clone(),
+                                    "invalid variable name".to_string(),
+                                    1,
+                                ));
+                            }
+                        }
+                    }
+                } else if Self::is_indirect_array_operator_expression(indirect) {
+                    // GNU treats `${!name[@]<op>...}` as indirection through
+                    // the VALUE of `name` re-expanded as a parameter
+                    // (parameter_brace_expand_indir, subst.c:7941-7945), so a
+                    // value that is not a valid indirect target reports
+                    // "<value>: invalid variable name" (new-exp13.sub:56
+                    // ${!VAR4[@]@Q}). The plain `${!name[@]}` form has no
+                    // operator tail: it is the KEYS expansion and never
+                    // validates the value here.
+                    let open = indirect.find('[').unwrap_or(0);
+                    let base = &indirect[..open];
+                    if !base.is_empty() && is_shell_name(base) {
+                        if let Some(value) = self.env_vars.get(base) {
+                            if !Self::is_valid_indirect_target(value) {
+                                // GNU reports the dollar_at join of the
+                                // variable's values (array_value with
+                                // AV_ALLOWALL, arrayfunc.c:1563), not the
+                                // raw storage text.
+                                let display =
+                                    if let Some(storage) = self.parameter_array_storage(base) {
+                                        if is_marked_var(&self.env_vars, ASSOC_VARS, base) {
+                                            assoc_hash_ordered_values(&storage).join(" ")
+                                        } else {
+                                            array_values(&storage).join(" ")
+                                        }
+                                    } else if is_array_storage(value) {
+                                        array_values(value).join(" ")
+                                    } else {
+                                        value.clone()
+                                    };
+                                return Some((
+                                    display,
                                     "invalid variable name".to_string(),
                                     1,
                                 ));

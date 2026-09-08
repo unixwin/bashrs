@@ -88,7 +88,7 @@ impl Executor {
                 };
                 return format!("{name}={marker}{expanded}");
             }
-            if let Some(expanded) = self.expand_compound_positional_at_assignment(raw_value) {
+            if let Some(expanded) = self.expand_compound_positional_at_assignment(raw_value, quoted) {
                 let marker = if compound_assignment {
                     COMPOUND_ASSIGNMENT_MARKER.to_string()
                 } else {

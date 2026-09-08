@@ -50,7 +50,12 @@ impl Executor {
     }
 
     fn expand_assignment_value_inner(&mut self, value: &str) -> String {
-        if !value.contains("$(") && !value.contains('`') {
+        // The verbatim single-element fast path is only for storage-shaped
+        // values without expansions: a compound value containing a
+        // parameter expansion (e.g. (${!xx})) must reach the compound
+        // expander below or the expansion text lands in the array as a
+        // literal element (new-exp4.sub Case05).
+        if !value.contains("$(") && !value.contains('`') && !value.contains('$') {
             if let Some(array_value) = normalize_single_element_array_assignment(value) {
                 return array_value;
             }
@@ -97,7 +102,7 @@ impl Executor {
             }
         }
         self.apply_parameter_assignment_expansions_in_word(value);
-        if let Some(expanded) = self.expand_compound_positional_at_assignment(value) {
+        if let Some(expanded) = self.expand_compound_positional_at_assignment(value, quoted) {
             if compound_assignment {
                 return format!("{COMPOUND_ASSIGNMENT_MARKER}{expanded}");
             }
@@ -387,6 +392,7 @@ impl Executor {
     pub(in crate::executor) fn expand_compound_positional_at_assignment(
         &self,
         value: &str,
+        quoted: bool,
     ) -> Option<String> {
         let inner = value.strip_prefix('(')?.strip_suffix(')')?;
         let mut changed = false;
@@ -414,6 +420,40 @@ impl Executor {
                     );
                 } else {
                     values.push(quote_array_value(""));
+                }
+            } else if let Some(indirect_name) = token
+                .strip_prefix('\x1d')
+                .and_then(|token| token.strip_prefix("${"))
+                .and_then(|token| token.strip_suffix('}'))
+                .and_then(|name| name.strip_prefix('!'))
+            {
+                // GNU compound assignment of quoted "${!ref}": a direct
+                // array reference in the braced name is the KEYS expansion
+                // (arrayfunc.c array_keys), anything else is indirection
+                // through the target value (new-exp9.sub / new-exp4.sub
+                // Case06-08).
+                match self.indirect_compound_assignment_values(indirect_name, true) {
+                    Some(mut expanded) => {
+                        changed = true;
+                        values.append(&mut expanded);
+                    }
+                    None => values.push(quote_array_value(&token)),
+                }
+            } else if let Some(indirect_name) = token
+                .strip_prefix("${")
+                .and_then(|token| token.strip_suffix('}'))
+                .and_then(|name| name.strip_prefix('!'))
+            {
+                // The lexer strips the token's quotes and marks the whole
+                // quoted-RHS value, so the value-level flag decides between
+                // the quoted (joined) and unquoted (field split) semantics
+                // (new-exp4.sub Case05-08).
+                match self.indirect_compound_assignment_values(indirect_name, quoted) {
+                    Some(mut expanded) => {
+                        changed = true;
+                        values.append(&mut expanded);
+                    }
+                    None => values.push(quote_array_value(&token)),
                 }
             } else if let Some(name) = token
                 .strip_prefix('\x1d')
@@ -455,6 +495,116 @@ impl Executor {
             }
         }
         changed.then(|| format!("({})", values.join(" ")))
+    }
+
+    /// Compound-assignment element values for a `"${!ref}"` token (GNU
+    /// parameter_brace_expand_indir plus the array-assignment element
+    /// splitting): a direct array reference in the braced name expands as
+    /// KEYS (arrayfunc.c array_keys), any other value is indirection
+    /// through the target parameter -- `@`/`*` targets keep their
+    /// $@/$* word semantics, `[@]`/`[*]` targets expand the array values,
+    /// and scalars read their value cell (field split when the token is
+    /// unquoted). Returns None for unrecognized names so the token stays
+    /// literal.
+    fn indirect_compound_assignment_values(
+        &self,
+        indirect_name: &str,
+        quoted: bool,
+    ) -> Option<Vec<String>> {
+        if let Some(array_name) = indirect_name
+            .strip_suffix("[@]")
+            .or_else(|| indirect_name.strip_suffix("[*]"))
+        {
+            if is_shell_name(array_name) {
+                let storage_name = self.resolved_variable_name(array_name)?;
+                let storage = self.parameter_array_storage(array_name)?;
+                let keys = if is_marked_var(&self.env_vars, ASSOC_VARS, &storage_name) {
+                    assoc_keys(&storage)
+                } else {
+                    array_indices(&storage)
+                };
+                if indirect_name.ends_with("[*]") {
+                    return Some(vec![quote_array_value(
+                        &keys.join(&self.ifs_first_char_separator()),
+                    )]);
+                }
+                return Some(
+                    keys.into_iter()
+                        .map(|key| quote_array_value(&key))
+                        .collect(),
+                );
+            }
+        }
+
+        // A nameref indirection yields the referenced NAME itself, not the
+        // target value (GNU parameter_brace_expand_indir subst.c:7896).
+        if is_marked_var(&self.env_vars, NAMEREF_VARS, indirect_name) {
+            return None;
+        }
+        let target_expr = self.resolve_indirect_target_expr(indirect_name)?;
+        match target_expr.as_str() {
+            "@" => {
+                return Some(
+                    self.positional_params
+                        .iter()
+                        .map(|value| quote_array_value(value))
+                        .collect(),
+                )
+            }
+            "*" => {
+                return Some(vec![quote_array_value(
+                    &self.positional_params.join(&self.ifs_first_char_separator()),
+                )])
+            }
+            _ => {}
+        }
+        let starred = target_expr.ends_with("[*]");
+        if starred || target_expr.ends_with("[@]") {
+            let values = self.indirect_target_values(&target_expr);
+            if starred {
+                if quoted {
+                    return Some(vec![quote_array_value(
+                        &values.join(&self.ifs_first_char_separator()),
+                    )]);
+                }
+                return Some(
+                    field_split_array_values_with_ifs(
+                        values,
+                        self.env_vars.get("IFS").map(String::as_str),
+                    )
+                    .into_iter()
+                    .map(|value| quote_array_value(&value))
+                    .collect(),
+                );
+            }
+            return Some(
+                values
+                    .into_iter()
+                    .map(|value| quote_array_value(&value))
+                    .collect(),
+            );
+        }
+        // Same bare-array decoding as the word path: implicit
+        // `name=(...)` storage may be unmarked, so prefer
+        // indirect_target_values before the parameter resolution.
+        let mut target_values = self.indirect_target_values(&target_expr);
+        let scalar = if target_values.len() == 1 {
+            target_values.remove(0)
+        } else if target_values.len() > 1 {
+            target_values.join(&self.ifs_first_char_separator())
+        } else {
+            self.parameter_pattern_scalar_value(&target_expr)
+                .unwrap_or_default()
+        };
+        if quoted {
+            return Some(vec![quote_array_value(&scalar)]);
+        }
+        Some(
+            field_split_values_with_ifs(&scalar, self.env_vars.get("IFS").map(String::as_str))
+                .into_iter()
+                .map(|value| quote_array_value(&value))
+                .collect(),
+        )
     }
 
     pub(in crate::executor) fn expand_unquoted_parameter_compound_assignment(

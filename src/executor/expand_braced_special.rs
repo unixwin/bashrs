@@ -119,6 +119,45 @@ impl Executor {
             return Some(value);
         }
 
-        Some(self.expand_parameter_named_value(&target_name))
+        // GNU chk_atstar (subst.c:7922): a target value of `@` or `*`
+        // re-expands as $@/$*; scalar context joins with a space for @ and
+        // IFS[0] for * (string_list_dollar_at / string_list_dollar_star).
+        match target_name.as_str() {
+            "@" => return Some(self.positional_params.join(" ")),
+            "*" => {
+                return Some(self.positional_params.join(&self.ifs_first_char_separator()))
+            }
+            _ => {}
+        }
+
+        // GNU parameter_brace_expand_word (subst.c:7955) re-expands the
+        // target as a parameter: a value ending in `[@]`/`[*]` joins its
+        // elements in scalar context (array_value AV_ALLOWALL branch,
+        // arrayfunc.c:1513-1564), a bare array name reads element [0], and
+        // a scalar reads its value cell (parameter_pattern_scalar_value).
+        if (target_name.ends_with("[@]") || target_name.ends_with("[*]"))
+            && Self::is_valid_indirect_array_reference(&target_name)
+        {
+            let values = self.indirect_target_values(&target_name);
+            return Some(values.join(&self.ifs_first_char_separator()));
+        }
+        if target_name.is_empty() {
+            return Some(String::new());
+        }
+        // indirect_target_values decodes a bare array name to element [0]
+        // even when the ARRAY_VARS marker is missing (implicit
+        // `name=(...)` assignments store array text unmarked); special
+        // parameters still fall through to the parameter resolution.
+        let mut target_values = self.indirect_target_values(&target_name);
+        if target_values.len() == 1 {
+            return Some(target_values.remove(0));
+        }
+        if target_values.len() > 1 {
+            return Some(target_values.join(&self.ifs_first_char_separator()));
+        }
+        return Some(
+            self.parameter_pattern_scalar_value(&target_name)
+                .unwrap_or_default(),
+        );
     }
 }

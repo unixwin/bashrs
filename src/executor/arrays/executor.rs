@@ -1,7 +1,5 @@
 use super::*;
-use crate::executor::{
-    assoc_hash_ordered_entries, assoc_hash_ordered_values, assoc_keys,
-};
+use crate::executor::{assoc_hash_ordered_entries, assoc_hash_ordered_values, assoc_keys, NAMEREF_VARS};
 
 impl Executor {
     pub(in crate::executor) fn indexed_array_stack(&self, name: &str) -> Vec<String> {
@@ -423,21 +421,91 @@ impl Executor {
         let indirect_name = word
             .strip_prefix("${!")
             .and_then(|word| word.strip_suffix('}'))?;
+        // A nameref indirection yields the referenced NAME itself, not the
+        // target's value (GNU parameter_brace_expand_indir subst.c:7896
+        // returns the nameref cell verbatim); leave those to the scalar
+        // path.
+        if is_marked_var(&self.env_vars, NAMEREF_VARS, indirect_name) {
+            return None;
+        }
+        let target_expr = self.resolve_indirect_target_expr(indirect_name)?;
+        self.indirect_target_word_values(&target_expr, quoted_array_word)
+    }
+
+    /// GNU parameter_brace_find_indir (subst.c:7839): the word after `!`
+    /// is expanded first -- a positional number reads that parameter (so
+    /// ${!1} sees the function's own arguments) and a shell name reads its
+    /// value. The result is the parameter expression the indirection
+    /// points at.
+    pub(in crate::executor) fn resolve_indirect_target_expr(&self, indirect_name: &str) -> Option<String> {
+        if let Ok(index) = indirect_name.parse::<usize>() {
+            return self
+                .positional_params
+                .get(index.saturating_sub(1))
+                .cloned();
+        }
         if !is_shell_name(indirect_name) {
             return None;
         }
-        let target_expr = self.env_vars.get(indirect_name)?;
-        if target_expr.ends_with("[@]") {
-            return Some(self.indirect_target_values(target_expr));
+        self.env_vars.get(indirect_name).cloned()
+    }
+
+    /// GNU chk_atstar (subst.c:7922) plus the array-indirection branch of
+    /// parameter_brace_expand_indir (subst.c:7945-7958): the target value
+    /// is re-expanded as a parameter. An `@`-target keeps $@ word
+    /// semantics, a `*`-target keeps $* semantics, and a value ending in
+    /// `[@]`/`[*]` expands the array's values as elements (new-exp9.sub).
+    /// Quoted `[@]` yields one word per element; unquoted results are
+    /// field split like the corresponding $@/$* word. Quoted `[*]` joins
+    /// with IFS[0] into a single word (string_list_dollar_star).
+    fn indirect_target_word_values(
+        &self,
+        target_expr: &str,
+        quoted_array_word: bool,
+    ) -> Option<Vec<String>> {
+        match target_expr {
+            "@" => {
+                // Unquoted $@ is field split like any unquoted expansion
+                // (new-exp.tests:196 `recho ${!foo}` with foo=@ splits the
+                // `b c` parameter under the default IFS); quoted "$@" keeps
+                // one word per parameter verbatim.
+                return Some(if quoted_array_word {
+                    self.positional_params.clone()
+                } else {
+                    field_split_positional_values_with_ifs(
+                        self.positional_params.clone(),
+                        self.env_vars.get("IFS").map(String::as_str),
+                    )
+                });
+            }
+            "*" => {
+                return Some(if quoted_array_word {
+                    vec![self.positional_params.join(&self.ifs_first_char_separator())]
+                } else {
+                    field_split_positional_values_with_ifs(
+                        self.positional_params.clone(),
+                        self.env_vars.get("IFS").map(String::as_str),
+                    )
+                });
+            }
+            _ => {}
         }
-        if target_expr.ends_with("[*]") {
-            let values = self.indirect_target_values(target_expr);
+        let starred = target_expr.ends_with("[*]");
+        if !starred && !target_expr.ends_with("[@]") {
+            return None;
+        }
+        let values = self.indirect_target_values(target_expr);
+        if starred {
             if quoted_array_word {
                 return Some(vec![values.join(&self.ifs_first_char_separator())]);
             }
+        } else if quoted_array_word {
             return Some(values);
         }
-        None
+        Some(field_split_array_values_with_ifs(
+            values,
+            self.env_vars.get("IFS").map(String::as_str),
+        ))
     }
 
     pub(in crate::executor) fn ifs_first_char_separator(&self) -> String {
