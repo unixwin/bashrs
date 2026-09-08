@@ -528,3 +528,28 @@ dbg-support 635、array 456、assoc 360、nameref 303、new-exp 241、more-exp 2
 - 绿区（0）：attr、cprint、dbg-support2、dstack2、dynvar、extglob2/3、getopts、glob-bracket、herestr、ifs、ifs-posix、intl(57→57 是 int-l 含义待核)、invert、mapfile、nquote2/3、posixpat、printf、strip、tilde/tilde2
 - 注意：本轮 v5 与两个 worktree 代理并发运行时出现 GNU 侧一次段错误+一次 Killed（WSL 资源竞争迹象），对应套件数字可能有噪声；后续收敛轮复测确认
 - 方法论警告：v5 运行与 worktree harness 并发时 stdout 日志与 ledger 分离（ledger 在 true-baseline-ledger.log，stdout 只有 TRUE-DONE/错误），勿把空 stdout 误判为失败
+
+### 合并轮：DIRSTACK 家族落地（8074da5e）+ P2 战役计划入档
+
+#### DIRSTACK（代理 B，已合并验证）
+- 根因（探针修正）：GNU DIRSTACK 是全动态变量——命名访问时经 get_dirstack（variables.c:1618）重建；list-all 打印"最后物化的 cell"，未命名过则保持 ()（即使 pushd 之后）
+- 修复：eager sync 移除 DIRSTACK；execute_declare 仅在命令词点名 DIRSTACK 时 sync_dirstack_cell()；初始 cell 为空索引数组；dirs -c 后 getter 仍暴露 cwd 于 [0]
+- 门：lib 338/1-flaky；cli 门 325/28（失败集与基线字节一致）；array 442→434（−8，严格子集）；dstack/quotearray/dstack2/dynvar 持平
+- 残余（代码注释已记）：动态 DIRSTACK[@] 读不物化 cell；pushd 间普通 cd 不重同步 stack[0]；unset DIRSTACK
+
+#### P2 战役计划（代理 C，量化分诊 607 行 → 6 根因族）
+- **F1 more-exp 静默吞没（215 行）**：L160-489 零输出（rc=0），恰在 L490 恢复——函数体扫描器把 `${1+"$@"}` 内的 `}` 当终止符，吞 ~320 行。最小复现：`b1() { b2 ${1+"$@"}; }`。owner：src/parser 函数体/花括组扫描（非 continuation.rs）
+- **F2 引号 $@/$* 词产出（116 行）**：expand_word.rs:95 将 $@ join 成单串（铁证）；需 GNU quoted_dollar_at/contains_dollar_at 旗标驱动的逐词产出（词缀附首尾元素、0 参规则、数组赋值塌缩）。最高风险项，独占切片+全 A/B
+- **F3 patsub 管线（60 行）**：patsub_replacement shopt 注册但从未被读；&/\\&/tilde/$var 展开、引号段跟踪需一次管线化重构（parameter_replace.rs/expand_braced_replacement.rs/parameter_ops.rs）
+- **F4 变换族 @A/@a/@Q/@K/@k/@P（64 行）**：@A 按属性而非值键控（declared-unset 打 declare -rl VAR1）；@Q 需 ANSI-C $'..'（与 declare -p 共享 helper——array/assoc/quotearray 跨套件上行空间）
+- F5 `!` 间接（19）/ F6 花括扫描（19）/ F7 数组标量强转（14）/ F8 转义双引号去引号（19，最后做）/ F9 小项（43）
+- 修复顺序：F1 → F3 → F5 → F4 → F2（独占）→ F6+F7 → F9 → F8；F2/F8 需全 A/B（quote/nquote/ifs 绿区是回归哨兵）
+- 完整工件：target/issue-suites/results/true-baseline/{new-exp,more-exp,exp}/{diff,hunks,anchors,srcmap}.txt
+
+#### wave-2 编队（66efb46a 起）
+- 代理 E（rubash-wt-f1）：F1 more-exp 吞没
+- 代理 F（rubash-wt-patsub）：F3 patsub 管线
+- 代理 G（rubash-wt-transform）：F4 变换族
+- 在途：代理 A（尺寸提示）、D（dbg-support DEBUG trap）
+- 路径注意：子代理工具曾把 D:\repo\X 解析为 D:\d\repo\X——代理提示词已要求 git rev-parse 自证；队长合并时从真实路径取 diff
+- 环境注意：WINUXSH_ROOT 经 WSL interop 泄入 rubash.exe，cd -P / 物理解析错位（dstack 50 行主因、array 基线虚高）——待 harness 消毒实验
