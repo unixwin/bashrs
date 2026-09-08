@@ -438,3 +438,25 @@ core.autocrlf=true 把 vendored bash 测试树（third_party/bash，submodule）
   1. **二进制路径污染**：套件输出嵌入 $0/THIS_SH 路径，不同目录构建的二进制对跑会产生数百行假差异（builtins 444 vs 19 全为此因）。跨二进制对比必须在同一路径重建。
   2. **GNU 侧早退截断**：WSL 侧 GNU 无 THIS_SH 时 comsub2/rsh 等 `${THIS_SH}` 依赖套件仅输出 32B/24B 即中止；rubash 正常跑完反而「diff 更大」。crew 的 0 差是复刻了截断行为的假完美。此类套件的真基线需 `export THIS_SH=/bin/bash` 的 GNU 全量输出。
   3. lib/cli_tests 通过 ≠ 套件台账通过：1c8987e5 提交前的 in-flight 验证漏掉了台账维度，套件级回归必须进提交前检查单。
+
+## 2026-09-07 第九轮：真基线重建（83 套件）+ fc 族关闭 + lexer 复合词修正
+
+### 真基线方法论修正
+GNU 侧导出 THIS_SH=/bin/bash 后 ${THIS_SH} 子调用真实执行，消除早退截断；固定单一二进制路径消除 $0/THIS_SH 路径污染。runner: true-baseline.sh；产物 true-baseline/。**此前多轮台账数字作废，以本轮为准。**
+
+### 真实缺口排行（83 套件，21 个真零差）
+dbg-support 635、array 456、assoc 360、nameref 303、new-exp 241、more-exp 232、posixexp 211、histexp 199、rsh 193、comsub2 190、history 188、quotearray 153、exp 134、quote 132、complete 115、shopt 113、varenv 109、globstar 101、invocation 93、alias 87、comsub 78、extglob 68、nquote 67、trap 61、glob 60、redir 58、func 58、intl 57、arith 50、dstack 50、read 48、precedence 46、type 45、jobs 37、errors 32、heredoc 29、iquote 28、rhs-exp 26、nquote1 25、comsub-posix 19、其余 ≤18。真零差：mapfile、printf、attr、casemod、cprint、dbg-support2、dstack2、dynvar、extglob2、extglob3、getopts、glob-bracket、herestr、ifs、invert、nquote2、nquote3、posixpat、strip、tilde、tilde2。
+
+### 本轮根因与修复（提交）
+- 2d6e32e9 fc：fc 调用自身不入列表/编号（GNU fc.def）——fc 族 10 测试全绿，lib 0 已知失败（余 1 为并行测试 PATH 竞态 flaky）
+- 2af92b9d lexer：name=(...) 复合值内全部元字符为字面量直至配对右括号（GNU read_token_word；array.tests `test=(first & second)` 为单条失败赋值而非异步列表）
+
+### 数组族根因分桶（array 456 行）
+1. 复合赋值值内引号分组丢失（~250 行，已知深层：declare -a d=([5]="hello world") 被拆分）
+2. declare -a e[10]=test 尺寸提示+赋值语义（GNU 赋元素[0]，rubash 泄漏 e[10] 名字）
+3. test=(first & second) 类：需 GNU 式 syntax-error-continue 语义（报错 rc=1 不中止脚本）
+4. DIRSTACK 动态同步时序（GNU 存储格在 pushd 前为空、declare -p 触发懒同步；~4 行）
+5. readonly declared-unset 数组 c 的 declare -ar c 列表丢失
+
+### 子代理通道
+本会话 8/8 全部在开工前夭折（零产物）。所有任务单兵完成。通道修复前不建议再派发。
