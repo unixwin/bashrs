@@ -1,0 +1,70 @@
+//! POSIX Interp 221 regression: under `set -o posix`, the dolbrace pairing of
+//! a `${...}` body depends on each word's own quote state — a `'` inside a
+//! double-quoted `${...}` is literal data (the first `}` closes), while
+//! unquoted it opens a nested single quote. The single-command command
+//! substitution shortcuts split the body with a generic quote scanner that
+//! strips quotes inside `${...}` bodies before expansion
+//! (`echo ${IFS+'}'z}` arrived at the echo shortcut as the corrupted word
+//! `${IFS+}z}`), so posixexp2.tests cases 11/12 mis-paired.
+//! GNU baseline: WSL GNU Bash 5.2.21, script-file comparison.
+
+use std::process::Command;
+
+fn rubash(script: &str) -> (String, String, Option<i32>) {
+    let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
+        .arg("-c")
+        .arg(script)
+        .output()
+        .expect("run rubash");
+    (
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+        output.status.code(),
+    )
+}
+
+#[test]
+fn posix_dquoted_brace_body_first_brace_closes_inside_comsub() {
+    // posixexp2.tests case 11: the inner word is double-quoted, so the `'`
+    // characters are literal data and the first `}` closes the expansion.
+    let (stdout, stderr, code) = rubash(r#"set -o posix; echo "$(echo "${IFS+'}'z}")""#);
+    assert_eq!(stdout, "''z}\n");
+    assert_eq!(stderr, "");
+    assert_eq!(code, Some(0));
+}
+
+#[test]
+fn posix_unquoted_brace_body_nested_quote_opens_inside_comsub() {
+    // posixexp2.tests case 12: the inner word is unquoted, so `'...'` opens a
+    // nested quoted string and the second `}` closes the expansion; the
+    // alternate `'}'` quote-removes to `}`.
+    let (stdout, stderr, code) = rubash(r#"set -o posix; echo "$(echo ${IFS+'}'z})""#);
+    assert_eq!(stdout, "}z\n");
+    assert_eq!(stderr, "");
+    assert_eq!(code, Some(0));
+}
+
+#[test]
+fn posix_dquoted_brace_body_plain_word_unchanged() {
+    // posixexp2.tests case 2: already correct before the fix; guards the
+    // plain (non-command-substitution) path against collateral changes.
+    let (stdout, stderr, code) = rubash(r#"set -o posix; echo "${IFS+'}'z}""#);
+    assert_eq!(stdout, "''z}\n");
+    assert_eq!(stderr, "");
+    assert_eq!(code, Some(0));
+}
+
+#[test]
+fn non_posix_brace_body_keeps_quote_operator_pairing() {
+    // Without `set -o posix` the single-quote operator pairing applies in
+    // both quote contexts, and the fast paths stay on their shortcuts.
+    // GNU 5.2.21: the dquoted word yields `'}'z` (the quote characters are
+    // literal data in the output), the unquoted word yields `}z`.
+    let (stdout, _stderr, code) = rubash(r#"echo "${IFS+'}'z}""#);
+    assert_eq!(stdout, "'}'z\n");
+    assert_eq!(code, Some(0));
+
+    let (stdout, _stderr, code) = rubash(r#"echo "$(echo ${IFS+'}'z})""#);
+    assert_eq!(stdout, "}z\n");
+    assert_eq!(code, Some(0));
+}

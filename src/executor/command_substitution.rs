@@ -171,6 +171,24 @@ impl Executor {
         if source == "type -p e" {
             return "./e".to_string();
         }
+        // POSIX Interp 221 (parse.y dolbrace): the pairing of a `${...}`
+        // body depends on each word's own quote state — a `'` inside a
+        // double-quoted `${...}` is literal data (the first `}` closes),
+        // while unquoted it opens a nested single quote. The word-based
+        // shortcuts below split the body with a generic quote scanner that
+        // strips quotes inside `${...}` bodies and loses the per-word quote
+        // state the pairing depends on (`echo ${IFS+'}'z}` arrives at the
+        // echo shortcut as the corrupted word `${IFS+}z}`; posixexp2.tests
+        // cases 11/12 differ exactly this way). Route substitution bodies
+        // whose raw text carries a quote inside a parameter expansion
+        // through the real parser, which lexes each word with the dolbrace
+        // state machine — the same route GNU subst.c always takes.
+        if source.contains("${") && source.contains('\'') {
+            if let Some(output) = self.command_list_substitution_output(source, context) {
+                return output;
+            }
+            return String::new();
+        }
         let word_source = strip_command_substitution_comments(source);
         let word_parts = split_shell_words_with_quote_info(&word_source);
         let words: Vec<String> = word_parts.iter().map(|(word, _)| word.clone()).collect();
