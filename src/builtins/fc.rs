@@ -98,7 +98,16 @@ where
         return Ok(EXECUTION_SUCCESS);
     }
 
-    let effective_len: usize = entries.len();
+    // GNU fc.def: the fc invocation itself is already the most recent
+    // history entry when the builtin runs, and fc never lists, indexes or
+    // numbers it. Discount that trailing entry for the whole computation.
+    let effective_entries: &[String] =
+        if entries.last().map(String::as_str) == Some("fc") {
+            &entries[..entries.len() - 1]
+        } else {
+            entries
+        };
+    let effective_len: usize = effective_entries.len();
 
     if effective_len == 0 {
         return Ok(EXECUTION_SUCCESS);
@@ -131,7 +140,7 @@ where
         return Ok(EXECUTION_SUCCESS);
     }
 
-    let slice = &entries[start_idx..end_idx];
+    let slice = &effective_entries[start_idx..end_idx];
 
     if reverse {
         for (i, entry) in slice.iter().rev().enumerate() {
