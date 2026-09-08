@@ -96,6 +96,19 @@ impl Executor {
                 };
                 return format!("{name}={marker}{expanded}");
             }
+            // A CA-marked compound value without expansions must reach the
+            // array storage verbatim: expand_embedded_parameters_mut performs
+            // assignment quote removal, which destroys the element quote
+            // grouping the storage parser needs (declare -a e=([0]="x y")
+            // must keep one element, GNU arrayfunc.c assign_array_var_from
+            // _string). Words containing $ or ` still take the expansion
+            // path below.
+            if compound_assignment
+                && !value.contains('$')
+                && !value.contains('`')
+            {
+                return format!("{name}={value}");
+            }
             let expanded = self.expand_embedded_parameters_mut(value);
             if !quoted
                 && !expanded.contains('=')

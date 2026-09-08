@@ -234,6 +234,29 @@ fn split_compound_assignment_words(inner: &str) -> Vec<String> {
     words
 }
 
+/// True when `raw` ends inside a double-quoted span (odd count of
+/// non-backslash-escaped double quotes). The lexer splits compound
+/// assignment values at whitespace inside quoted elements, so a subscript
+/// assignment whose raw ends with an open quote continues in the next
+/// token(s); the split pieces must be re-joined before the storage parser
+/// sees them (array.tests "[5]="hello world"" element grouping).
+fn compound_raw_quote_unclosed(raw: &str) -> bool {
+    let bytes = raw.as_bytes();
+    let mut count = 0usize;
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if bytes[index] == b'\\' && index + 1 < bytes.len() {
+            index += 2;
+            continue;
+        }
+        if bytes[index] == b'"' {
+            count += 1;
+        }
+        index += 1;
+    }
+    count % 2 == 1
+}
+
 pub(super) fn collect_compound_assignment(
     tokens: &[Token],
     start: usize,
@@ -249,6 +272,29 @@ pub(super) fn collect_compound_assignment(
     let mut values = Vec::new();
     while i < tokens.len() && !is_keyword(tokens, i, ")") {
         if let Some((left, rhs)) = compound_subscript_assignment_token(&tokens[i]) {
+            // Re-join lexer-split quoted elements: a raw ending mid-quote
+            // continues in the following token(s) until the quotes balance,
+            // and the joined raw is the quote-intact element value.
+            let mut merged_raw =
+                tokens[i].raw.split_once('=').map(|(_, r)| r.to_string());
+            let mut merged_end = i;
+            if let Some(raw) = merged_raw.as_mut() {
+                while compound_raw_quote_unclosed(raw)
+                    && merged_end + 1 < tokens.len()
+                    && !is_keyword(tokens, merged_end + 1, ")")
+                {
+                    merged_end += 1;
+                    raw.push(' ');
+                    raw.push_str(&tokens[merged_end].raw);
+                }
+            }
+            if merged_end > i {
+                if let Some(raw) = merged_raw {
+                    values.push(format!("{}{}", left, raw));
+                    i = merged_end + 1;
+                    continue;
+                }
+            }
             if rhs.is_empty() {
                 if compound_subscript_value_is_empty(tokens, i) {
                     values.push(left);

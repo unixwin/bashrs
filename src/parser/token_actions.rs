@@ -41,6 +41,32 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                 } else {
                     push_command_word(&mut state.current_cmd, token);
                 }
+            } else if token.raw.contains("=(") && token.raw.ends_with(')') {
+                // Atomic compound operand after a command word (declare -a
+                // e=(...) ): the lexer keeps name=(...) whole and de-quotes
+                // the value, which would destroy element quote grouping
+                // before the declare builtin sees it. Preserve the raw RHS
+                // behind the compound marker like the Assignment path does.
+                if let Some((lhs, rhs)) = token.raw.split_once('=') {
+                    if valid_compound_assignment_lhs(lhs) {
+                        let word = format!(
+                            "{lhs}={}{}",
+                            crate::executor::types::COMPOUND_ASSIGNMENT_MARKER,
+                            rhs
+                        );
+                        let word_index = state.current_cmd.words.len();
+                        state
+                            .current_cmd
+                            .word_metadata
+                            .push(build_word_metadata(word_index, &word, &token.raw));
+                        state.current_cmd.words.push(word);
+                        state.current_cmd.word_kinds.push(TokenKind::Word);
+                    } else {
+                        push_command_word(&mut state.current_cmd, token);
+                    }
+                } else {
+                    push_command_word(&mut state.current_cmd, token);
+                }
             } else {
                 push_command_word(&mut state.current_cmd, token);
             }
@@ -179,6 +205,23 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                                     crate::executor::types::COMPOUND_ASSIGNMENT_MARKER
                                 );
                                 word.push_str(rhs);
+                            }
+                        }
+                        // Split-form compound operand after a command word
+                        // (declare -a e=( ... )): the lexer ends the word at
+                        // the open paren; reassemble the compound through the
+                        // quote-preserving collector so element quote
+                        // grouping survives into the declare builtin, exactly
+                        // like the first-word assignment path above.
+                        if let Some((compound_value, next_i)) =
+                            collect_compound_assignment(tokens, *i)
+                        {
+                            if let Some((lhs, _)) = raw_word.split_once('=') {
+                                word = format!
+                                    ("{lhs}={}{}",
+                                     crate::executor::types::COMPOUND_ASSIGNMENT_MARKER,
+                                     compound_value);
+                                *i = next_i;
                             }
                         }
                     } else if word.ends_with('=') {
