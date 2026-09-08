@@ -468,3 +468,17 @@ dbg-support 635、array 456、assoc 360、nameref 303、new-exp 241、more-exp 2
 - 复合赋值 RAW 保留（token_actions）：`name=(...) `原子词加 `__RUBASH_CA1__`+原样 RHS，独立赋值语句形式已端到端正确；declare 操作数形式经 and_or_list 执行路径仍有二次去引号，待该路径与 materialized 分派的合流后收敛。
 - 执行分派存在双路径：单命令走 execute_materialized_command（instrumented 可见），多命令走 and_or_list 快路径（绕过前者）。后续插桩需两路同插。
 - 下一步：旁路真基线全量重跑 → 真实语义缺口地图 → 按根因逐族收敛，仿真层按 AGENTS.md 规则待真实语义达标后退役。
+
+## 目标轮 1（83→83 战役）：P1 根因全链路定位 + bashdb fixture 修复程序
+
+### P1 复合赋值引号分组——根因链完整定位（设计就绪，分层重落未完成）
+1. **词法根因（决定性）**：`next_token` 先 `advance()` 消费首字符再分派，`skip_word` 内 `word_start=self.position` 从第二字符起算——`compound_assignment_start` 的前缀永远缺首字符（"e=" 被看成 "="→""），`name=(` 判定永不成立 → Assignment 词元在 `=(` 处终止、复合值裂成多词元。修复方向：`skip_word(token_start)` 传入真实词首（finish_word_token/scanner 四个调用点均有 start 可传）。已验证：改后词元 `e=([0]="x y" [2]=z)` 单词元、RAW 引号完整。
+2. **解析层**：arm 1 需对原子复合词加 `__RUBASH_CA1__`+RAW RHS（与 else 分支对称）；marker 流已验证可达 builtin。
+3. **展开层**：`expand_embedded_parameters_mut` 会剥掉 CA 标记词的元素引号——需 compound_assignment && 无 $/反引号 时逐字返回。两处同形函数（parameterized/plain assignment word）注意锚点区分。
+4. **回退状态**：三层改动已在工作区验证 d/e 双形式与 GNU 完全一致，但因 cli_tests 53 个 bashdb_compat 失败（当时以为回归）而整体回退至 9ad47872。
+
+### bashdb fixture：环境性失败根因与修复程序（重要教训）
+- 52 个 bashdb_compat 失败 = `target/bashdb-clean/bashdb-generated` fixture 缺失（target/ 不入库），非产品回归。
+- 修复：`bash scripts/setup-bashdb-fixture.sh C:/Users/Administrator/Downloads/bashdb-5.2-1.2.0/bashdb-5.2-1.2.0/_install`——**必须用 `_install`（构建产物）**，源码树 launcher 含未展开 autoconf 变量会 syntax error。
+- **进程卫生教训**：本机多代理共享——taskkill 前必须 `wmic process get commandline` 确认归属；本轮误杀了并行代理的 niubash-runtime 测试进程链。
+- 待办：fixture 修复后重跑 bashdb_compat 子集确认 master 基线，再分层重落 P1（每层：lib→cli→bashdb 子集→np 探针）。
