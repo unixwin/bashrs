@@ -553,3 +553,12 @@ dbg-support 635、array 456、assoc 360、nameref 303、new-exp 241、more-exp 2
 - 在途：代理 A（尺寸提示）、D（dbg-support DEBUG trap）
 - 路径注意：子代理工具曾把 D:\repo\X 解析为 D:\d\repo\X——代理提示词已要求 git rev-parse 自证；队长合并时从真实路径取 diff
 - 环境注意：WINUXSH_ROOT 经 WSL interop 泄入 rubash.exe，cd -P / 物理解析错位（dstack 50 行主因、array 基线虚高）——待 harness 消毒实验
+
+### 基线漂移事件（wave-4 猎杀结论）：v5→v6 的 11 个"回退"全部是测量假象
+
+- **根因**：WSL `/usr/local/bin/bash` 于 2026-09-09 00:09 (+0800) 被升级到 **GNU bash 5.3.0**，恰在 bf03eb1a→def70809 测量窗口内；harness 的 PATH 顺序让它遮蔽契约基线 5.2.21
+- **证据链**（代理 J，全程干净树）：① bf03eb1a 与 def70809 在默认 harness 下受影响套件数字**完全一致**（无代码提交动过它们）；② 钉版 harness（GNU=/usr/bin/bash 5.2.21）在两个提交上都塌回 v5 原值；③ 默认 harness 在干净 def70809 上精确复现 v6；④ GNU-vs-GNU（同一 rubash 二进制）diff 显示 5.3 改了自己的行为：嵌套花括号重试（braces.tests:133 "fixed post-bash-5.2"）、`${ echo;}` 语义命令替换（comsub2）、trap/cond/read 状态文案
+- **修复**：true-baseline.sh 现以 `/usr/bin/bash` 显式解析 GNU 侧并断言 5.2.21（否则 exit 9）；gnu-ab.sh 作为漂移探测器入库；rubash 侧 PATH 同步去 /usr/local/bin
+- **含义**：对齐 5.3 行为（嵌套花括号、dollar-brace 命令替换等）是**新战役**而非回归修复；契约基线保持 5.2.21
+- **附带**：docs/builtins.md 已提交（include_str! 依赖，新 worktree 此前无法跑 cargo test --lib）；trap.tests 在 Windows 上会孤儿化 rubash.exe ./trap9.sub（harness reaper 待办）
+- **v7（钉版口径）在测**：预期总缺口 ≈ 4119（4245 − 126 漂移假象）
