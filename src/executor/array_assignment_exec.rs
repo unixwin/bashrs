@@ -139,23 +139,6 @@ impl Executor {
                 .trim_end_matches(']')
                 .trim_matches('\'')
                 .trim_matches('"');
-            // GNU variables.c assign_hashcmd (variables.c:1712-1740): in a
-            // restricted shell a hashed-path value must be relative and
-            // resolvable through $PATH. Absolute values report
-            // "<value>: restricted" (sh_restricted) and unresolvable ones
-            // "<value>: not found" (sh_notfound); the assignment fails.
-            if crate::builtins::set::shell_option_enabled(&self.env_vars, "restricted") {
-                if value.contains('/') || value.contains('\\') {
-                    eprintln!("{}{value}: restricted", self.diagnostic_prefix());
-                    self.exit_code = 1;
-                    return true;
-                }
-                if crate::executor::path::find_user_command(value, &self.env_vars).is_none() {
-                    eprintln!("{}{value}: not found", self.diagnostic_prefix());
-                    self.exit_code = 1;
-                    return true;
-                }
-            }
             crate::builtins::hash::set_hashed_path(&mut self.env_vars, command_name, value);
             self.sync_dynamic_assoc_vars();
             self.exit_code = 0;
@@ -193,7 +176,16 @@ impl Executor {
                         (entry_key == &key).then_some(entry_value.as_str())
                     })
                     .unwrap_or_default();
-                append_scalar_value(current, value)
+                if is_marked_var(&self.env_vars, INTEGER_VARS, name) {
+                    // GNU bind_array_variable att_integer append adds the two
+                    // expressions arithmetically (wheat[foo bar]+=7 with
+                    // wheat[foo bar]=9 stores 16, not the concat-eval 97).
+                    (self.eval_integer_assignment_value(current)
+                        + self.eval_integer_assignment_value(value))
+                        .to_string()
+                } else {
+                    append_scalar_value(current, value)
+                }
             } else {
                 value.to_string()
             };
@@ -202,7 +194,7 @@ impl Executor {
             // arithmetic expression before being stored (assoc.tests:
             // declare -Ai chaff; chaff[one]=3+7 stores 10, not 3+7).
             let value = if is_marked_var(&self.env_vars, INTEGER_VARS, name) {
-                eval_arith_value(&value).to_string()
+                self.eval_integer_assignment_value(&value).to_string()
             } else {
                 value
             };
@@ -304,7 +296,9 @@ impl Executor {
         let current_element = entries.get(&index).cloned().unwrap_or_default();
         let element = if append {
             if is_marked_var(&self.env_vars, INTEGER_VARS, name) {
-                (eval_arith_value(&current_element) + eval_arith_value(value)).to_string()
+                (self.eval_integer_assignment_value(&current_element)
+                    + self.eval_integer_assignment_value(value))
+                    .to_string()
             } else {
                 append_scalar_value(&current_element, value)
             }
@@ -312,7 +306,7 @@ impl Executor {
             value.to_string()
         };
         let element = if is_marked_var(&self.env_vars, INTEGER_VARS, name) {
-            eval_arith_value(&element).to_string()
+            self.eval_integer_assignment_value(&element).to_string()
         } else {
             element
         };

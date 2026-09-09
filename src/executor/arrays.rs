@@ -404,7 +404,12 @@ pub(super) fn append_array_value(
         }
 
         let command_subst_token = token.starts_with("\"$(") && token.ends_with('"');
-        let quoted_token = token.starts_with('"') && token.ends_with('"') && !command_subst_token;
+        // A compound word quoted with EITHER quote family stays one element
+        // ('a b' and "a b" each store a single element; only unquoted
+        // whitespace splits). Mirrors the declare storage copy.
+        let quoted_token = (token.starts_with('"') && token.ends_with('"')
+            && !command_subst_token)
+            || (token.starts_with('\'') && token.ends_with('\'') && token.len() >= 2);
         if let Some(token) = token.strip_prefix(ARRAY_FIELD_SPLIT_MARKER) {
             let token = unquote_storage_value(token);
             if let Some(matches) = pathname_expand_array_token(&token) {
