@@ -50,7 +50,7 @@ source line breakpoints, because optimized/incremental Windows builds may move
 or omit lines. Capture LLDB stdout/stderr under
 `target/issue-suites/results/`; remove temporary instrumentation before
 finishing. LLDB evidence complements, but does not replace, the required WSL
-GNU Bash 5.2.21 script-file comparison. Do not claim a fix from an LLDB-only
+GNU Bash 5.3.0 script-file comparison. Do not claim a fix from an LLDB-only
 run.
 
 Do not repeatedly rebuild entire suites while locating a root cause. First use
