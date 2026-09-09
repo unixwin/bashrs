@@ -571,3 +571,12 @@ dbg-support 635、array 456、assoc 360、nameref 303、new-exp 241、more-exp 2
 - 解读：与 v6（同为 5.3 GNU 侧）比 **−90**；posixexp 211→147、comsub2 200→140 是远程 4 提交的真实改善；**builtins 15→182** 是 5.3 vendored 测试的新增语义（新战役最大单增户）
 - 版本身份：BASH_VERSION/BASH_VERSINFO/--version 横幅已切 5.3.0（58c59a91）；套件输出零旧版本串泄漏，台账无需刷新
 - 遗留口径（5.2.21）审计因 v7 流水线被脚本中途编辑破坏而延后（教训：勿编辑运行中的脚本）；J 的 4 台账证据链已完整记录漂移
+
+### wave-4/5/6 合并实录（K/L/O 三族收官）
+
+- **L（dbg-support 53→0）**：AND-列表双触发（execute_cmd.c 无 connection 节点火点）、source-scope 陷阱继承（source.def:208-216 + return_trap_in_scope execute_cmd.c:5295）、非行首 `{` 回归普通词法（parse.y 元字符集）、for 每迭代行号重置（execute_cmd.c:3039）。`5a2415ad`
+- **K（assoc 344→274 + 连带 array/quotearray/new-exp −86）**：ASSOC_HASH_BUCKETS 1024、!A[@] 键值解构、declare -p GNU 引用规则（assoc.c/shquote.c）、引号感知切分、名字长度截断之谜（next_token 先吃首字符）、收集器覆写、存储往返、元素赋值元数据回退、`\$` 去除。`a65f0e33`。合并战役：另一会话在 assignment_helpers.rs 有独立 1024 实现 → git merge-file 三方合并（唯一冲突=注释，保留业主版）；CRLF 补丁需 --ignore-whitespace 入索引
+- **O（rsh 194→0，与 GNU 5.3.0 逐字节一致）**：主导根因 = `set +o restricted` 静默解除限制（set 快速路径跳过 GNU 拒绝检查 flags.c:227-235）→ exec 了 Windows shim 喷 190 行横幅；另修 set +r 文案/退出码、BASH_CMDS 赋值守卫、hash -p、管线成员斜杠拒绝（两条并发路径）、source 文件名、裸 exec 放行、受限只读集、argv0 rbash 自动受限。`1300aeca`
+- **台账演进：v8 4155 → L −64 → K −156 → O −194 ≈ 3741；零缺口 24→26（+dbg-support +rsh）**
+- 流程沉淀：管道后 `$?` 取的是 head 退出码；跨树补丁先查 CRLF；共享文件 git merge-file（base=HEAD, ours=主树脏态, theirs=代理版）；exe 句柄锁可改名绕过（mv rubash.exe → cargo 重写）；trap9/printf7 孤儿每次全量后例行核查
+- 在途：M builtins 182、N2 quote 族 172、P array 357、Q assoc 274（wave-5/6）
