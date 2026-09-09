@@ -292,7 +292,7 @@ where
     // bare help listing (builtins10.sub pipes through "sed 1d" to strip it).
     writeln!(
         stdout,
-        "GNU bash, version 5.2.21(1)-release-(x86_64-pc-msys)"
+        "GNU bash, version 5.3.0(1)-release-(x86_64-pc-msys)"
     )?;
     // TODO(builtins/help.def/builtins/gen-helpfiles.c): Generate this from the
     // builtin table. The current list matches the upstream builtins10.sub

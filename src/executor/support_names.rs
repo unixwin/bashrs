@@ -22,9 +22,10 @@ pub(in crate::executor) fn is_special_parameter_name(name: &str) -> bool {
 }
 
 /// Bash compatibility version advertised through BASH_VERSION / BASH_VERSINFO.
-/// Rubash targets GNU Bash 5.2 semantics; scripts that feature-detect on the
-/// version must see a compatible value, like other Bash-compatible shells do.
-const BASH_COMPAT_VERSION: &str = "5.2.37";
+/// Rubash targets GNU Bash 5.3 semantics (owner directive 2026-09-09, the
+/// compiled /usr/local/bin/bash 5.3.0 baseline); scripts that feature-detect on
+/// the version must see a compatible value, like other Bash-compatible shells.
+const BASH_COMPAT_VERSION: &str = "5.3.0";
 
 pub(in crate::executor) fn bash_version_value() -> String {
     format!("{}(1)-release", BASH_COMPAT_VERSION)
