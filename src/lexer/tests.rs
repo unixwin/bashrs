@@ -107,6 +107,50 @@ fn runtime_set_o_posix_switches_dolbrace_scan() {
 }
 
 #[test]
+fn posix_interleaved_quotes_whole_line_balance() {
+    // posixexp2 case 28: `"${IFS+"'"x ~ x'}'x"'}"x}" #'` closes the `${...}`
+    // span at the first `}` in POSIX mode (single quotes literal inside the
+    // double-quoted body), the double quote closes right after `'x`, and the
+    // trailing `'..."` single-quoted segment balances the word. The
+    // unclosed-input pre-flight and the line collector must agree, otherwise
+    // the script is rejected with "unexpected end of file" before execution.
+    let line = "(echo -n '28 '; printf '%s\\n' \"${IFS+\"'\"x ~ x'}'x\"'}\"x}\" #') 2>&-";
+    assert!(
+        !has_unclosed_input_syntax(line),
+        "posix-interleaved quotes must not read as unclosed input"
+    );
+    let tokens = tokenize_with_initial_posix(line, true);
+    assert!(
+        tokens.iter().any(|token| {
+            token.value.starts_with('\x1d')
+                && token.value.contains("${IFS+")
+                && token.value.ends_with(" #")
+        }),
+        "the quoted word must stay one token with the quoted-word marker: {tokens:?}"
+    );
+}
+
+#[test]
+fn posix_quoted_alternate_word_value_keeps_quote_structure() {
+    // The de-quoted value of the case-28 word: `${...}` closes at the first
+    // `}`, the literal-in-dquote `'` before the closing `"` travels as the
+    // protected-literal marker, and the single-quoted tail keeps its `"` as
+    // data. The expansion stage owns the rest.
+    let line = "printf '%s\\n' \"${IFS+\"'\"x ~ x'}'x\"'}\"x}\" #\"";
+    let tokens = tokenize_with_initial_posix(line, true);
+    let word = tokens
+        .iter()
+        .find(|token| token.value.contains("${IFS+"))
+        .expect("braced word token");
+    assert!(
+        word.value.starts_with('\x1d'),
+        "fully-quoted mixed word must carry the quoted-word marker: {:?}",
+        word.value
+    );
+    assert!(word.value.contains("\x17"), "literal-in-dquote `'` must be protected: {:?}", word.value);
+}
+
+#[test]
 fn test_comment_skip() {
     let tokens = tokenize("ls # comment");
     assert_eq!(tokens[0].value, "ls");

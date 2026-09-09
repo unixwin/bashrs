@@ -2,6 +2,15 @@ use super::ansi::decode_ansi_c_quoted;
 use super::dolbrace::{scan_braced_parameter, BraceContext, DolbraceState};
 
 pub(crate) fn remove_shell_quotes(raw: &str) -> String {
+    remove_shell_quotes_with_posix(raw, false)
+}
+
+/// Quote removal with the lexer's POSIX mode. Inside double quotes the
+/// `${...}` span scan must agree with the tokenizing skip phase: in POSIX
+/// mode the Interp 221 big hammer closes the span at the first `}` (single
+/// quotes are literal), otherwise the de-quoted value keeps quote structure
+/// the expansion stage cannot interpret (posixexp2 case 28).
+pub(crate) fn remove_shell_quotes_with_posix(raw: &str, posix: bool) -> String {
     let mut out = String::new();
     let mut chars = raw.chars().peekable();
     // Array-subscript regions keep `\"` as a bare data quote: the subscript
@@ -50,7 +59,7 @@ pub(crate) fn remove_shell_quotes(raw: &str) -> String {
             }
             '$' if chars.peek() == Some(&'"') => {
                 chars.next();
-                remove_double_quoted_into(&mut out, &mut chars, false);
+                remove_double_quoted_into(&mut out, &mut chars, false, posix);
             }
             '$' if chars.peek() == Some(&'{') => {
                 copy_braced_parameter_unquoted(&mut out, &mut chars);
@@ -70,7 +79,7 @@ pub(crate) fn remove_shell_quotes(raw: &str) -> String {
                 }
             }
             '"' => {
-                remove_double_quoted_into(&mut out, &mut chars, false);
+                remove_double_quoted_into(&mut out, &mut chars, false, posix);
             }
             '`' => {
                 out.push(ch);
@@ -131,7 +140,7 @@ pub(super) fn remove_shell_quotes_outside_backticks(raw: &str) -> String {
             }
             '$' if chars.peek() == Some(&'"') => {
                 chars.next();
-                remove_double_quoted_into(&mut out, &mut chars, true);
+                remove_double_quoted_into(&mut out, &mut chars, true, false);
             }
             '$' if chars.peek() == Some(&'{') => {
                 copy_braced_parameter_unquoted(&mut out, &mut chars);
@@ -145,7 +154,7 @@ pub(super) fn remove_shell_quotes_outside_backticks(raw: &str) -> String {
                 }
             }
             '"' => {
-                remove_double_quoted_into(&mut out, &mut chars, true);
+                remove_double_quoted_into(&mut out, &mut chars, true, false);
             }
             '\\' => {
                 let Some(escaped) = chars.next() else {
@@ -182,6 +191,7 @@ fn remove_double_quoted_into(
     out: &mut String,
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
     preserve_backticks: bool,
+    posix: bool,
 ) {
     while let Some(quoted) = chars.next() {
         if quoted == '$' && chars.peek() == Some(&'(') {
@@ -189,7 +199,7 @@ fn remove_double_quoted_into(
             continue;
         }
         if quoted == '$' && chars.peek() == Some(&'{') {
-            copy_braced_parameter_after_dollar(out, chars);
+            copy_braced_parameter_after_dollar(out, chars, posix);
             continue;
         }
         if quoted == '$'
@@ -402,6 +412,7 @@ mod tests {
 pub(super) fn copy_braced_parameter_after_dollar(
     out: &mut String,
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+    posix: bool,
 ) {
     out.push('$');
     if chars.peek() != Some(&'{') {
@@ -412,8 +423,10 @@ pub(super) fn copy_braced_parameter_after_dollar(
     wrapped.push_str(&remaining);
     let context = BraceContext {
         outer_double_quote: true,
-        // The surrounding double quote is not POSIX mode.
-        posix: false,
+        // POSIX mode comes from the lexer: parse.y's matched-pair scan runs
+        // the Interp 221 big hammer there (single quotes inside the
+        // double-quoted span are literal, first `}` closes).
+        posix,
         replacement_context: false,
         initial_state: DolbraceState::Param,
     };

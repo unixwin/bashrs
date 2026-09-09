@@ -244,7 +244,21 @@ impl Executor {
         else {
             return self.expand_embedded_parameters_mut_with_context(word, context);
         };
-        if !braced_parameter_spans_whole_word(word) {
+        // The whole-word span check must use the same quote rules the lexer
+        // used to build the word. In POSIX mode inside double quotes the
+        // Interp 221 big hammer closes `${...}` at the first `}` (single
+        // quotes are literal), so a body with an unbalanced `'` such as
+        // `${IFS+"'"x ~ x'}` still closes at the final `}`; the non-POSIX
+        // scan leaves that `}` quote-hidden and mis-routes the word to the
+        // embedded walker (posixexp2 case 28).
+        let spans_whole_word = if matches!(context, SubstitutionQuoteContext::DoubleQuoted)
+            && self.posix_mode_enabled()
+        {
+            braced_parameter_spans_whole_word_in_context(word, true, true)
+        } else {
+            braced_parameter_spans_whole_word(word)
+        };
+        if !spans_whole_word {
             return self.expand_embedded_parameters_mut_with_context(word, context);
         }
 

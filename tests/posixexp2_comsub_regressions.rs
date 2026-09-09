@@ -114,3 +114,39 @@ fn escaped_quote_in_unquoted_alternate_yields_literal_quote() {
     assert_eq!(stdout, "\"\n");
     assert_eq!(code, Some(0));
 }
+
+#[test]
+fn posix_interleaved_quotes_case28_mixed_quoted_word() {
+    // posixexp2.tests case 28: the word is a dq segment + sq segment pair.
+    // POSIX closes the `${...}` at the first `}` (single quotes literal in
+    // the double-quoted body), the `"` after `'x` closes the dq segment, and
+    // `'...'` single-quotes the tail. GNU 5.2.21:
+    // `'x ~ x''x}"x}" #`.
+    let (stdout, stderr, code) = rubash(
+        "set -o posix ; shopt -u xpg_echo\n(echo -n '28 '; printf '%s\n' \"${IFS+\"'\"x ~ x'}'x\"'}\"x}\" #') 2>&- || echo failed in 28\n",
+    );
+    assert_eq!(stdout, "28 'x ~ x''x}\"x}\" #\n");
+    assert_eq!(stderr, "");
+    assert_eq!(code, Some(0));
+}
+
+#[test]
+fn posix_interleaved_quotes_case28_dq_segment_alone() {
+    // The dq-segment-only sub-case: GNU 5.2.21 prints `'x ~ x'`.
+    let (stdout, stderr, code) =
+        rubash("set -o posix\nprintf '<%s>\n' \"${IFS+\"'\"x ~ x'}\"\n");
+    assert_eq!(stdout, "<'x ~ x'>\n");
+    assert_eq!(stderr, "");
+    assert_eq!(code, Some(0));
+}
+
+#[test]
+fn posix_interleaved_quotes_case28_dq_segment_plus_sq_tail() {
+    // dq segment followed by an unterminated-looking `'x"` tail: GNU 5.2.21
+    // prints `'x ~ x''x` (the trailing `"` closes the double quote).
+    let (stdout, stderr, code) =
+        rubash("set -o posix\nprintf '<%s>\n' \"${IFS+\"'\"x ~ x'}'x\"\n");
+    assert_eq!(stdout, "<'x ~ x''x>\n");
+    assert_eq!(stderr, "");
+    assert_eq!(code, Some(0));
+}

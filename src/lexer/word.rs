@@ -2,7 +2,7 @@ use super::classification::{
     assignment_value_is_quoted, is_assignment, is_keyword, mark_quoted_assignment_value,
     quoted_literal_tilde,
 };
-use super::quotes::{remove_shell_quotes, remove_shell_quotes_outside_backticks};
+use super::quotes::{remove_shell_quotes_outside_backticks, remove_shell_quotes_with_posix};
 use super::scanner::Lexer;
 use super::token::{Token, TokenKind};
 
@@ -34,7 +34,7 @@ impl<'a> Lexer<'a> {
             // backquote body for the substitution stage.
             remove_shell_quotes_outside_backticks(raw)
         } else {
-            remove_shell_quotes(raw)
+            remove_shell_quotes_with_posix(raw, self.posix)
         };
         let kind = if allow_keyword && is_keyword(raw) {
             TokenKind::Keyword
@@ -67,10 +67,17 @@ impl<'a> Lexer<'a> {
             // `"SHELL=~/bash"`, remains a normal word but its RHS quote state
             // still suppresses the assignment-word tilde pass.
             mark_quoted_assignment_value(raw, &value)
-        } else if raw.starts_with('"') && raw.ends_with('"') && raw.contains("${") {
+        } else if raw.starts_with('"')
+            && (raw.ends_with('"') || raw.ends_with('\''))
+            && raw.contains("${")
+        {
             // TODO(parse.y/subst.c): Preserve full quote state on WORD_DESC
             // instead of a sentinel. This narrow marker lets expansion
             // distinguish "${v:-~}" from ${v:-~} for upstream tilde2.tests.
+            // The trailing-' form covers mixed fully-quoted words such as
+            // `"${IFS+"'"x ~ x'}'x"}"x}" #'` (dq segment + sq segment):
+            // GNU treats the whole word as quoted (no field splitting,
+            // quoted alternate expansion, posixexp2 case 28).
             format!("\x1d{value}")
         } else {
             value

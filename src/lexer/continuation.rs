@@ -87,21 +87,57 @@ pub(super) fn has_unclosed_quotes(input: &str) -> bool {
 
         // Skip a parameter expansion `${...}` as a self-contained unit so that
         // quotes inside its word/operator body do not affect outer state.
-        if ch == '$' && !single && !double && chars.get(index + 1) == Some(&'{') {
+        // Inside double quotes the unit must still be skipped: the quote
+        // toggles below are dolbrace-style (`'` only when !double, `"` only
+        // when !single), so body quotes of `"${IFS+"'"x ~ x'}"` would
+        // otherwise leak a dangling double-quote state and report the line
+        // as unclosed (posixexp2 case 28). The span scan is mode-dependent —
+        // POSIX honors the Interp 221 big hammer (`'` literal, first `}`
+        // closes), non-POSIX honors quotes — so try POSIX first and fall back
+        // to the non-POSIX scan; if neither closes, the line is unclosed.
+        if ch == '$' && !single && chars.get(index + 1) == Some(&'{') {
             let body: String = chars[index + 2..].iter().collect();
-            let context = crate::lexer::dolbrace::BraceContext {
-                outer_double_quote: false,
-                posix: false,
-                replacement_context: false,
-                initial_state: crate::lexer::dolbrace::DolbraceState::Param,
-            };
-            if let Some(scan) = crate::lexer::dolbrace::scan_braced_parameter_body(&body, context) {
-                index += 2 + body[..scan.end].chars().count();
-                comment_start = false;
-                continue;
+            if !double {
+                let context = crate::lexer::dolbrace::BraceContext {
+                    outer_double_quote: false,
+                    posix: false,
+                    replacement_context: false,
+                    initial_state: crate::lexer::dolbrace::DolbraceState::Param,
+                };
+                if let Some(scan) =
+                    crate::lexer::dolbrace::scan_braced_parameter_body(&body, context)
+                {
+                    index += 2 + body[..scan.end].chars().count();
+                    comment_start = false;
+                    continue;
+                }
+                // Unterminated/odd expansion: fall through and let the caller
+                // treat the input as having unclosed syntax.
+            } else {
+                let mut closed = false;
+                for posix_mode in [true, false] {
+                    let context = crate::lexer::dolbrace::BraceContext {
+                        outer_double_quote: true,
+                        posix: posix_mode,
+                        replacement_context: false,
+                        initial_state: crate::lexer::dolbrace::DolbraceState::Param,
+                    };
+                    if let Some(scan) =
+                        crate::lexer::dolbrace::scan_braced_parameter_body(&body, context)
+                    {
+                        index += 2 + body[..scan.end].chars().count();
+                        comment_start = false;
+                        closed = true;
+                        break;
+                    }
+                }
+                if closed {
+                    continue;
+                }
+                // Neither scan closes the span: fall through; the trailing
+                // quote toggles leave the state as-is and the caller reports
+                // unclosed input, matching the lexer's own fallback swallow.
             }
-            // Unterminated/odd expansion: fall through and let the caller treat
-            // the input as having unclosed syntax.
         }
 
         // Skip a command substitution `$(...)` (and `$((...))` arithmetic) as a
