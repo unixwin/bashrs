@@ -258,7 +258,9 @@ pub(crate) fn set_shell_option(env_vars: &mut HashMap<String, String>, name: &st
     );
     env_vars.insert("SHELLOPTS".to_string(), shellopts_value(env_vars));
     if name == "restricted" && enabled {
-        for variable in ["PATH", "SHELL", "CDPATH", "ENV", "BASH_ENV"] {
+        // GNU shell.c maybe_make_restricted (shell.c:1278-1299): PATH, SHELL,
+        // ENV, BASH_ENV and HISTFILE become read-only; CDPATH is untouched.
+        for variable in ["PATH", "SHELL", "ENV", "BASH_ENV", "HISTFILE"] {
             mark_env_name(env_vars, super::READONLY_VARS, variable);
         }
     }

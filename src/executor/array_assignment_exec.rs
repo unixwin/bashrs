@@ -139,6 +139,23 @@ impl Executor {
                 .trim_end_matches(']')
                 .trim_matches('\'')
                 .trim_matches('"');
+            // GNU variables.c assign_hashcmd (variables.c:1712-1740): in a
+            // restricted shell a hashed-path value must be relative and
+            // resolvable through $PATH. Absolute values report
+            // "<value>: restricted" (sh_restricted) and unresolvable ones
+            // "<value>: not found" (sh_notfound); the assignment fails.
+            if crate::builtins::set::shell_option_enabled(&self.env_vars, "restricted") {
+                if value.contains('/') || value.contains('\\') {
+                    eprintln!("{}{value}: restricted", self.diagnostic_prefix());
+                    self.exit_code = 1;
+                    return true;
+                }
+                if crate::executor::path::find_user_command(value, &self.env_vars).is_none() {
+                    eprintln!("{}{value}: not found", self.diagnostic_prefix());
+                    self.exit_code = 1;
+                    return true;
+                }
+            }
             crate::builtins::hash::set_hashed_path(&mut self.env_vars, command_name, value);
             self.sync_dynamic_assoc_vars();
             self.exit_code = 0;

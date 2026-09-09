@@ -373,6 +373,21 @@ impl Executor {
                 if !crate::builtins::set::is_shell_option(option_name) {
                     return false;
                 }
+                // GNU flags.c change_flag (flags.c:227-235) refuses
+                // "set +o restricted" in a restricted shell with FLAG_ERROR,
+                // and set.def:493-497 turns that into sh_invalidoptname
+                // ("invalid option name", EX_USAGE) without changing the
+                // restriction. Bail to the full set parser so the refusal is
+                // reported instead of being silently applied here.
+                if option_name == "restricted"
+                    && prefix == '+'
+                    && crate::builtins::set::shell_option_enabled(
+                        &self.env_vars,
+                        "restricted",
+                    )
+                {
+                    return false;
+                }
                 let enabled = prefix == '-';
                 crate::builtins::set::set_shell_option(&mut self.env_vars, option_name, enabled);
                 if option_name == "posix" {

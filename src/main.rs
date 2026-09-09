@@ -64,6 +64,13 @@ fn apply_invocation_shell_mode(executor: &mut Executor, argv0: Option<&str>) {
         executor.set_env("__RUBASH_POSIX_MODE", "1");
         executor.set_shell_option("posix", true);
     }
+    // GNU shell.c shell_is_restricted/maybe_make_restricted
+    // (shell.c:1258-1299, config-bot.h:96): a shell invoked under the name
+    // `rbash` (a leading `-` login-shell marker is stripped first) starts
+    // restricted, which makes PATH/SHELL/ENV/BASH_ENV/HISTFILE read-only.
+    if name.strip_prefix('-').unwrap_or(name.as_str()) == "rbash" {
+        executor.set_shell_option("restricted", true);
+    }
 }
 
 fn invocation_shell_name(argv0: &str) -> Option<String> {

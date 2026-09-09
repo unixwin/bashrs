@@ -87,6 +87,20 @@ where
 
     let mut table = hash_table(env_vars);
     if let Some(pathname) = pathname {
+        // GNU builtins/hash.def:156-176: in a restricted shell `hash -p`
+        // refuses an absolute pathname (sh_restricted -> "hash: <path>:
+        // restricted") and requires a relative one to resolve through $PATH
+        // (sh_notfound -> "hash: <name>: not found"); both fail the builtin.
+        if crate::builtins::set::shell_option_enabled(env_vars, "restricted") {
+            if pathname.contains('/') || pathname.contains('\\') {
+                writeln!(stderr, "{}hash: {pathname}: restricted", script_prefix())?;
+                return Ok(EXECUTION_FAILURE);
+            }
+            if crate::executor::path::find_user_command(pathname, env_vars).is_none() {
+                writeln!(stderr, "{}hash: {pathname}: not found", script_prefix())?;
+                return Ok(EXECUTION_FAILURE);
+            }
+        }
         if let Some(name) = names.first().copied() {
             if pathname == "/" {
                 writeln!(

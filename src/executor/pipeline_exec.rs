@@ -685,6 +685,19 @@ impl Executor {
                 return Ok(None);
             };
             let expanded_name = self.expand_word(name);
+            // GNU runs every pipeline member through execute_disk_command
+            // (execute_cmd.c:5789), so a restricted shell refuses members
+            // exactly like plain commands. A member that would be refused
+            // must take the sequential stage path, where
+            // restricted_command_error reports it and the remaining stages
+            // still run against the (empty) pipe input.
+            if crate::builtins::set::shell_option_enabled(&self.env_vars, "restricted")
+                && self
+                    .restricted_command_error(command, &expanded_name)
+                    .is_some()
+            {
+                return Ok(None);
+            }
             if crate::executor::builtin_names::is_shell_builtin_name(&expanded_name) {
                 return Ok(None);
             }
@@ -846,6 +859,16 @@ impl Executor {
                 return Ok(None);
             };
             let expanded_name = self.expand_word(name);
+            // Same restricted-member bail-out as the first concurrent path:
+            // refused members are reported (and the rest of the pipeline
+            // keeps running) by the sequential stage executor.
+            if crate::builtins::set::shell_option_enabled(&self.env_vars, "restricted")
+                && self
+                    .restricted_command_error(command, &expanded_name)
+                    .is_some()
+            {
+                return Ok(None);
+            }
             if crate::executor::builtin_names::is_shell_builtin_name(&expanded_name) {
                 return Ok(None);
             }
@@ -1382,24 +1405,41 @@ impl Executor {
                 name
             ));
         }
-        if matches!(name, "cd" | "exec") {
+        if name == "cd" {
+            // GNU builtins/cd.def:267-274 refuses any cd in a restricted
+            // shell: sh_restricted(NULL) -> "cd: restricted".
             return Some(format!(
                 "{}{}: restricted\n",
                 self.diagnostic_prefix(),
                 name
             ));
         }
-        if matches!(name, "." | "source") {
-            if command.words[1..]
-                .iter()
-                .map(|word| self.expand_word(word))
-                .any(|word| slash(&word))
-            {
+        if name == "exec" {
+            // GNU builtins/exec.def:118-145: bare `exec` (redirects only)
+            // still succeeds in a restricted shell; an operand triggers
+            // sh_restricted(NULL) -> "exec: restricted".
+            if command.words.len() > 1 {
                 return Some(format!(
                     "{}{}: restricted\n",
                     self.diagnostic_prefix(),
                     name
                 ));
+            }
+        }
+        if matches!(name, "." | "source") {
+            // GNU builtins/source.def:148-155 refuses when the filename
+            // operand contains a slash: sh_restricted(filename) ->
+            // ".: <filename>: restricted".
+            if let Some(operand) = command.words.get(1) {
+                let filename = self.expand_word(operand);
+                if slash(&filename) {
+                    return Some(format!(
+                        "{}{}: {}: restricted\n",
+                        self.diagnostic_prefix(),
+                        name,
+                        filename
+                    ));
+                }
             }
         }
         if name == "command"

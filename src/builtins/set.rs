@@ -43,6 +43,24 @@ pub fn set(args: &[String], env_vars: &mut HashMap<String, String>) -> io::Resul
     )
 }
 
+/// GNU builtin_error prolog (builtins/common.c:83-94): the shell name, the
+/// executing line for scripts, then the builtin name. The builtin name is
+/// added by each call site, so this only carries the script/line prolog.
+/// Reads the executor env map (same sources as
+/// Executor::diagnostic_prefix), matching GNU's script-relative prolog.
+fn builtin_error_prefix(env_vars: &HashMap<String, String>) -> String {
+    if let (Some(script), Some(line)) = (
+        env_vars.get("__RUBASH_SCRIPT_NAME"),
+        env_vars.get("__RUBASH_CURRENT_LINE"),
+    ) {
+        if env_vars.contains_key("__RUBASH_EVAL_CONTEXT") {
+            return format!("{script}: eval: line {line}: ");
+        }
+        return format!("{script}: line {line}: ");
+    }
+    "rubash: ".to_string()
+}
+
 pub(crate) fn set_with_io<'a, I, W, E>(
     args: I,
     env_vars: &mut HashMap<String, String>,
@@ -103,11 +121,16 @@ where
                             && prefix == '+'
                             && shell_option_enabled(env_vars, "restricted")
                         {
+                            // GNU set.def set_minus_o_option (set.def:476-501)
+                            // -> change_flag FLAG_ERROR (flags.c:227-235) ->
+                            // sh_invalidoptname: "invalid option name" with
+                            // EX_USAGE; the restriction stays on.
                             writeln!(
                                 stderr,
-                                "rubash: set: restricted: cannot unset: restricted shell"
+                                "{}set: restricted: invalid option name",
+                                builtin_error_prefix(env_vars)
                             )?;
-                            return Ok(EXECUTION_FAILURE);
+                            return Ok(EX_USAGE);
                         }
                         set_shell_option(env_vars, name, prefix == '-');
                         index += 1;
@@ -119,9 +142,20 @@ where
 
             if option == 'r' {
                 if prefix == '+' && shell_option_enabled(env_vars, "restricted") {
+                    // GNU flags.c change_flag (flags.c:227-235) refuses
+                    // "set +r" in a restricted shell with FLAG_ERROR;
+                    // set.def:763-771 reports sh_invalidopt("+r") plus the
+                    // builtin usage line and returns EXECUTION_FAILURE.
                     writeln!(
                         stderr,
-                        "rubash: set: restricted: cannot unset: restricted shell"
+                        "{}set: {}{}: invalid option",
+                        builtin_error_prefix(env_vars),
+                        prefix,
+                        option
+                    )?;
+                    writeln!(
+                        stderr,
+                        "set: usage: set [-abefhkmnptuvxBCEHPT] [-o option-name] [--] [-] [arg ...]"
                     )?;
                     return Ok(EXECUTION_FAILURE);
                 }
