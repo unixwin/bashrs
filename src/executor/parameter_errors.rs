@@ -20,6 +20,115 @@ fn parse_special_assignment_operator(inner: &str) -> Option<(&str, bool)> {
     None
 }
 
+/// Byte index of the next `${` in `text` that starts a parameter expansion
+/// of the word itself, skipping spans whose contents belong to another
+/// expansion layer (GNU subst.c: string_extract_double_quoted copies a
+/// backtick body verbatim; extract_command_subst and
+/// extract_dollar_brace_string own their spans):
+///   * single-quoted spans and ANSI-C $'...' strings (data)
+///   * backtick bodies and $(...) bodies (separate command sources)
+///   * the lexer's legacy C0 data markers (0x11 glob, 0x14 backslash,
+///     0x17 single quote, 0x18 double quote, 0x1a backtick, 0x1f dollar)
+/// Inside double quotes `${` stays a real expansion start and a single
+/// quote is literal data (parse.y skip_double_quoted), matching GNU
+/// word expansion; heredoc bodies keep the raw scan instead.
+fn next_quoted_parameter_expansion_start(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut index = 0usize;
+    let mut in_double = false;
+    while index < bytes.len() {
+        let ch = bytes[index];
+        match ch {
+            b'\\' => {
+                // Escaped pair: \$ / \` / \} never opens a span here.
+                index += 2;
+            }
+            0x11 => {
+                // Protected glob marker plus the guarded character.
+                index += 2;
+            }
+            0x13 | 0x14 | 0x17 | 0x18 | 0x1a | 0x1f => {
+                // Legacy data markers: literal data, never delimiters.
+                index += 1;
+            }
+            b'\'' if !in_double => {
+                index += 1;
+                while index < bytes.len() && bytes[index] != b'\'' {
+                    index += 1;
+                }
+                index += 1;
+            }
+            b'$' if bytes.get(index + 1) == Some(&b'\'') && !in_double => {
+                // ANSI-C string: backslash escapes carry through the span.
+                index += 2;
+                while index < bytes.len() {
+                    if bytes[index] == b'\\' {
+                        index += 2;
+                        continue;
+                    }
+                    if bytes[index] == b'\'' {
+                        index += 1;
+                        break;
+                    }
+                    index += 1;
+                }
+            }
+            b'$' if bytes.get(index + 1) == Some(&b'{') => return Some(index),
+            b'$' if bytes.get(index + 1) == Some(&b'(') => {
+                // $(...) body: a separate command source with its own scan.
+                index += 2;
+                let mut depth = 1usize;
+                let mut single = false;
+                let mut double = false;
+                while index < bytes.len() {
+                    let current = bytes[index];
+                    if current == b'\\' && !single {
+                        index += 2;
+                        continue;
+                    }
+                    match current {
+                        b'\'' if !double => single = !single,
+                        b'"' if !single => double = !double,
+                        b'(' if !single && !double => depth += 1,
+                        b')' if !single && !double => {
+                            depth -= 1;
+                            if depth == 0 {
+                                index += 1;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    index += 1;
+                }
+            }
+            b'`' => {
+                // Backtick body: the dequoter copies it verbatim, so its
+                // `${` belongs to the inner command (quote.tests:117).
+                index += 1;
+                while index < bytes.len() {
+                    if bytes[index] == b'\\' {
+                        index += 2;
+                        continue;
+                    }
+                    if bytes[index] == b'`' {
+                        index += 1;
+                        break;
+                    }
+                    index += 1;
+                }
+            }
+            b'"' => {
+                in_double = !in_double;
+                index += 1;
+            }
+            _ => {
+                index += 1;
+            }
+        }
+    }
+    None
+}
 impl Executor {
     pub(in crate::executor) fn parameter_assignment_error(
         &self,
@@ -426,13 +535,29 @@ impl Executor {
             return None;
         }
         let body = strip_unterminated_heredoc_marker(strip_quoted_heredoc_marker(body));
-        self.parameter_expansion_error_in_word(body)
+        // Heredoc bodies are raw text: quote characters are literal data
+        // (redir.c heredoc expansion has no quote removal), so the scan must
+        // keep treating every `${` as an expansion start.
+        self.parameter_expansion_error_in_word_context(body, false)
             .map(|(name, message, status)| (name, message, if status == 127 { 1 } else { status }))
     }
 
     pub(in crate::executor) fn parameter_expansion_error_in_word(
         &self,
         word: &str,
+    ) -> Option<(String, String, i32)> {
+        self.parameter_expansion_error_in_word_context(word, true)
+    }
+
+    /// `quote_aware` mirrors GNU word expansion (subst.c): quotes in a word
+    /// delimit data, so `${` inside `'...'`, a $'...' string, a backtick
+    /// body or a $(...) body is not an expansion start of THIS word
+    /// (quote.tests:117 `echo \`echo '${'\```). Heredoc bodies keep the raw
+    /// scan because quotes are literal there.
+    fn parameter_expansion_error_in_word_context(
+        &self,
+        word: &str,
+        quote_aware: bool,
     ) -> Option<(String, String, i32)> {
         let word = word
             .strip_prefix('\x1b')
@@ -449,7 +574,11 @@ impl Executor {
             }
         }
         let mut rest = word;
-        while let Some(start) = rest.find("${") {
+        while let Some(start) = if quote_aware {
+            next_quoted_parameter_expansion_start(rest)
+        } else {
+            rest.find("${")
+        } {
             let after_start = &rest[start + 2..];
             let Some(end) = matching_parameter_brace(after_start) else {
                 return Some((

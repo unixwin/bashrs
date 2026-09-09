@@ -42,10 +42,10 @@ pub(super) fn decode_ansi_c_quoted(value: &str) -> String {
                         output.push('\0');
                     } else {
                         let parsed = u32::from_str_radix(&value, 16).unwrap_or(0) & 0xFF;
-                        push_ansi_c_codepoint(&mut output, parsed);
+                        push_ansi_c_byte(&mut output, parsed);
                     }
                 } else if let Some(value) = read_ansi_c_digits(&mut chars, 16, 2) {
-                    push_ansi_c_codepoint(&mut output, value & 0xFF);
+                    push_ansi_c_byte(&mut output, value & 0xFF);
                 } else {
                     output.push('\\');
                     output.push('x');
@@ -63,7 +63,7 @@ pub(super) fn decode_ansi_c_quoted(value: &str) -> String {
                     value = value * 8 + digit;
                     chars.next();
                 }
-                push_ansi_c_codepoint(&mut output, value);
+                push_ansi_c_byte(&mut output, value & 0xFF);
             }
             Some(c) if c.is_ascii_digit() => {
                 output.push('\\');
@@ -136,5 +136,24 @@ where
 fn push_ansi_c_codepoint(output: &mut String, value: u32) {
     if let Some(ch) = char::from_u32(value) {
         output.push(ch);
+    }
+}
+
+/// GNU strtrans.c ansicstr: `\xHH` and octal escapes emit one RAW byte
+/// (`c &= 0xFF; *r++ = c;`) -- they never go through locale conversion, so
+/// values >= 0x80 are single bytes, not UTF-8 encodings (nquote4.tests
+/// `$'ab\x{cd}e'` -> `ab\xcd e`). Rubash words are Rust Strings, so bytes
+/// >= 0x80 travel as the owner-tagged U+E000 raw-byte marker pair and are
+/// decoded exactly once at the output boundary
+/// (write_buffered_builtin_output / pipeline materialization).
+fn push_ansi_c_byte(output: &mut String, byte: u32) {
+    if byte < 0x80 {
+        if let Some(ch) = char::from_u32(byte) {
+            output.push(ch);
+        }
+    } else {
+        output.push_str(&crate::executor::substitution_metadata::encode_raw_byte_marker(
+            byte as u8,
+        ));
     }
 }

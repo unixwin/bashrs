@@ -1,6 +1,14 @@
 use super::ansi::decode_ansi_c_quoted;
 use super::dolbrace::{scan_braced_parameter, BraceContext, DolbraceState};
 
+/// Emitted by quote removal right before a quote boundary that terminates
+/// an unbraced `$name` parameter. Quote removal deletes the quote, which
+/// would otherwise let the expansion stage read `a$x"b"` as the variable
+/// `xb` (bash keeps the name boundary in the word's quote structure,
+/// subst.c param_expand). The marker is a non-name character: name
+/// collection stops at it, and the expansion walkers drop it from output.
+pub(crate) const PARAM_NAME_END_MARKER: char = '\u{13}';
+
 pub(crate) fn remove_shell_quotes(raw: &str) -> String {
     remove_shell_quotes_with_posix(raw, false)
 }
@@ -18,21 +26,28 @@ pub(crate) fn remove_shell_quotes_with_posix(raw: &str, posix: bool) -> String {
     // the de-escaped form. Outside subscripts `\"` must survive expansion as
     // data, so it travels as the walker's data-double-quote marker.
     let mut subscript_depth = 0usize;
+    // True while the emitted tail is an unbraced `$name` parameter; a quote
+    // boundary at that point must carry PARAM_NAME_END_MARKER (see above).
+    let mut pending_name = false;
 
     while let Some(ch) = chars.next() {
         match ch {
             '[' => {
                 subscript_depth += 1;
+                pending_name = false;
                 out.push(ch);
             }
             ']' if subscript_depth > 0 => {
                 subscript_depth -= 1;
+                pending_name = false;
                 out.push(ch);
             }
             '$' if chars.peek() == Some(&'(') => {
+                pending_name = false;
                 copy_dollar_paren_substitution(&mut out, &mut chars);
             }
             '$' if chars.peek() == Some(&'\'') => {
+                pending_name = false;
                 chars.next();
                 let mut quoted = String::new();
                 let mut escaped = false;
@@ -58,13 +73,19 @@ pub(crate) fn remove_shell_quotes_with_posix(raw: &str, posix: bool) -> String {
                 out.push_str(&decode_ansi_c_quoted(&quoted));
             }
             '$' if chars.peek() == Some(&'"') => {
+                pending_name = false;
                 chars.next();
                 remove_double_quoted_into(&mut out, &mut chars, false, posix);
             }
             '$' if chars.peek() == Some(&'{') => {
+                pending_name = false;
                 copy_braced_parameter_unquoted(&mut out, &mut chars);
             }
             '\'' => {
+                if pending_name {
+                    out.push(PARAM_NAME_END_MARKER);
+                }
+                pending_name = false;
                 for quoted in chars.by_ref() {
                     if quoted == '\'' {
                         break;
@@ -79,13 +100,26 @@ pub(crate) fn remove_shell_quotes_with_posix(raw: &str, posix: bool) -> String {
                 }
             }
             '"' => {
-                remove_double_quoted_into(&mut out, &mut chars, false, posix);
+                if pending_name {
+                    out.push(PARAM_NAME_END_MARKER);
+                }
+                pending_name = false;
+                // GNU subst.c string_extract_double_quoted: a backtick inside
+                // double quotes enters backquote mode and the body is copied
+                // verbatim (subst.c:925-932) - the body's quotes are delimiters
+                // of the inner command, never literal data of this word
+                // (quote.tests:47 `echo "`echo 'foo bar'`"` must not leak the
+                // single quotes). Nested $()/\\${} spans inside the body stay
+                // owned by copy_backtick_body_preserving_syntax.
+                remove_double_quoted_into(&mut out, &mut chars, true, posix);
             }
             '`' => {
+                pending_name = false;
                 out.push(ch);
                 copy_backtick_body_preserving_syntax(&mut out, &mut chars);
             }
             '\\' => {
+                pending_name = false;
                 let Some(escaped) = chars.next() else {
                     out.push(ch);
                     continue;
@@ -121,31 +155,56 @@ pub(crate) fn remove_shell_quotes_with_posix(raw: &str, posix: bool) -> String {
                     out.push(escaped);
                 }
             }
-            _ => out.push(ch),
+            _ => {
+                if ch == '$' {
+                    pending_name = chars
+                        .peek()
+                        .is_some_and(|next| is_lexer_shell_name_start(*next));
+                } else if !(pending_name && is_lexer_shell_name_char(ch)) {
+                    pending_name = false;
+                }
+                out.push(ch);
+            }
         }
     }
 
     out
 }
 
+fn is_lexer_shell_name_start(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphabetic()
+}
+
+fn is_lexer_shell_name_char(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphanumeric()
+}
+
 pub(super) fn remove_shell_quotes_outside_backticks(raw: &str) -> String {
     let mut out = String::new();
     let mut chars = raw.chars().peekable();
+    let mut pending_name = false;
 
     while let Some(ch) = chars.next() {
         match ch {
             '`' => {
+                pending_name = false;
                 out.push(ch);
                 copy_backtick_body_preserving_syntax(&mut out, &mut chars);
             }
             '$' if chars.peek() == Some(&'"') => {
+                pending_name = false;
                 chars.next();
                 remove_double_quoted_into(&mut out, &mut chars, true, false);
             }
             '$' if chars.peek() == Some(&'{') => {
+                pending_name = false;
                 copy_braced_parameter_unquoted(&mut out, &mut chars);
             }
             '\'' => {
+                if pending_name {
+                    out.push(PARAM_NAME_END_MARKER);
+                }
+                pending_name = false;
                 for quoted in chars.by_ref() {
                     if quoted == '\'' {
                         break;
@@ -154,9 +213,14 @@ pub(super) fn remove_shell_quotes_outside_backticks(raw: &str) -> String {
                 }
             }
             '"' => {
+                if pending_name {
+                    out.push(PARAM_NAME_END_MARKER);
+                }
+                pending_name = false;
                 remove_double_quoted_into(&mut out, &mut chars, true, false);
             }
             '\\' => {
+                pending_name = false;
                 let Some(escaped) = chars.next() else {
                     out.push(ch);
                     continue;
@@ -169,7 +233,16 @@ pub(super) fn remove_shell_quotes_outside_backticks(raw: &str) -> String {
                     out.push(escaped);
                 }
             }
-            _ => out.push(ch),
+            _ => {
+                if ch == '$' {
+                    pending_name = chars
+                        .peek()
+                        .is_some_and(|next| is_lexer_shell_name_start(*next));
+                } else if !(pending_name && is_lexer_shell_name_char(ch)) {
+                    pending_name = false;
+                }
+                out.push(ch);
+            }
         }
     }
 
@@ -193,12 +266,20 @@ fn remove_double_quoted_into(
     preserve_backticks: bool,
     posix: bool,
 ) {
+    // Unbraced `$name` inside double quotes keeps collecting name characters
+    // up to the closing quote (bash: `"$xb"` reads the variable `xb`); the
+    // closing quote must therefore emit PARAM_NAME_END_MARKER so the
+    // expansion stage stops the name there instead of swallowing the
+    // following literal text.
+    let mut pending_name = false;
     while let Some(quoted) = chars.next() {
         if quoted == '$' && chars.peek() == Some(&'(') {
+            pending_name = false;
             copy_dollar_paren_substitution(out, chars);
             continue;
         }
         if quoted == '$' && chars.peek() == Some(&'{') {
+            pending_name = false;
             copy_braced_parameter_after_dollar(out, chars, posix);
             continue;
         }
@@ -208,6 +289,7 @@ fn remove_double_quoted_into(
                 Some('?' | '$' | '!' | '#' | '-' | '@' | '*' | '0'..='9')
             )
         {
+            pending_name = false;
             out.push('$');
             if let Some(param) = chars.next() {
                 out.push(param);
@@ -215,12 +297,19 @@ fn remove_double_quoted_into(
             continue;
         }
         match quoted {
-            '"' => break,
+            '"' => {
+                if pending_name {
+                    out.push(PARAM_NAME_END_MARKER);
+                }
+                break;
+            }
             '`' if preserve_backticks => {
+                pending_name = false;
                 out.push(quoted);
                 copy_backtick_body_preserving_syntax(out, chars);
             }
             '\\' => {
+                pending_name = false;
                 if let Some(escaped @ ('\\' | '"' | '$' | '`' | '\n')) = chars.peek().copied() {
                     chars.next();
                     if escaped != '\n' {
@@ -242,13 +331,24 @@ fn remove_double_quoted_into(
                 // marker as \' so the expansion stage keeps it as data instead
                 // of re-reading it as a single-quote delimiter (which would
                 // also suppress parameter expansion across the pseudo span).
+                pending_name = false;
                 out.push('\x17');
             }
             _ if matches!(quoted, '*' | '?' | '[' | '@' | '+' | '!') => {
+                pending_name = false;
                 out.push('\x11');
                 out.push(quoted);
             }
-            _ => out.push(quoted),
+            _ => {
+                if quoted == '$' {
+                    pending_name = chars
+                        .peek()
+                        .is_some_and(|next| is_lexer_shell_name_start(*next));
+                } else if !(pending_name && is_lexer_shell_name_char(quoted)) {
+                    pending_name = false;
+                }
+                out.push(quoted);
+            }
         }
     }
 }

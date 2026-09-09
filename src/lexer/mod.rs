@@ -27,6 +27,7 @@ use heredoc::heredoc_delimiters;
 use scanner::Lexer;
 
 pub(crate) use quotes::remove_shell_quotes;
+pub(crate) use quotes::PARAM_NAME_END_MARKER;
 pub use token::{Token, TokenKind};
 
 pub(crate) const QUOTED_HEREDOC_MARKER: &str = "__RUBASH_HD1__";

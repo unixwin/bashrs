@@ -2,8 +2,14 @@ use super::glob::{pathname_expand_word, PathnameExpansion};
 use super::*;
 
 fn materialize_expanded_command_word(word: &str) -> String {
+    // Final containment: the lexer's name-end marker never reaches a real
+    // command word (the expansion walkers drop it; this strip covers any
+    // literal-fragment path that bypassed them).
     decode_command_substitution_payload(&restore_pathname_escape_markers(
-        &word.replace('\x15', "\\").replace('\x14', "\\"),
+        &word
+            .replace('\x15', "\\")
+            .replace('\x14', "\\")
+            .replace(crate::lexer::PARAM_NAME_END_MARKER, ""),
     ))
 }
 

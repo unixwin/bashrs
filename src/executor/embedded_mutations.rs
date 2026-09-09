@@ -91,7 +91,8 @@ impl Executor {
         let restored = restore_protected_replacement_quotes(&expanded)
             .replace('\x1f', "$")
             .replace('\x1a', "`")
-            .replace('\x14', "\\");
+            .replace('\x14', "\\")
+            .replace(crate::lexer::PARAM_NAME_END_MARKER, "");
         restored
     }
 
@@ -117,6 +118,13 @@ impl Executor {
             }
             if ch == '\x1a' {
                 output.push('`');
+                continue;
+            }
+
+            if ch == crate::lexer::PARAM_NAME_END_MARKER {
+                // Lexer quote removal marks where a quote boundary ends an
+                // unbraced $name; the name already stopped (the marker is a
+                // non-name character) and must not reach the output.
                 continue;
             }
 

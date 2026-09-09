@@ -65,6 +65,13 @@ impl Executor {
                 output.push(ch);
                 continue;
             }
+            if ch == crate::lexer::PARAM_NAME_END_MARKER {
+                // Lexer quote removal emits this where a quote boundary
+                // terminates an unbraced $name; the name already stopped
+                // (the marker is a non-name character) and must not leak
+                // into the expansion output.
+                continue;
+            }
             if ch == '\x1a' {
                 output.push('`');
                 continue;
@@ -405,7 +412,9 @@ impl Executor {
             }
         }
 
-        output.replace('\x14', "\\")
+        output
+            .replace('\x14', "\\")
+            .replace(crate::lexer::PARAM_NAME_END_MARKER, "")
     }
 
     pub(in crate::executor) fn expand_embedded_parameters_preserving_escaped_single_quotes(
@@ -459,6 +468,10 @@ fn decode_backtick_substitution_source(source: &str) -> String {
     source
         .replace('\x1a', "`")
         .replace('\x11', "")
+        .replace(
+            crate::lexer::PARAM_NAME_END_MARKER,
+            "",
+        )
         .replace('\x1f', "$")
         .replace('\x15', "\\")
 }

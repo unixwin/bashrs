@@ -438,7 +438,10 @@ impl Executor {
         if !double_quoted {
             return self.expand_parameter_word_mut(value);
         }
-        const PROTECTED_LITERAL_BACKSLASH: char = '\x13';
+        // 0x0e is unused by every other sentinel layer (the lexer's
+        // PARAM_NAME_END_MARKER is 0x13); protect/restore is local to this
+        // function, so the two never interact.
+        const PROTECTED_LITERAL_BACKSLASH: char = '\x0e';
         let chars: Vec<char> = value.chars().collect();
         let mut protected = String::with_capacity(value.len());
         let mut index = 0usize;
