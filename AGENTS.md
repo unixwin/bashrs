@@ -9,7 +9,7 @@ Before making compatibility changes, read:
 
 Key rules:
 
-- **CRITICAL: Always use WSL GNU Bash (`wsl bash`, 5.2.21) for semantic comparisons — NOT the winuxsh shim, and NOT Git Bash.** The winuxsh shim at PATH `bash` is an older version with different behavior. Git Bash (`D:/Git/bin/bash.exe`) is below rubash in some areas (notably quoting/escaping/braces) and produces wrong baselines there. Compare with a script FILE passed to both shells (see Bash Test Suite below).
+- **CRITICAL: Always use WSL GNU Bash (`wsl bash`, **5.3.0** at /usr/local/bin/bash — owner-compiled, baseline directive 2026-09-09; legacy 5.2.21 reference via scripts/true-baseline-521.sh) for semantic comparisons — NOT the winuxsh shim, and NOT Git Bash.** The winuxsh shim at PATH `bash` is an older version with different behavior. Git Bash (`D:/Git/bin/bash.exe`) is below rubash in some areas (notably quoting/escaping/braces) and produces wrong baselines there. Compare with a script FILE passed to both shells (see Bash Test Suite below).
 - Fix by root-cause subsystem, not by individual expected-output lines.
 - Keep raw suite artifacts under `target/issue-suites/results/`; keep durable
   interpretation in `docs/`.
