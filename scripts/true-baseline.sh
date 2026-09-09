@@ -24,6 +24,14 @@ RUB="$REPO/target/debug/rubash.exe"
 LOG="$REPO/target/issue-suites/results/true-baseline-ledger.log"
 TESTS_SRC="$REPO/third_party/bash/tests"
 
+# ---- GNU baseline is CONTRACTUAL: GNU bash 5.2.21 only ----------------------
+# /usr/local/bin/bash was upgraded to 5.3.0 on 2026-09-09 and silently
+# shadowed the baseline through PATH order (found by the v5-vs-v6 drift
+# hunt). Resolve the GNU side explicitly and refuse any other version.
+GNU_BASH=/usr/bin/bash
+GNU_VER=$("$GNU_BASH" --version | head -1)
+case "$GNU_VER" in *"version 5.2.21"*) ;; *) echo "FATAL: GNU baseline must be 5.2.21, got: $GNU_VER" >&2; exit 9 ;; esac
+
 # ---- sync: LF-normalized rw copies -----------------------------------------
 mkdir -p "$BASE"
 if [ ! -f "$BASE/recho" ] && [ -d "$TESTS_SRC" ]; then
@@ -62,11 +70,11 @@ mkdir -p "$OUT"
 for name in $SUITES; do
   sync_suite "$name" || { echo "$name SKIP(no-source)" >> "$LOG"; continue; }
   w="$OUT/$name"; mkdir -p "$w/tmp"
-  ( cd "$BASE" && PATH="$BASE:/usr/local/bin:/usr/bin:/bin" TMPDIR="$w/tmp" \
-      THIS_SH=/bin/bash timeout -k 5 40 bash "./$name.tests" \
+  ( cd "$BASE" && PATH="$BASE:/usr/bin:/bin" TMPDIR="$w/tmp" \
+      THIS_SH=/usr/bin/bash timeout -k 5 40 "$GNU_BASH" "./$name.tests" \
       > "$w/gnu.out" 2> "$w/gnu.err" ) < /dev/null
   echo $? > "$w/gnu.rc"
-  ( cd "$BASE" && PATH="$BASE:/usr/local/bin:/usr/bin:/bin" TMPDIR="$w/tmp" \
+  ( cd "$BASE" && PATH="$BASE:/usr/bin:/bin" TMPDIR="$w/tmp" \
       __RUBASH_NO_UPSTREAM_SCRIPTS=1 timeout -k 5 40 "$RUB" "./$name.tests" \
       > "$w/rb.out" 2> "$w/rb.err" ) < /dev/null
   echo $? > "$w/rb.rc"
