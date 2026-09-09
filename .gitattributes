@@ -7,6 +7,10 @@ tests/gnu-compat/GNU-TIMEOUT.txt -text
 *.sh eol=lf
 *.rs eol=lf
 
+# docs/builtins.md is include_str!-ed into the lib (builtin_doc_sync tests).
+# A CRLF smudge breaks the "<!-- builtins-list\n" marker search.
+docs/builtins.md eol=lf
+
 
 # third_party/bash upstream tree: normalize to LF so WSL GNU baselines are not
 # CR-poisoned (bash treats CRLF script input as data: CR becomes part of words,

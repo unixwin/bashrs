@@ -131,90 +131,111 @@ enum SymbolicModeError {
     Character(char),
 }
 
+// Port of GNU bash 5.3 builtins/umask.def parse_symbolic_mode: `mode` is a
+// chmod-style symbolic spec applied to the allowed-permission bits (the
+// complement of the mask).  A clause is `who op action`; after an op is
+// applied, a following + - or = continues the SAME who with a fresh perm
+// set (the goto start_op continuation), and a comma restarts who parsing.
+// Actions accept rwxXst (s/t bits are masked away by who for umask) and
+// the copy specifications u/g/o, which assign that class's permissions
+// from the INITIAL bits expanded to all classes.
 fn parse_symbolic_mask(mode: &str, current_mask: u32) -> Result<u32, SymbolicModeError> {
-    let initial_allowed = (!current_mask) & 0o777;
-    let mut allowed = initial_allowed;
+    let initial_bits = (!current_mask) & 0o777;
+    let mut bits = initial_bits;
+    let chars: Vec<char> = mode.chars().collect();
+    let mut s = 0usize;
 
-    for clause in mode.split(',') {
-        if clause.is_empty() {
-            return Err(SymbolicModeError::Operator('\0'));
+    loop {
+        // Parse the `who` portion of the symbolic mode clause.
+        let mut who = 0u32;
+        while let Some(&c) = chars.get(s) {
+            match c {
+                'u' => who |= 0o700,
+                'g' => who |= 0o070,
+                'o' => who |= 0o007,
+                'a' => who |= 0o777,
+                _ => break,
+            }
+            s += 1;
         }
-        allowed = apply_symbolic_clause(allowed, initial_allowed, clause)?;
-    }
+        // The default `who` is `a`.
+        if who == 0 {
+            who = 0o777;
+        }
 
-    Ok((!allowed) & 0o777)
+        // start_op: parse one operator and its action list, apply it, then
+        // continue with the same `who` while the next character is another
+        // operator.
+        loop {
+            let mut perm = 0u32;
+            let op = chars.get(s).copied().unwrap_or('\0');
+            s += 1;
+            if !matches!(op, '+' | '-' | '=') {
+                return Err(SymbolicModeError::Operator(op));
+            }
+
+            while let Some(&c) = chars.get(s) {
+                match c {
+                    // Copy specifications assign (not OR) the referenced
+                    // class's initial permissions, expanded to all classes.
+                    'u' => perm = copy_class(initial_bits, 0o400, 0o200, 0o100),
+                    'g' => perm = copy_class(initial_bits, 0o040, 0o020, 0o010),
+                    'o' => perm = copy_class(initial_bits, 0o004, 0o002, 0o001),
+                    'r' => perm |= 0o444,
+                    'w' => perm |= 0o222,
+                    // X acts as x only when the initial bits carry execute
+                    // permission; otherwise it is consumed as a no-op.
+                    'X' => {
+                        if initial_bits & 0o111 != 0 {
+                            perm |= 0o111;
+                        }
+                    }
+                    'x' => perm |= 0o111,
+                    // setuid/setgid/sticky are accepted but cannot survive
+                    // the `perm &= who` mask below (who is IRWX only).
+                    's' => perm |= 0o6000,
+                    't' => perm |= 0o1000,
+                    _ => break,
+                }
+                s += 1;
+            }
+
+            perm &= who;
+            match op {
+                '+' => bits |= perm,
+                '-' => bits &= !perm,
+                '=' => {
+                    bits &= !who;
+                    bits |= perm;
+                }
+                _ => unreachable!("validated symbolic umask operator"),
+            }
+
+            match chars.get(s) {
+                None => return Ok((!bits) & 0o777),
+                Some(',') => {
+                    s += 1;
+                    break;
+                }
+                Some('+' | '-' | '=') => continue,
+                Some(&c) => return Err(SymbolicModeError::Character(c)),
+            }
+        }
+    }
 }
 
-fn apply_symbolic_clause(
-    mut allowed: u32,
-    initial_allowed: u32,
-    clause: &str,
-) -> Result<u32, SymbolicModeError> {
-    let chars: Vec<char> = clause.chars().collect();
-    let mut index = 0;
-    let mut who = 0;
-
-    while let Some(ch) = chars.get(index) {
-        let bits = match ch {
-            'u' => 0o700,
-            'g' => 0o070,
-            'o' => 0o007,
-            'a' => 0o777,
-            _ => break,
-        };
-        who |= bits;
-        index += 1;
-    }
-
-    if who == 0 {
-        who = 0o777;
-    }
-
-    // GNU umask symbolic clauses carry exactly one operator; everything
-    // after it must be permission characters (builtins8.sub: "u=r+w" is
-    // rejected with "invalid symbolic mode character `+'", and a who or
-    // operator character is not re-parsed as a new clause).
-    let Some(op) = chars.get(index).copied() else {
-        return Err(SymbolicModeError::Operator('\0'));
-    };
-    if !matches!(op, '+' | '-' | '=') {
-        return Err(SymbolicModeError::Operator(op));
-    }
-    index += 1;
-
-    let perms = symbolic_permission_bits(&chars[index..], initial_allowed, who)?;
-    match op {
-        '+' => allowed |= perms,
-        '-' => allowed &= !perms,
-        '=' => allowed = (allowed & !who) | perms,
-        _ => unreachable!("validated symbolic umask operator"),
-    }
-
-    Ok(allowed & 0o777)
-}
-
-fn symbolic_permission_bits(
-    perms: &[char],
-    _initial_allowed: u32,
-    who: u32,
-) -> Result<u32, SymbolicModeError> {
+fn copy_class(initial_bits: u32, read: u32, write: u32, exec: u32) -> u32 {
     let mut bits = 0;
-    for ch in perms {
-        match ch {
-            // GNU umask symbolic modes accept only r, w and x; the who
-            // characters and X/s/t are rejected as invalid mode characters
-            // (umask.def parses perms with "rwx" only).
-            'r' => bits |= expand_permission_to_who(0o444, who),
-            'w' => bits |= expand_permission_to_who(0o222, who),
-            'x' => bits |= expand_permission_to_who(0o111, who),
-            _ => return Err(SymbolicModeError::Character(*ch)),
-        }
+    if initial_bits & read != 0 {
+        bits |= 0o444;
     }
-    Ok(bits)
-}
-
-fn expand_permission_to_who(permission: u32, who: u32) -> u32 {
-    permission & who
+    if initial_bits & write != 0 {
+        bits |= 0o222;
+    }
+    if initial_bits & exec != 0 {
+        bits |= 0o111;
+    }
+    bits
 }
 
 fn symbolic_mask(mask: u32) -> String {
@@ -264,37 +285,68 @@ mod tests {
     }
 
     #[test]
-    fn symbolic_mode_rejects_who_copy_characters() {
-        // GNU umask has no who-copy: u/g/o are not permission characters
-        // (builtins8.sub: "umask o=u" fails with "invalid symbolic mode
-        // character `u'" and leaves the mask alone).
-        for mode in ["o=u", "g=u", "o=g", "u+g", "g+o"] {
+    fn symbolic_mode_accepts_who_copy_specifications() {
+        // GNU umask.def parses u/g/o as copy specifications: the referenced
+        // class's INITIAL permissions are assigned (expanded to all classes,
+        // then masked by who).  Initial mask 022 -> allowed u=rwx,g=rx,o=rx.
+        for (mode, expected) in [
+            ("o=u", "u=rwx,g=rx,o=rwx"),
+            ("g=u", "u=rwx,g=rwx,o=rx"),
+            ("g+u", "u=rwx,g=rwx,o=rx"),
+            ("o+g", "u=rwx,g=rx,o=rx"),
+            ("u+g,g+o,o-rw", "u=rwx,g=rx,o=x"),
+            ("g+u,o+rwx-u", "u=rwx,g=rwx,o="),
+        ] {
             let (status, stdout, stderr) = run(mode, "022");
-            assert_eq!(status, EXECUTION_FAILURE);
-            assert!(stdout.is_empty());
-            assert!(stderr.contains("invalid symbolic mode character"));
+            assert_eq!(status, EXECUTION_SUCCESS, "mode {mode}");
+            assert!(stderr.is_empty(), "mode {mode}: {stderr:?}");
+            assert_eq!(stdout, format!("{expected}\n"), "mode {mode}");
         }
     }
 
     #[test]
-    fn symbolic_mode_rejects_second_operator_in_clause() {
-        // A second operator inside a clause is read as a permission
-        // character and rejected ("u=r+w" -> invalid mode character `+').
-        for mode in ["u=r+w", "u=r-w", "u+w=r+x", "u+g,g+o,o-rw"] {
+    fn symbolic_mode_accepts_multiple_operators_per_clause() {
+        // A following + - or = continues the same who with a fresh perm set
+        // (umask.def "goto start_op" continuation).
+        for (mode, expected) in [
+            ("u=r+w", "u=rw,g=rx,o=rx"),
+            ("u=r-w", "u=r,g=rx,o=rx"),
+            ("u+w=r+x", "u=rx,g=rx,o=rx"),
+            ("u=r+w=x", "u=x,g=rx,o=rx"),
+            ("u=rwx,u-w", "u=rx,g=rx,o=rx"),
+            ("u=xwr", "u=rwx,g=rx,o=rx"),
+            ("+xwr", "u=rwx,g=rwx,o=rwx"),
+            ("+xr", "u=rwx,g=rx,o=rx"),
+        ] {
             let (status, stdout, stderr) = run(mode, "022");
-            assert_eq!(status, EXECUTION_FAILURE);
-            assert!(stdout.is_empty());
-            assert!(stderr.contains("invalid symbolic mode character"));
+            assert_eq!(status, EXECUTION_SUCCESS, "mode {mode}");
+            assert!(stderr.is_empty(), "mode {mode}: {stderr:?}");
+            assert_eq!(stdout, format!("{expected}\n"), "mode {mode}");
         }
     }
 
     #[test]
-    fn symbolic_mode_rejects_chmod_only_permissions() {
-        for mode in ["a+X", "u+s", "u+t"] {
+    fn symbolic_mode_accepts_chmod_style_characters_as_noops() {
+        // X acts as x only when the initial bits include execute; s/t bits
+        // are accepted but masked away by who for umask.  Initial mask 022
+        // already allows execute, so these all leave the mask unchanged.
+        for mode in ["a+X", "g+X", "o+X", "+X", "u+s", "u+t"] {
             let (status, stdout, stderr) = run(mode, "022");
-            assert_eq!(status, EXECUTION_FAILURE);
-            assert!(stdout.is_empty());
-            assert!(stderr.contains("invalid symbolic mode character"));
+            assert_eq!(status, EXECUTION_SUCCESS, "mode {mode}");
+            assert!(stderr.is_empty(), "mode {mode}: {stderr:?}");
+            assert_eq!(stdout, "u=rwx,g=rx,o=rx\n", "mode {mode}");
+        }
+    }
+
+    #[test]
+    fn symbolic_mode_empty_action_clears_who_for_equals() {
+        for (mode, expected) in [
+            ("u=", "u=,g=rx,o=rx"),
+            ("u==r", "u=r,g=rx,o=rx"),
+        ] {
+            let (status, stdout, _stderr) = run(mode, "022");
+            assert_eq!(status, EXECUTION_SUCCESS, "mode {mode}");
+            assert_eq!(stdout, format!("{expected}\n"), "mode {mode}");
         }
     }
 

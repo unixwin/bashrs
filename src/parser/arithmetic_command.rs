@@ -28,13 +28,16 @@ pub(super) fn parse_arithmetic_command(
     let mut paren_depth = 0usize;
     let mut bracket_depth = 0usize;
     if first == "((" {
+        if !dparen_lexically_arithmetic(tokens, start) {
+            return None;
+        }
         i = start + 1;
         open_end = start + 1;
     } else if is_keyword(tokens, start, "(")
         && is_keyword(tokens, start + 1, "(")
         && tokens[start + 1].column == tokens[start].column + tokens[start].raw.len()
     {
-        if !has_arithmetic_command_closer(tokens, start + 2) {
+        if !dparen_lexically_arithmetic(tokens, start) {
             return None;
         }
         i = start + 2;
@@ -45,23 +48,6 @@ pub(super) fn parse_arithmetic_command(
 
     while i + 1 < tokens.len() {
         if paren_depth == 0 && bracket_depth == 0 && tokens[i].value == "))" {
-            let mut command = CommandNode::new();
-            command.line = tokens.get(start).map(|token| token.position);
-            let raw = arithmetic_raw_slice(tokens, open_end, Some(i));
-            set_arithmetic_command_words(&mut command, parts.join(" "), Some(raw));
-            return Some(finish_arithmetic_command(command, tokens, i + 1));
-        }
-
-        // A separated arithmetic command can be nested in a subshell. In
-        // the nested form, one closing parenthesis ends arithmetic and the
-        // separator belongs to the surrounding subshell.
-        if paren_depth == 0
-            && bracket_depth == 0
-            && is_keyword(tokens, i, ")")
-            && tokens
-                .get(i + 1)
-                .is_some_and(|token| token.kind == TokenKind::Semicolon)
-        {
             let mut command = CommandNode::new();
             command.line = tokens.get(start).map(|token| token.position);
             let raw = arithmetic_raw_slice(tokens, open_end, Some(i));
@@ -140,11 +126,35 @@ pub(super) fn parse_arithmetic_command(
     Some(finish_arithmetic_command(command, tokens, i))
 }
 
-pub(super) fn has_arithmetic_command_closer(tokens: &[Token], start: usize) -> bool {
-    tokens[start..]
-        .windows(2)
-        .any(|pair| pair[0].value == ")" && pair[1].value == ")")
-        || tokens[start..].iter().any(|token| token.value == "))")
+// GNU parse.y parse_dparen: after `((`, bash matches the balanced parenthesis
+// group opened by the second `(` (parse_matched_pair with P_ARITH) and then
+// reads the next character.  The construct is an arithmetic command only when
+// that character is `)`; otherwise the double parenthesis is a nested
+// subshell and bash re-lexes from the outer `(`.  `start` addresses either a
+// combined `((` token or an adjacent `(` `(` pair.
+pub(super) fn dparen_lexically_arithmetic(tokens: &[Token], start: usize) -> bool {
+    let combined_open = tokens.get(start).is_some_and(|token| token.value == "((");
+    let mut depth = 1usize;
+    let mut i = if combined_open { start + 1 } else { start + 2 };
+    while i < tokens.len() {
+        match tokens[i].value.as_str() {
+            "(" => depth += 1,
+            ")" => {
+                depth -= 1;
+                if depth == 0 {
+                    return tokens.get(i + 1).is_some_and(|token| token.value == ")");
+                }
+            }
+            "))" if depth == 1 => {
+                // The token closes this group and the following `)` is the
+                // next character: arithmetic, like GNU reading `))` here.
+                return true;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    false
 }
 
 fn arithmetic_token_value(token: &Token) -> String {

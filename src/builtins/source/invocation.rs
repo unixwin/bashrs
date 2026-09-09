@@ -70,6 +70,16 @@ impl<'a> SourceInvocation<'a> {
             }
         }
 
+        // GNU source.def: the current-directory fallback happens only when
+        // source_searches_cwd is set, and general.c posix_initialize() clears
+        // that flag in POSIX mode.  A plain name there is looked up via $PATH
+        // only (source_uses_path is forced on); names with a directory
+        // component are still opened directly (absolute_program path).
+        let plain_name = !self.filename.contains('/') && !self.filename.contains('\\');
+        if plain_name && executor.get_env("__RUBASH_POSIX_MODE") == Some("1") {
+            return None;
+        }
+
         let source_path = shell_path_to_windows(self.filename, executor.env_vars());
         source_path.exists().then_some(source_path)
     }

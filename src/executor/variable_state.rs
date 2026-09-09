@@ -144,11 +144,31 @@ impl Executor {
             return false;
         };
 
-        matches!(command, "export" | "declare" | "typeset" | "readonly")
+        matches!(command, "export" | "readonly")
+            || ((command == "declare" || command == "typeset")
+                && Self::declare_applies_persistent_attribute(cmd))
             || (command == "eval" && cmd
 .assignment_keys().any(|name| name.ends_with('+')))
             || (self.env_vars.get("__RUBASH_POSIX_MODE").map(String::as_str) == Some("1")
                 && matches!(command, "." | "source" | "eval" | ":" | "return"))
+    }
+
+    // GNU declare.def:1045-1086: a variable found in the temporary environment
+    // is converted into a real variable (keeping its value, dropping the
+    // tempenv attribute) only when the declare applies the export or readonly
+    // attribute — `var=value declare -x var` behaves like `var=value export
+    // var`.  Attribute-free forms (`declare -p`, `declare -i`, plain
+    // `declare name`) leave the assignment temporary, so it vanishes with the
+    // command.
+    fn declare_applies_persistent_attribute(cmd: &CommandNode) -> bool {
+        cmd.words
+            .iter()
+            .skip(1)
+            .take_while(|word| {
+                let word = word.as_str();
+                word.starts_with('-') && word.len() > 1 && word != "--"
+            })
+            .any(|word| word.contains('x') || word.contains('r'))
     }
 
     pub(in crate::executor) fn posix_mode_enabled(&self) -> bool {

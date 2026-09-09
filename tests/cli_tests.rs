@@ -199,6 +199,10 @@ fn c_command_dynamic_varredir_covers_read_write_dup_and_auto_close() {
 
 #[test]
 fn c_command_rejects_unbalanced_arithmetic_command_as_parse_error() {
+    // GNU bash 5.3 rejects `bash -c '"'"'((X=([))]'"'"'' with a parse error and
+    // status 2 ("syntax error near unexpected token `('"); rubash parses the
+    // same input through the GNU parse_dparen lexical rule and rejects it as
+    // a syntax error from the subshell path.
     let output = Command::new(env!("CARGO_BIN_EXE_rubash"))
         .arg("-c")
         .arg("((X=([))]")
@@ -206,7 +210,7 @@ fn c_command_rejects_unbalanced_arithmetic_command_as_parse_error() {
         .expect("run malformed arithmetic command");
 
     assert_eq!(output.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&output.stderr).contains("unexpected EOF"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("syntax error"));
 }
 
 #[test]

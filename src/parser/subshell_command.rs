@@ -10,8 +10,10 @@ pub(super) fn parse_subshell_command(
     }
     if is_keyword(tokens, start + 1, "(")
         && tokens[start + 1].column == tokens[start].column + tokens[start].raw.len()
-        && has_arithmetic_command_closer(tokens, start + 2)
+        && dparen_lexically_arithmetic(tokens, start)
     {
+        // GNU parse_dparen decided this is an arithmetic command, not a
+        // nested subshell (the token after the balanced group is `)`).
         return None;
     }
 
