@@ -562,3 +562,12 @@ dbg-support 635、array 456、assoc 360、nameref 303、new-exp 241、more-exp 2
 - **含义**：对齐 5.3 行为（嵌套花括号、dollar-brace 命令替换等）是**新战役**而非回归修复；契约基线保持 5.2.21
 - **附带**：docs/builtins.md 已提交（include_str! 依赖，新 worktree 此前无法跑 cargo test --lib）；trap.tests 在 Windows 上会孤儿化 rubash.exe ./trap9.sub（harness reaper 待办）
 - **v7（钉版口径）在测**：预期总缺口 ≈ 4119（4245 − 126 漂移假象）
+
+### v8 全台账（5.3.0 新契约基线，首测）
+
+- 契约：GNU 侧 = /usr/local/bin/bash 5.3.0（业主编译版，版本断言防漂移）；vendored 测试 = bash-5.3-16-gb4608166
+- **总缺口 4155**（83 套件），零缺口 **24**：appendop attr casemod cprint dbg-support2 dstack2 extglob2 extglob3 getopts glob-bracket herestr ifs invert mapfile nquote2 nquote3 nquote5 posixexp2 posixpat precedence printf strip tilde tilde2
+- top：array 387, assoc 344, nameref 209, rsh 194, history 190, builtins 182, histexp 176, quotearray 151, posixexp 147, comsub2 140, quote 132, complete 116, varenv 108, new-exp 107
+- 解读：与 v6（同为 5.3 GNU 侧）比 **−90**；posixexp 211→147、comsub2 200→140 是远程 4 提交的真实改善；**builtins 15→182** 是 5.3 vendored 测试的新增语义（新战役最大单增户）
+- 版本身份：BASH_VERSION/BASH_VERSINFO/--version 横幅已切 5.3.0（58c59a91）；套件输出零旧版本串泄漏，台账无需刷新
+- 遗留口径（5.2.21）审计因 v7 流水线被脚本中途编辑破坏而延后（教训：勿编辑运行中的脚本）；J 的 4 台账证据链已完整记录漂移
