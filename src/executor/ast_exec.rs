@@ -101,7 +101,14 @@ impl Executor {
                 || command.if_command.is_some()
                 || command.loop_command.is_some()
                 || command.for_command.is_some()
-                || command.subshell_command.is_some();
+                || command.subshell_command.is_some()
+                // GNU fires the DEBUG trap once per executed simple command,
+                // never for the and/or list node itself (execute_cmd.c has no
+                // run_debug_trap call site in execute_connection_command);
+                // the folded list's members each fire through their own
+                // execute_ast below (dbg-support.tests:55/25 `[ $j -eq $n ]
+                // && j=i` fires once for `[ ...]`, twice only when `j=i` runs).
+                || command.and_or_list.is_some();
             let debug_trap_active = crate::builtins::trap::get_trap_action(&self.env_vars, "DEBUG")
                 .is_some_and(|action| !action.is_empty());
             // Do not fire for commands inside the trap action itself: Bash

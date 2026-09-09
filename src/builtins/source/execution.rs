@@ -79,6 +79,18 @@ fn execute_ast_with_args(
 
     let old_dollar_vars_changed = executor.dollar_vars_changed_by_set;
     executor.dollar_vars_changed_by_set = false;
+    // GNU builtins/source.def:208-216 unsets the DEBUG trap for the duration
+    // of a sourced file when function_trace_mode is off; the unwind-protect
+    // restores it only after source_file's run_return_trap (evalfile.c:395),
+    // so the sourced file's top-level commands and the RETURN-trap action's
+    // own DEBUG fire are suppressed together (dbg-support.tests:98 emits
+    // only `debug lineno: 98 main`, no fires inside dbg-support.sub).
+    let functrace =
+        crate::builtins::set::shell_option_enabled(&executor.env_vars(), "functrace");
+    let old_source_debug_suppressed = executor.source_debug_suppressed();
+    if !functrace {
+        executor.set_source_debug_suppressed(true);
+    }
     let result = executor.execute_ast(&ast);
 
     if source_name.is_some() {
@@ -112,8 +124,17 @@ fn execute_ast_with_args(
 
     // GNU Bash runs the RETURN trap when a sourced script finishes
     // (builtins/evalfile.c source_file: run_return_trap after
-    // evalfile_internal).
-    executor.run_return_trap()?;
+    // evalfile_internal). Inside a function that does not inherit the
+    // RETURN trap it was already restored to default (execute_cmd.c:5295),
+    // so nothing fires (dbg-support.tests:96/97 have no `return lineno`
+    // inside the functrace-off fn3, while the top-level tests:98 exit
+    // still reports `return lineno: 98 main`). The DEBUG suppression above
+    // stays active through the trap action itself, matching GNU's
+    // unwind-protect ordering.
+    if executor.return_trap_in_scope() {
+        executor.run_return_trap()?;
+    }
+    executor.set_source_debug_suppressed(old_source_debug_suppressed);
 
     if had_source_args {
         // GNU source.def uw_maybe_pop_dollar_vars: when the sourced script

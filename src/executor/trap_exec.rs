@@ -236,9 +236,39 @@ impl Executor {
     /// (execute_cmd.c:5270: no trace attribute and functrace off), so fires
     /// for compound-command sub-parts (for / arith-for expressions) only
     /// happen at the top level or inside inheriting functions.
+    /// GNU builtins/source.def:208-216 additionally unsets the DEBUG trap
+    /// for the whole duration of a sourced file when functrace is off.
     pub(crate) fn debug_trap_in_scope(&self) -> bool {
+        if self.source_debug_suppressed {
+            return false;
+        }
         (self.subshell_depth.get() == 0 && self.function_depth == 0)
             || crate::builtins::set::shell_option_enabled(&self.env_vars, "functrace")
+    }
+
+    /// Whether the RETURN trap can fire at a sourced-file exit here.
+    /// GNU evalfile.c:395 (source_file) runs the RETURN trap unconditionally,
+    /// but inside a function that does not inherit it the trap was already
+    /// restored to default (execute_cmd.c:5295: `signal_in_progress
+    /// (DEBUG_TRAP) || ((trace_p (var) == 0) && function_trace_mode == 0)`),
+    /// so nothing fires (dbg-support.tests:96/97: no `return lineno` when
+    /// functrace is off, but `return lineno: 98 main` at the top level).
+    pub(crate) fn return_trap_in_scope(&self) -> bool {
+        if self.function_depth == 0 {
+            return true;
+        }
+        if self.debug_trap_running {
+            return false;
+        }
+        crate::builtins::set::shell_option_enabled(&self.env_vars, "functrace")
+    }
+
+    pub(crate) fn set_source_debug_suppressed(&mut self, value: bool) {
+        self.source_debug_suppressed = value;
+    }
+
+    pub(crate) fn source_debug_suppressed(&self) -> bool {
+        self.source_debug_suppressed
     }
 
     pub(crate) fn run_pending_signal_traps(&mut self) -> Result<(), ExecuteError> {

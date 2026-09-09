@@ -59,12 +59,21 @@ impl Executor {
             )
         };
         let mut ran_body = false;
+        // GNU execute_cmd.c:3039 sets line_number = for_command->line before
+        // each per-iteration debug fire; without the reset the fire inherits
+        // the last body command's line (dbg-support.tests:146-148 nested for
+        // loops report the for head's line on every iteration).
+        let for_line = self.env_vars.get("__RUBASH_CURRENT_LINE").cloned();
         for value in values {
             // Bash fires the DEBUG trap for the `for` command once per
             // iteration (execute_cmd.c execute_for_command), but only where
             // the trap is in scope (functions without functrace do not
             // inherit it, execute_cmd.c:5270).
             if self.debug_trap_in_scope() {
+                if let Some(line) = &for_line {
+                    self.env_vars
+                        .insert("__RUBASH_CURRENT_LINE".to_string(), line.clone());
+                }
                 let _ = self.run_debug_trap(&for_text)?;
             }
             ran_body = true;

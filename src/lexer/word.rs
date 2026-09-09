@@ -136,8 +136,20 @@ impl<'a> Lexer<'a> {
                     continue;
                 }
                 if c == '{' {
+                    if self.position == word_start {
+                        self.advance();
+                        self.skip_brace();
+                        extglob_operator = false;
+                        continue;
+                    }
+                    // GNU parse.y treats `{`/`}` as ordinary characters inside
+                    // a word: only a brace that starts the word opens a brace
+                    // group or expansion (read_token_word's metacharacter set
+                    // is ` \t\n|&;<>` plus the parens). `x={ sourced_fn }` is
+                    // the assignment word `x={` plus the command `sourced_fn`
+                    // with argument `}` (dbg-support.tests:121), matching
+                    // GNU's temporary-assignment + function-call execution.
                     self.advance();
-                    self.skip_brace();
                     extglob_operator = false;
                     continue;
                 }

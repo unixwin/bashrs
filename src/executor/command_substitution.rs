@@ -622,6 +622,7 @@ impl Executor {
             debug_trap_running: false,
             return_trap_running: false,
             signal_trap_running: false,
+            source_debug_suppressed: false,
             debug_trap_command: std::cell::RefCell::new(None),
             debug_trap_function_line: None,
             last_command_substitution_status: Cell::new(None),
