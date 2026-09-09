@@ -359,7 +359,14 @@ pub(super) fn arithmetic_unbound_variable(
             previous = name.chars().last();
             continue;
         }
-        if !env_vars.contains_key(&name) && !matches!(name.as_str(), "RANDOM" | "SRANDOM") {
+        if !env_vars.contains_key(&name)
+            && !matches!(
+                name.as_str(),
+                // Dynamic parameters resolved by the evaluator without an
+                // env_vars entry (RANDOM/SRANDOM advance the RNG state).
+                "RANDOM" | "SRANDOM" | "SECONDS" | "EPOCHSECONDS" | "LINENO"
+            )
+        {
             return Some(name);
         }
         previous = name.chars().last();

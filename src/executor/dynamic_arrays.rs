@@ -1,29 +1,43 @@
 use super::*;
 
+/// Resolves dynamic parameters whose values derive solely from `env_vars`
+/// (plus the wall clock). Shared between `$SECONDS`-style parameter
+/// expansion (via [`Executor::dynamic_parameter_value`]) and arithmetic
+/// evaluation, whose parser carries no [`Executor`] handle.
+pub(in crate::executor) fn env_derived_dynamic_parameter_value(
+    env_vars: &HashMap<String, String>,
+    name: &str,
+) -> Option<String> {
+    match name {
+        "EPOCHSECONDS" => Some(current_epoch_seconds().to_string()),
+        "EPOCHREALTIME" => {
+            let micros = current_epoch_micros();
+            Some(format!("{}.{:06}", micros / 1_000_000, micros % 1_000_000))
+        }
+        "SECONDS" => {
+            let start = env_vars
+                .get(SHELL_START_EPOCH)
+                .and_then(|value| value.parse::<i64>().ok())
+                .unwrap_or_else(current_epoch_seconds);
+            let offset = env_vars
+                .get(SECONDS_OFFSET)
+                .and_then(|value| value.parse::<i64>().ok())
+                .unwrap_or(0);
+            Some(
+                (current_epoch_seconds() - start + offset)
+                    .max(0)
+                    .to_string(),
+            )
+        }
+        _ => None,
+    }
+}
+
 impl Executor {
     pub(in crate::executor) fn dynamic_parameter_value(&self, name: &str) -> Option<String> {
         match name {
-            "EPOCHSECONDS" => Some(current_epoch_seconds().to_string()),
-            "EPOCHREALTIME" => {
-                let micros = current_epoch_micros();
-                Some(format!("{}.{:06}", micros / 1_000_000, micros % 1_000_000))
-            }
-            "SECONDS" => {
-                let start = self
-                    .env_vars
-                    .get(SHELL_START_EPOCH)
-                    .and_then(|value| value.parse::<i64>().ok())
-                    .unwrap_or_else(current_epoch_seconds);
-                let offset = self
-                    .env_vars
-                    .get(SECONDS_OFFSET)
-                    .and_then(|value| value.parse::<i64>().ok())
-                    .unwrap_or(0);
-                Some(
-                    (current_epoch_seconds() - start + offset)
-                        .max(0)
-                        .to_string(),
-                )
+            "SECONDS" | "EPOCHSECONDS" | "EPOCHREALTIME" => {
+                env_derived_dynamic_parameter_value(&self.env_vars, name)
             }
             "RANDOM" => Some(self.next_random_value().to_string()),
             "SRANDOM" => Some(self.next_srandom_value().to_string()),

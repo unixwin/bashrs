@@ -1,10 +1,11 @@
 use super::{ArithLValue, ConditionalArithParser};
 use crate::executor::arithmetic::{bash_arith, checked_arithmetic_pow};
 use crate::executor::{
-    array_value_at, assoc_entries, assoc_value_at, format_assoc_storage,
-    format_indexed_array_storage, indexed_array_entries, is_marked_var, is_noassign_bash_array,
-    mark_env_name, next_random_from_state, next_srandom_from_state,
-    resolve_indexed_array_subscript, set_process_env, ARRAY_VARS, ASSOC_VARS, READONLY_VARS,
+    array_value_at, assoc_entries, assoc_value_at, current_epoch_seconds,
+    env_derived_dynamic_parameter_value, format_assoc_storage, format_indexed_array_storage,
+    indexed_array_entries, is_marked_var, is_noassign_bash_array, mark_env_name,
+    next_random_from_state, next_srandom_from_state, resolve_indexed_array_subscript,
+    set_process_env, ARRAY_VARS, ASSOC_VARS, READONLY_VARS, SECONDS_OFFSET, SHELL_START_EPOCH,
 };
 
 impl ConditionalArithParser<'_> {
@@ -50,6 +51,14 @@ impl ConditionalArithParser<'_> {
                 .get("__RUBASH_CURRENT_LINE")
                 .and_then(|line| line.parse::<i128>().ok())
                 .or(Some(1));
+        }
+        // Dynamic parameters ($SECONDS, $EPOCHSECONDS, ...) never have a
+        // stored env_vars entry, so the fallback below would read them as 0.
+        // Resolve them through the same path parameter expansion uses.
+        if let Some(value) = env_derived_dynamic_parameter_value(self.env_vars, name) {
+            if let Ok(number) = value.parse::<i128>() {
+                return Some(bash_arith(number));
+            }
         }
 
         // GNU expr.c treats a bare indexed-array operand as element zero.
@@ -194,6 +203,22 @@ impl ConditionalArithParser<'_> {
             return;
         }
         let value = bash_arith(value).to_string();
+        if name == "SECONDS" {
+            // Assignment resets the reference point so the dynamic value
+            // becomes the assigned number and grows from there, matching
+            // the parameter-assignment path in temporary_assignments.rs.
+            let assigned = value.parse::<i64>().unwrap_or(0);
+            let start = self
+                .env_vars
+                .get(SHELL_START_EPOCH)
+                .and_then(|value| value.parse::<i64>().ok())
+                .unwrap_or_else(current_epoch_seconds);
+            let elapsed = current_epoch_seconds() - start;
+            self.env_vars
+                .insert(SECONDS_OFFSET.to_string(), (assigned - elapsed).to_string());
+            set_process_env(name, value);
+            return;
+        }
         if name == "RANDOM" {
             if let Some(state) = self.random_state {
                 state.set(value.parse::<u32>().unwrap_or(0));

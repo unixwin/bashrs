@@ -45,6 +45,7 @@ pub(crate) mod substitution_metadata;
 use compound_exec::*;
 mod declare_local;
 mod dynamic_arrays;
+pub(in crate::executor) use dynamic_arrays::env_derived_dynamic_parameter_value;
 mod embedded_mutations;
 mod embedded_parameters;
 mod expand_braced_indices;
