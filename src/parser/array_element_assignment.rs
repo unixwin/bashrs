@@ -10,7 +10,14 @@ pub(super) fn record_array_element_assignment_for_word(
     word: &str,
     raw: &str,
 ) -> bool {
-    if let Some(mut assignment) = array_element_assignment_from_word(word, raw) {
+    // The de-quoted word can lose the subscript delimiters' shape (quoting
+    // a bracket merges it with the closing `]`: A["]"] de-quotes to
+    // A[]]=rbracket and the `=` no longer follows the subscript). Fall back
+    // to the raw spelling, whose quote-aware subscript scan still finds the
+    // real delimiters and keeps raw_subscript/raw_value verbatim.
+    if let Some(mut assignment) = array_element_assignment_from_word(word, raw)
+        .or_else(|| array_element_assignment_from_word(raw, raw))
+    {
         assignment.word_index = Some(word_index);
         command.array_element_assignments.push(assignment);
         return true;

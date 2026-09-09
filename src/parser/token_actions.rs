@@ -131,6 +131,27 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                                 "unexpected EOF while looking for matching `)'".to_string(),
                             );
                         }
+                    } else if token.raw.ends_with(')') && token.raw.contains("=(") {
+                        // Atomic name=(...) captured whole by the lexer.
+                        // next_token consumes the first name character
+                        // before skip_word runs, so compound_assignment_start
+                        // sees "b=" for a two-character name and keeps the
+                        // word atomic while a one-character name splits and
+                        // takes the raw-preserving collector above. Preserve
+                        // the raw RHS verbatim behind the compound marker
+                        // exactly like the Word path does; token.value has
+                        // already de-quoted the element grouping the
+                        // assoc/array pair parser needs (assoc.tests
+                        // wheat=([six]=6 [foo bar]="qux qix")).
+                        if let Some((lhs, rhs)) = token.raw.split_once('=') {
+                            if valid_compound_assignment_lhs(lhs) && rhs.starts_with('(') {
+                                var_value = format!(
+                                    "{}{}",
+                                    crate::executor::types::COMPOUND_ASSIGNMENT_MARKER,
+                                    rhs
+                                );
+                            }
+                        }
                     }
                     if let Some((value, raw, next_i)) =
                         collect_adjacent_assignment_process_substitution(tokens, *i, token)
@@ -191,6 +212,7 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                 } else {
                     let mut word = token.value.clone();
                     let raw_word = token.raw.clone();
+                    let mut atomic_compound_attached = false;
                     if raw_word.ends_with(')') && raw_word.contains("=(") {
                         // Atomic compound (the lexer keeps name=(...) whole
                         // through whitespace and metacharacters, GNU
@@ -205,6 +227,7 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                                     crate::executor::types::COMPOUND_ASSIGNMENT_MARKER
                                 );
                                 word.push_str(rhs);
+                                atomic_compound_attached = true;
                             }
                         }
                         // Split-form compound operand after a command word
@@ -213,15 +236,23 @@ pub(super) fn handle_token(tokens: &[Token], i: &mut usize, state: &mut ParseSta
                         // quote-preserving collector so element quote
                         // grouping survives into the declare builtin, exactly
                         // like the first-word assignment path above.
-                        if let Some((compound_value, next_i)) =
-                            collect_compound_assignment(tokens, *i)
-                        {
-                            if let Some((lhs, _)) = raw_word.split_once('=') {
-                                word = format!
-                                    ("{lhs}={}{}",
-                                     crate::executor::types::COMPOUND_ASSIGNMENT_MARKER,
-                                     compound_value);
-                                *i = next_i;
+                        //
+                        // Only for genuinely split words: for an atomic
+                        // token the raw RHS above is already verbatim, and
+                        // the collector's quote re-joining would re-escape
+                        // the element grouping the pair parser needs
+                        // (assoc.tests: myarray=(["a]=test1;#a"]="123")).
+                        if !atomic_compound_attached {
+                            if let Some((compound_value, next_i)) =
+                                collect_compound_assignment(tokens, *i)
+                            {
+                                if let Some((lhs, _)) = raw_word.split_once('=') {
+                                    word = format!
+                                        ("{lhs}={}{}",
+                                         crate::executor::types::COMPOUND_ASSIGNMENT_MARKER,
+                                         compound_value);
+                                    *i = next_i;
+                                }
                             }
                         }
                     } else if raw_word.ends_with(")'")

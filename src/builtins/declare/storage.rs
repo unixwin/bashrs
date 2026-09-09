@@ -4,7 +4,6 @@ mod glob;
 mod words;
 
 pub(super) use array::{append_array_value, format_indexed_array_storage, indexed_array_entries};
-use assoc::quote_assoc_key;
 pub(super) use assoc::{append_assoc_value, parse_assoc_words};
 pub(super) use words::{parse_array_tokens, split_storage_words, unquote_storage_value};
 
@@ -49,8 +48,8 @@ pub(super) fn format_assoc_value(value: &str) -> String {
         .map(|(_, (key, entry_value))| {
             format!(
                 "[{}]={}",
-                quote_assoc_key(&key),
-                quote_declare_value(&entry_value)
+                quote_assoc_display_key(&key),
+                quote_declare_display_value(&entry_value)
             )
         })
         .collect::<Vec<_>>();
@@ -118,4 +117,89 @@ pub(super) fn quote_double(value: &str) -> String {
         }
     }
     quoted
+}
+
+// ---- GNU declare -p display quoting (assoc.c assoc_to_assign) -------------
+
+/// strtrans.c ansic_shouldquote: `$'...'` quoting is needed when the string
+/// contains a non-printing character. With a UTF-8 locale, printable
+/// non-ASCII characters stay literal (ansic_wshouldquote passes them).
+fn gnu_ansic_shouldquote(value: &str) -> bool {
+    value.chars().any(|ch| ch.is_control())
+}
+
+/// strtrans.c ansic_quote: render the `$'...'` form. Named escapes for the
+/// C specials, `\\` and `\'` verbatim, other non-printing characters as
+/// three-digit octal escapes.
+fn gnu_ansic_quote(value: &str) -> String {
+    let mut out = String::from("$'");
+    for ch in value.chars() {
+        match ch {
+            '\u{1b}' => out.push_str("\\E"),
+            '\u{7}' => out.push_str("\\a"),
+            '\u{b}' => out.push_str("\\v"),
+            '\u{8}' => out.push_str("\\b"),
+            '\u{c}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\\' => out.push_str("\\\\"),
+            '\'' => out.push_str("\\'"),
+            c if !c.is_control() => out.push(c),
+            c => out.push_str(&format!("\\{:03o}", c as u32)),
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// shquote.c sh_contains_shell_metas: shell metacharacters force quoting of
+/// a bare assoc key. `~` is special only at the start or after `=`/`:` and
+/// `#` only at the start of the key.
+fn gnu_sh_contains_shell_metas(value: &str) -> bool {
+    let chars: Vec<char> = value.chars().collect();
+    for (index, ch) in chars.iter().enumerate() {
+        match ch {
+            ' ' | '\t' | '\n' | '\'' | '"' | '\\' | '|' | '&' | ';' | '(' | ')' | '<' | '>'
+            | '!' | '{' | '}' | '*' | '[' | '?' | ']' | '^' | '$' | '`' => return true,
+            '~' => {
+                if index == 0 || chars[index - 1] == '=' || chars[index - 1] == ':' {
+                    return true;
+                }
+            }
+            '#' => {
+                if index == 0 {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// assoc.c assoc_to_assign key rule: `$'...'` for non-printing keys,
+/// double quotes for keys with shell metas, double quotes for a bare `*`
+/// or `@` key (ALL_ELEMENT_SUB), otherwise the bare key.
+fn quote_assoc_display_key(key: &str) -> String {
+    if gnu_ansic_shouldquote(key) {
+        return gnu_ansic_quote(key);
+    }
+    if gnu_sh_contains_shell_metas(key) {
+        return format!("\"{}\"", quote_double(key));
+    }
+    if key.len() == 1 && matches!(key, "*" | "@") {
+        return format!("\"{key}\"");
+    }
+    key.to_string()
+}
+
+/// assoc.c assoc_to_assign value rule (setattr.def:528 uses the same pair
+/// for scalars): `$'...'` when the value has non-printing characters,
+/// otherwise always double quotes.
+fn quote_declare_display_value(value: &str) -> String {
+    if gnu_ansic_shouldquote(value) {
+        return gnu_ansic_quote(value);
+    }
+    format!("\"{}\"", quote_double(value))
 }

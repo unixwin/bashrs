@@ -223,6 +223,10 @@ impl Executor {
     pub(in crate::executor) fn assoc_subscript_key(&self, key: &str) -> String {
         let mut expanded = self
             .expand_embedded_parameters(key)
+            // Double-quote quote removal (subst.c): a backslash keeps its
+            // special meaning only before $ ` " \ and newline; the raw
+            // subscript path stores `\$` literally and must shed it.
+            .replace("\\$", "$")
             .replace("\\\"", "\"")
             .replace("\\'", "'");
         loop {

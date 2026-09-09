@@ -7,8 +7,15 @@ pub(in crate::builtins::declare) fn parse_assoc_words(value: &str) -> Vec<(Strin
     else {
         return Vec::new();
     };
-    split_storage_words(inner)
+    merge_assoc_subscript_tokens(split_storage_words(inner).collect())
+        .into_iter()
         .filter_map(|part| {
+            // Storage pairs are `[key]=value`; split at the quote-aware
+            // subscript close so a quoted `=` inside a stored key stays in
+            // the key (assoc.tests assoc4: ["a]=test1;#a"]="123").
+            if let Some((key, value, _)) = assoc_assignment_token(&part) {
+                return Some((unquote_storage_value(key), unquote_storage_value(value)));
+            }
             let (key, value) = part.split_once('=')?;
             Some((
                 unquote_storage_value(key.trim_start_matches('[').trim_end_matches(']')),
@@ -34,7 +41,7 @@ pub(in crate::builtins::declare) fn append_assoc_value(
         }
     };
     let mut entries = parse_assoc_words(current);
-    let tokens = parse_array_tokens(value);
+    let tokens = merge_assoc_subscript_tokens(parse_array_tokens(value));
     let explicit_subscripts = tokens
         .iter()
         .any(|token| assoc_assignment_token(token).is_some());
@@ -80,21 +87,99 @@ pub(in crate::builtins::declare) fn append_assoc_value(
     format_assoc_storage(entries)
 }
 
+/// Split an assoc assignment token (`[key]=value` / `[key]+=value`) at the
+/// subscript-closing `]`, honoring quotes and escapes: GNU parses the raw
+/// compound assignment text so quoted `]`/`=` inside a key stay literal
+/// (assoc.tests assoc4: ["a]=test1;#a"]="123").
 fn assoc_assignment_token(token: &str) -> Option<(&str, &str, bool)> {
-    if let Some((left, rhs)) = token.split_once("+=") {
-        if let Some(key) = left
-            .strip_prefix('[')
-            .and_then(|left| left.strip_suffix(']'))
-        {
-            return Some((key, rhs, true));
+    let rest = token.strip_prefix('[')?;
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+    for (index, ch) in rest.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if !in_single => escaped = true,
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            ']' if !in_single && !in_double => {
+                let key = &rest[..index];
+                let after = &rest[index + 1..];
+                if let Some(value) = after.strip_prefix("+=") {
+                    return Some((key, value, true));
+                }
+                let value = after.strip_prefix('=')?;
+                return Some((key, value, false));
+            }
+            _ => {}
         }
     }
+    None
+}
 
-    let (left, rhs) = token.split_once('=')?;
-    let key = left
-        .strip_prefix('[')
-        .and_then(|left| left.strip_suffix(']'))?;
-    Some((key, rhs, false))
+/// Quote-aware unclosed `[` / quote state of a storage token: whitespace between an
+/// unclosed `[` and its `]`, or inside an unclosed quote, is part of the
+/// assoc key/value, not a word separator (assoc.tests:
+/// wheat=([six]=6 [foo bar]="qux qix" )). Returns (bracket_depth, in_single,
+/// in_double).
+fn assoc_token_scan_state(token: &str) -> (usize, bool, bool) {
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+    // [key]=value structure: the first unquoted ']' closes the subscript
+    // and every later bracket belongs to the value text. A stored key like
+    // '[' produces the token '[[]=lbracket', which must read as closed:
+    // counting nested brackets in the key/value text made the merger glue
+    // unrelated pairs together.
+    let mut subscript_open = token.starts_with('[');
+    let mut after_subscript = false;
+    for (i, ch) in token.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if !in_single => escaped = true,
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            ']' if !in_single && !in_double => {
+                if subscript_open || i > 0 {
+                    subscript_open = false;
+                    after_subscript = true;
+                }
+            }
+            '[' if !in_single && !in_double && !subscript_open && !after_subscript => {
+                subscript_open = true;
+            }
+            _ => {}
+        }
+    }
+    (if subscript_open { 1 } else { 0 }, in_single, in_double)
+}
+
+/// Re-join tokens that were split on whitespace inside an unclosed `[...]`
+/// subscript or an unclosed quote so assoc pair parsing sees GNU's raw
+/// subscript/value text.
+fn merge_assoc_subscript_tokens(tokens: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for token in tokens {
+        match out.last_mut() {
+            Some(last)
+                if {
+                    let (depth, in_single, in_double) = assoc_token_scan_state(last);
+                    depth > 0 || in_single || in_double
+                } =>
+            {
+                last.push(' ');
+                last.push_str(&token);
+            }
+            _ => out.push(token),
+        }
+    }
+    out
 }
 
 fn format_assoc_storage(entries: Vec<(String, String)>) -> String {
@@ -118,7 +203,7 @@ pub(in crate::builtins::declare) fn quote_assoc_key(key: &str) -> String {
     if !key.is_empty()
         && !key
             .chars()
-            .any(|ch| ch.is_ascii_whitespace() || matches!(ch, '"' | '\\' | ']'))
+            .any(|ch| ch.is_ascii_whitespace() || matches!(ch, '\'' | '"' | '\\' | ']'))
     {
         return key.to_string();
     }

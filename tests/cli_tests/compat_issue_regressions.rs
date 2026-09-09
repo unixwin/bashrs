@@ -690,9 +690,12 @@ fn associative_arithmetic_subscript_preserves_escaped_command_substitution() {
         .expect("run associative arithmetic subscript probe");
 
     assert_eq!(output.status.code(), Some(0));
+    // GNU bash 5.2.21 and 5.3.0 both keep the protective backslash in the
+    // declare -p key rendering (quote_assoc_key escapes the `$` metachar);
+    // the escaped command substitution stays unevaluated either way.
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "declare -A a=([\"x],b[$(echo uname >&2)\"]=\"1\" )\n"
+        "declare -A a=([\"x],b[\\$(echo uname >&2)\"]=\"1\" )\n"
     );
     assert!(String::from_utf8_lossy(&output.stderr).is_empty());
 }

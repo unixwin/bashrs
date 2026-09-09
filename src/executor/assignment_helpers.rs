@@ -51,7 +51,7 @@ pub(in crate::executor) fn append_assoc_value(current: &str, value: &str, intege
         }
     };
     let mut entries = assoc_entries(current);
-    let tokens = array_assignment_tokens(value);
+    let tokens = merge_assoc_subscript_tokens(array_assignment_tokens(value));
     let explicit_subscripts = tokens
         .iter()
         .any(|token| assoc_assignment_token(token).is_some());
@@ -105,7 +105,7 @@ pub(in crate::executor) fn append_assoc_value(current: &str, value: &str, intege
 /// error for each one. Returns an empty vec for the alternating `key value`
 /// form (no explicit subscripts) — that form has no bare elements.
 pub(in crate::executor) fn assoc_bare_elements(value: &str) -> Vec<String> {
-    let tokens = array_assignment_tokens(value);
+    let tokens = merge_assoc_subscript_tokens(array_assignment_tokens(value));
     let explicit_subscripts = tokens
         .iter()
         .any(|token| assoc_assignment_token(token).is_some());
@@ -119,21 +119,99 @@ pub(in crate::executor) fn assoc_bare_elements(value: &str) -> Vec<String> {
         .collect()
 }
 
+/// Split an assoc assignment token (`[key]=value` / `[key]+=value`) at the
+/// subscript-closing `]`, honoring quotes and escapes: GNU parses the raw
+/// compound assignment text so quoted `]`/`=` inside a key stay literal
+/// (assoc.tests assoc4: ["a]=test1;#a"]="123").
 fn assoc_assignment_token(token: &str) -> Option<(&str, &str, bool)> {
-    if let Some((left, rhs)) = token.split_once("+=") {
-        if let Some(key) = left
-            .strip_prefix('[')
-            .and_then(|left| left.strip_suffix(']'))
-        {
-            return Some((key, rhs, true));
+    let rest = token.strip_prefix('[')?;
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+    for (index, ch) in rest.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if !in_single => escaped = true,
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            ']' if !in_single && !in_double => {
+                let key = &rest[..index];
+                let after = &rest[index + 1..];
+                if let Some(value) = after.strip_prefix("+=") {
+                    return Some((key, value, true));
+                }
+                let value = after.strip_prefix('=')?;
+                return Some((key, value, false));
+            }
+            _ => {}
         }
     }
+    None
+}
 
-    let (left, rhs) = token.split_once('=')?;
-    let key = left
-        .strip_prefix('[')
-        .and_then(|left| left.strip_suffix(']'))?;
-    Some((key, rhs, false))
+/// Quote-aware unclosed `[` / quote state of a storage token: whitespace
+/// between an unclosed `[` and its `]`, or inside an unclosed quote, is part
+/// of the assoc key/value, not a word separator (assoc.tests:
+/// wheat=([six]=6 [foo bar]="qux qix" )). Returns (bracket_depth, in_single,
+/// in_double).
+fn assoc_token_scan_state(token: &str) -> (usize, bool, bool) {
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+    // [key]=value structure: the first unquoted ']' closes the subscript
+    // and every later bracket belongs to the value text. A stored key like
+    // '[' produces the token '[[]=lbracket', which must read as closed:
+    // counting nested brackets in the key/value text made the merger glue
+    // unrelated pairs together.
+    let mut subscript_open = token.starts_with('[');
+    let mut after_subscript = false;
+    for (i, ch) in token.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if !in_single => escaped = true,
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            ']' if !in_single && !in_double => {
+                if subscript_open || i > 0 {
+                    subscript_open = false;
+                    after_subscript = true;
+                }
+            }
+            '[' if !in_single && !in_double && !subscript_open && !after_subscript => {
+                subscript_open = true;
+            }
+            _ => {}
+        }
+    }
+    (if subscript_open { 1 } else { 0 }, in_single, in_double)
+}
+
+/// Re-join tokens that were split on whitespace inside an unclosed `[...]`
+/// subscript or an unclosed quote so assoc pair parsing sees GNU's raw
+/// subscript/value text.
+fn merge_assoc_subscript_tokens(tokens: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for token in tokens {
+        match out.last_mut() {
+            Some(last)
+                if {
+                    let (depth, in_single, in_double) = assoc_token_scan_state(last);
+                    depth > 0 || in_single || in_double
+                } =>
+            {
+                last.push(' ');
+                last.push_str(&token);
+            }
+            _ => out.push(token),
+        }
+    }
+    out
 }
 
 pub(in crate::executor) fn append_assoc_scalar_value(current: &str, value: &str) -> String {
@@ -168,7 +246,7 @@ pub(in crate::executor) fn quote_assoc_key(key: &str) -> String {
     if !key.is_empty()
         && !key
             .chars()
-            .any(|ch| ch.is_ascii_whitespace() || matches!(ch, '"' | '\\' | ']'))
+            .any(|ch| ch.is_ascii_whitespace() || matches!(ch, '\'' | '"' | '\\' | ']'))
     {
         return key.to_string();
     }
@@ -180,7 +258,7 @@ pub(in crate::executor) fn quote_assoc_storage_value(value: &str) -> String {
     if !value.is_empty()
         && !value
             .chars()
-            .any(|ch| ch.is_ascii_whitespace() || matches!(ch, '"' | '\\'))
+            .any(|ch| ch.is_ascii_whitespace() || matches!(ch, '\'' | '"' | '\\'))
     {
         return value.to_string();
     }
@@ -216,8 +294,15 @@ pub(in crate::executor) fn assoc_entries(value: &str) -> Vec<(String, String)> {
         return Vec::new();
     };
 
-    split_storage_words(inner)
+    merge_assoc_subscript_tokens(split_storage_words(inner).collect())
+        .into_iter()
         .filter_map(|part| {
+            // Storage pairs are `[key]=value`; split at the quote-aware
+            // subscript close so a quoted `=` inside a stored key stays in
+            // the key (assoc.tests assoc4: ["a]=test1;#a"]="123").
+            if let Some((key, value, _)) = assoc_assignment_token(&part) {
+                return Some((unquote_storage_value(key), unquote_storage_value(value)));
+            }
             let (key, value) = part.split_once('=')?;
             Some((
                 unquote_storage_value(key.trim_start_matches('[').trim_end_matches(']')),
@@ -235,9 +320,10 @@ pub(in crate::executor) fn assoc_value_at(value: &str, key: &str) -> Option<Stri
 }
 
 pub(in crate::executor) fn assoc_keys(value: &str) -> Vec<String> {
+    // bash_assoc_order items are (entry_index, (key, value)); collect keys.
     bash_assoc_order(&assoc_entries(value))
         .into_iter()
-        .map(|(_, (_, key))| key)
+        .map(|(_, (key, _))| key)
         .collect()
 }
 
@@ -254,7 +340,9 @@ fn bash_hash_string(key: &str) -> u32 {
 }
 
 /// Bash assoc.c / hashlib.c table iteration order: FNV-1 hashed keys into a
-/// power-of-two bucket array starting at 128 buckets, head-insertion chains,
+/// power-of-two bucket array starting at ASSOC_HASH_BUCKETS (assoc.h: 1024;
+/// variables.c make_new_assoc_variable calls assoc_create(ASSOC_HASH_BUCKETS)),
+/// head-insertion chains,
 /// grow x4 when nentries >= nbuckets * 2 (rehash walks old buckets 0..n and
 /// re-inserts each item at its new chain head). Iteration visits bucket 0..n,
 /// each chain head to tail. A repeated key keeps its first-insert slot and
@@ -274,7 +362,7 @@ pub(crate) fn bash_assoc_order(
         unique.push(index);
     }
 
-    let mut nbuckets: usize = 128;
+    let mut nbuckets: usize = 1024;
     let mut buckets: Vec<Vec<usize>> = vec![Vec::new(); nbuckets];
     let mut count = 0usize;
     for &entry_index in &unique {
