@@ -441,10 +441,57 @@ pub(in crate::executor) fn format_key_value_transform_part(
     quoted: bool,
 ) -> String {
     if quoted {
-        format!("{key} {}", quote_array_value(value))
+        format!("{} {}", quote_key_value_transform_key(key), quote_array_value(value))
     } else {
         format!("{key} {value}")
     }
+}
+
+/// GNU assoc_to_kvpair (assoc.c:346) key quoting: $'...' for characters
+/// that need ANSI-C quoting, double quotes when the key contains shell
+/// metacharacters (sh_contains_shell_metas, lib/sh/stringlib.c) or is a
+/// lone @ / * (ALL_ELEMENT_SUB), bare otherwise. Values are always
+/// double-quoted by the caller.
+fn quote_key_value_transform_key(key: &str) -> String {
+    if key.is_empty() {
+        return key.to_string();
+    }
+    if key.chars().any(|ch| (ch as u32) < 0x20 || (ch as u32) == 0x7f) {
+        let body = key
+            .replace('\\', "\\\\")
+            .replace('\'', "\\'")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r");
+        return format!("$'{body}'");
+    }
+    if key == "@" || key == "*" || key_value_word_contains_shell_metas(key) {
+        return quote_array_value(key);
+    }
+    key.to_string()
+}
+
+/// sh_contains_shell_metas (lib/sh/stringlib.c): IFS whitespace, quoting
+/// characters, shell metacharacters, reserved words, globbing characters,
+/// expansion characters, ^, and tilde/hash in leading positions.
+fn key_value_word_contains_shell_metas(word: &str) -> bool {
+    for (index, ch) in word.char_indices() {
+        match ch {
+            ' ' | '\t' | '\n' | '\'' | '"' | '\\' | '|' | '&' | ';' | '(' | ')' | '<' | '>'
+            | '!' | '{' | '}' | '*' | '[' | '?' | ']' | '^' | '$' | '`' => return true,
+            '~' => {
+                if index == 0 || word[..index].ends_with('=') || word[..index].ends_with(':') {
+                    return true;
+                }
+            }
+            '#' => {
+                if index == 0 {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 pub(in crate::executor) fn shell_single_quote_assignment_value(value: &str) -> String {

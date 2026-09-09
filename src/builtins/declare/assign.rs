@@ -44,6 +44,23 @@ where
             if bare != stripped && !marked_vars(variables, ASSOC_VARS).contains(bare) {
                 mark_typed(variables, ARRAY_VARS, bare);
             }
+            // GNU declare.def -> get_universal_initial_value / assocconvert:
+            // converting an existing scalar to an associative array moves
+            // the value into element "0" (assoc.tests: assoc=assoc;
+            // declare -A assoc then prints [0]="assoc" and ${assoc[@]}).
+            if marked_vars(variables, ASSOC_VARS).contains(bare) {
+                if let Some(current) = variables.get(bare).cloned() {
+                    let is_array_storage = current.starts_with('\x1d')
+                        || (current.starts_with('(') && current.ends_with(')'));
+                    if !current.is_empty() && !is_array_storage {
+                        let converted = super::storage::format_assoc_storage(vec![(
+                            "0".to_string(),
+                            current,
+                        )]);
+                        variables.insert(bare.to_string(), converted);
+                    }
+                }
+            }
             if mark_unset_declarations && !variables.contains_key(bare) {
                 mark_typed(variables, DECLARED_UNSET_VARS, bare);
             }
@@ -94,7 +111,7 @@ where
                     let element = format!("([{index_expression}]={value})");
                     variables.insert(
                         base.to_string(),
-                        append_assoc_value(&current, &element, integer),
+                        append_assoc_value(&current, &element, integer, variables),
                     );
                     mark_typed(variables, ASSOC_VARS, base);
                     unmark_typed(variables, DECLARED_UNSET_VARS, base);
@@ -211,7 +228,7 @@ where
                         continue;
                     }
                 }
-                append_assoc_value(&current, value, integer)
+                append_assoc_value(&current, value, integer, variables)
             } else if array
                 || marked_vars(variables, ARRAY_VARS).contains(var_name)
                 || current.starts_with('\x1d')
@@ -248,7 +265,7 @@ where
                 status = EXECUTION_FAILURE;
                 continue;
             }
-            append_assoc_value("()", value, integer)
+            append_assoc_value("()", value, integer, variables)
         } else if integer {
             if value.starts_with('(') && value.ends_with(')') {
                 append_array_value("()", value, true)
@@ -270,7 +287,18 @@ where
 /// compound assignment value, or `None` if every element uses a subscript.
 fn assoc_bare_element(value: &str) -> Option<String> {
     let inner = value.strip_prefix('(').and_then(|v| v.strip_suffix(')'))?;
+    // GNU arrayfunc.c kvpair_assignment_p: the FIRST compound word decides
+    // the mode. A leading word without the [key]= assignment shape puts the
+    // whole list into alternating key/value mode, so no word is "bare"
+    // (assoc11: declare -A inside=(a 1 b 2 c 3)).
+    let mut first = true;
     for token in parse_array_tokens(inner) {
+        if first {
+            first = false;
+            if !token.starts_with('[') {
+                return None;
+            }
+        }
         let subscript_end = token.trim_end_matches(']').rfind(']');
         let eq = token.find('=');
         let is_subscript = token.starts_with('[')

@@ -241,20 +241,27 @@ fn split_compound_assignment_words(inner: &str) -> Vec<String> {
 /// token(s); the split pieces must be re-joined before the storage parser
 /// sees them (array.tests "[5]="hello world"" element grouping).
 fn compound_raw_quote_unclosed(raw: &str) -> bool {
-    let bytes = raw.as_bytes();
-    let mut count = 0usize;
-    let mut index = 0usize;
-    while index < bytes.len() {
-        if bytes[index] == b'\\' && index + 1 < bytes.len() {
-            index += 2;
+    // GNU read_token_word parses the whole compound value before any quote
+    // state resets, so a lexer split inside EITHER quote family continues
+    // in the next token. Track single/double state with backslash escapes
+    // (escapes do not apply inside single quotes) instead of counting one
+    // quote character: '"spa ces' + "1"' and "'a b'" both re-join here.
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+    for ch in raw.chars() {
+        if escaped {
+            escaped = false;
             continue;
         }
-        if bytes[index] == b'"' {
-            count += 1;
+        match ch {
+            '\\' if !in_single => escaped = true,
+            '\'' if !in_double => in_single = !in_single,
+            '"' if !in_single => in_double = !in_double,
+            _ => {}
         }
-        index += 1;
     }
-    count % 2 == 1
+    in_single || in_double
 }
 
 pub(super) fn collect_compound_assignment(
@@ -341,6 +348,26 @@ pub(super) fn collect_compound_assignment(
         }
 
         if let Some((word, next_i)) = collect_compound_or_keyword_word_value(tokens, i) {
+            // Re-join lexer-split bare words the same way the [key]= branch
+            // does: a raw ending inside an unclosed quote continues in the
+            // following token(s) (arrayfunc.c parses the raw compound text,
+            // so 'a b' is ONE kvpair element, not two).
+            let mut merged_raw = tokens[i].raw.clone();
+            let mut merged_end = i;
+            while compound_raw_quote_unclosed(&merged_raw)
+                && merged_end + 1 < tokens.len()
+                && !is_keyword(tokens, merged_end + 1, ")")
+            {
+                merged_end += 1;
+                merged_raw.push(' ');
+                merged_raw.push_str(&tokens[merged_end].raw);
+            }
+            if merged_end > i {
+                let merged = remove_compound_assignment_quotes(&merged_raw);
+                values.push(quote_compound_assignment_word(&merged));
+                i = merged_end + 1;
+                continue;
+            }
             values.push(quote_compound_assignment_token_word(
                 tokens, i, next_i, &word,
             ));
@@ -717,10 +744,14 @@ fn quote_compound_assignment_word_forced(value: &str) -> String {
 }
 
 pub(super) fn quote_compound_assignment_word(value: &str) -> String {
+    // A literal ' must also be re-quoted (inside double quotes it is data):
+    // the joined value is re-split by the storage word iterator, and a bare
+    // quote character would open a phantom quoted span (assoc11 dict=( '"'
+    // dquote "'" squote )).
     if !value.is_empty()
         && !value
             .chars()
-            .any(|ch| ch.is_ascii_whitespace() || matches!(ch, '"' | '\\'))
+            .any(|ch| ch.is_ascii_whitespace() || matches!(ch, '"' | '\\' | '\''))
     {
         return value.to_string();
     }

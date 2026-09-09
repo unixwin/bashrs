@@ -86,6 +86,15 @@ impl Executor {
         let storage_name = self.resolved_variable_name(array_name)?;
         let storage = self.parameter_array_storage(array_name).unwrap_or_default();
         if is_marked_var(&self.env_vars, ASSOC_VARS, &storage_name) {
+            // GNU parameters.c assoc_reference: a literal * subscript means
+            // all elements, not the key "*"; a quoted * joins with IFS[0]
+            // (string_list_pos_params). Expanded subscripts such as
+            // assoc[$key] still look up the literal key (assoc13).
+            if key == "*" {
+                return Some(
+                    assoc_hash_ordered_values(&storage).join(&self.ifs_first_char_separator()),
+                );
+            }
             let key = self.assoc_subscript_key(key);
             return assoc_value_at(&storage, &key);
         }

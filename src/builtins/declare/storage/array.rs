@@ -57,7 +57,11 @@ pub(in crate::builtins::declare) fn append_array_value(
             }
         }
 
-        let quoted_token = token.starts_with('"') && token.ends_with('"');
+        // GNU keeps whitespace inside a quoted compound word as ONE element
+        // for both quote families ('a b' and "a b" each store a single
+        // element; only unquoted whitespace splits).
+        let quoted_token = (token.starts_with('"') && token.ends_with('"'))
+            || (token.starts_with('\'') && token.ends_with('\''));
         let token = unquote_storage_value(&token);
         let unquoted_command_substitution = token.starts_with('\x1d');
         let token = token.strip_prefix('\x1d').unwrap_or(&token);

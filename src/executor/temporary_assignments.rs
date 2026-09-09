@@ -97,12 +97,16 @@ impl Executor {
                 .unwrap_or_default();
             let element = if append {
                 if integer {
-                    (eval_arith_value(&existing) + eval_arith_value(value)).to_string()
+                    // Real evaluator: resolves shell variables like GNU's
+                    // expr.c evaluation (flix=9 -> 9, not the storage-shape 0).
+                    (self.eval_integer_assignment_value(&existing)
+                        + self.eval_integer_assignment_value(value))
+                        .to_string()
                 } else {
                     append_scalar_value(&existing, value)
                 }
             } else if integer {
-                eval_arith_value(value).to_string()
+                self.eval_integer_assignment_value(value).to_string()
             } else {
                 value.to_string()
             };
@@ -141,12 +145,14 @@ impl Executor {
         let current_element = entries.get(&index).cloned().unwrap_or_default();
         let element = if append {
             if integer {
-                (eval_arith_value(&current_element) + eval_arith_value(value)).to_string()
+                (self.eval_integer_assignment_value(&current_element)
+                    + self.eval_integer_assignment_value(value))
+                    .to_string()
             } else {
                 append_scalar_value(&current_element, value)
             }
         } else if integer {
-            eval_arith_value(value).to_string()
+            self.eval_integer_assignment_value(value).to_string()
         } else {
             value.to_string()
         };
@@ -279,6 +285,7 @@ impl Executor {
                         &current,
                         &value,
                         is_marked_var(&self.env_vars, INTEGER_VARS, base_name),
+                        &self.env_vars,
                     )
                 } else {
                     append_assoc_scalar_value(&current, &value)
@@ -317,6 +324,7 @@ impl Executor {
                 "()",
                 &value,
                 is_marked_var(&self.env_vars, INTEGER_VARS, base_name),
+                &self.env_vars,
             )
         } else if compound_assignment
             && value.starts_with('(')

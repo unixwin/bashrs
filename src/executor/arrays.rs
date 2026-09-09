@@ -512,17 +512,32 @@ pub(super) fn array_parameter_slice(
     offset: isize,
     length: Option<usize>,
 ) -> Vec<String> {
-    let values = array_values(value);
-    let start = if offset < 0 {
-        values.len().saturating_sub(offset.unsigned_abs())
+    // GNU array_subrange (array.c:377-419) with the offset resolution from
+    // subst.c:8432-8449: the offset is an ARRAY INDEX, not a position in the
+    // value list. The slice is every element whose index >= start; unset
+    // holes are skipped and empty-string elements still count toward the
+    // length. A negative offset counts back from one past the maximum index
+    // (subst.c:8446: len = array_max_index(a) + (*e1p < 0); *e1p += len),
+    // and a start below the smallest index yields nothing.
+    let entries = indexed_array_entries(value);
+    if entries.is_empty() {
+        return Vec::new();
+    }
+    let max_index = *entries.keys().next_back().expect("non-empty entries");
+    let start: i128 = if offset < 0 {
+        max_index as i128 + 1 + offset as i128
     } else {
-        offset as usize
+        offset as i128
     };
+    if start < 0 {
+        return Vec::new();
+    }
 
-    values
+    entries
         .into_iter()
-        .skip(start)
+        .filter(|(index, _)| *index as i128 >= start)
         .take(length.unwrap_or(usize::MAX))
+        .map(|(_, element)| element)
         .collect()
 }
 

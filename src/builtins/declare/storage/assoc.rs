@@ -7,7 +7,30 @@ pub(in crate::builtins::declare) fn parse_assoc_words(value: &str) -> Vec<(Strin
     else {
         return Vec::new();
     };
-    merge_assoc_subscript_tokens(split_storage_words(inner).collect())
+    let tokens = merge_assoc_subscript_tokens(split_storage_words(inner).collect());
+    // GNU ASSOC_KVPAIR_ASSIGNMENT (arrayfunc.c kvpair_assignment_p +
+    // assign_assoc_from_kvlist): when the first compound word carries no
+    // [key]= assignment form, the words alternate key, value (assoc11:
+    // declare -A inside=(a 1 b 2 c 3)).
+    match tokens.first() {
+        Some(first) if assoc_assignment_token(first).is_none() && !first.starts_with('[') => {
+            return tokens
+                .chunks(2)
+                .filter_map(|pair| {
+                    let key = pair.first()?;
+                    Some((
+                        unquote_storage_value(key),
+                        pair.get(1)
+                            .map(|value| unquote_storage_value(value))
+                            .unwrap_or_default(),
+                    ))
+                })
+                .collect();
+        }
+        _ => {}
+    }
+
+    tokens
         .into_iter()
         .filter_map(|part| {
             // Storage pairs are `[key]=value`; split at the quote-aware
@@ -28,14 +51,18 @@ pub(in crate::builtins::declare) fn append_assoc_value(
     current: &str,
     value: &str,
     integer: bool,
+    variables: &std::collections::HashMap<String, String>,
 ) -> String {
     // GNU arrayfunc.c assign_compound_array_list / bind_assoc_variable: when
     // the array carries the integer attribute, every element value is
     // evaluated as an arithmetic expression before it is stored
-    // (assoc.tests: declare -Ai chaff=([one]=3+7) stores 10).
+    // (assoc.tests: declare -Ai chaff=([one]=3+7) stores 10). The evaluation
+    // resolves shell variables, so it uses the real evaluator.
     let eval_element = |raw: &str| -> String {
         if integer {
-            super::eval_arith_value(raw).to_string()
+            crate::executor::arithmetic::eval_conditional_arith_value(raw, variables)
+                .unwrap_or(0)
+                .to_string()
         } else {
             raw.to_string()
         }
@@ -71,14 +98,37 @@ pub(in crate::builtins::declare) fn append_assoc_value(
                     .rev()
                     .find(|(entry_key, _)| entry_key == &key)
                 {
-                    entry_value.push_str(&rhs);
-                    *entry_value = eval_element(entry_value);
+                    if integer {
+                        *entry_value = (crate::executor::arithmetic::eval_conditional_arith_value(
+                            entry_value, variables,
+                        )
+                        .unwrap_or(0)
+                            + crate::executor::arithmetic::eval_conditional_arith_value(
+                                &rhs, variables,
+                            )
+                            .unwrap_or(0))
+                            .to_string();
+                    } else {
+                        entry_value.push_str(&rhs);
+                        *entry_value = eval_element(entry_value);
+                    }
                 } else {
                     entries.push((key, eval_element(&rhs)));
                 }
                 continue;
             }
-            entries.push((key, eval_element(&rhs)));
+            // GNU bind_assoc_variable -> assoc_insert: a repeated key keeps
+            // its first-insert slot and the new value replaces the old one
+            // (assoc13: declare a[@]=at2 overwrites [@" at").
+            if let Some((_, entry_value)) = entries
+                .iter_mut()
+                .rev()
+                .find(|(entry_key, _)| entry_key == &key)
+            {
+                *entry_value = eval_element(&rhs);
+            } else {
+                entries.push((key, eval_element(&rhs)));
+            }
             continue;
         }
         entries.push(("0".to_string(), eval_element(&unquote_storage_value(&token))));
@@ -182,7 +232,9 @@ fn merge_assoc_subscript_tokens(tokens: Vec<String>) -> Vec<String> {
     out
 }
 
-fn format_assoc_storage(entries: Vec<(String, String)>) -> String {
+pub(in crate::builtins::declare) fn format_assoc_storage(
+    entries: Vec<(String, String)>,
+) -> String {
     format!(
         "({})",
         entries
@@ -253,8 +305,9 @@ mod tests {
 
     #[test]
     fn alternating_bracket_words_are_literal_keys() {
+        let variables = std::collections::HashMap::new();
         assert_eq!(
-            append_assoc_value("()", "([x] one [y] two)", false),
+            append_assoc_value("()", "([x] one [y] two)", false, &variables),
             "([\"[x]\"]=one [\"[y]\"]=two)"
         );
     }

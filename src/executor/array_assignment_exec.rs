@@ -226,11 +226,11 @@ impl Executor {
             return true;
         }
 
-        if index.trim().is_empty()
-            && raw_subscript
-                .map(str::trim)
-                .is_none_or(|raw| raw.is_empty() || raw == "[]")
-        {
+        // GNU evaluates the subscript arithmetically even when it is all
+        // whitespace (probe vs GNU 5.3: `h[ ]=10` stores h[0]=10 with
+        // status 0, array25.sub), so only a truly EMPTY subscript is a bad
+        // array subscript (`h[]=10`).
+        if index.trim().is_empty() && raw_subscript.is_none_or(str::is_empty) {
             eprintln!(
                 "{}{}: bad array subscript",
                 self.diagnostic_prefix(),
@@ -296,9 +296,7 @@ impl Executor {
         let current_element = entries.get(&index).cloned().unwrap_or_default();
         let element = if append {
             if is_marked_var(&self.env_vars, INTEGER_VARS, name) {
-                (self.eval_integer_assignment_value(&current_element)
-                    + self.eval_integer_assignment_value(value))
-                    .to_string()
+                (eval_arith_value(&current_element) + eval_arith_value(value)).to_string()
             } else {
                 append_scalar_value(&current_element, value)
             }
@@ -306,7 +304,7 @@ impl Executor {
             value.to_string()
         };
         let element = if is_marked_var(&self.env_vars, INTEGER_VARS, name) {
-            self.eval_integer_assignment_value(&element).to_string()
+            eval_arith_value(&element).to_string()
         } else {
             element
         };

@@ -38,14 +38,23 @@ pub(in crate::executor) fn single_unquoted_parameter_name(value: &str) -> Option
     is_shell_name(name).then_some(name)
 }
 
-pub(in crate::executor) fn append_assoc_value(current: &str, value: &str, integer: bool) -> String {
+pub(in crate::executor) fn append_assoc_value(
+    current: &str,
+    value: &str,
+    integer: bool,
+    env_vars: &HashMap<String, String>,
+) -> String {
     // GNU arrayfunc.c assign_compound_array_list / bind_assoc_variable: when
     // the array carries the integer attribute, every element value is
     // evaluated as an arithmetic expression before it is stored
-    // (assoc.tests: declare -i chaff; chaff=( [zero]=1+4 [one]=3+7 )).
+    // (assoc.tests: declare -i chaff; chaff=( [zero]=1+4 [one]=3+7 )). The
+    // evaluation resolves shell variables (flix=9; wheat=([foo bar]=flix)
+    // stores 9), so it uses the real evaluator, not the storage-shape one.
     let eval_element = |raw: &str| -> String {
         if integer {
-            super::arithmetic::eval_arith_value(raw).to_string()
+            eval_conditional_arith_value(raw, env_vars)
+                .unwrap_or(0)
+                .to_string()
         } else {
             raw.to_string()
         }
@@ -81,14 +90,34 @@ pub(in crate::executor) fn append_assoc_value(current: &str, value: &str, intege
                     .rev()
                     .find(|(entry_key, _)| entry_key == &key)
                 {
-                    *entry_value = append_scalar_value(entry_value, &rhs);
-                    *entry_value = eval_element(entry_value);
+                    if integer {
+                        // GNU bind_assoc_variable: an integer append adds the
+                        // two expressions arithmetically (wheat[foo bar]+=7
+                        // with wheat[foo bar]=eval(flix)=9 stores 16).
+                        *entry_value = (eval_conditional_arith_value(entry_value, env_vars)
+                            .unwrap_or(0)
+                            + eval_conditional_arith_value(&rhs, env_vars).unwrap_or(0))
+                            .to_string();
+                    } else {
+                        *entry_value = append_scalar_value(entry_value, &rhs);
+                    }
                 } else {
                     entries.push((key, eval_element(&rhs)));
                 }
                 continue;
             }
-            entries.push((key, eval_element(&rhs)));
+            // GNU bind_assoc_variable -> assoc_insert: a repeated key keeps
+            // its first-insert slot and the new value replaces the old one
+            // (assoc13: declare a[*]=star2 overwrites [*]" star").
+            if let Some((_, entry_value)) = entries
+                .iter_mut()
+                .rev()
+                .find(|(entry_key, _)| entry_key == &key)
+            {
+                *entry_value = eval_element(&rhs);
+            } else {
+                entries.push((key, eval_element(&rhs)));
+            }
             continue;
         }
         // Bare element (no `[key]=` form): GNU rejects it with
@@ -340,13 +369,19 @@ fn bash_hash_string(key: &str) -> u32 {
 }
 
 /// Bash assoc.c / hashlib.c table iteration order: FNV-1 hashed keys into a
-/// power-of-two bucket array starting at ASSOC_HASH_BUCKETS (assoc.h: 1024;
-/// variables.c make_new_assoc_variable calls assoc_create(ASSOC_HASH_BUCKETS)),
-/// head-insertion chains,
-/// grow x4 when nentries >= nbuckets * 2 (rehash walks old buckets 0..n and
-/// re-inserts each item at its new chain head). Iteration visits bucket 0..n,
-/// each chain head to tail. A repeated key keeps its first-insert slot and
-/// the last value wins (hash_search replaces data in place).
+/// power-of-two bucket array, head-insertion chains, grow x4 when nentries >=
+/// nbuckets * 2 (rehash walks old buckets 0..n and re-inserts each item at its
+/// new chain head). Iteration visits bucket 0..n, each chain head to tail. A
+/// repeated key keeps its first-insert slot and the last value wins
+/// (hash_search replaces data in place).
+///
+/// Declared associative variables (`declare -A` / `typeset -A`) are created by
+/// make_new_assoc_variable with ASSOC_HASH_BUCKETS == 1024 buckets
+/// (variables.c:2857); only the implicit scalar→assoc conversion
+/// (convert_var_to_assoc, arrayfunc.c:117) starts from DEFAULT_HASH_BUCKETS
+/// (128). The declared path is the common case, so model 1024 here
+/// (appendop.tests: `typeset -A foo=([one]=bar ...)` enumerates [0] before
+/// [two] at 1024 buckets, [two] before [0] at 128).
 pub(crate) fn bash_assoc_order(
     entries: &[(String, String)],
 ) -> Vec<(usize, (String, String))> {
@@ -428,6 +463,7 @@ impl Iterator for StorageWordIter<'_> {
 
         let mut word = String::new();
         let mut in_double = false;
+        let mut in_single = false;
         let mut escaped = false;
         for (relative, ch) in self.input[self.offset..].char_indices() {
             if escaped {
@@ -440,12 +476,21 @@ impl Iterator for StorageWordIter<'_> {
                 escaped = true;
                 continue;
             }
-            if ch == '"' {
+            // Mirror the declare storage splitter (declare/storage/words.rs):
+            // whitespace inside EITHER quote family does not split a
+            // compound-assignment word ('a b' stores one element, assoc12
+            // "1 2" stays one kvpair key).
+            if ch == '\'' && !in_double {
+                in_single = !in_single;
+                word.push(ch);
+                continue;
+            }
+            if ch == '"' && !in_single {
                 in_double = !in_double;
                 word.push(ch);
                 continue;
             }
-            if ch.is_ascii_whitespace() && !in_double {
+            if ch.is_ascii_whitespace() && !in_double && !in_single {
                 self.offset += relative + ch.len_utf8();
                 return Some(word);
             }
