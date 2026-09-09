@@ -95,7 +95,7 @@ authoritative source; update it only after real reproduction.
 - **Upstream test files**: `third_party/bash/tests/<name>.tests`, run per-file
   with bounded timeouts; keep raw artifacts under
   `target/issue-suites/results/`.
-- **Comparison baseline**: WSL GNU Bash 5.2.21. Run the same case file through
+- **Comparison baseline**: WSL GNU Bash 5.3.0 (`/usr/local/bin/bash`; legacy 5.2.21 via `scripts/true-baseline-521.sh`). Run the same case file through
   both shells, e.g. `target/debug/rubash.exe case.sh` vs
   `MSYS_NO_PATHCONV=1 wsl bash /mnt/d/repo/rubash/case.sh`.
 - **Never use `wsl bash -c "$c"` for cases with doubled backslashes or
@@ -148,8 +148,7 @@ kills WSL-side test runs, and inflated PASS claims from wrong baselines.
   harness suddenly reports that error, do NOT patch the script; run
   git add --renormalize . and re-run. The attribute is the only durable fix.
 
-- One verification baseline only: WSL GNU Bash 5.2.21 via the run-83.sh check
-  subcommand (MSYS_NO_PATHCONV=1 wsl bash tests/gnu-compat/run-83.sh check NAME).
+- One verification baseline only: WSL GNU Bash 5.3.0 via scripts/true-baseline.sh (suite slices: `MSYS_NO_PATHCONV=1 wsl bash /mnt/d/repo/rubash/scripts/true-baseline.sh NAME`; the older run-83.sh check remains usable for non-baseline spot checks).
   Do NOT certify a fix by diffing third_party/bash/tests/*.tests against recho/
   zecho output, by comparing raw stdout, or by any other harness. A PASS claim
   is only valid if run-83.sh check prints PASS NAME.
